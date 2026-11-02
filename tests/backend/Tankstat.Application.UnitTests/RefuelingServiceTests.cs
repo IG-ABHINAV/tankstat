@@ -50,16 +50,19 @@ public class RefuelingServiceTests
     }
 
     [Fact]
-    public async Task Log_StoresTheDiscount_AndAnUpdateWithoutOneClearsIt()
+    public async Task Log_StoresTheDiscount_AnUpdateWithoutOneKeepsIt_AndZeroClearsIt()
     {
         var s = await Setup();
 
         var log = await Log(s, Input(volume: 43, cost: 34744, currency: "HUF", discount: 430));
         Assert.Equal((34744m, 430m, 808m, 818m), (log.TotalCost, log.Discount, log.PricePerUnit, log.PricePerUnitBeforeDiscount));
 
-        var updated = await s.W.RefuelingService.UpdateAsync(log.Id, Input(volume: 43, cost: 34744, currency: "HUF"), default);
-        Assert.Null(updated.Discount);
-        Assert.Equal(808m, updated.PricePerUnitBeforeDiscount);
+        var kept = await s.W.RefuelingService.UpdateAsync(log.Id, Input(volume: 43, cost: 34744, currency: "HUF"), default); // a build from before discounts
+        Assert.Equal(430m, kept.Discount);
+
+        var cleared = await s.W.RefuelingService.UpdateAsync(log.Id, Input(volume: 43, cost: 34744, currency: "HUF", discount: 0), default);
+        Assert.Null(cleared.Discount);
+        Assert.Equal(808m, cleared.PricePerUnitBeforeDiscount);
     }
 
     [Fact]

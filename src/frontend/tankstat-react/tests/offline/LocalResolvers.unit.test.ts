@@ -71,6 +71,17 @@ describe('answerLocally', () => {
     return device.rows
   }
 
+  it('answers a downloaded refuelling with the pump\'s price, and one downloaded before discounts with none and the price paid', async () => {
+    const { discount: _discount, ...older } = refueling('old', { date: '2026-09-02', volume: 40, totalCost: 20000 }) // no discount, no pump price
+    const rows = await store([refueling('new', { date: '2026-09-03', volume: 43, totalCost: 34744, discount: 430, pricePerUnit: 808, pricePerUnitBeforeDiscount: 818 }), older as LogRow])
+
+    const answer = await answerLocally(rows, 'Refuelings', { vehicleId: 'v1', orderBy: 'DATE', direction: 'DESC', skip: 0, take: 10 })
+
+    const [fresh, old] = answer!.refuelings as Record<string, unknown>[]
+    expect(fresh).toMatchObject({ id: 'new', discount: 430, pricePerUnitBeforeDiscount: 818 }) // the server's own, never worked out again
+    expect(old).toMatchObject({ id: 'old', discount: null, pricePerUnitBeforeDiscount: 500 }) // so a grid with the column shows it, not a dash
+  })
+
   it('answers any page of a downloaded vehicle, with who may edit following the vehicle today', async () => {
     const rows = await store([refueling('a', { date: '2026-09-03' }), refueling('b', { date: '2026-09-02' }), refueling('c', { date: '2026-09-01' }), refueling('t', { deletedAt: '2026-09-10T00:00:00Z' })])
 

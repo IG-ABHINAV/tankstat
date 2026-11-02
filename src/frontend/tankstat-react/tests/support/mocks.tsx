@@ -765,7 +765,9 @@ export function fakeLogBackend(vehicle: FakeVehicle, logs: FakeRefueling[] = [],
       const failure = fail()
       if (failure) return failure
       const i = state.logs.findIndex((l) => l.id === variables.input.id)
-      state.logs[i] = { ...state.logs[i], ...variables.input, reviewState: 'NONE', filledFromPhoto: [] } // a person saved it: checked
+      // A person saved it: checked. Like the server, a discount left out stays and 0 is none.
+      const discount = variables.input.discount === undefined || variables.input.discount === null ? state.logs[i].discount : variables.input.discount || null
+      state.logs[i] = { ...state.logs[i], ...variables.input, discount, reviewState: 'NONE', filledFromPhoto: [] }
       return HttpResponse.json({ data: { updateRefueling: { id: variables.input.id } } })
     }),
     graphql.mutation('DeleteRefueling', ({ variables }) => {

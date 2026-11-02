@@ -272,7 +272,7 @@ internal sealed class InMemoryStats(InMemoryRefuelings refuelings, InMemoryExpen
         var fuel = refuelings.Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId && r.Missing == LogValues.None).ToList();
         var costs = expenses.Items.Where(e => !e.IsDeleted && e.VehicleId == vehicleId && e.Cost is not null).ToList();
         return Task.FromResult(new StatsData(
-            fuel.Select(r => new FuelPoint(r.Date, r.Volume!.Value, r.TotalCost!.Value, r.Currency!, r.Odometer!.Value, r.IsFullTank, r.Consumption)).ToList(),
+            fuel.Select(r => new FuelPoint(r.Date, r.Volume!.Value, r.TotalCost!.Value, r.Currency!, r.Odometer!.Value, r.IsFullTank, r.Consumption, r.Discount ?? 0)).ToList(),
             costs.Select(e => new ExpensePoint(e.Date, e.Category, e.Amount!.Value, e.Currency!)).ToList(),
             fuel.Select(r => new OdometerPoint(r.Date, r.Odometer!.Value)).Concat(costs.Where(e => e.Odometer is not null).Select(e => new OdometerPoint(e.Date, e.Odometer!.Value))).ToList()));
     }

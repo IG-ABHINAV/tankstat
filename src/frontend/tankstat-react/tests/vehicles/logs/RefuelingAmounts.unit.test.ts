@@ -107,8 +107,11 @@ describe('volume, unit price and total', () => {
     expect(state.values.discount).toBe('')
     expect(state.calculated).toEqual(new Set())
 
-    const read = photo(open(), { VOLUME: '43', UNIT_PRICE: '818', TOTAL: '34744' }) // a photo's three amounts give it too
-    expect(read.values.discount).toBe('430')
+    // A photo's amounts never give it: a misread one (6409 for 640.9) would become a discount that is saved. A photo reads the discount itself.
+    const read = photo(open(), { VOLUME: '43', UNIT_PRICE: '818', TOTAL: '34744' })
+    expect(read.values.discount).toBe('')
+    const misread = photo(type(open(), 'volume', '43'), { UNIT_PRICE: '6409', TOTAL: '34744' })
+    expect({ ...amounts(misread), discount: misread.values.discount }).toEqual({ volume: '43', unitPrice: '6409', totalCost: '34744', discount: '' })
 
     // The receipt's rounding is no discount: 38.52 L × 640.9 is 24 687.47, printed as 24 687. A card's 2 Ft/L off is one.
     const rounding = type(type(type(open(), 'volume', '38.52'), 'totalCost', '24687'), 'unitPrice', '640.9')

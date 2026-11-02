@@ -23,7 +23,7 @@ public sealed record LogRefuelingInput(
 /// <param name="Volume">Volume, total cost and odometer may be omitted only while a photo of the log is still being read.</param>
 /// <param name="Currency">Omit to keep the log's currency.</param>
 /// <param name="MissedPreviousFillUp">Omit to keep what the log says.</param>
-/// <param name="Discount">What was taken off the total at the till; omitted or null means none, like <c>totalCost</c> (it is not kept from the log).</param>
+/// <param name="Discount">What was taken off the total at the till; omit (or null) to keep the log's, like <c>missedPreviousFillUp</c>, and send 0 for none.</param>
 public sealed record UpdateRefuelingInput(
     Guid Id, DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, bool? MissedPreviousFillUp = null,
     decimal? Discount = null);

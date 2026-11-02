@@ -54,7 +54,9 @@ export function keepAmountsInStep<F extends string>(
     if (field === 'totalCost' && (typed(field) || state.filled.totalCost !== undefined)) return undefined
     return GIVES_WAY.indexOf(field) + 1
   }
-  const candidates = GIVES_WAY.filter((field) => !moved.includes(field) && rank(field) !== undefined && (byUser || !typed(field)))
+  // The discount is worked out from what the user typed only: amounts a photo read are not checked against each other unless all three were
+  // read, so a misread price (6409 for 640.9) would turn into a discount that is saved. A photo reads the discount itself.
+  const candidates = GIVES_WAY.filter((field) => !moved.includes(field) && rank(field) !== undefined && (byUser || (!typed(field) && field !== 'discount')))
     .sort((a, b) => rank(a)! - rank(b)!)
 
   let next = state
@@ -96,8 +98,8 @@ function workedOut(values: Record<AmountField, string>, field: AmountField): str
   }
   const result = value === undefined ? undefined : rounded(value, DECIMALS[field])
   if (result === undefined) return undefined
-  // Written the way the user writes numbers: with a decimal comma when what it came from has one.
-  const comma = (Object.keys(values) as AmountField[]).some((other) => other !== field && values[other].includes(','))
+  // Written the way the user writes numbers: with a decimal comma when an amount it came from has one (the form's other fields hold more).
+  const comma = GIVES_WAY.some((other) => other !== field && values[other].includes(','))
   return comma ? String(result).replace('.', ',') : String(result)
 }
 

@@ -219,7 +219,7 @@ it('shows a saved discount with the pump price in the edit dialog, and clears it
   expect(within(dialog).getByLabelText('Total cost')).toHaveValue('34744') // what was paid never moves
   await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
 
-  await waitFor(() => expect(state.calls.UpdateRefueling).toEqual([{ input: expect.objectContaining({ id: 'r3', totalCost: 34744, discount: null }) }]))
+  await waitFor(() => expect(state.calls.UpdateRefueling).toEqual([{ input: expect.objectContaining({ id: 'r3', totalCost: 34744, discount: 0 }) }])) // 0 clears; left out would keep it
 })
 
 it('shows the unit price of a saved log and keeps the amounts in step when it changes', async () => {

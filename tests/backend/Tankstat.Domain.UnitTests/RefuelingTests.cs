@@ -110,6 +110,19 @@ public class RefuelingTests
     }
 
     [Fact]
+    public void ADiscountOfNothing_NeedsNoAmount_ANegativeOneSaysSoFirst_AndOneIsKeptToTheCent()
+    {
+        var r = TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day);
+
+        r.Update(Day, 40, null, "EUR", 1000, true, false, null, readingPhotos: true, discount: 0); // the field emptied while the photo is read
+        Assert.Null(r.Discount);
+        Assert.Equal("cost.discountNegative", Assert.Throws<DomainException>(() => r.Update(Day, 40, null, "EUR", 1000, true, false, null, readingPhotos: true, discount: -1)).Key);
+
+        Assert.Null(TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day, discount: 0.004m).Discount); // what the column would keep as 0.00
+        Assert.Equal(0.01m, TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day, discount: 0.005m).Discount);
+    }
+
+    [Fact]
     public void Trash_And_Restore_CarryTheReadingAndCostAlong()
     {
         var r = TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day);
