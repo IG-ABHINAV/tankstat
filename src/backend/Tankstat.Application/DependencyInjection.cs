@@ -18,9 +18,11 @@ using Tankstat.Application.Refuelings;
 using Tankstat.Application.Settings;
 using Tankstat.Application.Setup;
 using Tankstat.Application.Sync;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Sharing;
 using Tankstat.Application.SystemSettings;
 using Tankstat.Application.Stats;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
 
@@ -55,12 +57,15 @@ public static class DependencyInjection
         // Photo reading is optional: its settings are never validated on start (they would stop the app); RecognitionSetup turns
         // reading off instead when they cannot be used.
         services.AddOptions<RecognitionOptions>().Bind(configuration.GetSection(RecognitionOptions.SectionName));
+        // Telemetry is optional too, never validated on start: TelemetryGate reads its key before the host is built and only says what it ignores.
+        services.AddOptions<TelemetryOptions>().Bind(configuration.GetSection(TelemetryOptions.SectionName));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>());
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<HealthReporter>();
         services.AddSingleton<NoticeService>();
         services.AddSingleton<InstanceGeneration>();
+        services.AddAppMetrics();
         services.TryAddSingleton<OneTimeCode>(); // the host's own when it keeps one over a restart in the process
         services.AddSingleton<SetupStatus>();
 
@@ -109,6 +114,16 @@ public static class DependencyInjection
         services.AddScoped<RecognitionService>();
         services.AddScoped<LogPhotoFiller>();
         services.AddScoped<PhotoReadingProcessor>();
+        return services;
+    }
+
+    /// <summary>
+    /// The app's own metrics (#219), once: through the host's meter factory when there is one (a test's services have none). Called by
+    /// <see cref="AddApplication"/> and by <c>AddInfrastructure</c> (the backups record them), so a host of either layer's services alone has them.
+    /// </summary>
+    public static IServiceCollection AddAppMetrics(this IServiceCollection services)
+    {
+        services.TryAddSingleton(sp => new AppMetrics(sp.GetService<System.Diagnostics.Metrics.IMeterFactory>()));
         return services;
     }
 }

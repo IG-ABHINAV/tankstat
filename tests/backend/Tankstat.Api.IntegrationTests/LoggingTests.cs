@@ -229,7 +229,7 @@ public class LoggingTests
         using var app = new TestApp(new Dictionary<string, string?> { ["Auth:Mode"] = "Standalone", ["Setup:Enabled"] = "true" }, migrated: false);
 
         var client = app.NewClient(); // starts the host
-        var code = (string)Assert.Single(app.Log.From(SetupService), e => e.Values.ContainsKey("Code")).Values["Code"]!;
+        var code = (string)Assert.Single(app.Log.From<Tankstat.Application.Setup.OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code")).Values["Code"]!;
         (await client.Gql("mutation($i: SetupFinishInput!) { setupFinish(input: $i) { restarting } }",
             new { i = new { code, email = "root@example.com", password = "initial-password-1", passwordConfirmation = "initial-password-1" } })).Data();
 

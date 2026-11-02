@@ -48,6 +48,10 @@ public sealed class ApiFixture : IDisposable
         Environment.SetEnvironmentVariable(SettingsVar, SettingsPath);
         Environment.SetEnvironmentVariable(BackupsVar, BackupsPath);
         foreach (var name in ScheduleVars) Environment.SetEnvironmentVariable(name, null);
+        // Nor a telemetry endpoint of the developer's or the runner's: cleared, never set (the variables are the process's, and the telemetry
+        // tests in it set theirs through their own host's settings).
+        foreach (var name in Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(n => n.StartsWith("OTEL_", StringComparison.OrdinalIgnoreCase) || n.StartsWith("Telemetry__", StringComparison.OrdinalIgnoreCase)).ToList())
+            Environment.SetEnvironmentVariable(name, null);
         Factory = new WebApplicationFactory<Program>();
     }
 

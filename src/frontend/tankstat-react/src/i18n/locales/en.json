@@ -1874,7 +1874,8 @@
       "SYNC": "Offline sync",
       "PHOTO_READING": "Photo reading",
       "BACKUPS": "Backups",
-      "LOGGING": "Logging"
+      "LOGGING": "Logging",
+      "TELEMETRY": "Telemetry"
     },
     "groupHelp": {
       "AUTH": "How users sign in. A change of the mode takes effect at the next restart and signs everybody out then, you included.",
@@ -1884,7 +1885,8 @@
       "SYNC": "How long the server remembers the changes devices sent and what was removed for good, for devices that keep data for offline use.",
       "PHOTO_READING": "A vision model behind an OpenAI-compatible API that reads receipts and dashboards; off without a provider. A cloud address sends every photo there.",
       "BACKUPS": "When backups are written on their own, how many are kept, what goes in and how they are encrypted. Backing up, uploading and restoring are on the Backups page.",
-      "LOGGING": "The log level per category. The ASP.NET Core categories never go below Warning: their request lines hold the tokens of password reset links."
+      "LOGGING": "The log level per category. The ASP.NET Core categories never go below Warning: their request lines hold the tokens of password reset links.",
+      "TELEMETRY": "Traces, metrics and logs sent over OpenTelemetry (OTLP) to a collector or backend you choose; off without an endpoint. Like the log, what is sent holds ids, counts and reasons, never what someone typed, and never the one-time code."
     },
     "groupForm": "{{group}} settings",
     "source": {
@@ -1990,7 +1992,7 @@
       "Backups__KeepDays": "After every backup the app writes, the files named tankstat-backup-… older than this many days are removed (the safety nets before upgrades are kept apart, the newest three); the newest always stays. Uploads and files under another name are never removed. Empty: no limit by age.",
       "Backups__Photos": "Only matters when the photos of logs have a folder of their own (Storage:PhotosPath): they grow without limit, so they are left out unless this is on. With one folder they are always in.",
       "Backups__Environment": "What a backup does with the settings environment variables hold here. Names only (Record): the backup names them, and a restore on a server where one of them has no value is refused until it is set. Names and values (Merge): the backup's copy of the settings file also takes the values this server runs with (never this server's own file), so a restore elsewhere brings them; the secrets only with Secrets in backups on.",
-      "Backups__Secrets": "Every backup's settings file holds the secrets too (the OIDC client secret, the SMTP password, the model API key), so a restore elsewhere brings them. Off by default. In a backup that is not encrypted anyone who has the file reads them: make a key set on the Backups page to encrypt backups. With Names only (Settings from the environment), this is the only way the secrets in this server's settings file reach a backup; secrets held by environment variables travel only with Names and values. Either way a backup names every secret it leaves out.",
+      "Backups__Secrets": "Every backup's settings file holds the secrets too (the OIDC client secret, the SMTP password, the model API key, the telemetry headers), so a restore elsewhere brings them. Off by default. In a backup that is not encrypted anyone who has the file reads them: make a key set on the Backups page to encrypt backups. With Names only (Settings from the environment), this is the only way the secrets in this server's settings file reach a backup; secrets held by environment variables travel only with Names and values. Either way a backup names every secret it leaves out.",
       "Backups__Encryption__Recipient": "The age recipient (age1…) backups are encrypted for. It and the salt are one pair, from one key set: make both with Make a key set on the Backups page and change them only together. Empty: backups are written in plain, without the keys that protect the sign-in.",
       "Backups__Encryption__Salt": "The salt the key is worked out from the passphrase with, printed with the recipient: the two belong together. With a salt of another key set (or one changed by hand) the passphrase no longer opens the backups written after it, only the identity does. Older backups keep their own passphrase.",
       "Backups__PassphraseMinLength": "The least a passphrase typed for encrypted backups must have, on the Backups page and for backup keygen (12 to 128, 12 by default). A made-up passphrase and one that opens an existing backup are never judged by it.",
@@ -1999,7 +2001,12 @@
       "Logging__LogLevel__Tankstat": "The app's own lines: Information shows what an operator looks for, Debug every ordinary change by id.",
       "Logging__LogLevel__Microsoft_AspNetCore": "The web server's lines. Never below Warning: its request lines hold the tokens of password reset links.",
       "Logging__LogLevel__Microsoft_EntityFrameworkCore": "The database layer's lines; Information writes every SQL command.",
-      "Logging__LogLevel__System_Net_Http_HttpClient": "Outgoing requests, such as those to the photo reading server; Information writes a line per request."
+      "Logging__LogLevel__System_Net_Http_HttpClient": "Outgoing requests, such as those to the photo reading server; Information writes a line per request.",
+      "OTEL_EXPORTER_OTLP_ENDPOINT": "The collector or backend telemetry goes to, such as http://otel-collector:4317 (gRPC) or http://otel-collector:4318 (HTTP). Empty (the default): nothing is sent. An address outside your network sends every trace, metric and log line there.",
+      "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc (the default, usually port 4317) or http/protobuf (usually port 4318), as the endpoint expects.",
+      "OTEL_EXPORTER_OTLP_HEADERS": "Sent with every export, as key=value pairs separated by commas, such as a backend's API key (x-api-key=...). It is never shown back.",
+      "OTEL_SERVICE_NAME": "The name the telemetry is filed under in the backend; tankstat by default.",
+      "Telemetry__TraceDatabase": "Also sends a span for every database command, with its SQL text. Beta: EF Core's instrumentation is a pre-release, and its masking of the values written into a command can miss one, so a value could reach the backend; what people type is sent as parameters, which are never exported. Off by default, and only with an endpoint."
     },
     "sections": {
       "sessions": "Sessions (Standalone and OIDC)",
@@ -2075,7 +2082,12 @@
       "Logging__LogLevel__Tankstat": "Tankstat",
       "Logging__LogLevel__Microsoft_AspNetCore": "ASP.NET Core",
       "Logging__LogLevel__Microsoft_EntityFrameworkCore": "Entity Framework Core",
-      "Logging__LogLevel__System_Net_Http_HttpClient": "HTTP client"
+      "Logging__LogLevel__System_Net_Http_HttpClient": "HTTP client",
+      "OTEL_EXPORTER_OTLP_ENDPOINT": "OTLP endpoint",
+      "OTEL_EXPORTER_OTLP_PROTOCOL": "Protocol",
+      "OTEL_EXPORTER_OTLP_HEADERS": "Headers",
+      "OTEL_SERVICE_NAME": "Service name",
+      "Telemetry__TraceDatabase": "Trace database commands"
     },
     "choices": {
       "authMode": {
@@ -2103,10 +2115,14 @@
       "backupEnvironment": {
         "Record": "Names only",
         "Merge": "Names and values"
+      },
+      "otlpProtocol": {
+        "grpc": "gRPC, usually port 4317",
+        "http/protobuf": "HTTP, usually port 4318"
       }
     },
     "choiceWithValue": "{{words}} ({{value}})",
     "noSignInWarning": "Not secure: without sign-in, anyone who can reach the server sees and changes all data, and the administration pages are off. Use it only to try the app out on a network you trust, never in production.",
-    "secretsPlainWarning": "Backups are not encrypted, so with this on every backup holds the secrets in plain: anyone who gets a file, from a disk, a copy or a share, reads the OIDC client secret, the SMTP password and the model API key. Make a key set on the Backups page to encrypt them."
+    "secretsPlainWarning": "Backups are not encrypted, so with this on every backup holds the secrets in plain: anyone who gets a file, from a disk, a copy or a share, reads the OIDC client secret, the SMTP password, the model API key and the telemetry headers. Make a key set on the Backups page to encrypt them."
   }
 }

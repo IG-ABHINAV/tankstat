@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Time.Testing;
 using Tankstat.Seeder;
+using Tankstat.TestSupport;
 
 namespace Tankstat.Seeder.UnitTests;
 
@@ -368,6 +369,8 @@ public sealed class SeederAppTests : IDisposable
         {
             // a settings file that does not exist, never a developer's: it is read before the host is built, so it goes as an argument
             b.UseSetting("Settings:Path", Path.Combine(Path.GetTempPath(), $"tankstat-seed-app-{Guid.NewGuid():N}-settings.json"));
+            // nor a developer's telemetry endpoint: decided before the host is built too, so it goes as an argument as well
+            foreach (var key in TelemetryKeys.InEnvironment()) b.UseSetting(key, "");
             b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Database:Provider"] = "Sqlite",

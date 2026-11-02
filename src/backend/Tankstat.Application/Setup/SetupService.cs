@@ -45,7 +45,8 @@ public sealed class SetupService(
     IOptions<AuthOptions> auth,
     IOptions<SetupOptions> options,
     TimeProvider clock,
-    ILogger<SetupService> logger)
+    ILogger<SetupService> logger,
+    ILogger<OneTimeCode.SetupLine> codeLogger)
 {
     /// <summary>
     /// The settings that made the first administrator before the setup page was the only way (#149): no longer read, so a start that still
@@ -101,9 +102,10 @@ public sealed class SetupService(
         }
 
         status.Set(phase == SetupPhase.Pending);
-        // A Warning, so a log kept to warnings still has it: without it the instance cannot be set up from the browser.
+        // A Warning, so a log kept to warnings still has it: without it the instance cannot be set up from the browser. Its own category keeps
+        // it off the telemetry exporter (OneTimeCode.LogCategory).
         if (phase == SetupPhase.Pending)
-            logger.LogWarning("Setup is waiting: open /setup in the browser and enter the one-time setup code {Code}", code.Value);
+            codeLogger.LogWarning("Setup is waiting: open /setup in the browser and enter the one-time setup code {Code}", code.Value);
     }
 
     /// <summary>

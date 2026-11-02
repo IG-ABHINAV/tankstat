@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Images;
+using Tankstat.Application.Telemetry;
 using Tankstat.Domain.Photos;
 using Tankstat.Domain.Recognition;
 
@@ -27,7 +28,7 @@ public sealed record ReadingSummary(DocumentKind Kind, int Values, int Sure);
 /// </summary>
 public sealed class PhotoReadingProcessor(
     IRecognitionProvider provider, RecognitionAvailability availability, RecognitionSetup setup, IPhotoReadingRepository readings,
-    IImageRepository images, IImageStore store, LogPhotoFiller filler, TimeProvider clock, ILogger<PhotoReadingProcessor> logger)
+    IImageRepository images, IImageStore store, LogPhotoFiller filler, TimeProvider clock, AppMetrics metrics, ILogger<PhotoReadingProcessor> logger)
 {
     /// <summary>
     /// An attempt this old was cut short (the app stopped while reading): it is queued again. At least five minutes, and always longer than
@@ -78,12 +79,19 @@ public sealed class PhotoReadingProcessor(
         if (await readings.ClaimAsync(id, clock.GetUtcNow(), ct) is not { } reading) return null; // taken by another worker, or gone
         if (await images.FindAsync(id, ct) is not { } image) return null; // the picture went meanwhile, and its reading with it
 
+        // A trace of its own per photo read (#219), the model server's call below it: ids, the outcome and counts, never a value or a message.
+        using var activity = AppTraces.StartJob("tankstat.photo_reading.read");
+        activity?.SetTag("tankstat.image.id", id);
+        activity?.SetTag("tankstat.photo_reading.provider", provider.Name);
+        var timestamp = clock.GetTimestamp();
+        string? errorType = null;
         ProcessedReading outcome;
         var data = await LoadAsync(image, ct);
         if (data is null)
         {
             reading.Fail();
             outcome = new ProcessedReading(id, ReadingOutcome.Failed, "The picture's file is missing.");
+            errorType = "photo_reading.fileMissing";
         }
         else
         {
@@ -98,6 +106,7 @@ public sealed class PhotoReadingProcessor(
             {
                 reading.Fail();
                 outcome = new ProcessedReading(id, ReadingOutcome.Failed, e.Message);
+                errorType = AppTraces.ErrorTypeOf(e);
             }
             catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
             {
@@ -105,8 +114,20 @@ public sealed class PhotoReadingProcessor(
                 availability.Forget();
                 reading.Retry(clock.GetUtcNow());
                 outcome = new ProcessedReading(id, reading.Status == ReadingStatus.Failed ? ReadingOutcome.Failed : ReadingOutcome.Retrying, e.Message);
+                errorType = AppTraces.ErrorTypeOf(e);
             }
         }
+        var ended = outcome.Outcome.ToString().ToLowerInvariant();
+        var kind = outcome.Summary?.Kind.ToString() ?? "none";
+        activity?.SetTag("tankstat.photo_reading.outcome", ended);
+        activity?.SetTag("tankstat.photo_reading.kind", kind);
+        if (outcome.Summary is { } summary)
+        {
+            activity?.SetTag("tankstat.photo_reading.values", summary.Values);
+            activity?.SetTag("tankstat.photo_reading.sure", summary.Sure);
+        }
+        if (errorType is not null) activity.Failed(errorType);
+        metrics.PhotoReadingDuration.Record(clock.GetElapsedTime(timestamp).TotalSeconds, new("tankstat.photo_reading.outcome", ended), new("tankstat.photo_reading.kind", kind));
         await readings.SaveAsync(reading, ct);
         return outcome;
     }

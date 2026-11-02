@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tankstat.Application.Auth;
 using Tankstat.Application.Backups;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Health;
 using Tankstat.Application.Images;
 using Tankstat.Domain;
@@ -49,6 +50,27 @@ internal sealed class BackupWriter(
     private readonly string _folder = options.CurrentValue.Root;
 
     public async Task<BackupResult> WriteAsync(BackupRequest request, CancellationToken ct)
+    {
+        // A child of what asked for it (#219): a run's span, the migrations' at start; nothing listens to the backup command.
+        using var activity = AppTraces.Source.StartActivity("tankstat.backup.write");
+        activity?.SetTag("tankstat.backup.safety_net", request.SafetyNet);
+        try
+        {
+            var result = await WriteFileAsync(request, ct);
+            activity?.SetTag("tankstat.backup.encrypted", result.Manifest.Encryption is not null);
+            activity?.SetTag("tankstat.backup.photos", result.Manifest.Contents.Photos.ToString());
+            activity?.SetTag("tankstat.backup.tables", result.Manifest.Contents.Tables.Count);
+            activity?.SetTag("tankstat.backup.rows", result.Manifest.Contents.Tables.Values.Sum());
+            activity?.SetTag("tankstat.backup.bytes", new FileInfo(result.Path).Length);
+            return result;
+        }
+        catch (Exception e) when (activity.FailedBy(e, ct))
+        {
+            throw; // never reached: the filter only marks the span
+        }
+    }
+
+    private async Task<BackupResult> WriteFileAsync(BackupRequest request, CancellationToken ct)
     {
         var o = options.CurrentValue;
         var roots = storage.Value;

@@ -21,13 +21,13 @@ if curl -s -o /dev/null "$E2E_URL"; then
   exit 1
 fi
 
-# Nothing of the developer's own setup: the mode, the database, the folders, the schedule, the photo reading, the defaults the pages
-# show (a date format), the logging the start is read from. .NET reads the variables' names in any case.
+# Nothing of the developer's own setup: the mode, the database, the folders, the schedule, the photo reading, the telemetry, the
+# defaults the pages show (a date format), the logging the start is read from. .NET reads the variables' names in any case.
 shopt -s nocasematch
 for name in $(compgen -e); do
   case "$name" in
     Auth__* | Database__* | Storage__* | Settings__* | Backups__* | Recognition__* | DataProtection__* | Setup__* | Smtp__* | \
-      Defaults__* | Notifications__* | Sync__* | Logging__* | Kestrel__* | ASPNETCORE_*) unset "$name" ;;
+      Defaults__* | Notifications__* | Sync__* | Logging__* | Kestrel__* | ASPNETCORE_* | OTEL_* | Telemetry__*) unset "$name" ;;
   esac
 done
 shopt -u nocasematch

@@ -401,6 +401,46 @@ public class StartupSmokeTests
         public override bool CanSeek => false;
     }
 
+    // ---- Telemetry (optional: it never stops the app) -------------------------------------------------------
+
+    [Fact]
+    public async Task Telemetry_IsOffByDefault_WithoutAWord()
+    {
+        await using var app = await AppProcess.StartAsync(Env(("Auth__Mode", "None")));
+
+        Assert.Equal("ok", (await app.Gql(Session)).Data().GetProperty("health").GetProperty("status").GetString());
+        Assert.DoesNotContain("OpenTelemetry", app.Log); // nothing registered, nothing said (a Debug line, unseen in Production)
+    }
+
+    [Fact]
+    public async Task Telemetry_WithACollectorThatRefuses_Starts_Serves_AndSaysItIsOn_NeverWhere()
+    {
+        await using var app = await AppProcess.StartAsync(Env(
+            ("Auth__Mode", "None"),
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9"), // nothing listens there
+            ("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
+            ("OTEL_EXPORTER_OTLP_HEADERS", "x-api-key=zzzz-smoke-key")));
+
+        var added = (await app.Gql("mutation { addVehicle(input: { name: \"Smoke car\", fuelType: PETROL }) { id } }")).Data();
+
+        Assert.NotNull(added.GetProperty("addVehicle").GetProperty("id").GetString());
+        Assert.True(await app.LogsAsync("OpenTelemetry export is on: traces, metrics and logs over http/protobuf, as service tankstat"), app.Log);
+        Assert.DoesNotContain("127.0.0.1:9", app.Log); // never where it goes, nor what it sends along
+        Assert.DoesNotContain("zzzz-smoke-key", app.Log);
+        Assert.DoesNotContain("fail: ", app.Log); // a failed export is the SDK's own diagnostics, never an Error of the app's
+        Assert.False(app.HasExited);
+    }
+
+    [Fact]
+    public async Task Telemetry_WithSettingsTheSdkCannotUse_StartsWithoutIt_AndNamesThem()
+    {
+        await using var app = await AppProcess.StartAsync(Env(("Auth__Mode", "None"), ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9"), ("OTEL_EXPORTER_OTLP_HEADERS", "zzzz-not-a-pair")));
+
+        Assert.Equal("ok", (await app.Gql(Session)).Data().GetProperty("health").GetProperty("status").GetString()); // the SDK would have thrown on these headers
+        Assert.True(await app.LogsAsync("OpenTelemetry export is off because its settings cannot be used: OTEL_EXPORTER_OTLP_HEADERS"), app.Log);
+        Assert.DoesNotContain("zzzz-not-a-pair", app.Log);
+    }
+
     // ---- Photo reading (optional: it never stops the app) ---------------------------------------------------
 
     private const string Recognition = "{ recognitionStatus { available } }";

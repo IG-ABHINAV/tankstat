@@ -5,6 +5,7 @@ using Tankstat.Api.Backups;
 using Tankstat.Api.Media;
 using Tankstat.Api.GraphQL;
 using Tankstat.Api.Settings;
+using Tankstat.Api.Telemetry;
 using Tankstat.Application;
 using Tankstat.Application.Backups;
 using Tankstat.Application.SystemSettings;
@@ -108,6 +109,9 @@ do
         .AddApplicationService<ILoggerFactory>()
         .AddApplicationService<IHttpContextAccessor>()
         .AddDiagnosticEventListener<GraphQLLoggingListener>();
+    // OpenTelemetry over OTLP, registered only with an endpoint configured (docs/configuration.md, Telemetry); never for the commands that
+    // build the app without serving it.
+    if (!BackupCommands.Handles(args) && args is not ["schema", "export", ..]) builder.AddTelemetry();
 
     var app = builder.Build();
 
@@ -156,6 +160,7 @@ do
         // The options the host validates before any start step, validated first here too: a wrong folder stops the start before the restore
         // replaces anything, as it did when the host's start applied it.
         app.Services.GetService<Microsoft.Extensions.Options.IStartupValidator>()?.Validate();
+        app.Services.StartBeforeHost(); // telemetry's providers, so the restore's own span is exported (#219)
         await StartupSteps.ApplyBeforeHostAsync(app.Services, CancellationToken.None);
         if (restarts.Requested)
         {

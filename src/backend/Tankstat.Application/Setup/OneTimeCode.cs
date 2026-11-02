@@ -26,4 +26,17 @@ public sealed class OneTimeCode
         var typed = new string([.. code.Where(c => c != '-' && !char.IsWhiteSpace(c)).Select(char.ToUpperInvariant)]);
         return CryptographicOperations.FixedTimeEquals(System.Text.Encoding.ASCII.GetBytes(_code), System.Text.Encoding.ASCII.GetBytes(typed));
     }
+
+    /// <summary>
+    /// The log category of every line that writes the code, below which <see cref="SetupLine"/> and <see cref="RestoreLine"/> are named: the
+    /// console has them (the code is in the log on purpose), the OpenTelemetry exporter never (a telemetry backend's readers are not
+    /// the log's), which a filter on this category keeps out.
+    /// </summary>
+    public static readonly string LogCategory = typeof(OneTimeCode).FullName!;
+
+    /// <summary>The category of the line that says the setup waits for the code (<c>SetupService</c>).</summary>
+    public sealed class SetupLine;
+
+    /// <summary>The category of the line that names the code a restore asked for from the app needs with sign-in off (<c>RestoreStep</c>).</summary>
+    public sealed class RestoreLine;
 }

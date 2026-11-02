@@ -14,6 +14,8 @@ export type ValueOf = (key: string) => string | undefined
 const MODE = 'Auth:Mode'
 const PROVIDER = 'Recognition:Provider'
 const SMTP_HOST = 'Smtp:Host'
+/** The one switch of telemetry: without it nothing is exported (a signal's own endpoint, environment only, never turns it on). */
+const OTLP_ENDPOINT = 'OTEL_EXPORTER_OTLP_ENDPOINT'
 // (Nothing set anywhere, these run as the built-in defaults the server sends: no sign-in, no photo provider, no mail server.)
 
 interface Rule {
@@ -34,6 +36,7 @@ const RULES: readonly Rule[] = [
   { keys: ['Auth:ProxyHeader:'], on: MODE, usedWith: ['ProxyHeader'] },
   { keys: ['Smtp:Port', 'Smtp:Security', 'Smtp:Username', 'Smtp:Password'], on: SMTP_HOST },
   { keys: ['Recognition:'], on: PROVIDER, usedWith: ['OpenAiCompatible'] },
+  { keys: ['OTEL_EXPORTER_OTLP_PROTOCOL', 'OTEL_EXPORTER_OTLP_HEADERS', 'OTEL_SERVICE_NAME', 'Telemetry:TraceDatabase'], on: OTLP_ENDPOINT },
 ]
 
 /** Whether `key` is among `keys`: a key, or every key below a prefix ending with a colon (the rules here, the page's sections). */

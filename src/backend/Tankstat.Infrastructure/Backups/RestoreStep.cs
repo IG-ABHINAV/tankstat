@@ -12,6 +12,7 @@ using Tankstat.Application.Auth;
 using Tankstat.Application.Backups;
 using Tankstat.Application.Images;
 using Tankstat.Application.Setup;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.SystemSettings;
 using Tankstat.Domain;
 using Tankstat.Domain.Backups;
@@ -78,7 +79,8 @@ internal sealed class RestoreStep(
     InstanceGeneration state,
     OneTimeCode code,
     TimeProvider clock,
-    ILogger<RestoreStep> logger) : IHostedService
+    ILogger<RestoreStep> logger,
+    ILogger<OneTimeCode.RestoreLine> codeLogger) : IHostedService
 {
     /// <summary>The folders right below a vehicle's that hold the photos of its logs (not their drafts, which go with every restore).</summary>
     private static readonly HashSet<string> LogPhotoFolders = [.. ImageFolders.LogPhotoKinds];
@@ -99,7 +101,20 @@ internal sealed class RestoreStep(
     public async Task<RestoreOutcome> ApplyWaitingAsync(CancellationToken ct)
     {
         var marker = RestoreMarker.PathIn(options.CurrentValue.Root);
-        Outcome = File.Exists(marker) ? await RestoreAsync(marker, ct) : RestoreOutcome.None;
+        if (!File.Exists(marker)) return Outcome = RestoreOutcome.None;
+        // A trace of its own (#219), only when a restore waits; why one was refused is the log's (its reason quotes the backup's name).
+        using var activity = AppTraces.StartJob("tankstat.restore.apply");
+        try
+        {
+            Outcome = await RestoreAsync(marker, ct);
+        }
+        catch (Exception e) when (activity.FailedBy(e, ct))
+        {
+            throw; // never reached: the filter only marks the span
+        }
+        var outcome = Outcome.ToString().ToLowerInvariant();
+        activity?.SetTag("tankstat.restore.outcome", outcome);
+        if (Outcome is RestoreOutcome.Refused or RestoreOutcome.Failed) activity.Failed($"restore.{outcome}");
         return Outcome;
     }
 
@@ -162,8 +177,9 @@ internal sealed class RestoreStep(
             restart.RestartNow();
             return;
         }
+        // Its own category keeps the code off the telemetry exporter (OneTimeCode.LogCategory).
         if (auth.Value.Mode == AuthMode.None)
-            logger.LogInformation("Restoring a backup from the app needs the one-time restore code {Code} (sign-in is off, so there is no administrator to ask)", code.Value);
+            codeLogger.LogInformation("Restoring a backup from the app needs the one-time restore code {Code} (sign-in is off, so there is no administrator to ask)", code.Value);
     }
 
     public Task StopAsync(CancellationToken ct) => Task.CompletedTask;

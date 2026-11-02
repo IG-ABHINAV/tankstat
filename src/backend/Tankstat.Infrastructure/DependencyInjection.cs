@@ -38,6 +38,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddAppMetrics(); // the backups record them (#219); AddApplication asks too, a host of these services alone needs them
         services.AddOptions<DatabaseOptions>()
             .Bind(configuration.GetSection(DatabaseOptions.SectionName))
             .PostConfigure(o =>

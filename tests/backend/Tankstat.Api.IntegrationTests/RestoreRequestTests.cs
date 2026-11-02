@@ -80,7 +80,7 @@ public sealed class RestoreRequestTests : IDisposable
         using var app = new TestApp(new() { ["Auth:Mode"] = "None", ["Backups:Path"] = _folder });
         var file = await Backup(app, encrypted: false);
         var client = app.NewClient();
-        var code = (string)Assert.Single(app.Log.From("Tankstat.Infrastructure.Backups.RestoreStep").Where(e => e.Values.ContainsKey("Code"))).Values["Code"]!;
+        var code = (string)Assert.Single(app.Log.From<Tankstat.Application.Setup.OneTimeCode.RestoreLine>().Where(e => e.Values.ContainsKey("Code"))).Values["Code"]!;
 
         Assert.Equal("backup.codeRequired", (await client.Gql(Restore, new { i = new { file } })).ErrorKey());
         Assert.Equal("backup.codeRequired", (await client.Gql(Restore, new { i = new { file, code = "WRONG123" } })).ErrorKey());

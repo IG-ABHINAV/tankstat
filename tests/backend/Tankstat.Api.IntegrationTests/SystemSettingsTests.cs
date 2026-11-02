@@ -55,12 +55,33 @@ public class SystemSettingsTests
     }
 
     [Fact]
+    public async Task TheTelemetrySettings_AreSavedUnderTheirStandardNames_AndWaitForARestart()
+    {
+        using var app = TestApp.Standalone();
+        var admin = await Admin(app);
+
+        var answer = (await admin.Gql(Update, new { c = new object[] { new { key = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://collector:4317" }, new { key = "Telemetry:TraceDatabase", value = "true" } } }))
+            .Data().GetProperty("updateSystemSettings");
+
+        Assert.True(answer.GetProperty("restartPending").GetBoolean()); // read when the host is built
+        var endpoint = Setting(answer, "OTEL_EXPORTER_OTLP_ENDPOINT");
+        Assert.Equal(("FILE", "http://collector:4317", true), (endpoint.GetProperty("source").GetString(), endpoint.GetProperty("value").GetString(), endpoint.GetProperty("restartPending").GetBoolean()));
+        var written = SettingsFileStore.Read(app.SettingsPath);
+        Assert.Equal(("http://collector:4317", "true"), (written["OTEL_EXPORTER_OTLP_ENDPOINT"], written["Telemetry:TraceDatabase"])); // the very names the SDK reads
+    }
+
+    [Fact]
     public async Task Administrators_SeeEverySetting_WithItsSource_OthersNothing()
     {
         using var app = TestApp.Standalone();
         var settings = (await (await Admin(app)).Gql(Query)).Data().GetProperty("systemSettings");
 
-        Assert.Equal(["AUTH", "SMTP", "DEFAULTS", "NOTIFICATIONS", "SYNC", "PHOTO_READING", "BACKUPS", "LOGGING"], settings.GetProperty("groups").EnumerateArray().Select(g => g.GetProperty("name").GetString()));
+        Assert.Equal(["AUTH", "SMTP", "DEFAULTS", "NOTIFICATIONS", "SYNC", "PHOTO_READING", "BACKUPS", "LOGGING", "TELEMETRY"], settings.GetProperty("groups").EnumerateArray().Select(g => g.GetProperty("name").GetString()));
+        // The OpenTelemetry SDK's own settings, under their standard names: set nowhere here, so editable; the headers a secret.
+        var endpoint = Setting(settings, "OTEL_EXPORTER_OTLP_ENDPOINT");
+        Assert.Equal(("DEFAULT", true, false, "TEXT"), (endpoint.GetProperty("source").GetString(), endpoint.GetProperty("editable").GetBoolean(), endpoint.GetProperty("isSet").GetBoolean(), endpoint.GetProperty("kind").GetString()));
+        Assert.True(Setting(settings, "OTEL_EXPORTER_OTLP_HEADERS").GetProperty("isSecret").GetBoolean());
+        Assert.Equal(["grpc", "http/protobuf"], Setting(settings, "OTEL_EXPORTER_OTLP_PROTOCOL").GetProperty("choices").EnumerateArray().Select(c => c.GetString()));
         var mode = Setting(settings, "Auth:Mode");
         Assert.Equal(("ENVIRONMENT", false, "Standalone", "CHOICE"), (mode.GetProperty("source").GetString(), mode.GetProperty("editable").GetBoolean(), mode.GetProperty("value").GetString(), mode.GetProperty("kind").GetString())); // the host's own settings sit above the file, as the environment does
         Assert.Equal(["None", "Standalone", "Oidc", "ProxyHeader"], mode.GetProperty("choices").EnumerateArray().Select(c => c.GetString()));
@@ -213,8 +234,11 @@ public class SystemSettingsTests
         Assert.Equal("settings.invalid", await Refusal("Smtp:Port", "zzzz-not-a-port"));
         Assert.Equal("settings.invalid", await Refusal("Notifications:MaxPerHour", "0"));
         Assert.Equal("settings.invalid", await Refusal("Logging:LogLevel:Microsoft.AspNetCore", "Debug"));
+        Assert.Equal("settings.invalid", await Refusal("OTEL_EXPORTER_OTLP_ENDPOINT", "zzzz-not-an-address")); // the start would leave telemetry off
+        Assert.Equal("settings.invalid", await Refusal("OTEL_EXPORTER_OTLP_HEADERS", "zzzz-not-a-pair")); // the SDK would throw on it
 
         Assert.False(File.Exists(app.SettingsPath)); // all or nothing: the currency did not land either
+        Assert.False(app.Log.Mentions("zzzz-not-an-address") || app.Log.Mentions("zzzz-not-a-pair"));
         Assert.False(app.Log.Mentions("zzzz-not-a-port"));
         Assert.Empty(app.Log.From(Service).Where(e => e.Level >= LogLevel.Information));
     }

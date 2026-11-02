@@ -39,7 +39,7 @@ public sealed class SetupTests : IDisposable
     }
 
     private static string CodeOf(TestApp app) =>
-        (string)Assert.Single(app.Log.From<SetupService>(), e => e.Values.ContainsKey("Code")).Values["Code"]!;
+        (string)Assert.Single(app.Log.From<OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code")).Values["Code"]!;
 
     private static IEnumerable<string?> CodesOf(JsonElement body) =>
         body.Data().GetProperty("notices").EnumerateArray().Select(n => n.GetProperty("code").GetString());
@@ -54,7 +54,7 @@ public sealed class SetupTests : IDisposable
         var notice = (await browser.Gql(Notices)).Data().GetProperty("notices").EnumerateArray().Last();
         Assert.Equal(("SETUP_PENDING", "INFO"), (notice.GetProperty("code").GetString(), notice.GetProperty("severity").GetString()));
         var code = CodeOf(app);
-        Assert.Equal(LogLevel.Warning, Assert.Single(app.Log.From<SetupService>(), e => e.Values.ContainsKey("Code")).Level);
+        Assert.Equal(LogLevel.Warning, Assert.Single(app.Log.From<OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code")).Level);
 
         Assert.Equal("setup.codeInvalid", (await browser.Gql(Finish, new { i = new { code = "ZZZZ-ZZZZ-ZZZZ", email = "root@example.com", password = "zzzz-password-1" } })).ErrorKey());
         Assert.False(app.Log.Mentions("zzzz-password-1"));
@@ -119,7 +119,7 @@ public sealed class SetupTests : IDisposable
         using var back = data.Host(new() { ["Auth:Mode"] = "None", ["Setup:Enabled"] = "true" });
 
         Assert.False((await back.NewClient().Gql(Pending)).Data().GetProperty("setup").GetProperty("pending").GetBoolean());
-        Assert.DoesNotContain(back.Log.From<SetupService>(), e => e.Values.ContainsKey("Code"));
+        Assert.DoesNotContain(back.Log.From<OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code"));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class SetupTests : IDisposable
         var client = app.NewClient();
         Assert.Equal(["AUTH_DISABLED", "SETUP_PENDING"], CodesOf(await client.Gql(Notices)));
         // With sign-in off the one code is also the restore code its own line names.
-        Assert.Equal(CodeOf(app), (string)Assert.Single(app.Log.From("Tankstat.Infrastructure.Backups.RestoreStep"), e => e.Values.ContainsKey("Code")).Values["Code"]!);
+        Assert.Equal(CodeOf(app), (string)Assert.Single(app.Log.From<OneTimeCode.RestoreLine>(), e => e.Values.ContainsKey("Code")).Values["Code"]!);
 
         Assert.Equal("setup.codeInvalid", (await client.Gql(Finish, new { i = new { code = "nope", acknowledgeOpenAccess = true } })).ErrorKey());
         Assert.Equal("setup.acknowledgementRequired", (await client.Gql(Finish, new { i = new { code = CodeOf(app) } })).ErrorKey());
@@ -241,7 +241,7 @@ public sealed class SetupTests : IDisposable
         using var upgraded = data.Host(new() { ["Auth:Mode"] = "None", ["Setup:Enabled"] = "true" });
 
         Assert.False((await upgraded.NewClient().Gql(Pending)).Data().GetProperty("setup").GetProperty("pending").GetBoolean());
-        Assert.DoesNotContain(upgraded.Log.From<SetupService>(), e => e.Values.ContainsKey("Code"));
+        Assert.DoesNotContain(upgraded.Log.From<OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code"));
     }
 
     [Fact]
@@ -288,6 +288,6 @@ public sealed class SetupTests : IDisposable
         using var app = new TestApp(new() { ["Auth:Mode"] = "None" }); // the test hosts' default: Setup:Enabled=false
 
         Assert.False((await app.NewClient().Gql(Pending)).Data().GetProperty("setup").GetProperty("pending").GetBoolean());
-        Assert.DoesNotContain(app.Log.From<SetupService>(), e => e.Values.ContainsKey("Code"));
+        Assert.DoesNotContain(app.Log.From<OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code"));
     }
 }

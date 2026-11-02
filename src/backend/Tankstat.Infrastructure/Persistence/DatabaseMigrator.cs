@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Backups;
+using Tankstat.Application.Telemetry;
 using Tankstat.Domain.Vehicles;
 using Tankstat.Infrastructure.Backups;
 
@@ -46,16 +47,27 @@ internal sealed class DatabaseMigrator(
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
         var backfill = pending.Any(m => m.EndsWith(ConsumptionMigration, StringComparison.Ordinal));
-        if (backupFirst && pending.Count > 0 && (await db.Database.GetAppliedMigrationsAsync(ct)).Any())
-            await BackUpAsync(pending.Count, ct);
+        // A span only when the start changes the database (#219): the backup before it and the backfill after it are inside it.
+        using var activity = pending.Count > 0 ? AppTraces.StartJob("tankstat.database.migrate") : null;
+        activity?.SetTag("tankstat.database.migrations", pending.Count);
+        activity?.SetTag("tankstat.database.provider", db.Database.ProviderName);
+        try
+        {
+            if (backupFirst && pending.Count > 0 && (await db.Database.GetAppliedMigrationsAsync(ct)).Any())
+                await BackUpAsync(pending.Count, ct);
 
-        // The one line that tells an operator the database was changed by this start, and by what.
-        if (pending.Count > 0) logger.LogInformation("Applying {Count} database migrations ({Provider}): {Migrations}", pending.Count, db.Database.ProviderName, string.Join(", ", pending));
-        await db.Database.MigrateAsync(ct);
-        if (pending.Count > 0) logger.LogInformation("Applied {Count} database migrations", pending.Count);
-        else logger.LogInformation("The database schema is up to date ({Provider})", db.Database.ProviderName);
+            // The one line that tells an operator the database was changed by this start, and by what.
+            if (pending.Count > 0) logger.LogInformation("Applying {Count} database migrations ({Provider}): {Migrations}", pending.Count, db.Database.ProviderName, string.Join(", ", pending));
+            await db.Database.MigrateAsync(ct);
+            if (pending.Count > 0) logger.LogInformation("Applied {Count} database migrations", pending.Count);
+            else logger.LogInformation("The database schema is up to date ({Provider})", db.Database.ProviderName);
 
-        if (backfill) await BackfillConsumptionAsync(ct);
+            if (backfill) await BackfillConsumptionAsync(ct);
+        }
+        catch (Exception e) when (activity.FailedBy(e, ct))
+        {
+            throw; // never reached: the filter only marks the span
+        }
     }
 
     /// <summary>The backup before the migrations; when it cannot be written, nothing is migrated and the start stops, saying why.</summary>

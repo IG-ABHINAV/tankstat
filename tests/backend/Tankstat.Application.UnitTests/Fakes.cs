@@ -848,7 +848,7 @@ internal sealed class World
     public InMemoryOfflineSettings OfflineSettingsStore { get; } = new();
     public OfflineSettingsService OfflineSettings { get; }
     public InMemorySyncChanges SyncLedger { get; } = new();
-    public SyncService Sync => new(SyncLedger, Vehicles, Access, new SyncOptions().Create(), Clock, Log.For<SyncService>());
+    public SyncService Sync => new(SyncLedger, Vehicles, Access, new SyncOptions().Create(), Clock, Metrics, Log.For<SyncService>());
     public SyncTargetService SyncTargets => new(Vehicles, Refuelings, Expenses, Recurring, RecurringService, Access);
     public ImportService Imports { get; }
     public OdometerService Odometer { get; }
@@ -874,7 +874,10 @@ internal sealed class World
     public RecognitionAvailability Availability { get; }
     public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, PhotoDrafts, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, Clock, Log.For<RecognitionService>());
     public LogPhotoFiller Filler { get; }
-    public PhotoReadingProcessor Processor => new(Recognizer, Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, Images, ImageStore, Filler, Clock, Log.For<PhotoReadingProcessor>());
+    /// <summary>The app's own metrics of this world alone (a meter of its own: a test listens to it, never to another test's).</summary>
+    public Tankstat.Application.Telemetry.AppMetrics Metrics { get; } = new();
+
+    public PhotoReadingProcessor Processor => new(Recognizer, Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, Images, ImageStore, Filler, Clock, Metrics, Log.For<PhotoReadingProcessor>());
     public NotificationService NotificationService => new(Access, Notifications, new RecurringNotificationSync(Access, Recurring, Vehicles, RecurringService, Notifier), new SyncNotificationSync(Access, SyncLedger, Vehicles, Users, Notifier), NotificationOptions.Create(), Clock, Log.For<NotificationService>()); // a new one per use, like one per request (it syncs once)
 
     public World(AuthMode mode = AuthMode.Standalone, bool smtp = false, Action<AuthOptions>? configure = null)

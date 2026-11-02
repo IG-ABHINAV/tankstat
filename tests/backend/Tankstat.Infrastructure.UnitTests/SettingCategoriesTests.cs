@@ -45,7 +45,7 @@ public sealed partial class SettingCategoriesTests
     public void TheSectionsFound_AreEveryOneTheAppBinds()
     {
         Assert.Equal(
-            ["Auth", "Auth:Standalone", "Backups", "DataProtection", "Database", "Defaults", "Notifications", "Recognition", "Setup", "Smtp", "Storage", "Sync"],
+            ["Auth", "Auth:Standalone", "Backups", "DataProtection", "Database", "Defaults", "Notifications", "Recognition", "Setup", "Smtp", "Storage", "Sync", "Telemetry"],
             Sections.Select(s => s.Section).Order(StringComparer.Ordinal));
     }
 
@@ -75,6 +75,10 @@ public sealed partial class SettingCategoriesTests
     [InlineData("Auth:Standalone:AdminPassword", null)] // retired (#149): nothing binds it, so a backup leaves it out by name, never its value
     [InlineData("Backups:Path", SettingCategory.Machine)]
     [InlineData("Setup:Enabled", SettingCategory.Machine)]
+    [InlineData("OTEL_EXPORTER_OTLP_ENDPOINT", SettingCategory.Instance)] // the OpenTelemetry SDK's own, edited on the Telemetry tab
+    [InlineData("OTEL_EXPORTER_OTLP_HEADERS", SettingCategory.Secret)] // a backend's API key
+    [InlineData("Telemetry:TraceDatabase", SettingCategory.Instance)]
+    [InlineData("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", null)] // the environment's only: not on the page, so a backup names it, never carries it
     [InlineData("PATH", null)]
     public void ASettingsCategory(string key, SettingCategory? category) => Assert.Equal(category, SettingsInBackups.CategoryOf(key));
 }
