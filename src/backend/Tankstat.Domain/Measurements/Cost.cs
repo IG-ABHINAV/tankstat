@@ -45,23 +45,31 @@ public sealed class Cost : IOwned, ISoftDeletable
         return cost;
     }
 
-    /// <param name="discount">What was taken off; none, or 0, is kept as none.</param>
+    /// <param name="discount">What was taken off, kept to the cent (as the column holds it); none, or what rounds to 0, is kept as none.</param>
     public void Update(DateOnly date, decimal amount, string? currency, decimal? discount = null)
     {
         if (amount < 0) throw new DomainException("cost.negative", "A cost cannot be negative.");
         if (discount < 0) throw new DomainException("cost.discountNegative", "A discount cannot be negative.");
         Date = date;
         Amount = amount;
-        Discount = discount is > 0 ? discount : null;
+        Discount = Normalised(discount);
         Currency = CurrencyCode.Normalize(currency);
     }
 
-    /// <summary>A discount belongs to an amount it was taken off: one without an amount (a log still waiting for its photo's total) is refused.</summary>
+    /// <summary>
+    /// A discount belongs to an amount it was taken off: one without an amount (a log still waiting for its photo's total) is refused. A
+    /// negative one says so first; one that is none (0, or what rounds to 0) needs no amount.
+    /// </summary>
     public static void RequireAmountForDiscount(decimal? amount, decimal? discount)
     {
-        if (discount is not null && amount is null)
+        if (discount < 0) throw new DomainException("cost.discountNegative", "A discount cannot be negative.");
+        if (Normalised(discount) is not null && amount is null)
             throw new DomainException("cost.discountWithoutAmount", "A discount needs the amount it was taken off.");
     }
+
+    /// <summary>To the cent, as every provider's column keeps it (SQLite would keep more), and none when that is nothing.</summary>
+    private static decimal? Normalised(decimal? discount) =>
+        discount is { } value && Math.Round(value, 2, MidpointRounding.AwayFromZero) is var cents && cents > 0 ? cents : null;
 
     public void MarkDeleted(DateTimeOffset now) => DeletedAt = now;
 

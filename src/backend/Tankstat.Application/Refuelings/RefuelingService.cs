@@ -21,7 +21,10 @@ public sealed record RefuelingDefaults(long? LastOdometer, DateOnly? LastDate, s
 /// <param name="Currency">Required with a total when logging; when updating, omit it to keep the log's currency.</param>
 /// <param name="Volume">Volume, total and odometer may be null only while a photo of the log is still being read: it fills them in later.</param>
 /// <param name="MissedPreviousFillUp">A fill-up before this one was not logged (see <see cref="Refueling.MissedPreviousFillUp"/>); when updating, omit it to keep what the log says.</param>
-/// <param name="Discount">What was taken off <paramref name="TotalCost"/> at the till (see <see cref="Cost.Discount"/>); null means none, also when updating, and is refused without a total.</param>
+/// <param name="Discount">
+/// What was taken off <paramref name="TotalCost"/> at the till (see <see cref="Cost.Discount"/>); refused without a total. On an update null keeps
+/// the log's (a build from before discounts sends none) and 0 is none.
+/// </param>
 public sealed record RefuelingInput(
     DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, bool? MissedPreviousFillUp = null,
     decimal? Discount = null);
@@ -102,7 +105,8 @@ public sealed class RefuelingService(
 
         var changes = refueling.Update(
             input.Date, input.Volume, input.TotalCost, input.Currency ?? refueling.Currency, input.Odometer, input.IsFullTank,
-            input.MissedPreviousFillUp ?? refueling.MissedPreviousFillUp, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id, input.Discount);
+            input.MissedPreviousFillUp ?? refueling.MissedPreviousFillUp, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id,
+            input.Discount ?? refueling.Discount); // left out is kept (a build from before discounts knows none), 0 is none
         await refuelings.UpdateAsync(refueling, changes, ct);
         // Readings that finished before the save are taken now (the worker's round may have passed while the log did not wait yet).
         if (refueling.ReviewState == ReviewState.AwaitingPhotos) await filler.FillAsync(LogType.Refueling, id, ct);

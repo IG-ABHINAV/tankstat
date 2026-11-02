@@ -344,7 +344,8 @@ function RefuelingForm({
         date: text('date'),
         volume: text('volume') === '' ? null : parseDecimal(text('volume'))!,
         totalCost: text('totalCost') === '' ? null : parseDecimal(text('totalCost'))!,
-        discount: text('discount') === '' ? null : parseDecimal(text('discount'))!,
+        // Emptied in an edit: 0, which clears it (left out, the server keeps the log's: what a build from before discounts sends).
+        discount: text('discount') === '' ? (editing ? 0 : null) : parseDecimal(text('discount'))!,
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         isFullTank: full,

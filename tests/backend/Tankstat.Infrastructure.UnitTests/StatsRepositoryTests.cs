@@ -50,6 +50,20 @@ public class StatsRepositoryTests
     }
 
     [Fact]
+    public async Task AFillUpsDiscount_IsLoadedWithIt_AndNoneIsZero()
+    {
+        await using var db = new TestDatabase();
+        var car = await AddVehicle(db);
+        var refuelings = db.Get<IRefuelingRepository>();
+        await refuelings.AddAsync(TestData.Refueling(Owner, Owner, car.Id, Day, 43, 34744, 1000, true, "HUF", discount: 430), default);
+        await refuelings.AddAsync(TestData.Refueling(Owner, Owner, car.Id, Day.AddDays(9), 40, 32000, 1500, true, "HUF"), default);
+
+        var data = await db.Get<IStatsRepository>().LoadAsync(car.Id, default);
+
+        Assert.Equal([430m, 0m], data.Fuel.OrderBy(f => f.Date).Select(f => f.Discount)); // through the database's own decimals (TEXT on SQLite)
+    }
+
+    [Fact]
     public async Task Charts_AreStoredPerVehicle_VisibleToTheirCreatorAndWhenShared_AndRemovedWithTheVehicle()
     {
         await using var db = new TestDatabase();
