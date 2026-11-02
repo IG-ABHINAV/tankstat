@@ -32,9 +32,17 @@ public static partial class ReadingNormaliser
             ReadingFieldName.Date => DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
                 ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
             ReadingFieldName.Title => Title(text),
+            // Receipts print what was taken off with a minus sign, and models copy it: the amount is the same.
+            ReadingFieldName.Discount => Amount(text.TrimStart('-', '−').TrimStart(), decimals: 2, max: 999_999_999_999.99m),
             _ => null,
         };
     }
+
+    /// <summary>A discount read as nothing (0, or -0.00): what a model answers for "none", so it is left out without a reason.</summary>
+    public static bool IsNoDiscount(ReadingFieldName name, string? raw) =>
+        name == ReadingFieldName.Discount
+        && decimal.TryParse(raw?.Trim().TrimStart('-', '−').TrimStart(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+        && value == 0;
 
     private static string? Amount(string text, int decimals, decimal max)
     {

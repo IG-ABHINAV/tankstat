@@ -73,20 +73,22 @@ interface Initial extends Omit<RefuelingValues, 'volume' | 'totalCost' | 'discou
 
 /**
  * The fields of a new log that photos can fill in, and which read value goes into each. The unit price is only a help for entering the
- * amounts (it is never saved): volume, unit price, discount and total follow each other (`keepAmountsInStep`). No photo reads the
- * discount yet, so it is typed only.
+ * amounts (it is never saved): volume, unit price, discount and total follow each other (`keepAmountsInStep`).
  */
 type FillableField = 'date' | 'volume' | 'unitPrice' | 'discount' | 'totalCost' | 'currency' | 'odometer'
-const READ_INTO: Partial<Record<FillableField, ReadingFieldName>> = {
+const READ_INTO: Record<FillableField, ReadingFieldName> = {
   date: 'DATE',
   volume: 'VOLUME',
   unitPrice: 'UNIT_PRICE',
+  discount: 'DISCOUNT',
   totalCost: 'TOTAL',
   currency: 'CURRENCY',
   odometer: 'ODOMETER',
 }
-/** The values the server fills in from photos after saving, and their fields. */
-const WAITS_FOR: Record<LogValue, FillableField> = { ODOMETER: 'odometer', VOLUME: 'volume', TOTAL: 'totalCost' }
+/** The values the server fills in from photos after saving, and their fields (the discount comes with the total it was taken off). */
+const FROM_PHOTO: Record<LogValue, FillableField> = { ODOMETER: 'odometer', VOLUME: 'volume', TOTAL: 'totalCost', DISCOUNT: 'discount' }
+/** Of those, the ones a new log may be saved without while its photos are read (a discount is never required). */
+const WAITS_FOR: readonly FillableField[] = ['odometer', 'volume', 'totalCost']
 
 /**
  * Add a log (no `refuelingId`) or edit one. A new log starts from sensible values: today, the vehicle's latest odometer
@@ -293,8 +295,8 @@ function RefuelingForm({
     editing,
   )
   const merging = useMergeFields(merge)
-  const fromPhoto = filledFields(initial.filledFromPhoto, WAITS_FOR)
-  const waits = new Set(Object.values(WAITS_FOR))
+  const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
+  const waits = new Set(WAITS_FOR)
   const optional = (field: FillableField) => mayWait && waits.has(field)
   const note = (field: FillableField) => (
     <>

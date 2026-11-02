@@ -30,10 +30,13 @@ public enum LogValues
     Odometer = 1,
     Volume = 2,
     Total = 4,
+
+    /// <summary>Taken with the total it was taken off: a log never waits for it, it is never missing.</summary>
+    Discount = 8,
 }
 
 /// <summary>What the photos of one log showed, normalised (only values the provider was sure enough of).</summary>
-public sealed record PhotoValues(long? Odometer, decimal? Volume, decimal? Total, string? Currency);
+public sealed record PhotoValues(long? Odometer, decimal? Volume, decimal? Total, string? Currency, decimal? Discount = null);
 
 /// <summary>
 /// Readings and costs a log created or let go of while it changed. They are rows of their own (with ids made by the domain), so the

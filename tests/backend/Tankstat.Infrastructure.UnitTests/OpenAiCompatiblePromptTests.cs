@@ -18,7 +18,7 @@ public class OpenAiCompatiblePromptTests
         var unknownLanguage = OpenAiCompatiblePrompt.Contract(Expense, "fr");
 
         Assert.Contains("a refuelling entry", refuelling);
-        Assert.Contains("fuel-receipt: total, volume, unitPrice, currency, date.", refuelling);
+        Assert.Contains("fuel-receipt: total, volume, unitPrice, discount, currency, date.", refuelling);
         Assert.DoesNotContain("expense-receipt", refuelling);
         Assert.Contains("Hungarian", refuelling);
         Assert.Contains("an expense entry", expense);

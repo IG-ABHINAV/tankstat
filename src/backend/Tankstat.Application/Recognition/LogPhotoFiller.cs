@@ -175,7 +175,7 @@ public sealed class LogPhotoFiller(
         var odometer = Number(ReadingFieldName.Odometer) is { } o && o == decimal.Truncate(o) && o <= long.MaxValue ? (long?)o : null;
         var total = Number(ReadingFieldName.Total);
         var currency = best.GetValueOrDefault(ReadingFieldName.Currency) is { } c && IsCurrency(c) ? c : null;
-        return new PhotoValues(odometer, Number(ReadingFieldName.Volume), total, currency?.ToUpperInvariant());
+        return new PhotoValues(odometer, Number(ReadingFieldName.Volume), total, currency?.ToUpperInvariant(), Number(ReadingFieldName.Discount));
     }
 
     private static bool IsCurrency(string code) => code.Length == 3 && code.All(char.IsAsciiLetter);

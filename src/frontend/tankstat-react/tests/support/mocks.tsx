@@ -512,7 +512,7 @@ export interface FakeRefueling {
   createdBy: Person
   deletedAt?: string
   reviewState: 'NONE' | 'AWAITING_PHOTOS' | 'NEEDS_REVIEW' | 'INCOMPLETE'
-  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL')[]
+  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL' | 'DISCOUNT')[]
   /** Counts its saves (from 1): a change kept on the device says which one it was made from. */
   version: number
 }
@@ -631,7 +631,7 @@ export function fakePhotoStore(initial: Record<string, FakePhoto[]> = {}) {
 }
 
 export interface FakeReadValue {
-  name: 'ODOMETER' | 'TOTAL' | 'VOLUME' | 'UNIT_PRICE' | 'CURRENCY' | 'DATE' | 'TITLE'
+  name: 'ODOMETER' | 'TOTAL' | 'VOLUME' | 'UNIT_PRICE' | 'DISCOUNT' | 'CURRENCY' | 'DATE' | 'TITLE'
   value: string
   confidence?: number
 }

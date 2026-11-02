@@ -198,9 +198,11 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
         }
         if (Cost is null && LogReview.UsableAmount(values.Total) is { } total && values.Currency is { } currency)
         {
-            createdCost = Cost.Create(OwnerId, VehicleId, Date, total, currency);
+            // The discount only with the total it was taken off: a cost a person entered keeps what they said (an empty discount is none).
+            var discount = LogReview.UsableAmount(values.Discount);
+            createdCost = Cost.Create(OwnerId, VehicleId, Date, total, currency, discount);
             (Cost, CostId) = (createdCost, createdCost.Id);
-            FilledFromPhoto |= LogValues.Total;
+            FilledFromPhoto |= LogValues.Total | (createdCost.Discount is null ? LogValues.None : LogValues.Discount);
         }
         // Every value a photo fills in sets its FilledFromPhoto flag, so a change of the flags is a change of the values: an edit of the copy
         // from before is stale. A value added here later must set its flag too.

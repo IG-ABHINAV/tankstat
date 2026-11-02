@@ -253,6 +253,7 @@ export type LogRefuelingInput = {
 };
 
 export type LogValue =
+  | 'DISCOUNT'
   | 'ODOMETER'
   | 'TOTAL'
   | 'VOLUME';
@@ -335,6 +336,7 @@ export type OfflineVehicleWindowInput = {
 export type ReadingFieldName =
   | 'CURRENCY'
   | 'DATE'
+  | 'DISCOUNT'
   | 'ODOMETER'
   | 'TITLE'
   | 'TOTAL'

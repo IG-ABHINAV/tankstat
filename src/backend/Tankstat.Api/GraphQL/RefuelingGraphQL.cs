@@ -40,13 +40,14 @@ public enum LogValue
     Odometer,
     Volume,
     Total,
+    Discount,
 }
 
 public static class LogValueList
 {
     /// <summary>The flags as a list, for clients.</summary>
     public static IReadOnlyList<LogValue> Of(LogValues values) =>
-        [.. new[] { (LogValues.Odometer, LogValue.Odometer), (LogValues.Volume, LogValue.Volume), (LogValues.Total, LogValue.Total) }
+        [.. new[] { (LogValues.Odometer, LogValue.Odometer), (LogValues.Volume, LogValue.Volume), (LogValues.Total, LogValue.Total), (LogValues.Discount, LogValue.Discount) }
             .Where(v => values.HasFlag(v.Item1)).Select(v => v.Item2)];
 }
 

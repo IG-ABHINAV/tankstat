@@ -28,7 +28,7 @@ public static class ReadingChecks
     public static IReadOnlyList<ReadingFieldName> FieldsOf(DocumentKind kind) => kind switch
     {
         DocumentKind.Odometer => [ReadingFieldName.Odometer],
-        DocumentKind.FuelReceipt => [ReadingFieldName.Total, ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Currency, ReadingFieldName.Date],
+        DocumentKind.FuelReceipt => [ReadingFieldName.Total, ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Discount, ReadingFieldName.Currency, ReadingFieldName.Date],
         DocumentKind.ExpenseReceipt => [ReadingFieldName.Total, ReadingFieldName.Currency, ReadingFieldName.Date, ReadingFieldName.Title],
         _ => [],
     };
@@ -46,6 +46,7 @@ public static class ReadingChecks
         foreach (var value in values)
         {
             if (!allowed.Contains(value.Name)) continue;
+            if (ReadingNormaliser.IsNoDiscount(value.Name, value.Value)) continue; // "none", said as 0: nothing to keep, nothing to explain
             if (ReadingNormaliser.Normalise(value.Name, value.Value) is not { } text)
             {
                 issues.Add(new ReadingIssue(value.Name, ReadingIssueCode.NotUnderstood));
@@ -88,7 +89,7 @@ public static class ReadingChecks
         ReadingFieldName.Odometer => Odometer(long.Parse(text, CultureInfo.InvariantCulture), hints.LastOdometer),
         ReadingFieldName.Date => Date(DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture), hints.Today),
         ReadingFieldName.Volume => Amount(text) is >= 0.3m and <= 400m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange), // a moped's top-up to a lorry's tank
-        ReadingFieldName.Total => Amount(text) < 10_000_000m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange),
+        ReadingFieldName.Total or ReadingFieldName.Discount => Amount(text) < 10_000_000m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange),
         ReadingFieldName.UnitPrice => Amount(text) < 100_000m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange),
         _ => Verdict.Fine,
     };
@@ -107,23 +108,41 @@ public static class ReadingChecks
         : date < today.AddYears(-DateYearsBack) ? Verdict.Drop(ReadingIssueCode.DateTooOld)
         : Verdict.Fine;
 
-    /// <summary>All three amounts read but not fitting: one of them is misread, most likely the litres or the price, so those two are doubted and the total stays.</summary>
+    /// <summary>
+    /// The litres, the price per litre and the total read, checked against each other: litres × price − the discount (none when not read)
+    /// must give the total. Without a discount read, within <see cref="Loose"/> (a small discount nobody read still fits); with one, the
+    /// receipt's numbers must add up to its rounding (<see cref="Tight"/>), or a discount the total already lacks would fit as well. When they
+    /// do not fit but litres × price alone does, the discount is the odd one out (taken off already, or misread): only it is doubted. When
+    /// neither fits, one of the amounts is misread, most likely the litres or the price, so those are doubted, the discount with them (this
+    /// sum is the one check it has), and the total stays.
+    /// </summary>
     private static List<RecognizedValue> CrossChecked(List<RecognizedValue> kept, List<ReadingIssue> issues, RecognitionRequest hints)
     {
         RecognizedValue? Of(ReadingFieldName name) => kept.FirstOrDefault(v => v.Name == name);
         if (Of(ReadingFieldName.Total) is not { } total || Of(ReadingFieldName.Volume) is not { } volume || Of(ReadingFieldName.UnitPrice) is not { } price) return kept;
         var currency = Of(ReadingFieldName.Currency)?.Value ?? hints.Currency;
-        if (Fits(Amount(total.Value), Amount(volume.Value) * Amount(price.Value), currency)) return kept;
-        issues.Add(new ReadingIssue(ReadingFieldName.Volume, ReadingIssueCode.AmountsDoNotAdd));
-        issues.Add(new ReadingIssue(ReadingFieldName.UnitPrice, ReadingIssueCode.AmountsDoNotAdd));
-        return kept.Select(v => v.Name is ReadingFieldName.Volume or ReadingFieldName.UnitPrice ? v with { Confidence = Math.Min(v.Confidence, Doubtful) } : v).ToList();
+        var discount = Of(ReadingFieldName.Discount);
+        var product = Amount(volume.Value) * Amount(price.Value);
+        var share = discount is null ? Loose : Tight;
+        if (Fits(Amount(total.Value), product - (discount is null ? 0 : Amount(discount.Value)), currency, share)) return kept;
+        ReadingFieldName[] doubted = discount is not null && Fits(Amount(total.Value), product, currency, share)
+            ? [ReadingFieldName.Discount]
+            : discount is null ? [ReadingFieldName.Volume, ReadingFieldName.UnitPrice] : [ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Discount];
+        issues.AddRange(doubted.Select(name => new ReadingIssue(name, ReadingIssueCode.AmountsDoNotAdd)));
+        return kept.Select(v => doubted.Contains(v.Name) ? v with { Confidence = Math.Min(v.Confidence, Doubtful) } : v).ToList();
     }
 
-    /// <summary>Whether a total and litres × price per litre agree: within 1.5 %, or one and a half of the currency's smallest unit.</summary>
-    private static bool Fits(decimal total, decimal product, string? currency)
+    /// <summary>How far a total may be from litres × price when no discount was read: 1.5 % (a small discount nobody read).</summary>
+    private const decimal Loose = 0.015m;
+
+    /// <summary>How far it may be once a discount was read: the receipt's rounding (a price per litre printed to a tenth, a total to the unit).</summary>
+    private const decimal Tight = 0.002m;
+
+    /// <summary>Whether a total and litres × price per litre (less a discount) agree: within the share of the total, or one and a half of the currency's smallest unit.</summary>
+    private static bool Fits(decimal total, decimal product, string? currency, decimal share)
     {
         var unit = currency?.ToUpperInvariant() is "HUF" or "JPY" or "KRW" or "ISK" ? 1m : 0.01m; // whole units, or cents
-        return Math.Abs(total - product) <= Math.Max(total * 0.015m, unit * 1.5m);
+        return Math.Abs(total - product) <= Math.Max(total * share, unit * 1.5m);
     }
 
     private static decimal Amount(string normalised) => decimal.Parse(normalised, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);

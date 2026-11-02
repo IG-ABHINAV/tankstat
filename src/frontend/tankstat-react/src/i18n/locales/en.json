@@ -1435,7 +1435,8 @@
     "values": {
       "ODOMETER": "odometer",
       "VOLUME": "volume",
-      "TOTAL": "total"
+      "TOTAL": "total",
+      "DISCOUNT": "discount"
     }
   },
   "recurring": {

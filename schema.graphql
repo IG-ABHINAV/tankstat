@@ -1326,6 +1326,7 @@ enum LogValue {
   ODOMETER
   VOLUME
   TOTAL
+  DISCOUNT
 }
 
 enum NoticeSeverity {
@@ -1373,6 +1374,7 @@ enum ReadingFieldName {
   CURRENCY
   DATE
   TITLE
+  DISCOUNT
 }
 
 enum ReadingIssueCode {

@@ -1435,7 +1435,8 @@
     "values": {
       "ODOMETER": "kilométeróra",
       "VOLUME": "mennyiség",
-      "TOTAL": "összeg"
+      "TOTAL": "összeg",
+      "DISCOUNT": "kedvezmény"
     }
   },
   "recurring": {

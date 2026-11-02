@@ -3,7 +3,7 @@ import { applyRead, changeField, takeOffered, type FillState, type ReadValues } 
 import { keepAmountsInStep, type AmountField } from '../../../src/refuelingAmounts.ts'
 
 type F = AmountField | 'currency'
-const fields = { volume: 'VOLUME', unitPrice: 'UNIT_PRICE', totalCost: 'TOTAL', currency: 'CURRENCY' } as const
+const fields = { volume: 'VOLUME', unitPrice: 'UNIT_PRICE', discount: 'DISCOUNT', totalCost: 'TOTAL', currency: 'CURRENCY' } as const
 
 // The steps of the dialog (useReadFill), on the pure functions.
 
@@ -22,7 +22,7 @@ const typeKeys = (state: FillState<F>, field: F, value: string) =>
   [...value].reduce((s, _, i) => type(s, field, value.slice(0, i + 1)), changeField(state, field, ''))
 
 /** A photo is read. */
-function photo(state: FillState<F>, read: Partial<Record<'VOLUME' | 'UNIT_PRICE' | 'TOTAL', string>>) {
+function photo(state: FillState<F>, read: Partial<Record<'VOLUME' | 'UNIT_PRICE' | 'DISCOUNT' | 'TOTAL', string>>) {
   const values: ReadValues = Object.fromEntries(Object.entries(read).map(([name, value]) => [name, { value, confidence: 0.9 }]))
   const { state: next, newly } = applyRead(state, fields, values)
   return keepAmountsInStep(next, newly, false)
@@ -176,6 +176,16 @@ describe('amounts read from photos', () => {
   it('works out the amount the photos did not show', () => {
     expect(amounts(photo(open(), { VOLUME: '38.52', TOTAL: '24687' }))).toEqual({ volume: '38.52', unitPrice: '640.888', totalCost: '24687' })
     expect(amounts(photo(type(open(), 'unitPrice', '640'), { VOLUME: '38.5' }))).toEqual({ volume: '38.5', unitPrice: '640', totalCost: '24640' })
+  })
+
+  it('keeps all four as read when a photo shows them, and works out the litres from the amount paid, the discount and the pump price', () => {
+    const all = photo(open(), { VOLUME: '43', UNIT_PRICE: '818', DISCOUNT: '430', TOTAL: '34744' }) // the receipt of #204
+    expect({ ...amounts(all), discount: all.values.discount }).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744', discount: '430' })
+    expect(all.calculated).toEqual(new Set())
+
+    const noLitres = photo(open(), { UNIT_PRICE: '818', DISCOUNT: '430', TOTAL: '34744' }) // (34 744 + 430) ÷ 818: right to the litre, the discount counted
+    expect(noLitres.values.volume).toBe('43')
+    expect(noLitres.calculated).toEqual(new Set(['volume']))
   })
 
   it('keeps all three as read when a photo shows all three', () => {

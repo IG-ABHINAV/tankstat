@@ -9,7 +9,7 @@ type KindText = Exclude<keyof (typeof en)['notifications']['kinds'], `${string}_
 
 const LEVELS: AccessLevel[] = ['NONE', 'VIEW', 'EDIT', 'DELETE']
 const asLevel = (value: string | undefined): AccessLevel => ((LEVELS as string[]).includes(value ?? '') ? (value as AccessLevel) : 'NONE')
-const LOG_VALUES: LogValue[] = ['ODOMETER', 'VOLUME', 'TOTAL']
+const LOG_VALUES: LogValue[] = ['ODOMETER', 'VOLUME', 'TOTAL', 'DISCOUNT']
 /** A reason's arguments, sent as one JSON object. */
 const parseArgs = (json: string | undefined): Record<string, string> => {
   try {
