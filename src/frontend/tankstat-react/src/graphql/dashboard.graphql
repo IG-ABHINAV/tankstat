@@ -67,10 +67,20 @@ query VehicleCard($id: UUID!) {
   }
 }
 
-# A vehicle's dashboard: the key figures and the saved charts (the user's own and the shared ones). Each chart loads its own data.
+# A vehicle's dashboard: the key figures, how it is arranged (the vehicle's and the user's own; never asked for a list of vehicles: it is
+# resolved per vehicle) and the saved charts (the user's own and the shared ones). Each chart loads its own data.
 query VehicleDashboard($id: UUID!) {
   vehicle(id: $id) {
     id
+    dashboard {
+      canChangeShared
+      shared {
+        ...DashboardLayoutFields
+      }
+      personal {
+        ...DashboardLayoutFields
+      }
+    }
     summary {
       lastFillUpDate
       latestOdometer
@@ -114,6 +124,20 @@ query VehicleDashboard($id: UUID!) {
       avatarUrl
     }
   }
+}
+
+fragment DashboardLayoutFields on DashboardLayoutInfo {
+  figures
+  charts
+  hidden
+}
+
+mutation SaveDashboardLayout($input: SaveDashboardLayoutInput!) {
+  saveDashboardLayout(input: $input)
+}
+
+mutation ResetDashboardLayout($vehicleId: UUID!, $personal: Boolean!) {
+  resetDashboardLayout(vehicleId: $vehicleId, personal: $personal)
 }
 
 query ChartData($vehicleId: UUID!, $config: ChartConfigInput!) {

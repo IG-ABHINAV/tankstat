@@ -952,6 +952,11 @@
       "notYours": "Ezt a grafikont csak a létrehozója módosíthatja.",
       "notFound": "Ez a grafikon nem létezik."
     },
+    "dashboard": {
+      "itemInvalid": "Az irányítópult egyik eleme nem érvényes.",
+      "tooMany": "Egy irányítópult mindegyikből legfeljebb {{max}} elemet sorolhat fel.",
+      "needEditToChange": "Az irányítópult módosításához szerkesztési jog kell a jármű naplójához."
+    },
     "photo": {
       "tooMany": "Egy naplóbejegyzéshez legfeljebb {{max}} fotó tartozhat.",
       "notFound": "Ez a fotó nem létezik.",
@@ -1282,7 +1287,6 @@
       "none": "–",
       "title": "Fő adatok"
     },
-    "overview": "Áttekintés",
     "yourCharts": "Grafikonok",
     "addChart": "Grafikon hozzáadása",
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
@@ -1324,6 +1328,42 @@
       "fuelPrice": "Üzemanyagár",
       "categories": "Költségek kategóriánként",
       "distance": "Havi megtett távolság"
+    },
+    "customize": {
+      "button": "Testreszabás",
+      "title": "Az irányítópult testreszabása",
+      "description": "Válaszd ki, mit mutasson a jármű irányítópultja, és milyen sorrendben.",
+      "whose": "Kinek az irányítópultja",
+      "everyone": "Mindenkinek, aki látja a járművet",
+      "mine": "Csak nekem",
+      "preset": "Kiindulás egy sablonból",
+      "presetHint": "Lecseréli az alábbi listákat; semmi sem mentődik, amíg nem mented.",
+      "choose": "Válassz",
+      "started": "Kiindulás: {{name}}.",
+      "figures": "Fő adatok",
+      "charts": "Grafikonok",
+      "empty": "Itt nincs semmi.",
+      "moveUp": "{{name}} feljebb",
+      "moveDown": "{{name}} lejjebb",
+      "remove": "{{name}} eltávolítása",
+      "moved": "{{name}} a(z) {{position}}. helyre került ({{total}} közül).",
+      "removed": "{{name}} levéve.",
+      "added": "{{name}} hozzáadva.",
+      "addFigure": "Fő adat hozzáadása",
+      "addChart": "Grafikon hozzáadása",
+      "ready": "Kész grafikon",
+      "savedChart": "Saját grafikon",
+      "sharedChart": "Megosztott grafikon",
+      "privateHint": "A csak általad látható grafikonok nincsenek a mindenki által látott irányítópulton; oszd meg, hogy oda is felkerülhessen.",
+      "resetShared": "Vissza az alaphoz",
+      "resetPersonal": "A jármű irányítópultjának használata",
+      "save": "Irányítópult mentése",
+      "needsServer": "Az irányítópult módosításához kapcsolat kell a szerverrel.",
+      "yours": "Az irányítópult saját elrendezését látod.",
+      "noCharts": "Ezen az irányítópulton nincs grafikon. Szabd testre, és adj hozzá."
+    },
+    "layoutPresets": {
+      "standard": "Alap"
     }
   },
   "charts": {

@@ -952,6 +952,11 @@
       "notYours": "Only the creator can change this chart.",
       "notFound": "This chart does not exist."
     },
+    "dashboard": {
+      "itemInvalid": "An entry of the dashboard is not valid.",
+      "tooMany": "A dashboard can list at most {{max}} of each.",
+      "needEditToChange": "You need edit access to the vehicle's logs to change its dashboard."
+    },
     "photo": {
       "tooMany": "A log can have at most {{max}} photos.",
       "notFound": "This photo does not exist.",
@@ -1282,7 +1287,6 @@
       "none": "–",
       "title": "Key figures"
     },
-    "overview": "Overview",
     "yourCharts": "Charts",
     "addChart": "Add chart",
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
@@ -1324,6 +1328,42 @@
       "fuelPrice": "Fuel price",
       "categories": "Expenses by category",
       "distance": "Distance per month"
+    },
+    "customize": {
+      "button": "Customize",
+      "title": "Customize the dashboard",
+      "description": "Choose what this vehicle's dashboard shows and in which order.",
+      "whose": "Whose dashboard",
+      "everyone": "Everyone who sees this vehicle",
+      "mine": "Just me",
+      "preset": "Start from a preset",
+      "presetHint": "Replaces the lists below; nothing is saved until you save.",
+      "choose": "Choose one",
+      "started": "Started from {{name}}.",
+      "figures": "Key figures",
+      "charts": "Charts",
+      "empty": "Nothing here.",
+      "moveUp": "Move {{name}} up",
+      "moveDown": "Move {{name}} down",
+      "remove": "Remove {{name}}",
+      "moved": "{{name}} moved to position {{position}} of {{total}}.",
+      "removed": "{{name}} taken off.",
+      "added": "{{name}} added.",
+      "addFigure": "Add a key figure",
+      "addChart": "Add a chart",
+      "ready": "Ready-made",
+      "savedChart": "Your chart",
+      "sharedChart": "Shared chart",
+      "privateHint": "Charts only you can see are not on everyone's dashboard; share one to add it there.",
+      "resetShared": "Back to Standard",
+      "resetPersonal": "Use the vehicle's dashboard",
+      "save": "Save dashboard",
+      "needsServer": "Changing the dashboard needs a connection to the server.",
+      "yours": "You see your own arrangement of this dashboard.",
+      "noCharts": "No charts on this dashboard. Customize it to add some."
+    },
+    "layoutPresets": {
+      "standard": "Standard"
     }
   },
   "charts": {

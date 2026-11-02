@@ -33,6 +33,21 @@ test('a vehicle page and its add refuelling dialog have no axe violations', asyn
   expect(await violations(page, '[role="dialog"]')).toEqual([])
 })
 
+test('a vehicle\'s dashboard and its Customize dialog have no axe violations', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await page.goto(`/vehicles/${vehicle.id}`)
+  await pageLoaded(page)
+  await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
+  expect(await violations(page)).toEqual([])
+  // The tall dialog reaches the bottom of the screen, where the "can now be used offline" toast of a first visit would cover its buttons.
+  await expect(page.getByText('Tankstat can now be used offline.')).toBeHidden({ timeout: 15_000 })
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('dialog', { name: 'Customize the dashboard' })).toBeVisible()
+  // Scanned once it has faded in: halfway, its text is fainter than it will be.
+  await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1')
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+})
+
 test('the add vehicle dialog has no axe violations', async ({ page }) => {
   await page.goto('/')
   await pageLoaded(page)

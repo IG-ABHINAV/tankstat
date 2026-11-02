@@ -4,7 +4,7 @@ import { axe } from 'vitest-axe'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
 import { server } from '../../support/server.ts'
-import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
+import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
 import { dateValue, findDateField, typeDate } from '../../support/dates.ts'
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
@@ -14,13 +14,22 @@ afterEach(() => {
 })
 afterAll(() => server.close())
 
-function setup(vehicle = fakeVehicle(), charts = [fakeChart()], route = '/vehicles/v1') {
+function setup(vehicle = fakeVehicle(), charts = [fakeChart()], route = '/vehicles/v1', { signedIn = false, arranged }: { signedIn?: boolean; arranged?: (state: ReturnType<typeof fakeDashboardBackend>['state']) => void } = {}) {
   stubViewport('desktop')
   const dashboard = fakeDashboardBackend(vehicle, charts)
-  server.use(sessionHandler('NONE', () => null), healthHandler, ...fakeLogBackend(vehicle, []).handlers, ...dashboard.handlers)
+  arranged?.(dashboard.state)
+  server.use(sessionHandler(signedIn ? 'STANDALONE' : 'NONE', () => (signedIn ? user() : null)), healthHandler, ...fakeLogBackend(vehicle, []).handlers, ...dashboard.handlers)
   renderWithApollo(<App />, route)
   return { ...dashboard, ui: userEvent.setup() }
 }
+
+/** The charts' titles in the order the dashboard shows them. */
+const chartTitles = async () => {
+  const section = (await screen.findByRole('heading', { name: 'Charts', level: 2 })).closest('section') as HTMLElement
+  return within(section).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+}
+const figureLabels = () => [...within(screen.getByRole('region', { name: 'Key figures' })).getAllByText(/./, { selector: '.MuiCard-root > p:first-child' })].map((p) => p.textContent)
+const layout = (over: Partial<FakeLayout>): FakeLayout => ({ figures: [], charts: [], hidden: [], ...over })
 
 const choose = async (ui: ReturnType<typeof userEvent.setup>, control: string, option: string) => {
   await ui.click(screen.getByRole('combobox', { name: control }))
@@ -145,6 +154,120 @@ it('deletes a chart after a confirmation', async () => {
 
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'My chart' })).not.toBeInTheDocument())
   expect(state.calls.DeleteChart).toEqual([{ id: 'c1' }])
+})
+
+// ---- the arrangement ----------------------------------------------------------------------------------------
+
+it('shows the Standard preset until someone arranges the dashboard: the four figures, the five ready-made charts, then the saved ones', async () => {
+  setup(fakeVehicle(), [fakeChart()])
+
+  await screen.findByRole('heading', { name: 'My chart' })
+  expect(await chartTitles()).toEqual(['Monthly costs', 'Consumption', 'Fuel price', 'Expenses by category', 'Distance per month', 'My chart'])
+  expect(figureLabels()).toEqual(['Spent this month', 'Average consumption', 'Odometer', 'Last fill-up'])
+})
+
+it('follows the vehicle\'s arrangement: its order, a saved chart it does not mention at the end, one taken off left out', async () => {
+  setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Second', isShared: true }), fakeChart({ id: 'c3', title: 'Taken off', isShared: true })], undefined, {
+    arranged: (s) => (s.dashboard.shared = layout({ figures: ['odometer', 'thisMonth'], charts: ['chart:c2', 'preset:distance'], hidden: ['chart:c3'] })),
+  })
+
+  await screen.findByRole('heading', { name: 'Second' })
+  expect(await chartTitles()).toEqual(['Second', 'Distance per month', 'My chart'])
+  expect(figureLabels()).toEqual(['Odometer', 'Spent this month'])
+  expect(screen.queryByText(/your own arrangement/)).not.toBeInTheDocument()
+})
+
+it('shows a person\'s own arrangement over the vehicle\'s, says so, and goes back to the vehicle\'s', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, {
+    signedIn: true,
+    arranged: (s) => {
+      s.dashboard.shared = layout({ figures: ['odometer'], charts: ['preset:distance'] })
+      s.dashboard.personal = layout({ figures: ['lastFillUp'], charts: ['preset:fuelPrice'] })
+    },
+  })
+
+  expect(await screen.findByText('You see your own arrangement of this dashboard.')).toBeInTheDocument()
+  expect(await chartTitles()).toEqual(['Fuel price'])
+  await ui.click(screen.getByRole('button', { name: "Use the vehicle's dashboard" }))
+
+  await waitFor(() => expect(state.calls.ResetDashboardLayout).toEqual([{ vehicleId: 'v1', personal: true }]))
+  await waitFor(async () => expect(await chartTitles()).toEqual(['Distance per month']))
+  expect(screen.queryByText('You see your own arrangement of this dashboard.')).not.toBeInTheDocument()
+})
+
+it('customizes the vehicle\'s dashboard: a figure moved up, a ready-made chart and a saved one taken off, saved for everyone', async () => {
+  const { ui, state } = setup(fakeVehicle(), [fakeChart({ isShared: true })], undefined, { signedIn: true })
+  await screen.findByRole('heading', { name: 'My chart' })
+
+  await ui.click(screen.getByRole('button', { name: 'Customize' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Customize the dashboard' })
+  expect(within(dialog).getByRole('radio', { name: 'Everyone who sees this vehicle' })).toBeChecked()
+  await ui.click(within(dialog).getByRole('button', { name: 'Move Odometer up' }))
+  expect(within(dialog).getByRole('status')).toHaveTextContent('Odometer moved to position 2 of 4.')
+  expect(within(dialog).getByRole('button', { name: 'Move Odometer up' })).toHaveFocus() // the focus travels with the row
+  await ui.click(within(dialog).getByRole('button', { name: 'Remove Consumption' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Remove My chart' }))
+  await ui.click(screen.getByRole('combobox', { name: 'Add a chart' }))
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Consumption', 'My chart'])
+  await ui.keyboard('{Escape}')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save dashboard' }))
+
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  expect(state.calls.SaveDashboardLayout![0]).toEqual({
+    input: {
+      vehicleId: 'v1',
+      personal: false,
+      figures: ['thisMonth', 'odometer', 'consumption', 'lastFillUp'],
+      charts: ['preset:monthlyCosts', 'preset:fuelPrice', 'preset:categories', 'preset:distance'],
+      hidden: ['chart:c1'],
+    },
+  })
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  await waitFor(async () => expect(await chartTitles()).toEqual(['Monthly costs', 'Fuel price', 'Expenses by category', 'Distance per month']))
+})
+
+it('adds back what was taken off, starts afresh from a preset, and arranges one\'s own from what one sees', async () => {
+  const { ui, state } = setup(fakeVehicle(), [fakeChart()], undefined, {
+    signedIn: true,
+    arranged: (s) => (s.dashboard.shared = layout({ figures: ['odometer'], charts: ['preset:distance'], hidden: ['chart:c1'] })),
+  })
+  await screen.findByRole('heading', { name: 'Distance per month' })
+  await ui.click(screen.getByRole('button', { name: 'Customize' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Customize the dashboard' })
+
+  await ui.click(within(dialog).getByRole('radio', { name: 'Just me' }))
+  await choose(ui, 'Add a chart', 'My chart')
+  await choose(ui, 'Add a key figure', 'Last fill-up')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  expect(state.calls.SaveDashboardLayout![0]).toEqual({ input: { vehicleId: 'v1', personal: true, figures: ['odometer', 'lastFillUp'], charts: ['preset:distance', 'chart:c1'], hidden: [] } })
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  await ui.click(screen.getByRole('button', { name: 'Customize' }))
+  const again = await screen.findByRole('dialog', { name: 'Customize the dashboard' })
+  expect(within(again).getByRole('radio', { name: 'Just me' })).toBeChecked() // one's own, now that there is one
+  await choose(ui, 'Start from a preset', 'Standard')
+  expect(within(again).getByRole('status')).toHaveTextContent('Started from Standard.')
+  expect(within(again).getAllByRole('listitem')).toHaveLength(4 + 6) // every figure, the five ready-made charts and the saved one
+})
+
+it('offers a viewer only an arrangement of their own, and nobody one of their own with sign-in off', async () => {
+  const viewer = setup(fakeVehicle({ canEdit: false, logAccess: 'VIEW' }), [], undefined, { signedIn: true, arranged: (s) => (s.dashboard.canChangeShared = false) })
+  await viewer.ui.click(await screen.findByRole('button', { name: 'Customize' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Customize the dashboard' })
+  expect(within(dialog).queryByRole('radiogroup')).not.toBeInTheDocument()
+  await viewer.ui.click(within(dialog).getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(viewer.state.calls.SaveDashboardLayout).toHaveLength(1))
+  expect((viewer.state.calls.SaveDashboardLayout![0] as { input: { personal: boolean } }).input.personal).toBe(true)
+})
+
+it('with sign-in off, everyone is the same visitor: the vehicle\'s dashboard only', async () => {
+  const { ui } = setup(fakeVehicle(), [])
+  await ui.click(await screen.findByRole('button', { name: 'Customize' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Customize the dashboard' })
+
+  expect(within(dialog).queryByRole('radio', { name: 'Just me' })).not.toBeInTheDocument()
+  expect(within(dialog).queryByRole('button', { name: 'Back to Standard' })).not.toBeInTheDocument() // nothing arranged yet
 })
 
 // ---- the builder ----------------------------------------------------------------------------------------------
@@ -428,4 +551,9 @@ it('has no accessibility violations: the dashboard, an opened table and the buil
   await ui.click(screen.getByRole('button', { name: 'Add chart' }))
   await screen.findByRole('dialog', { name: 'Add chart' })
   await check(document.body)
+  await ui.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+  await ui.click(screen.getByRole('button', { name: 'Customize' }))
+  await check(await screen.findByRole('dialog', { name: 'Customize the dashboard' }))
 })

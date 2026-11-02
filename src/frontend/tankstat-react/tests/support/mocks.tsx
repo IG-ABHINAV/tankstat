@@ -966,6 +966,12 @@ export interface FakeChart {
   createdBy: Person
 }
 
+export interface FakeLayout {
+  figures: string[]
+  charts: string[]
+  hidden: string[]
+}
+
 export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   id: 'c1',
   title: 'My chart',
@@ -999,6 +1005,8 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
     chartRequests: [] as { vehicleId: string; config: Record<string, unknown> }[],
     failWith: undefined as { message: string; key: string; args?: Record<string, unknown> } | undefined,
     nextId: 400,
+    /** How the dashboard is arranged: the vehicle's and the user's own (null for none), and whether the user may change the vehicle's. */
+    dashboard: { shared: null as FakeLayout | null, personal: null as FakeLayout | null, canChangeShared: true },
   }
   const record = (name: string, vars: unknown) => (state.calls[name] ??= []).push(vars)
   const months = ['2026-08', '2026-09', '2026-10']
@@ -1036,9 +1044,23 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
   }
 
   const handlers = [
-    graphql.query('VehicleDashboard', ({ variables }) =>
-      HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, summary: state.vehicle.summary } : null, vehicleCharts: state.charts } }),
-    ),
+    graphql.query('VehicleDashboard', ({ variables }) => {
+      const layout = (l: FakeLayout | null) => (l ? { __typename: 'DashboardLayoutInfo', ...l } : null)
+      const dashboard = { __typename: 'DashboardInfo', shared: layout(state.dashboard.shared), personal: layout(state.dashboard.personal), canChangeShared: state.dashboard.canChangeShared }
+      return HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, summary: state.vehicle.summary, dashboard } : null, vehicleCharts: state.charts } })
+    }),
+    graphql.mutation('SaveDashboardLayout', ({ variables }) => {
+      record('SaveDashboardLayout', variables)
+      const { personal, figures, charts, hidden } = variables.input as FakeLayout & { personal: boolean }
+      if (!personal && !state.dashboard.canChangeShared) return HttpResponse.json(gqlError('no', 'FORBIDDEN', 'dashboard.needEditToChange'))
+      state.dashboard[personal ? 'personal' : 'shared'] = { figures, charts, hidden }
+      return HttpResponse.json({ data: { saveDashboardLayout: true } })
+    }),
+    graphql.mutation('ResetDashboardLayout', ({ variables }) => {
+      record('ResetDashboardLayout', variables)
+      state.dashboard[variables.personal ? 'personal' : 'shared'] = null
+      return HttpResponse.json({ data: { resetDashboardLayout: true } })
+    }),
     graphql.query('ChartData', ({ variables }) => {
       state.chartRequests.push(variables as never)
       return HttpResponse.json({ data: { vehicleChartData: answer(variables.config as Record<string, unknown>) } })
