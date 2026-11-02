@@ -136,6 +136,55 @@ public class LogPhotoFillerTests
     }
 
     [Fact]
+    public async Task AReceiptsDiscount_IsStoredWithTheTotalItWasTakenOff()
+    {
+        var s = await Setup();
+        var receipt = await Queued(s);
+        var log = await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(Day, null, null, "HUF", 1000, false, null), default, photoDraftIds: [receipt]);
+        Answer(s, DocumentKind.FuelReceipt,
+            Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Volume, "43"), Read(ReadingFieldName.UnitPrice, "818"), Read(ReadingFieldName.Discount, "-430"), Read(ReadingFieldName.Currency, "HUF"));
+
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Refuelings.Items.Single(r => r.Id == log.Id);
+        Assert.Equal((43m, 34744m, 430m, 808m, 818m), (filled.Volume, filled.TotalCost, filled.Discount, filled.PricePerUnit, filled.PricePerUnitBeforeDiscount)); // the receipt of #204
+        Assert.Equal(LogValues.Volume | LogValues.Total | LogValues.Discount, filled.FilledFromPhoto);
+    }
+
+    [Fact]
+    public async Task TheDiscount_ComesFromThePhotoThatGaveTheTotal_NeverFromAnother()
+    {
+        var s = await Setup();
+        var after = await Queued(s, marker: 1); // the receipt read after its discount
+        var before = await Queued(s, marker: 2); // another shot of it, read on the fuel line before the discount, and surer
+        s.W.Recognizer.Answer = r => r.ReadingId == after
+            ? new RecognitionResult("fake-1", DocumentKind.FuelReceipt, [Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Discount, "430"), Read(ReadingFieldName.Currency, "HUF")])
+            : new RecognitionResult("fake-1", DocumentKind.FuelReceipt, [Read(ReadingFieldName.Total, "35174", 0.95), Read(ReadingFieldName.Currency, "HUF")]);
+        var log = await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(Day, 43, null, "HUF", 1000, true, null), default, photoDraftIds: [after, before]);
+
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Refuelings.Items.Single(r => r.Id == log.Id);
+        Assert.Equal(35174m, filled.TotalCost); // the surest total
+        Assert.Null(filled.Discount); // its photo shows none: the other photo's 430 was taken off another total
+    }
+
+    [Fact]
+    public async Task ADiscountOnAPhoto_NeverChangesACostAPersonEntered()
+    {
+        var s = await Setup();
+        var receipt = await Queued(s);
+        var log = await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(Day, 43, 34744, "HUF", null, false, null), default, photoDraftIds: [receipt]);
+        Answer(s, DocumentKind.FuelReceipt, Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Discount, "430"), Read(ReadingFieldName.Currency, "HUF"));
+
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Refuelings.Items.Single(r => r.Id == log.Id);
+        Assert.Null(filled.Discount); // what they entered, an empty discount among it, is theirs: the dialog offers the photo's
+        Assert.False(filled.FilledFromPhoto.HasFlag(LogValues.Discount));
+    }
+
+    [Fact]
     public async Task ATotalWithoutALegibleCurrency_IsLeftForThePerson_NeverStoredInTheUsualCurrency()
     {
         var s = await Setup();
@@ -289,6 +338,20 @@ public class LogPhotoFillerTests
         Assert.Equal((245m, "EUR", ReviewState.NeedsReview, LogValues.Total), (filled.Amount, filled.Currency, filled.ReviewState, filled.FilledFromPhoto));
         var told = Assert.Single(s.W.Notifications.Items);
         Assert.Equal((NotificationRef.Expense(expense.Id), "Service"), (told.Subject, told.Args["title"]));
+    }
+
+    [Fact]
+    public async Task AnExpenseReceiptsDiscount_IsStoredWithTheAmountThePhotoGives()
+    {
+        var s = await Setup();
+        var photo = await Queued(s, ReadingPurpose.Expense);
+        var expense = await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(Day, "Tyres", null, null, "EUR", null, null), default, [photo]);
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Total, "245.00"), Read(ReadingFieldName.Discount, "-30"), Read(ReadingFieldName.Currency, "EUR"));
+
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Expenses.Items.Single(e => e.Id == expense.Id);
+        Assert.Equal((245m, 30m, LogValues.Total | LogValues.Discount), (filled.Amount, filled.Discount, filled.FilledFromPhoto));
     }
 
     [Fact]

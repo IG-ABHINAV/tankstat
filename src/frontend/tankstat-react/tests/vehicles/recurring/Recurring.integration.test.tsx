@@ -235,6 +235,7 @@ it('marks what was done at one visit: the clicked one and the due ones of its ca
   expect(within(dialog).getByLabelText('Expense category (optional)')).toHaveValue('Service')
   await ui.type(within(dialog).getByLabelText(/^Odometer/), '62000')
   await ui.type(within(dialog).getByLabelText('Amount (optional)'), '35000')
+  await ui.type(within(dialog).getByLabelText('Discount'), '2000') // taken off at the workshop: the amount is what was paid
   await ui.click(within(dialog).getByRole('button', { name: 'Mark as done' }))
 
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -245,6 +246,7 @@ it('marks what was done at one visit: the clicked one and the due ones of its ca
         date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         odometer: 62000,
         amount: 35000,
+        discount: 2000,
         currency: 'HUF',
         title: 'Tyres, Oil change',
         category: 'Service',
@@ -323,6 +325,18 @@ it("a row's own Done leaves the selection in the list alone", async () => {
   expect(screen.getByRole('checkbox', { name: 'Select Wipers' })).toBeChecked()
 })
 
+it('a discount without an amount is said at its field before anything is sent: the server would refuse the whole visit', async () => {
+  const { ui, state } = setup(fakeVehicle(), [fakeRecurring({ kind: 'TIME', intervalDistance: null, lastDoneOdometer: null })])
+  await row('Oil change')
+
+  const dialog = await doneDialog(ui, 'Oil change')
+  await ui.type(within(dialog).getByLabelText('Discount'), '2000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Mark as done' }))
+
+  expect(within(dialog).getByLabelText('Discount')).toHaveAccessibleDescription(/A discount needs the amount it was taken off\./)
+  expect(state.calls.MarkRecurringExpensesDone).toBeUndefined()
+})
+
 it('without an amount only the schedules move on: nothing is required beyond the day', async () => {
   const { ui, state } = setup(fakeVehicle(), [fakeRecurring({ kind: 'TIME', intervalDistance: null, lastDoneOdometer: null })])
   await row('Oil change')
@@ -333,7 +347,7 @@ it('without an amount only the schedules move on: nothing is required beyond the
 
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(state.calls.MarkRecurringExpensesDone).toEqual([
-    { input: { ids: ['rc1'], date: expect.any(String), odometer: null, amount: null, currency: null, title: 'Oil change', category: 'Service', photoIds: [] } }, // no expense is logged, so no id for one
+    { input: { ids: ['rc1'], date: expect.any(String), odometer: null, amount: null, discount: null, currency: null, title: 'Oil change', category: 'Service', photoIds: [] } }, // no expense is logged, so no id for one
   ])
 })
 

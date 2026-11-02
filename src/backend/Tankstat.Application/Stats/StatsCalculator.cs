@@ -90,7 +90,8 @@ public static class StatsCalculator
             ChartMetric.FuelVolume => [new ChartSeries(Fuel, null, keys.Select(k => new ChartPoint(k, fuel.Where(f => Key(f.Date, config.Grouping) == k).Sum(f => f.Volume))).ToList())],
             ChartMetric.FillUps => [new ChartSeries(Fuel, null, keys.Select(k => new ChartPoint(k, fuel.Count(f => Key(f.Date, config.Grouping) == k))).ToList())],
             ChartMetric.AverageConsumption => [new ChartSeries(Fuel, null, keys.Select(k => Mean(k, fuel.Where(f => Key(f.Date, config.Grouping) == k && f.Consumption is not null).Select(f => f.Consumption!.Value))).ToList())],
-            ChartMetric.AveragePricePerUnit => PricePerUnit(keys, config.Grouping, fuel),
+            ChartMetric.AveragePricePerUnit => PricePerUnit(keys, config.Grouping, fuel, f => f.Amount),
+            ChartMetric.AveragePricePerUnitBeforeDiscount => PricePerUnit(keys, config.Grouping, fuel, f => f.Amount + f.Discount),
             ChartMetric.Distance => [new ChartSeries(Total, null, periods.Select(p => new ChartPoint(Key(p, config.Grouping), DistanceIn(data.Readings, Bounds(p, config.Grouping)))).ToList())],
             _ => [],
         };
@@ -116,13 +117,14 @@ public static class StatsCalculator
             .ToList();
     }
 
-    private static List<ChartSeries> PricePerUnit(List<string> keys, ChartGrouping g, List<FuelPoint> fuel) =>
+    /// <summary>The money <paramref name="amount"/> names (what was paid, or what it was before the discounts) over the volume, per currency and period.</summary>
+    private static List<ChartSeries> PricePerUnit(List<string> keys, ChartGrouping g, List<FuelPoint> fuel, Func<FuelPoint, decimal> amount) =>
         fuel.GroupBy(f => f.Currency).OrderByDescending(c => c.Sum(f => f.Amount))
             .Select(c => new ChartSeries(Fuel, c.Key, keys.Select(k =>
             {
                 var rows = c.Where(f => Key(f.Date, g) == k).ToList();
                 var volume = rows.Sum(f => f.Volume);
-                return new ChartPoint(k, volume > 0 ? Math.Round(rows.Sum(f => f.Amount) / volume, 3) : null);
+                return new ChartPoint(k, volume > 0 ? Math.Round(rows.Sum(amount) / volume, 3) : null);
             }).ToList())).ToList();
 
     private static List<ChartSeries> CategorySeries(List<ExpensePoint> expenses) =>

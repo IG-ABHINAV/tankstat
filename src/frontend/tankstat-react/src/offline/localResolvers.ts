@@ -94,23 +94,49 @@ export function sortLogs(kind: LogKind, rows: readonly LogRow[], field: string, 
   )
 }
 
-/** A log as a query answers it: who may edit it follows its vehicle today. */
+/**
+ * A log as a query answers it: who may edit it follows its vehicle today. An expense downloaded before discounts existed has none (null).
+ * A refuelling downloaded before discounts existed has neither the
+ * discount nor the pump's price: none and the price paid, worked out the server's way, so no query reads a field it lacks. The server's own
+ * prices are never worked out again.
+ */
 function asAnswer(row: LogRow, vehicle: VehicleRow | undefined): Record<string, unknown> {
   const { pulledAt: _pulledAt, ...fields } = row
-  return { ...fields, canEdit: atLeast(vehicle?.logAccess, 'EDIT'), canDelete: atLeast(vehicle?.logAccess, 'DELETE') }
+  const known = row.__typename === 'Refueling' ? withDiscount(fields) : row.__typename === 'Expense' ? { ...fields, discount: fields.discount ?? null } : fields
+  return { ...known, canEdit: atLeast(vehicle?.logAccess, 'EDIT'), canDelete: atLeast(vehicle?.logAccess, 'DELETE') }
 }
 
-/** The values an add or an update carries onto the row; the price per unit follows them, a person's save leaves nothing to review. */
+function withDiscount(row: Record<string, unknown>): Record<string, unknown> {
+  const discount = row.discount ?? null
+  if ('pricePerUnitBeforeDiscount' in row) return { ...row, discount }
+  const cost = num(row.totalCost)
+  return { ...row, discount, pricePerUnitBeforeDiscount: perUnit(cost === null ? null : cost + (num(discount) ?? 0), row.volume) }
+}
+
+/** The values an add or an update carries onto the row; the prices per unit follow them, a person's save leaves nothing to review. */
 const VALUES: Record<LogKind, readonly string[]> = {
-  refuelings: ['date', 'volume', 'totalCost', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
-  expenses: ['date', 'title', 'category', 'amount', 'currency', 'odometer', 'note'],
+  refuelings: ['date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
+  expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
+}
+
+/** A price per unit as the server works it out (3 decimals), or null without a volume or a cost. */
+const perUnit = (amount: number | null, volume: unknown) => (amount !== null && num(volume) ? Math.round((amount / (volume as number)) * 1000) / 1000 : null)
+
+/**
+ * The two prices per unit of a row: what was paid, and the pump's (the cost plus the discount; a row downloaded before discounts existed has
+ * none). An edit sends 0 for an emptied discount, which the server keeps as none: so does the row.
+ */
+function withPrices(row: LogRow): LogRow {
+  const cost = num(row.totalCost)
+  const discount = (num(row.discount) ?? 0) > 0 ? num(row.discount) : null
+  return { ...row, discount, pricePerUnit: perUnit(cost, row.volume), pricePerUnitBeforeDiscount: perUnit(cost === null ? null : cost + (discount ?? 0), row.volume) }
 }
 
 function withValues(kind: LogKind, row: LogRow, input: Record<string, unknown> | undefined): LogRow {
   const values = Object.fromEntries(VALUES[kind].filter((k) => input && k in input).map((k) => [k, input![k]]))
   const next: LogRow = { ...row, ...values, reviewState: 'NONE', filledFromPhoto: [] }
-  if (kind === 'refuelings') next.pricePerUnit = num(next.totalCost) !== null && num(next.volume) ? Math.round(((next.totalCost as number) / (next.volume as number)) * 1000) / 1000 : null
-  return next
+  // An edit sends 0 for an emptied discount, which the server keeps as none: so does the row.
+  return kind === 'refuelings' ? withPrices(next) : { ...next, discount: (num(next.discount) ?? 0) > 0 ? num(next.discount) : null }
 }
 
 /** A log added on this device and not sent yet: what the server would answer, without what only the server works out. */
@@ -121,8 +147,8 @@ function added(kind: LogKind, change: Change): LogRow {
   }
   const row: LogRow =
     kind === 'refuelings'
-      ? { __typename: 'Refueling', ...common, volume: null, totalCost: null, consumption: null, isFullTank: true, missedPreviousFillUp: false }
-      : { __typename: 'Expense', ...common, title: '', category: null, amount: null, schedules: [] }
+      ? { __typename: 'Refueling', ...common, volume: null, totalCost: null, discount: null, consumption: null, isFullTank: true, missedPreviousFillUp: false }
+      : { __typename: 'Expense', ...common, title: '', category: null, amount: null, discount: null, schedules: [] }
   return withValues(kind, row, change.input)
 }
 

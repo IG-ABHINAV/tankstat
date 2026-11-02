@@ -174,6 +174,23 @@ public class RecurringExpenseServiceTests
     }
 
     [Fact]
+    public async Task MarkDone_TheDiscountGoesWithTheLoggedExpense_AndNeedsItsAmount()
+    {
+        var s = await Setup();
+        var oil = (await s.W.RecurringService.AddAsync(s.Car.Id, Oil(), default)).Item;
+
+        var refused = await Assert.ThrowsAsync<DomainException>(() => s.W.RecurringService.MarkDoneAsync([oil.Id], Done(amount: null) with { Discount = 2000 }, default));
+        Assert.Equal("cost.discountWithoutAmount", refused.Key);
+        Assert.Empty(s.W.Expenses.Items);
+        Assert.Equal(new DateOnly(2026, 1, 15), oil.LastDoneDate); // refused before anything moved
+
+        await s.W.RecurringService.MarkDoneAsync([oil.Id], Done(amount: 33000) with { Discount = 2000 }, default);
+
+        var expense = Assert.Single(s.W.Expenses.Items);
+        Assert.Equal((33000m, 2000m), (expense.Amount, expense.Discount)); // the amount is what was paid
+    }
+
+    [Fact]
     public async Task MarkDone_TheTitleAndCategoryGiven_AreTheExpenses()
     {
         var s = await Setup();

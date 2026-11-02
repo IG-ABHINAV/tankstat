@@ -124,6 +124,100 @@ public class ReadingChecksTests
     }
 
     [Theory]
+    [InlineData("34744", "430", "", null)] // the receipt of #204: 43 L × 818 − 430 is what was paid
+    [InlineData("34744", null, "", null)] // no discount read: 1.2 % off still fits the loose bar, as before
+    // Litres × price alone fits: the total is before the discount, or the discount is misread. Neither can be told, so both are doubted.
+    [InlineData("35174", "430", "Total Discount", ReadingIssueCode.DiscountNotTakenOff)]
+    [InlineData("34744", "1000", "Total Discount", ReadingIssueCode.DiscountNotTakenOff)]
+    [InlineData("39612", null, "Volume UnitPrice", ReadingIssueCode.AmountsDoNotAdd)] // the basket's grand total: still doubted, the total kept
+    [InlineData("39612", "430", "Volume UnitPrice Discount", ReadingIssueCode.AmountsDoNotAdd)]
+    public void ADiscountRead_IsTakenOffLitresTimesPrice_AndTheReceiptMustThenAddUpToItsRounding(string total, string? discount, string doubted, ReadingIssueCode? code)
+    {
+        List<RecognizedValue> values = [Read(ReadingFieldName.Total, total), Read(ReadingFieldName.Volume, "43"), Read(ReadingFieldName.UnitPrice, "818"), Read(ReadingFieldName.Currency, "HUF")];
+        if (discount is not null) values.Add(Read(ReadingFieldName.Discount, discount));
+
+        var checks = ReadingChecks.Check(DocumentKind.FuelReceipt, values, Hints());
+
+        Assert.Equal(doubted, string.Join(" ", checks.Kept.Where(v => v.Confidence < 0.9).Select(v => v.Name)));
+        Assert.Equal(doubted, string.Join(" ", checks.Issues.Select(i => i.Field)));
+        Assert.All(checks.Issues, i => Assert.Equal(code, i.Code));
+    }
+
+    [Fact]
+    public void AnUnsureDiscount_IsLeftOutOfTheSum_SoItNeverBlanksLitresAndAPriceThatFit()
+    {
+        RecognizedValue[] values = [Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Volume, "43"), Read(ReadingFieldName.UnitPrice, "818"), Read(ReadingFieldName.Discount, "10", 0.3)];
+
+        var checks = ReadingChecks.Check(DocumentKind.FuelReceipt, values, Hints());
+
+        Assert.Equal("Total=34744@0.9 Volume=43@0.9 UnitPrice=818@0.9 Discount=10@0.3", Shown(checks.Kept)); // the loose bar, as without one
+        Assert.Empty(checks.Issues);
+    }
+
+    [Fact]
+    public void SeveralDiscountsForTheFuel_AreOne_TheirSum_AsSureAsTheLeastSure()
+    {
+        RecognizedValue[] values = [Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Volume, "43"), Read(ReadingFieldName.UnitPrice, "818"),
+            Read(ReadingFieldName.Discount, "-200"), Read(ReadingFieldName.Discount, "230", 0.8)]; // a card's and a coupon's
+
+        var checks = ReadingChecks.Check(DocumentKind.FuelReceipt, values, Hints());
+
+        Assert.Equal("Total=34744@0.9 Volume=43@0.9 UnitPrice=818@0.9 Discount=430@0.8", Shown(checks.Kept));
+        Assert.Empty(checks.Issues);
+    }
+
+    [Theory]
+    [InlineData(DocumentKind.FuelReceipt)]
+    [InlineData(DocumentKind.ExpenseReceipt)] // which has no other check of its discount
+    public void ADiscountAboveHalfTheTotal_IsNotBelieved(DocumentKind kind)
+    {
+        var checks = ReadingChecks.Check(kind, [Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Discount, "34744")], Hints()); // the total copied
+
+        Assert.Equal("Total=34744@0.9", Shown(checks.Kept));
+        Assert.Equal("Discount:OutOfRange", string.Join(" ", checks.Issues.Select(i => $"{i.Field}:{i.Code}")));
+    }
+
+    [Theory]
+    [InlineData("-430", "430")] // printed with its minus sign, and copied
+    [InlineData("430-", "430")] // after it, as German and Austrian receipts do
+    [InlineData("–430", "430")] // with a dash
+    [InlineData("(430)", "430")] // in brackets
+    [InlineData("− 430,00", null)] // not written the way the app takes it: dropped as not understood
+    [InlineData("430.004", "430")]
+    public void ADiscount_IsKeptAsAPositiveAmount(string read, string? kept)
+    {
+        var checks = ReadingChecks.Check(DocumentKind.FuelReceipt, [Read(ReadingFieldName.Discount, read)], Hints());
+
+        Assert.Equal(kept, checks.Kept.SingleOrDefault()?.Value);
+        Assert.Equal(kept is null ? "Discount:NotUnderstood" : "", string.Join(" ", checks.Issues.Select(i => $"{i.Field}:{i.Code}")));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-0.00")]
+    [InlineData("0,00")] // with the receipt's comma
+    [InlineData("0.004")] // rounds to nothing at the cent
+    [InlineData("none")]
+    [InlineData("N/A")]
+    [InlineData("-")]
+    public void ADiscountOfNothing_IsLeftOut_WithoutAReason(string read)
+    {
+        var checks = ReadingChecks.Check(DocumentKind.FuelReceipt, [Read(ReadingFieldName.Discount, read), Read(ReadingFieldName.Total, "34744")], Hints());
+
+        Assert.Equal("Total=34744@0.9", Shown(checks.Kept));
+        Assert.Empty(checks.Issues); // a model's "none" is no reading problem to tell the person
+    }
+
+    [Fact]
+    public void AnExpenseReceiptsDiscount_IsKept_WithOnlyItsTotalToCheckItAgainst()
+    {
+        var checks = ReadingChecks.Check(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.Discount, "-1200"), Read(ReadingFieldName.Total, "18800")], Hints());
+
+        Assert.Equal("Total=18800@0.9 Discount=1200@0.9", Shown(checks.Kept)); // no litres or price to multiply: kept as read, below half the total
+        Assert.Empty(checks.Issues);
+    }
+
+    [Theory]
     [InlineData("EUR", "HUF", 0.5)] // the receipt's currency counts: two cents off is a misread in euros
     [InlineData(null, "HUF", 0.9)] // without one, the hint: nothing in forints, which have no cents
     [InlineData(null, null, 0.5)]

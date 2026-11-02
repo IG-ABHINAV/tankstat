@@ -99,6 +99,55 @@ it('fills a new refuelling from a receipt photo read on the server, marks what i
   ])
 })
 
+it('fills the discount from a receipt with the other amounts, and saves it with what was paid', async () => {
+  const receipt: FakeReadValue[] = [
+    { name: 'TOTAL', value: '34744' },
+    { name: 'VOLUME', value: '43' },
+    { name: 'UNIT_PRICE', value: '818' },
+    { name: 'DISCOUNT', value: '430' },
+    { name: 'CURRENCY', value: 'HUF' },
+  ]
+  const { ui, state } = setupRefuelings(fakeRecognition({ results: [receipt] }))
+  const dialog = await openAddRefueling(ui)
+
+  await ui.upload(camera(dialog), photo())
+
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('430'), READ_WAIT) // the receipt of #204
+  expect(within(dialog).getByLabelText('Discount')).toHaveAccessibleDescription(/Read from the photo; check it\./)
+  expect(within(dialog).getByLabelText('Price per L')).toHaveValue('818') // the pump's price, as printed
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('34744')
+  expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('43')
+  expect(within(dialog).getByRole('status', { name: 'Photo reading status' })).toHaveTextContent(/Discount/)
+
+  await ui.type(within(dialog).getByLabelText(/^Odometer/), '12500')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add refuelling' }))
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ volume: 43, totalCost: 34744, discount: 430, currency: 'HUF' }) }])
+})
+
+it('saves no discount while the total is left to the photo: the server fills both later', async () => {
+  const receipt: FakeReadValue[] = [
+    { name: 'TOTAL', value: '34744' },
+    { name: 'DISCOUNT', value: '430' },
+    { name: 'CURRENCY', value: 'HUF' },
+  ]
+  const { ui, state, recognition } = setupRefuelings(fakeRecognition({ results: [receipt] }))
+  const dialog = await openAddRefueling(ui)
+
+  await ui.upload(camera(dialog), photo())
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('430'), READ_WAIT)
+  recognition.state.queuedPolls = 10_000 // a second photo, the dashboard, is still being read: the values may wait for it
+  await ui.upload(camera(dialog), photo('dashboard.png'))
+  expect((await within(dialog).findAllByText('Reading…')).length).toBeGreaterThan(0)
+  await ui.clear(within(dialog).getByLabelText('Total cost')) // left for the server to fill, as the user guide says it may be
+  await ui.type(within(dialog).getByLabelText(/^Volume/), '43')
+  await ui.type(within(dialog).getByLabelText(/^Odometer/), '12500')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add refuelling' }))
+
+  await waitFor(() => expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ totalCost: null, discount: null }) }])) // never refused for a value not typed
+})
+
 it('keeps the smaller WebP where the server says photo reading is off', async () => {
   const { ui, recognition } = setupRefuelings(fakeRecognition({ available: false }))
   const dialog = await openAddRefueling(ui)
@@ -184,13 +233,13 @@ it('works out the unit price from the volume and total on a receipt, and then ne
   await ui.upload(camera(dialog), photo())
 
   await waitFor(() => expect(within(dialog).getByLabelText('Price per L')).toHaveValue('640.888'), READ_WAIT)
-  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Calculated from the other two values\./)
+  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Worked out from the other amounts\./)
   const status = within(dialog).getByRole('status', { name: 'Photo reading status' })
   expect(status).toHaveTextContent('Filled in from the photo: Date, Volume (L), Total cost, Currency.')
   expect(status).not.toHaveTextContent('Price per L')
 })
 
-it('offers the unit price on a photo next to a calculated one, and "Use it" makes the volume, typed longest ago, follow', async () => {
+it('offers the unit price on a photo next to a calculated one, and "Use it" takes it: the typed total and the litres stay', async () => {
   const { ui } = setupRefuelings(fakeRecognition({ results: [[{ name: 'UNIT_PRICE', value: '599.9' }]], queuedPolls: 0 }))
   const dialog = await openAddRefueling(ui)
   await ui.type(within(dialog).getByLabelText(/^Volume/), '40')
@@ -204,8 +253,8 @@ it('offers the unit price on a photo next to a calculated one, and "Use it" make
   await ui.click(within(dialog).getByRole('button', { name: 'Use 599.9 from the photo for Price per L' }))
 
   expect(within(dialog).getByLabelText('Price per L')).toHaveValue('599.9')
-  expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('40.007')
-  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('24000')
+  expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('40') // the litres never move by themselves (#204)
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('24000') // nor does the amount paid the user typed: the receipt's
 })
 
 it('keeps the total following the volume typed key by key next to a unit price read from a photo', async () => {
@@ -279,6 +328,34 @@ it('asks again after an upload when photo reading was off as the dialog opened, 
   await waitFor(() => expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('38.52'), { timeout: 8000 })
   expect(recognition.state.asked.at(-1)).toEqual(['draft1'])
 }, 10_000)
+
+it('fills an expense receipt\'s discount next to the amount paid, and saves both', async () => {
+  stubViewport('desktop')
+  const photos = fakePhotoStore()
+  const backend = fakeExpenseBackend(fakeVehicle(), [fakeExpense({ id: 'e1', title: 'Oil change' })], photos)
+  const receipt: FakeReadValue[] = [
+    { name: 'TOTAL', value: '18800' },
+    { name: 'DISCOUNT', value: '1200' },
+    { name: 'CURRENCY', value: 'HUF' },
+    { name: 'TITLE', value: 'Gumiszerviz' },
+  ]
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeRecognition({ results: [receipt] }).handlers)
+  renderWithApollo(<App />, '/vehicles/v1?tab=expenses')
+  const ui = userEvent.setup()
+  await screen.findByText('Oil change')
+  await ui.click(screen.getByRole('button', { name: 'Add expense' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
+  await waitFor(() => expect(within(dialog).getByLabelText('Currency')).toHaveValue('HUF'))
+
+  await ui.upload(camera(dialog), photo())
+
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('1200'), READ_WAIT)
+  expect(within(dialog).getByLabelText('Discount')).toHaveAccessibleDescription(/Read from the photo; check it\./)
+  expect(within(dialog).getByLabelText('Amount')).toHaveValue('18800')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
+
+  await waitFor(() => expect(backend.state.calls.AddExpense).toEqual([{ input: expect.objectContaining({ title: 'Gumiszerviz', amount: 18800, discount: 1200 }) }]))
+})
 
 it('fills a new expense from its receipt: the shop becomes the title', async () => {
   stubViewport('desktop')
@@ -383,6 +460,23 @@ it('without a photo being read, every value of a refuelling is required', async 
   expect(await within(dialog).findByText('Odometer (kilometers) is required')).toBeInTheDocument()
   expect(within(dialog).queryByText(/Leave it empty/)).not.toBeInTheDocument()
   expect(state.calls.LogRefueling).toBeUndefined()
+})
+
+it('a discount the server filled in from the photo is marked in the edit dialog with the total it came with', async () => {
+  stubViewport('desktop')
+  const filled = fakeRefueling({ id: 'r1', volume: 43, totalCost: 34744, discount: 430, odometer: 12480, reviewState: 'NEEDS_REVIEW', filledFromPhoto: ['TOTAL', 'DISCOUNT'] })
+  const backend = fakeLogBackend(fakeVehicle(), [filled])
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeRecognition().handlers)
+  renderWithApollo(<App />, '/vehicles/v1?tab=refuelings')
+  const ui = userEvent.setup()
+
+  await ui.click(await screen.findByRole('button', { name: /^Edit the refuelling/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit refuelling' })
+
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('430'))
+  expect(within(dialog).getByLabelText('Discount')).toHaveAccessibleDescription(/Read from the photo; check it\./)
+  expect(within(dialog).getByLabelText('Total cost')).toHaveAccessibleDescription(/Read from the photo; check it\./)
+  expect(within(dialog).getByLabelText(/^Volume/)).not.toHaveAccessibleDescription(/Read from the photo/)
 })
 
 it('a refuelling filled in from its photo is marked in the list, and its edit dialog says what to check', async () => {

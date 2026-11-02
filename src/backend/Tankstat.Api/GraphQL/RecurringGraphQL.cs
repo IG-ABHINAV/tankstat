@@ -31,9 +31,10 @@ public sealed record UpdateRecurringExpenseInput(
 /// <param name="Category">The expense's category; omit for the schedules' common (or first) category.</param>
 /// <param name="PhotoIds">Photos uploaded beforehand (<c>PUT /media/vehicles/{id}/photo-drafts</c>); they become the logged expense's photos.</param>
 /// <param name="ExpenseId">An id the client chose for the logged expense: the same visit sent again (a lost answer, a replay after being offline) changes nothing.</param>
+/// <param name="Discount">What was taken off the amount (what was paid), kept with the logged expense; needs the amount.</param>
 public sealed record MarkRecurringExpensesDoneInput(
     IReadOnlyList<Guid> Ids, DateOnly Date, long? Odometer, decimal? Amount, string? Currency, string? Title, string? Category, IReadOnlyList<Guid>? PhotoIds = null,
-    Guid? ExpenseId = null);
+    Guid? ExpenseId = null, decimal? Discount = null);
 
 /// <summary>The schedules as they stand now, and the expense logged for them (null when none was).</summary>
 public sealed record MarkRecurringExpensesDonePayload(IReadOnlyList<RecurringExpenseInfo> Schedules, Expense? Expense);
@@ -128,7 +129,7 @@ public sealed class RecurringMutations
         MarkRecurringExpensesDoneInput input, [Service] RecurringExpenseService recurring, [Service] IOptionsSnapshot<VehicleDefaultsOptions> defaults, CancellationToken ct)
     {
         var done = await recurring.MarkDoneAsync(input.Ids,
-            new MarkDoneInput(input.Date, input.Odometer, input.Amount, input.Currency ?? defaults.Value.Currency, input.Title, input.Category, input.PhotoIds, input.ExpenseId), ct);
+            new MarkDoneInput(input.Date, input.Odometer, input.Amount, input.Currency ?? defaults.Value.Currency, input.Title, input.Category, input.PhotoIds, input.ExpenseId, input.Discount), ct);
         return new MarkRecurringExpensesDonePayload(done.Schedules.Select(RecurringExpenseInfo.From).ToList(), done.Expense);
     }
 }

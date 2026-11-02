@@ -66,7 +66,7 @@ describe('baseOf', () => {
       id: client.cache.identify({ __typename: 'Refueling', id: 'r1' }),
       fragment: RefuelingChangeValuesFragmentDoc,
       // As the server answers it (the generated types leave __typename out).
-      data: { __typename: 'Refueling', version: 2, date: '2026-09-01', volume: 40, totalCost: 60, currency: 'EUR', odometer: 1000, isFullTank: true, missedPreviousFillUp: false, note: null } as RefuelingChangeValuesFragment,
+      data: { __typename: 'Refueling', version: 2, date: '2026-09-01', volume: 40, totalCost: 60, discount: null, currency: 'EUR', odometer: 1000, isFullTank: true, missedPreviousFillUp: false, note: null } as RefuelingChangeValuesFragment,
     })
 
     expect(baseOf(client, 'refuelings', 'r1', 2)).toMatchObject({ volume: 40, note: null, currency: 'EUR' })

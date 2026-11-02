@@ -36,6 +36,9 @@ public enum ReadingFieldName
     Currency,
     Date,
     Title,
+
+    /// <summary>What a fuel receipt says was taken off the fuel (a positive amount; the total is what was paid after it).</summary>
+    Discount,
 }
 
 /// <summary>Where a value came from: read on the photo, worked out from other values, or the hint it was given coming back (readings made by the former photo reader hold some; they are never filled in).</summary>

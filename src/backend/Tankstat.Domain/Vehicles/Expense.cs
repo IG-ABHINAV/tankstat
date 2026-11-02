@@ -40,6 +40,9 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
     public decimal? Amount => Cost?.Amount;
     public string? Currency => Cost?.Currency;
 
+    /// <summary>What was taken off the amount (the amount is what was paid); null when none.</summary>
+    public decimal? Discount => Cost?.Discount;
+
     public Guid? OdometerReadingId { get; private set; }
 
     /// <summary>The linked reading, if the odometer was noted; load it (Include) before reading <see cref="Odometer"/>.</summary>
@@ -113,7 +116,7 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
             CostId = cost?.Id, Cost = cost, OdometerReadingId = reading?.Id, OdometerReading = reading,
         };
         expense.Apply(date, title, category, note);
-        cost?.Update(date, cost.Amount, cost.Currency);
+        cost?.Update(date, cost.Amount, cost.Currency, cost.Discount);
         reading?.Update(date, reading.Value);
         expense.ReviewState = LogReview.AfterSave(expense.Missing, expense.Fillable, readingPhotos);
         return expense;
@@ -126,12 +129,15 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
     /// </summary>
     /// <param name="by">Who changed it (see <see cref="ChangedById"/>).</param>
     /// <param name="currency">The currency of the cost; ignored without <paramref name="amount"/>.</param>
+    /// <param name="discount">What was taken off <paramref name="amount"/>, which is what was paid; null is none (it needs an amount).</param>
     public LinkedChanges Update(
-        DateOnly date, string title, string? category, decimal? amount, string? currency, long? odometer, string? note, bool readingPhotos = false, Guid? by = null)
+        DateOnly date, string title, string? category, decimal? amount, string? currency, long? odometer, string? note, bool readingPhotos = false, Guid? by = null,
+        decimal? discount = null)
     {
         if (IsDeleted) throw new DomainException("expense.trashedCannotEdit", "An expense in the trash cannot be edited; restore it first.");
+        Cost.RequireAmountForDiscount(amount, discount);
         Apply(date, title, category, note);
-        var (createdCost, removedCost) = SetCost(date, amount, currency);
+        var (createdCost, removedCost) = SetCost(date, amount, currency, discount);
         var (createdReading, removedReading) = SetReading(date, odometer);
         ReviewState = LogReview.AfterSave(Missing, Fillable, readingPhotos);
         FilledFromPhoto = LogValues.None;
@@ -157,9 +163,10 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
         }
         if (Cost is null && LogReview.UsableAmount(values.Total) is { } total && values.Currency is { } currency)
         {
-            createdCost = Cost.Create(OwnerId, VehicleId, Date, total, currency);
+            // The discount only with the total it was taken off: a cost a person entered keeps what they said (an empty discount is none).
+            createdCost = Cost.Create(OwnerId, VehicleId, Date, total, currency, LogReview.UsableAmount(values.Discount));
             (Cost, CostId) = (createdCost, createdCost.Id);
-            FilledFromPhoto |= LogValues.Total;
+            FilledFromPhoto |= LogValues.Total | (createdCost.Discount is null ? LogValues.None : LogValues.Discount);
         }
         // Every value a photo fills in sets its FilledFromPhoto flag, so a change of the flags is a change of the values: an edit of the copy
         // from before is stale. A value added here later must set its flag too.
@@ -211,7 +218,7 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
         return (null, null);
     }
 
-    private (Cost? Created, Cost? Removed) SetCost(DateOnly date, decimal? amount, string? currency)
+    private (Cost? Created, Cost? Removed) SetCost(DateOnly date, decimal? amount, string? currency, decimal? discount)
     {
         if (amount is null)
         {
@@ -221,11 +228,11 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
         }
         if (Cost is null)
         {
-            var created = Cost.Create(OwnerId, VehicleId, date, amount.Value, currency);
+            var created = Cost.Create(OwnerId, VehicleId, date, amount.Value, currency, discount);
             (Cost, CostId) = (created, created.Id);
             return (created, null);
         }
-        Cost.Update(date, amount.Value, currency);
+        Cost.Update(date, amount.Value, currency, discount);
         return (null, null);
     }
 

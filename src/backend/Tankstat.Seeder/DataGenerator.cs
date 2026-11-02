@@ -39,6 +39,7 @@ public sealed class DataGenerator(TimeProvider clock)
         var random = new Random(options.RandomSeed);
         var scheduleRandom = new Random(options.RandomSeed + 1); // its own sequence, so the vehicles and logs of a seed stay as they were
         var expenseRandom = new Random(options.RandomSeed + 3); // and its own too (+2 is the notifications'), so expenses move nothing else
+        var discountRandom = new Random(options.RandomSeed + 4); // the discounts on fill-ups: their own sequence, so the logs of a seed stay as they were
         var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var total = options.Vehicles + options.Trashed;
@@ -52,7 +53,7 @@ public sealed class DataGenerator(TimeProvider clock)
             if (i >= options.Vehicles) vehicle.MarkDeleted(clock.GetUtcNow() - TimeSpan.FromDays(random.Next(1, 61)) - TimeSpan.FromMinutes(random.Next(0, 1440)), vehicle.OwnerId);
 
             var count = random.Next(options.RefuelingsPerVehicle.Min, options.RefuelingsPerVehicle.Max + 1);
-            var log = Refuelings(random, vehicle, market, count, today);
+            var log = Refuelings(random, discountRandom, vehicle, market, count, today);
             var trajectory = OdometerTrajectory.Of(log, DefaultKmPerDay * market.DistancePerKm);
             var schedules = vehicle.IsDeleted ? [] : Recurring(scheduleRandom, vehicle, market, trajectory, options.RecurringPerVehicle, today);
             var (expenses, completions) = Expenses(expenseRandom, vehicle, market, trajectory, schedules, options.ExpensesPerVehicle, today);
@@ -114,7 +115,7 @@ public sealed class DataGenerator(TimeProvider clock)
     /// each fill-up equal the distance driven since the previous one at the vehicle's consumption (give or take 10%). Now and then a
     /// fill-up was not logged: the odometer runs on by its distance and the next log is marked (<see cref="Refueling.MissedPreviousFillUp"/>).
     /// </summary>
-    private static List<Refueling> Refuelings(Random random, Vehicle vehicle, Market market, int count, DateOnly today)
+    private static List<Refueling> Refuelings(Random random, Random discountRandom, Vehicle vehicle, Market market, int count, DateOnly today)
     {
         var log = new List<Refueling>(count);
         if (count == 0) return log;
@@ -161,10 +162,12 @@ public sealed class DataGenerator(TimeProvider clock)
 
             var volume = Math.Round((decimal)(liters / market.LitersPerUnit), 2);
             var cost = Math.Round((decimal)(liters * pricePerLiter * rate), 2);
+            // A fifth of the fill-ups had a loyalty discount of one to three per cent taken off at the till: the cost is what was paid.
+            var discount = discountRandom.NextDouble() < 0.2 ? Math.Round(cost * (decimal)(0.01 + discountRandom.NextDouble() * 0.02), 2) : (decimal?)null;
 
             log.Add(Refueling.Create(
                 vehicle.OwnerId, vehicle.OwnerId, vehicle.Id, dates[i], volume,
-                Cost.Create(vehicle.OwnerId, vehicle.Id, dates[i], cost, currency),
+                Cost.Create(vehicle.OwnerId, vehicle.Id, dates[i], cost, currency, discount),
                 OdometerReading.Create(vehicle.OwnerId, vehicle.Id, dates[i], odometer),
                 isFullTank: random.NextDouble() < 0.85, missedPreviousFillUp: missed));
         }

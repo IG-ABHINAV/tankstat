@@ -28,8 +28,8 @@ public static class ReadingChecks
     public static IReadOnlyList<ReadingFieldName> FieldsOf(DocumentKind kind) => kind switch
     {
         DocumentKind.Odometer => [ReadingFieldName.Odometer],
-        DocumentKind.FuelReceipt => [ReadingFieldName.Total, ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Currency, ReadingFieldName.Date],
-        DocumentKind.ExpenseReceipt => [ReadingFieldName.Total, ReadingFieldName.Currency, ReadingFieldName.Date, ReadingFieldName.Title],
+        DocumentKind.FuelReceipt => [ReadingFieldName.Total, ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Discount, ReadingFieldName.Currency, ReadingFieldName.Date],
+        DocumentKind.ExpenseReceipt => [ReadingFieldName.Total, ReadingFieldName.Discount, ReadingFieldName.Currency, ReadingFieldName.Date, ReadingFieldName.Title],
         _ => [],
     };
 
@@ -46,6 +46,7 @@ public static class ReadingChecks
         foreach (var value in values)
         {
             if (!allowed.Contains(value.Name)) continue;
+            if (ReadingNormaliser.IsNoDiscount(value.Name, value.Value)) continue; // "none", said as 0: nothing to keep, nothing to explain
             if (ReadingNormaliser.Normalise(value.Name, value.Value) is not { } text)
             {
                 issues.Add(new ReadingIssue(value.Name, ReadingIssueCode.NotUnderstood));
@@ -58,7 +59,8 @@ public static class ReadingChecks
             if (rated is null) issues.Add(new ReadingIssue(value.Name, ReadingIssueCode.NoConfidence));
             kept.Add(value with { Value = text, Confidence = Math.Min(rated ?? Doubtful, cap) });
         }
-        return new CheckedValues(kind == DocumentKind.FuelReceipt ? CrossChecked(kept, issues, hints) : kept, issues);
+        var withDiscount = DiscountChecked(kept, issues);
+        return new CheckedValues(kind == DocumentKind.FuelReceipt ? CrossChecked(withDiscount, issues, hints) : withDiscount, issues);
     }
 
     /// <summary>The model's own rating on the scale of 0 to 1: one given in per cent is scaled down; null when it is no rating at all (none given, not a number, on no scale), which counts as doubtful.</summary>
@@ -88,7 +90,7 @@ public static class ReadingChecks
         ReadingFieldName.Odometer => Odometer(long.Parse(text, CultureInfo.InvariantCulture), hints.LastOdometer),
         ReadingFieldName.Date => Date(DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture), hints.Today),
         ReadingFieldName.Volume => Amount(text) is >= 0.3m and <= 400m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange), // a moped's top-up to a lorry's tank
-        ReadingFieldName.Total => Amount(text) < 10_000_000m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange),
+        ReadingFieldName.Total or ReadingFieldName.Discount => Amount(text) < 10_000_000m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange),
         ReadingFieldName.UnitPrice => Amount(text) < 100_000m ? Verdict.Fine : Verdict.Drop(ReadingIssueCode.OutOfRange),
         _ => Verdict.Fine,
     };
@@ -107,23 +109,62 @@ public static class ReadingChecks
         : date < today.AddYears(-DateYearsBack) ? Verdict.Drop(ReadingIssueCode.DateTooOld)
         : Verdict.Fine;
 
-    /// <summary>All three amounts read but not fitting: one of them is misread, most likely the litres or the price, so those two are doubted and the total stays.</summary>
+    /// <summary>
+    /// Several discounts printed for one fuel (a card's and a coupon's) are one discount, their sum, as sure as the least sure of them; and a
+    /// discount is not believed above half the total read with it (a model that copied the total, or read a points line): it is dropped.
+    /// </summary>
+    private static List<RecognizedValue> DiscountChecked(List<RecognizedValue> kept, List<ReadingIssue> issues)
+    {
+        var discounts = kept.Where(v => v.Name == ReadingFieldName.Discount).ToList();
+        if (discounts.Count == 0) return kept;
+        var sum = discounts.Sum(d => Amount(d.Value));
+        var discount = discounts[0] with { Value = sum.ToString("0.##", CultureInfo.InvariantCulture), Confidence = discounts.Min(d => d.Confidence) };
+        var rest = kept.Where(v => v.Name != ReadingFieldName.Discount).ToList();
+        if (rest.FirstOrDefault(v => v.Name == ReadingFieldName.Total) is { } total && sum > Amount(total.Value) / 2)
+        {
+            issues.Add(new ReadingIssue(ReadingFieldName.Discount, ReadingIssueCode.OutOfRange));
+            return rest;
+        }
+        return [.. rest, discount];
+    }
+
+    /// <summary>
+    /// The litres, the price per litre and the total read, checked against each other: litres × price − the discount must give the total. A
+    /// discount counts only when it is rated above <see cref="Doubtful"/> (an unsure one is not filled in, so it must not blank what is sure).
+    /// Without one, within <see cref="Loose"/> (a small discount nobody read still fits); with one, to the receipt's rounding
+    /// (<see cref="Tight"/>), or a discount the total already lacks would fit as well. When litres × price fits the total without the discount
+    /// (<see cref="Loose"/>), the total is before the discount or the discount was misread, which the numbers cannot tell apart: the total and
+    /// the discount are doubted (a blank beats a wrong value), the litres and the price stay. When nothing fits, one of the amounts is misread,
+    /// most likely the litres or the price, so those are doubted, the discount with them (this sum is the one check it has), and the total stays.
+    /// </summary>
     private static List<RecognizedValue> CrossChecked(List<RecognizedValue> kept, List<ReadingIssue> issues, RecognitionRequest hints)
     {
         RecognizedValue? Of(ReadingFieldName name) => kept.FirstOrDefault(v => v.Name == name);
         if (Of(ReadingFieldName.Total) is not { } total || Of(ReadingFieldName.Volume) is not { } volume || Of(ReadingFieldName.UnitPrice) is not { } price) return kept;
         var currency = Of(ReadingFieldName.Currency)?.Value ?? hints.Currency;
-        if (Fits(Amount(total.Value), Amount(volume.Value) * Amount(price.Value), currency)) return kept;
-        issues.Add(new ReadingIssue(ReadingFieldName.Volume, ReadingIssueCode.AmountsDoNotAdd));
-        issues.Add(new ReadingIssue(ReadingFieldName.UnitPrice, ReadingIssueCode.AmountsDoNotAdd));
-        return kept.Select(v => v.Name is ReadingFieldName.Volume or ReadingFieldName.UnitPrice ? v with { Confidence = Math.Min(v.Confidence, Doubtful) } : v).ToList();
+        var discount = Of(ReadingFieldName.Discount) is { Confidence: > Doubtful } sure ? sure : null;
+        var product = Amount(volume.Value) * Amount(price.Value);
+        var paid = Amount(total.Value);
+        if (Fits(paid, product - (discount is null ? 0 : Amount(discount.Value)), currency, discount is null ? Loose : Tight)) return kept;
+        var (doubted, code) = discount is not null && Fits(paid, product, currency, Loose)
+            ? (new[] { ReadingFieldName.Total, ReadingFieldName.Discount }, ReadingIssueCode.DiscountNotTakenOff)
+            : (discount is null ? [ReadingFieldName.Volume, ReadingFieldName.UnitPrice] : new[] { ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Discount },
+                ReadingIssueCode.AmountsDoNotAdd);
+        issues.AddRange(doubted.Select(name => new ReadingIssue(name, code)));
+        return kept.Select(v => doubted.Contains(v.Name) ? v with { Confidence = Math.Min(v.Confidence, Doubtful) } : v).ToList();
     }
 
-    /// <summary>Whether a total and litres × price per litre agree: within 1.5 %, or one and a half of the currency's smallest unit.</summary>
-    private static bool Fits(decimal total, decimal product, string? currency)
+    /// <summary>How far a total may be from litres × price when no discount was read: 1.5 % (a small discount nobody read).</summary>
+    private const decimal Loose = 0.015m;
+
+    /// <summary>How far it may be once a discount was read: the receipt's rounding (a price per litre printed to a tenth, a total to the unit).</summary>
+    private const decimal Tight = 0.002m;
+
+    /// <summary>Whether a total and litres × price per litre (less a discount) agree: within the share of the total, or one and a half of the currency's smallest unit.</summary>
+    private static bool Fits(decimal total, decimal product, string? currency, decimal share)
     {
         var unit = currency?.ToUpperInvariant() is "HUF" or "JPY" or "KRW" or "ISK" ? 1m : 0.01m; // whole units, or cents
-        return Math.Abs(total - product) <= Math.Max(total * 0.015m, unit * 1.5m);
+        return Math.Abs(total - product) <= Math.Max(total * share, unit * 1.5m);
     }
 
     private static decimal Amount(string normalised) => decimal.Parse(normalised, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);

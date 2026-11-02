@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { addDueRecurring, addExpense, addVehicle, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { expectSoundLayout } from './support/layout.ts'
 
 // The logs of a vehicle: refuellings, expenses and recurring expenses, changed and trashed through the vehicle page and the home card.
 // Every test signs in as a user of its own, so its home page and trash hold only its own data.
@@ -21,6 +22,47 @@ test('edits a refuelling', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Save changes' }).click()
   await expect(dialog).toBeHidden()
   await expect(row(page, '38.25 L')).toBeVisible()
+})
+
+test('types the litres, the pump price and the amount paid: the price per litre follows, the litres never change', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await openVehicle(page, vehicle.id, 'refuelings')
+  await page.getByRole('button', { name: 'Add refuelling' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Add refuelling' })
+  await dialog.getByLabel(/^Volume/).fill('43')
+  await dialog.getByLabel(/^Price per/).fill('818')
+  await expect(dialog.getByLabel('Total cost')).toHaveValue('35174') // the pump's total
+  await dialog.getByLabel('Total cost').fill('34744') // what the receipt says was paid, after a discount
+  await expect(dialog.getByLabel(/^Price per/)).toHaveValue('808') // the price paid per litre; the litres stay 43
+  await expect(dialog.getByLabel(/^Volume/)).toHaveValue('43')
+  await dialog.getByLabel(/^Odometer/).fill('12450')
+  await dialog.getByRole('button', { name: 'Add refuelling' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(row(page, '43 L')).toBeVisible()
+})
+
+test('the litres, the amount paid and the pump price give the discount, which is saved with the refuelling', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await openVehicle(page, vehicle.id, 'refuelings')
+  await page.getByRole('button', { name: 'Add refuelling' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Add refuelling' })
+  await dialog.getByLabel(/^Volume/).fill('43')
+  await dialog.getByLabel('Total cost').fill('34744') // what the receipt says was paid
+  await expect(dialog.getByLabel(/^Price per/)).toHaveValue('808')
+  await dialog.getByLabel(/^Price per/).fill('818') // the pump's price: the amount paid stays, the discount appears (#204)
+  await expect(dialog.getByLabel('Discount')).toHaveValue('430')
+  await expect(dialog.getByLabel('Total cost')).toHaveValue('34744')
+  await expectSoundLayout(page) // the row of discount, total and currency, at both sizes
+  await dialog.getByLabel(/^Odometer/).fill('12450')
+  await dialog.getByRole('button', { name: 'Add refuelling' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(row(page, '43 L')).toContainText(/34,744/) // the cost column shows what was paid, at both sizes
+
+  // The discount is saved: it is back in the edit dialog, and the pump's price with it.
+  await page.getByRole('button', { name: /^Edit the refuelling of/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit refuelling' })
+  await expect(edit.getByLabel('Discount')).toHaveValue('430')
+  await expect(edit.getByLabel(/^Price per/)).toHaveValue('818')
 })
 
 test('trashes a refuelling and takes it back with Undo', async ({ page }) => {
@@ -61,12 +103,15 @@ test('adds, edits and trashes an expense', async ({ page }) => {
   const add = page.getByRole('dialog', { name: 'Add expense' })
   await add.getByLabel('Title').fill('Parking')
   await add.getByLabel('Amount').fill('1500')
+  await add.getByLabel('Discount').fill('300') // a coupon: the amount is what was paid
+  await expectSoundLayout(page) // the row of amount, discount and currency, at both sizes
   await add.getByRole('button', { name: 'Add expense' }).click()
   await expect(add).toBeHidden()
   await expect(row(page, 'Parking')).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit the expense Parking' }).click()
   const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await expect(edit.getByLabel('Discount')).toHaveValue('300') // saved with the expense
   await edit.getByLabel('Title').fill('Parking garage')
   await edit.getByRole('button', { name: 'Save changes' }).click()
   await expect(edit).toBeHidden()
@@ -91,6 +136,9 @@ test('adds a recurring expense and marks it as done', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Mark Oil change as done' }).click()
   const done = page.getByRole('dialog', { name: 'Mark as done: Oil change' })
+  await done.getByLabel('Amount (optional)').fill('35000')
+  await done.getByLabel('Discount').fill('2000') // taken off at the workshop: kept with the visit's expense
+  await expectSoundLayout(page) // the row of amount (with its hint), discount and currency, at both sizes
   await done.getByRole('button', { name: 'Mark as done' }).click()
   await expect(done).toBeHidden()
   await expect(page.getByRole('row').filter({ hasText: 'Oil change' })).toBeVisible()

@@ -3,7 +3,9 @@ using Tankstat.Domain.Charts;
 namespace Tankstat.Application.Stats;
 
 /// <summary>One fill-up, reduced to what statistics need.</summary>
-public sealed record FuelPoint(DateOnly Date, decimal Volume, decimal Amount, string Currency, long Odometer, bool IsFull, decimal? Consumption);
+/// <param name="Amount">What was paid, after <paramref name="Discount"/>.</param>
+/// <param name="Discount">What was taken off at the till, 0 when none: the pump's price is (<paramref name="Amount"/> + <paramref name="Discount"/>) ÷ <paramref name="Volume"/>.</param>
+public sealed record FuelPoint(DateOnly Date, decimal Volume, decimal Amount, string Currency, long Odometer, bool IsFull, decimal? Consumption, decimal Discount = 0);
 
 public sealed record ExpensePoint(DateOnly Date, string? Category, decimal Amount, string Currency);
 

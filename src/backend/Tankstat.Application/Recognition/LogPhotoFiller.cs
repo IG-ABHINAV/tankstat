@@ -163,11 +163,17 @@ public sealed class LogPhotoFiller(
     private PhotoValues ValuesOf(IReadOnlyList<PhotoReading> found)
     {
         var read = found.Where(r => r.Status == ReadingStatus.Read).ToList();
-        var best = read
-            .SelectMany(r => r.Values)
-            .Where(setup.IsSureEnough)
-            .GroupBy(v => v.Name)
-            .ToDictionary(g => g.Key, g => g.MaxBy(v => v.Confidence)!.Value);
+        var sure = read.SelectMany(r => r.Values.Where(setup.IsSureEnough).Select(v => (Reading: r, Value: v))).ToList();
+        var best = sure
+            .GroupBy(x => x.Value.Name)
+            .ToDictionary(g => g.Key, g => g.MaxBy(x => x.Value.Confidence)!.Value.Value);
+        // The discount goes with the total it was taken off: from the photo that gave the total, none when that photo shows none (another
+        // photo's discount was checked against another total).
+        best.Remove(ReadingFieldName.Discount);
+        var totals = sure.Where(x => x.Value.Name == ReadingFieldName.Total).ToList();
+        if (totals.Count > 0
+            && totals.MaxBy(x => x.Value.Confidence).Reading.Values.Where(setup.IsSureEnough).FirstOrDefault(v => v.Name == ReadingFieldName.Discount) is { } discount)
+            best[ReadingFieldName.Discount] = discount.Value;
 
         decimal? Number(ReadingFieldName name) =>
             best.TryGetValue(name, out var text) && decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
@@ -175,7 +181,7 @@ public sealed class LogPhotoFiller(
         var odometer = Number(ReadingFieldName.Odometer) is { } o && o == decimal.Truncate(o) && o <= long.MaxValue ? (long?)o : null;
         var total = Number(ReadingFieldName.Total);
         var currency = best.GetValueOrDefault(ReadingFieldName.Currency) is { } c && IsCurrency(c) ? c : null;
-        return new PhotoValues(odometer, Number(ReadingFieldName.Volume), total, currency?.ToUpperInvariant());
+        return new PhotoValues(odometer, Number(ReadingFieldName.Volume), total, currency?.ToUpperInvariant(), Number(ReadingFieldName.Discount));
     }
 
     private static bool IsCurrency(string code) => code.Length == 3 && code.All(char.IsAsciiLetter);

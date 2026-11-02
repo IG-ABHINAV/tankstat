@@ -497,6 +497,8 @@ export interface FakeRefueling {
   /** Volume, total and odometer are null while the log waits for its photos (`reviewState`). */
   volume: number | null
   totalCost: number | null
+  /** What was taken off at the till; the total is what was paid after it. */
+  discount: number | null
   currency: string | null
   odometer: number | null
   isFullTank: boolean
@@ -510,7 +512,7 @@ export interface FakeRefueling {
   createdBy: Person
   deletedAt?: string
   reviewState: 'NONE' | 'AWAITING_PHOTOS' | 'NEEDS_REVIEW' | 'INCOMPLETE'
-  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL')[]
+  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL' | 'DISCOUNT')[]
   /** Counts its saves (from 1): a change kept on the device says which one it was made from. */
   version: number
 }
@@ -521,6 +523,7 @@ export const fakeRefueling = (over: Partial<FakeRefueling> = {}): FakeRefueling 
   date: '2026-09-01',
   volume: 40.5,
   totalCost: 20250,
+  discount: null,
   currency: 'HUF',
   odometer: 12000,
   isFullTank: true,
@@ -537,6 +540,8 @@ export const fakeRefueling = (over: Partial<FakeRefueling> = {}): FakeRefueling 
 })
 
 const pricePerUnit = (r: FakeRefueling) => (r.totalCost == null || !r.volume ? null : r.totalCost / r.volume)
+/** The pump's price: the cost plus the discount, per unit (as the server works it out). */
+const pricePerUnitBeforeDiscount = (r: FakeRefueling) => (r.totalCost == null || !r.volume ? null : (r.totalCost + (r.discount ?? 0)) / r.volume)
 
 const logSorters: Record<string, (r: FakeRefueling) => string | number> = {
   DATE: (r) => r.date,
@@ -626,7 +631,7 @@ export function fakePhotoStore(initial: Record<string, FakePhoto[]> = {}) {
 }
 
 export interface FakeReadValue {
-  name: 'ODOMETER' | 'TOTAL' | 'VOLUME' | 'UNIT_PRICE' | 'CURRENCY' | 'DATE' | 'TITLE'
+  name: 'ODOMETER' | 'TOTAL' | 'VOLUME' | 'UNIT_PRICE' | 'DISCOUNT' | 'CURRENCY' | 'DATE' | 'TITLE'
   value: string
   confidence?: number
 }
@@ -715,6 +720,7 @@ export function fakeLogBackend(vehicle: FakeVehicle, logs: FakeRefueling[] = [],
     return sorted.slice(vars.skip, vars.skip + vars.take).map((r) => ({
       ...r,
       pricePerUnit: pricePerUnit(r),
+      pricePerUnitBeforeDiscount: pricePerUnitBeforeDiscount(r),
       vehicle: { id: state.vehicle.id, name: state.vehicle.name, units: state.vehicle.units },
     }))
   }
@@ -759,7 +765,9 @@ export function fakeLogBackend(vehicle: FakeVehicle, logs: FakeRefueling[] = [],
       const failure = fail()
       if (failure) return failure
       const i = state.logs.findIndex((l) => l.id === variables.input.id)
-      state.logs[i] = { ...state.logs[i], ...variables.input, reviewState: 'NONE', filledFromPhoto: [] } // a person saved it: checked
+      // A person saved it: checked. Like the server, a discount left out stays and 0 is none.
+      const discount = variables.input.discount === undefined || variables.input.discount === null ? state.logs[i].discount : variables.input.discount || null
+      state.logs[i] = { ...state.logs[i], ...variables.input, discount, reviewState: 'NONE', filledFromPhoto: [] }
       return HttpResponse.json({ data: { updateRefueling: { id: variables.input.id } } })
     }),
     graphql.mutation('DeleteRefueling', ({ variables }) => {
@@ -809,6 +817,8 @@ export interface FakeExpense {
   category: string | null
   /** Null while the expense waits for its photos (`reviewState`). */
   amount: number | null
+  /** What was taken off the amount, which is what was paid. */
+  discount: number | null
   currency: string | null
   odometer: number | null
   note: string | null
@@ -817,7 +827,7 @@ export interface FakeExpense {
   createdBy: Person
   deletedAt?: string
   reviewState: 'NONE' | 'AWAITING_PHOTOS' | 'NEEDS_REVIEW' | 'INCOMPLETE'
-  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL')[]
+  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL' | 'DISCOUNT')[]
   /** The recurring expenses it covered when they were marked done. */
   schedules?: { id: string; title: string }[]
   version: number
@@ -830,6 +840,7 @@ export const fakeExpense = (over: Partial<FakeExpense> = {}): FakeExpense => ({
   title: 'Oil change',
   category: 'Service',
   amount: 35000,
+  discount: null,
   currency: 'HUF',
   odometer: 12000,
   note: null,
@@ -906,7 +917,9 @@ export function fakeExpenseBackend(vehicle: FakeVehicle, expenses: FakeExpense[]
     graphql.mutation('UpdateExpense', ({ variables }) => {
       record('UpdateExpense', variables)
       const i = state.expenses.findIndex((e) => e.id === variables.input.id)
-      state.expenses[i] = { ...state.expenses[i], ...variables.input, reviewState: 'NONE', filledFromPhoto: [] }
+      // Like the server: a discount left out stays, 0 is none.
+      const discount = variables.input.discount === undefined || variables.input.discount === null ? state.expenses[i].discount : variables.input.discount || null
+      state.expenses[i] = { ...state.expenses[i], ...variables.input, discount, reviewState: 'NONE', filledFromPhoto: [] }
       return HttpResponse.json({ data: { updateExpense: { id: variables.input.id } } })
     }),
     graphql.mutation('DeleteExpense', ({ variables }) => {

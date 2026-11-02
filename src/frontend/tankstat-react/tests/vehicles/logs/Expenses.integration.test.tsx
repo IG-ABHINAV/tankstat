@@ -76,11 +76,12 @@ it('adds an expense with the usual currency, an optional odometer and a category
   await ui.type(within(dialog).getByLabelText('Title'), 'Tyres')
   await ui.type(within(dialog).getByLabelText(/^Category/), 'Maintenance')
   await ui.type(within(dialog).getByLabelText('Amount'), '120000')
+  await ui.type(within(dialog).getByLabelText('Discount'), '6000')
   await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
 
   await screen.findByText('Tyres')
   expect(state.calls.AddExpense).toEqual([
-    { input: expect.objectContaining({ vehicleId: 'v1', title: 'Tyres', category: 'Maintenance', amount: 120000, currency: 'HUF', odometer: null, note: null }) },
+    { input: expect.objectContaining({ vehicleId: 'v1', title: 'Tyres', category: 'Maintenance', amount: 120000, discount: 6000, currency: 'HUF', odometer: null, note: null }) },
   ])
   expect(await screen.findByText('Saved.')).toBeInTheDocument() // a short message once the dialog is gone
 })
@@ -154,6 +155,27 @@ it('edits an expense starting from its real values, and the odometer can be clea
   await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
 
   await waitFor(() => expect(state.calls.UpdateExpense).toEqual([{ input: expect.objectContaining({ id: 'e2', title: 'Oil change', amount: 35000, odometer: null, note: 'with filters' }) }]))
+})
+
+it('keeps a discount with the amount paid: shown in its column on request, back in the edit dialog, cleared when emptied', async () => {
+  const { ui, state } = setup(fakeVehicle(), [fakeExpense({ id: 'e4', title: 'Tyres', amount: 18800, discount: 1200, currency: 'HUF' })])
+  await screen.findByText('Tyres')
+  expect(state.requests.at(-1)).toMatchObject({ withDiscount: false }) // hidden by default, so never asked for
+
+  await ui.click(screen.getByRole('button', { name: 'Columns' }))
+  await ui.click(within(await screen.findByRole('dialog')).getByRole('checkbox', { name: 'Show Discount' }))
+  await ui.keyboard('{Escape}')
+  expect(await screen.findByRole('columnheader', { name: 'Discount' })).toBeInTheDocument()
+  expect(await screen.findByText(/1,200/)).toBeInTheDocument()
+
+  await ui.click(screen.getByRole('button', { name: 'Edit the expense Tyres' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit expense' })
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('1200'))
+  expect(within(dialog).getByLabelText('Amount')).toHaveValue('18800') // what was paid
+  await ui.clear(within(dialog).getByLabelText('Discount'))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+  await waitFor(() => expect(state.calls.UpdateExpense).toEqual([{ input: expect.objectContaining({ id: 'e4', amount: 18800, discount: 0 }) }])) // 0 clears; left out would keep it
 })
 
 it('moves an expense to the trash after a confirmation, not before', async () => {

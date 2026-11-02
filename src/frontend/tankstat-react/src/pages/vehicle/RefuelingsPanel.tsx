@@ -85,6 +85,15 @@ export function RefuelingsPanel({
         sortField: 'PRICE_PER_UNIT',
         cell: (r) => (r.pricePerUnit == null || !r.currency ? none : format.pricePerUnit(r.pricePerUnit, r.currency, units.volume)),
       },
+      // What the till took off and the pump's price: hidden until wanted (most logs have no discount); not sortable, the server orders by the paid price only.
+      { id: 'discount', label: 'columns.discount', include: 'withDiscount', defaultHidden: true, cell: (r) => (r.discount == null || !r.currency ? none : format.money(r.discount, r.currency)) },
+      {
+        id: 'listPrice',
+        label: 'columns.listPrice',
+        include: 'withListPrice',
+        defaultHidden: true,
+        cell: (r) => (r.pricePerUnitBeforeDiscount == null || !r.currency ? none : format.pricePerUnit(r.pricePerUnitBeforeDiscount, r.currency, units.volume)),
+      },
       {
         id: 'consumption',
         label: 'columns.consumption',

@@ -7,8 +7,10 @@ fragment OfflineRefuelingFields on Refueling {
   date
   volume
   totalCost
+  discount
   currency
   pricePerUnit
+  pricePerUnitBeforeDiscount
   consumption
   odometer
   isFullTank
@@ -39,6 +41,7 @@ fragment OfflineExpenseFields on Expense {
   title
   category
   amount
+  discount
   currency
   odometer
   note

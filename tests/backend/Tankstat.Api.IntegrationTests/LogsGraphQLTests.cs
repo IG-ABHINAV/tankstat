@@ -59,6 +59,31 @@ public class LogsGraphQLTests(ApiFixture api)
     }
 
     [Fact]
+    public async Task ADiscount_IsStoredWithTheCost_GivesBothPrices_IsKeptWhenAnUpdateLeavesItOut_AndGoesWithZero()
+    {
+        var id = await AddVehicle();
+        const string fields = "id totalCost discount pricePerUnit pricePerUnitBeforeDiscount";
+
+        var logged = Data(await Send($"mutation($i: LogRefuelingInput!) {{ logRefueling(input: $i) {{ {fields} }} }}",
+            new { i = new { vehicleId = id, date = "2026-10-20", volume = 43, totalCost = 34744, discount = 430, currency = "HUF", odometer = 1000, isFullTank = true } })).GetProperty("logRefueling");
+        Assert.Equal((34744m, 430m, 808m, 818m),
+            (logged.GetProperty("totalCost").GetDecimal(), logged.GetProperty("discount").GetDecimal(), logged.GetProperty("pricePerUnit").GetDecimal(), logged.GetProperty("pricePerUnitBeforeDiscount").GetDecimal()));
+
+        const string update = $"mutation($i: UpdateRefuelingInput!) {{ updateRefueling(input: $i) {{ {fields} }} }}";
+        var kept = Data(await Send(update, // a build from before discounts sends none: the discount stays
+            new { i = new { id = logged.GetProperty("id").GetString(), date = "2026-10-20", volume = 43, totalCost = 34744, currency = "HUF", odometer = 1000, isFullTank = true } })).GetProperty("updateRefueling");
+        Assert.Equal(430m, kept.GetProperty("discount").GetDecimal());
+
+        var updated = Data(await Send(update,
+            new { i = new { id = logged.GetProperty("id").GetString(), date = "2026-10-20", volume = 43, totalCost = 34744, discount = 0, currency = "HUF", odometer = 1000, isFullTank = true } })).GetProperty("updateRefueling");
+        Assert.Equal(JsonValueKind.Null, updated.GetProperty("discount").ValueKind);
+        Assert.Equal(808m, updated.GetProperty("pricePerUnitBeforeDiscount").GetDecimal());
+
+        Assert.Equal("cost.discountWithoutAmount", Code(await Send("mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
+            new { i = new { vehicleId = id, date = "2026-10-21", volume = 40, discount = 5, currency = "HUF", odometer = 1100, isFullTank = true } })));
+    }
+
+    [Fact]
     public async Task TheConsumptionBetweenFullFillUps_IsStored_AndFollowsEveryChange()
     {
         var id = await AddVehicle();

@@ -38,15 +38,15 @@ export interface PushDeps {
 
 /** What each mutation's input may carry: a form may hold more (a client id twice, values only the screen uses). */
 const FIELDS = {
-  logRefueling: ['id', 'vehicleId', 'date', 'volume', 'totalCost', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note', 'photoIds'],
-  updateRefueling: ['id', 'date', 'volume', 'totalCost', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
-  addExpense: ['id', 'vehicleId', 'date', 'title', 'category', 'amount', 'currency', 'odometer', 'note', 'photoIds'],
-  updateExpense: ['id', 'date', 'title', 'category', 'amount', 'currency', 'odometer', 'note'],
+  logRefueling: ['id', 'vehicleId', 'date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note', 'photoIds'],
+  updateRefueling: ['id', 'date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
+  addExpense: ['id', 'vehicleId', 'date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note', 'photoIds'],
+  updateExpense: ['id', 'date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
   addVehicle: ['id', 'name', 'licensePlate', 'fuelType', 'units'],
   updateVehicle: ['id', 'name', 'licensePlate', 'fuelType', 'units'],
   addRecurringExpense: ['id', 'vehicleId', 'title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
   updateRecurringExpense: ['id', 'title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
-  markRecurringExpensesDone: ['ids', 'date', 'odometer', 'amount', 'currency', 'title', 'category', 'photoIds', 'expenseId'],
+  markRecurringExpensesDone: ['ids', 'date', 'odometer', 'amount', 'discount', 'currency', 'title', 'category', 'photoIds', 'expenseId'],
 } as const
 
 const pick = (input: Record<string, unknown> | undefined, keys: readonly string[], extra: Record<string, unknown> = {}) =>

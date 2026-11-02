@@ -19,6 +19,7 @@ const refueling = (id: string, fields: Partial<LogRow> = {}): LogRow => ({
   date: '2026-09-01',
   volume: 40,
   totalCost: 20000,
+  discount: null,
   odometer: 1000,
   consumption: null,
   deletedAt: null,
@@ -69,6 +70,17 @@ describe('answerLocally', () => {
     for (const id of ['v1', 'v2']) await device.rows.putCursor({ vehicleId: id, from: null, watermark: 'w', next: null, complete, fullStartedAt: null })
     return device.rows
   }
+
+  it('answers a downloaded refuelling with the pump\'s price, and one downloaded before discounts with none and the price paid', async () => {
+    const { discount: _discount, ...older } = refueling('old', { date: '2026-09-02', volume: 40, totalCost: 20000 }) // no discount, no pump price
+    const rows = await store([refueling('new', { date: '2026-09-03', volume: 43, totalCost: 34744, discount: 430, pricePerUnit: 808, pricePerUnitBeforeDiscount: 818 }), older as LogRow])
+
+    const answer = await answerLocally(rows, 'Refuelings', { vehicleId: 'v1', orderBy: 'DATE', direction: 'DESC', skip: 0, take: 10 })
+
+    const [fresh, old] = answer!.refuelings as Record<string, unknown>[]
+    expect(fresh).toMatchObject({ id: 'new', discount: 430, pricePerUnitBeforeDiscount: 818 }) // the server's own, never worked out again
+    expect(old).toMatchObject({ id: 'old', discount: null, pricePerUnitBeforeDiscount: 500 }) // so a grid with the column shows it, not a dash
+  })
 
   it('answers any page of a downloaded vehicle, with who may edit following the vehicle today', async () => {
     const rows = await store([refueling('a', { date: '2026-09-03' }), refueling('b', { date: '2026-09-02' }), refueling('c', { date: '2026-09-01' }), refueling('t', { deletedAt: '2026-09-10T00:00:00Z' })])
@@ -129,7 +141,7 @@ describe('the changes waiting on this device', () => {
     deviceData.reset(memoryStorage())
     await deviceData.signedIn('u1')
     await outbox.reload()
-    await outbox.enqueue({ id: 'n', entity: 'refuelings', action: 'add', vehicleId: 'v1', targetId: 'n', input: { id: 'n', date: '2026-10-02', volume: 20, totalCost: 50, currency: 'EUR', odometer: 1500 } })
+    await outbox.enqueue({ id: 'n', entity: 'refuelings', action: 'add', vehicleId: 'v1', targetId: 'n', input: { id: 'n', date: '2026-10-02', volume: 20, totalCost: 50, discount: 5, currency: 'EUR', odometer: 1500 } })
     await outbox.enqueue({ id: 'u', entity: 'refuelings', action: 'update', vehicleId: 'v1', targetId: 'a', input: { id: 'a', volume: 10, totalCost: 25, date: '2026-09-01' }, expectedVersion: 1 })
     await outbox.enqueue({ id: 'r', entity: 'refuelings', action: 'restore', vehicleId: 'v1', targetId: 't', expectedVersion: 2 })
     await outbox.enqueue({ id: 'x', entity: 'refuelings', action: 'trash', vehicleId: 'v1', targetId: 'b', expectedVersion: 1 })
@@ -137,8 +149,8 @@ describe('the changes waiting on this device', () => {
     const rows = withChanges('refuelings', [refueling('a'), refueling('b'), refueling('t', { deletedAt: '2026-09-10T00:00:00Z' })], 'v1')
     const byId = new Map(rows.map((r) => [r.id, r]))
 
-    expect(byId.get('n')).toMatchObject({ __typename: 'Refueling', volume: 20, pricePerUnit: 2.5, consumption: null, version: 0, reviewState: 'NONE' })
-    expect(byId.get('a')).toMatchObject({ volume: 10, pricePerUnit: 2.5 })
+    expect(byId.get('n')).toMatchObject({ __typename: 'Refueling', volume: 20, discount: 5, pricePerUnit: 2.5, pricePerUnitBeforeDiscount: 2.75, consumption: null, version: 0, reviewState: 'NONE' })
+    expect(byId.get('a')).toMatchObject({ volume: 10, pricePerUnit: 2.5, pricePerUnitBeforeDiscount: 2.5 }) // no discount: the two prices are one
     expect(byId.get('t')?.deletedAt).toBeNull()
     expect(byId.get('b')?.deletedAt).toBeNull() // waiting to be trashed: still listed (marked)
     expect(outbox.markOf('refuelings', 'b')).toBe('deleted')
@@ -269,6 +281,17 @@ describe('answering offline, the device\'s own data', () => {
 
     expect(ids(answer!.refuelings as LogRow[])).toEqual(['new', 'old'])
     expect(await answerLocally(rows, undefined, { vehicleId: 'v1' })).toBeUndefined()
+  })
+
+  it('an expense downloaded before discounts is answered with none, one downloaded since with its own', async () => {
+    const rows = await device()
+    await rows.putLogs('expenses', [expense('old', { date: '2026-08-01', amount: 3000 }), expense('new', { date: '2026-09-15', amount: 18800, discount: 1200 })])
+
+    const answer = await answerLocally(rows, 'Expenses', { vehicleId: 'v1' })
+
+    const [fresh, old] = answer!.expenses as Record<string, unknown>[]
+    expect(fresh).toMatchObject({ id: 'new', discount: 1200 })
+    expect(old).toMatchObject({ id: 'old', discount: null }) // asked for by the grid and the details: never a field the row lacks
   })
 
   it('a refuelling kept before its photo is read has no price per unit yet', async () => {

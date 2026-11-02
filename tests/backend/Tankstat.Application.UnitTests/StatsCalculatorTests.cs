@@ -7,8 +7,8 @@ public class StatsCalculatorTests
 {
     private static readonly DateOnly Today = new(2026, 10, 15);
 
-    private static FuelPoint Fill(string date, decimal volume, decimal amount, long odometer, string currency = "HUF", bool full = true, decimal? consumption = null) =>
-        new(DateOnly.Parse(date), volume, amount, currency, odometer, full, consumption);
+    private static FuelPoint Fill(string date, decimal volume, decimal amount, long odometer, string currency = "HUF", bool full = true, decimal? consumption = null, decimal discount = 0) =>
+        new(DateOnly.Parse(date), volume, amount, currency, odometer, full, consumption, discount);
 
     private static ExpensePoint Cost(string date, decimal amount, string? category = "Service", string currency = "HUF") => new(DateOnly.Parse(date), category, amount, currency);
 
@@ -173,6 +173,19 @@ public class StatsCalculatorTests
 
         Assert.Equal([null, 620m, null], Values(chart.Series.Single())); // 31000 / 50
         Assert.Equal("HUF", chart.Series.Single().Currency);
+    }
+
+    [Fact]
+    public void PricePerUnitBeforeDiscount_AddsTheDiscountsBack_WhileThePricePaidLeavesThemOff()
+    {
+        var data = Data([Fill("2026-09-03", 43, 34744, 1000, discount: 430), Fill("2026-09-20", 10, 8180, 1100)]);
+
+        var paid = StatsCalculator.Chart(Config(ChartMetric.AveragePricePerUnit), data, Today);
+        var pump = StatsCalculator.Chart(Config(ChartMetric.AveragePricePerUnitBeforeDiscount), data, Today);
+
+        Assert.Equal([null, 809.887m, null], Values(paid.Series.Single())); // 42 924 / 53
+        Assert.Equal([null, 818m, null], Values(pump.Series.Single())); // 43 354 / 53
+        Assert.Equal(paid.Unit, pump.Unit);
     }
 
     [Fact]

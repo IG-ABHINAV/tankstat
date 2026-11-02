@@ -88,6 +88,31 @@ public class RecurringGraphQLTests(ApiFixture api)
     private static string Id(JsonElement added) => added.GetProperty("data").GetProperty("addRecurringExpense").GetProperty("id").GetString()!;
 
     [Fact]
+    public async Task ADiscount_GoesWithTheExpenseLoggedForTheVisit_IsKeptByAnUpdateWithoutOne_AndClearedByZero()
+    {
+        var vehicle = await AddVehicle();
+        var id = Id(await AddItem(vehicle));
+
+        var done = await Send("mutation($i: MarkRecurringExpensesDoneInput!) { markRecurringExpensesDone(input: $i) { expense { id amount discount } } }",
+            new { i = new { ids = new[] { id }, date = "2026-09-20", odometer = 62000, amount = 33000, discount = 2000 } });
+        var expense = done.GetProperty("data").GetProperty("markRecurringExpensesDone").GetProperty("expense");
+        Assert.Equal((33000m, 2000m), (expense.GetProperty("amount").GetDecimal(), expense.GetProperty("discount").GetDecimal()));
+
+        const string update = "mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { amount discount } }";
+        var kept = await Send(update, // a build from before discounts sends none: the discount stays
+            new { i = new { id = expense.GetProperty("id").GetString(), date = "2026-09-20", title = "Oil change", amount = 33000, odometer = 62000 } });
+        Assert.Equal(2000m, kept.GetProperty("data").GetProperty("updateExpense").GetProperty("discount").GetDecimal());
+
+        var updated = await Send(update,
+            new { i = new { id = expense.GetProperty("id").GetString(), date = "2026-09-20", title = "Oil change", amount = 33000, discount = 0, odometer = 62000 } });
+        Assert.Equal(JsonValueKind.Null, updated.GetProperty("data").GetProperty("updateExpense").GetProperty("discount").ValueKind);
+
+        var refused = await Send("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }",
+            new { i = new { vehicleId = vehicle, date = "2026-09-21", title = "Wash", discount = 300 } });
+        Assert.Equal("cost.discountWithoutAmount", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
+
+    [Fact]
     public async Task MarkingItDone_LogsTheExpenseAndStartsTheNextInterval()
     {
         var vehicle = await AddVehicle();

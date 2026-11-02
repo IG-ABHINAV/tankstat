@@ -49,7 +49,10 @@ export interface ExpenseValues {
   date: string
   title: string
   category: string | null
+  /** What was paid, after the discount. */
   amount: number | null
+  /** What was taken off the amount; null when none on an add, 0 to clear one on an edit (null there keeps the expense's). */
+  discount: number | null
   currency: string
   odometer: number | null
   note: string | null
@@ -60,6 +63,7 @@ interface Initial {
   title: string
   category: string | null
   amount?: number | null
+  discount?: number | null
   currency: string
   odometer?: number | null
   note: string | null
@@ -68,10 +72,10 @@ interface Initial {
 }
 
 /** The fields of a new expense that photos can fill in (a receipt's shop becomes the title), and which read value goes into each. */
-type FillableField = 'date' | 'title' | 'amount' | 'currency' | 'odometer'
-const READ_INTO: Record<FillableField, ReadingFieldName> = { date: 'DATE', title: 'TITLE', amount: 'TOTAL', currency: 'CURRENCY', odometer: 'ODOMETER' }
-/** The values the server fills in from photos after saving, and their fields. */
-const WAITS_FOR: Partial<Record<LogValue, FillableField>> = { ODOMETER: 'odometer', TOTAL: 'amount' }
+type FillableField = 'date' | 'title' | 'amount' | 'discount' | 'currency' | 'odometer'
+const READ_INTO: Record<FillableField, ReadingFieldName> = { date: 'DATE', title: 'TITLE', amount: 'TOTAL', discount: 'DISCOUNT', currency: 'CURRENCY', odometer: 'ODOMETER' }
+/** The values the server fills in from photos after saving, and their fields (the discount comes with the amount it was taken off). */
+const FROM_PHOTO: Partial<Record<LogValue, FillableField>> = { ODOMETER: 'odometer', TOTAL: 'amount', DISCOUNT: 'discount' }
 
 /**
  * Add an expense (no `expenseId`) or edit one. Starts from today and the currency of the vehicle's latest log; the category suggests
@@ -152,7 +156,7 @@ export function ExpenseFormDialog({
             editing={editing}
             categories={categories.data?.expenseCategories ?? []}
             photosBusy={queue.busy || queue.failed > 0 || adding}
-            read={mergeReadings(drafts.readings.values())}
+            read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.
@@ -242,11 +246,19 @@ function ExpenseForm({
     date: t('expenses.fields.date'),
     title: t('expenses.fields.title'),
     amount: t('expenses.fields.amount'),
+    discount: t('expenses.fields.discount'),
     currency: t('expenses.fields.currency'),
     odometer: odometerLabel,
   }
   const fill = useReadFill(
-    { date: initial.date, title: initial.title, amount: initial.amount?.toString() ?? '', currency: initial.currency, odometer: initial.odometer?.toString() ?? '' },
+    {
+      date: initial.date,
+      title: initial.title,
+      amount: initial.amount?.toString() ?? '',
+      discount: initial.discount?.toString() ?? '',
+      currency: initial.currency,
+      odometer: initial.odometer?.toString() ?? '',
+    },
     READ_INTO,
     read,
     labels,
@@ -254,9 +266,10 @@ function ExpenseForm({
     explanation,
     undefined,
     editing,
+    { discount: 'amount' }, // a photo's discount was taken off its own total: next to an amount the user entered, it is only offered
   )
   const merging = useMergeFields(merge)
-  const fromPhoto = filledFields(initial.filledFromPhoto, WAITS_FOR)
+  const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
   const amountOptional = mayWait
   const note = (field: FillableField) => (
     <>
@@ -285,6 +298,9 @@ function ExpenseForm({
         title: text('title'),
         category: text('category') || null,
         amount: text('amount') === '' ? null : parseDecimal(text('amount'))!,
+        // Emptied in an edit: 0, which clears it (left out, the server keeps the expense's). With the amount left to a photo: none, the
+        // photo brings both.
+        discount: text('discount') === '' || text('amount') === '' ? (editing ? 0 : null) : parseDecimal(text('discount'))!,
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
@@ -324,6 +340,16 @@ function ExpenseForm({
               extra={note('amount')}
             >
               <FieldInput inputMode="decimal" autoComplete="off" value={fill.values.amount} onChange={(e) => fill.change('amount', e.target.value)} />
+            </Field>
+          </Box>
+          <Box sx={{ flex: '1 1 6rem', minWidth: 0 }}>
+            <Field
+              name="discount"
+              label={labels.discount}
+              invalid={{ message: t('forms.numberInvalid'), test: (v) => v !== '' && parseDecimal(v) === undefined }}
+              extra={note('discount')}
+            >
+              <FieldInput inputMode="decimal" autoComplete="off" value={fill.values.discount} onChange={(e) => fill.change('discount', e.target.value)} />
             </Field>
           </Box>
           <Box sx={{ flex: '1 1 6rem', minWidth: 0 }}>

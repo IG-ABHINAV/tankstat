@@ -16,7 +16,7 @@ namespace Tankstat.Migrations.MySql
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("Tankstat.Domain.Access.AccessGrant", b =>
@@ -236,6 +236,10 @@ namespace Tankstat.Migrations.MySql
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<decimal?>("Discount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
 
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("char(36)");

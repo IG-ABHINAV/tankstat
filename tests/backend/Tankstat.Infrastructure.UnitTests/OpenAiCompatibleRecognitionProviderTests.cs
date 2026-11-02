@@ -80,7 +80,7 @@ public class OpenAiCompatibleRecognitionProviderTests
         Assert.Equal(("json_schema", true), (format.GetProperty("type").GetString(), format.GetProperty("json_schema").GetProperty("strict").GetBoolean()));
         var schema = format.GetProperty("json_schema").GetProperty("schema");
         Assert.Equal(["odometer", "fuel-receipt", "unknown"], schema.GetProperty("properties").GetProperty("kind").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
-        Assert.Equal(["odometer", "total", "volume", "unitPrice", "currency", "date"],
+        Assert.Equal(["odometer", "total", "volume", "unitPrice", "discount", "currency", "date"],
             schema.GetProperty("properties").GetProperty("fields").GetProperty("items").GetProperty("properties").GetProperty("name").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
         Assert.Equal(("gpt-vision-example", DocumentKind.FuelReceipt), (result.ModelVersion, result.Kind));
         Assert.Equal("Total=24687@0.95 Volume=38.52@0.9 UnitPrice=640.9@0.9 Currency=HUF@0.9 Date=2026-09-17@0.85", Shown(result));

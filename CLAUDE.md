@@ -59,7 +59,7 @@ The rules of each area are in `.claude/rules/`, one file per area. Each loads by
 - Vite's `root` is `src/frontend/tankstat-react/src`; the build goes to `src/frontend/tankstat-react/dist`, which `mise run build:api` copies into `out/wwwroot`. Frontend coverage still goes to the repository's `coverage/frontend`.
 - Backend follows clean architecture, dependencies pointing inward only: `Api -> Application, Infrastructure`; `Infrastructure -> Application`; `Application -> Domain`. Application and Domain must not reference EF Core or HotChocolate. Application defines ports (interfaces such as `IDatabaseProbe`); Infrastructure implements them. Each layer registers itself through an `AddApplication` / `AddInfrastructure` extension.
 - Add new .NET projects to `Tankstat.slnx`.
-- Reusable building blocks (use them for new entities, do not add raw numbers): `OdometerReading` (all readings of a vehicle in one table, no maximum, unit per vehicle; neighbour validation across sources), `Cost` (amount + currency), `MeasurementUnits` (per-vehicle distance/volume units, locked once logs exist, never converted). Entities own their reading/cost; trash/restore/purge cascade in code.
+- Reusable building blocks (use them for new entities, do not add raw numbers): `OdometerReading` (all readings of a vehicle in one table, no maximum, unit per vehicle; neighbour validation across sources), `Cost` (amount + currency, and an optional discount taken off at the till: the amount is what was paid, every sum of spending stays on it), `MeasurementUnits` (per-vehicle distance/volume units, locked once logs exist, never converted). Entities own their reading/cost; trash/restore/purge cascade in code.
 
 ## Stack decisions
 

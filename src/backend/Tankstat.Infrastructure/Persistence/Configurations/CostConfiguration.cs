@@ -13,6 +13,7 @@ internal sealed class CostConfiguration : IEntityTypeConfiguration<Cost>
         b.HasKey(c => c.Id);
         b.Property(c => c.Id).ValueGeneratedNever();
         b.Property(c => c.Amount).HasPrecision(14, 2);
+        b.Property(c => c.Discount).HasPrecision(14, 2);
         b.Property(c => c.Currency).HasMaxLength(3).IsRequired();
         b.HasOne<Vehicle>().WithMany().HasForeignKey(c => c.VehicleId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(c => new { c.VehicleId, c.Date });

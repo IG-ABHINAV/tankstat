@@ -15,6 +15,21 @@ public class DataGeneratorTests
         new DataGenerator(Clock).Generate(new SeedOptions(vehicles, trashed, refuelings ?? new IntRange(5, 25), seed, true, null, null)).ToList();
 
     [Fact]
+    public void AFifthOfTheFillUps_CarryADiscount_TakenOffWhatWasPaid()
+    {
+        var logs = Generate(vehicles: 10, trashed: 0, refuelings: new IntRange(20, 20)).SelectMany(g => g.Refuelings).ToList();
+
+        var discounted = logs.Where(l => l.Discount is not null).ToList();
+
+        Assert.InRange(discounted.Count / (double)logs.Count, 0.12, 0.28);
+        Assert.All(discounted, l =>
+        {
+            Assert.InRange(l.Discount!.Value, 0.01m, l.TotalCost!.Value * 0.031m); // one to three per cent of what was paid, to the cent
+            Assert.True(l.PricePerUnitBeforeDiscount > l.PricePerUnit, "the pump's price is above the price paid");
+        });
+    }
+
+    [Fact]
     public void GeneratedLogs_CarryTheirStoredConsumption_LikeLogsEnteredInTheApp()
     {
         var logs = Generate(vehicles: 5, trashed: 0, refuelings: new IntRange(30, 30)).SelectMany(g => g.Refuelings).ToList();

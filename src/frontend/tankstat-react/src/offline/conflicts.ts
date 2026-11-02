@@ -62,8 +62,8 @@ export const currentValues = (entity: ChangeEntity, current: Current): ChangeVal
  * a null there is "not touched", never a change and never a clear. Elsewhere null clears the value (a note, a category, a plate).
  */
 export const KEEP_WHEN_NULL: Record<ChangeEntity, readonly string[]> = {
-  refuelings: ['currency', 'missedPreviousFillUp'],
-  expenses: ['currency'],
+  refuelings: ['currency', 'missedPreviousFillUp', 'discount'],
+  expenses: ['currency', 'discount'],
   vehicles: ['units'],
   recurring: ['lastDoneDate', 'warnDays', 'warnDistance'],
 }

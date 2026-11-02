@@ -70,6 +70,8 @@ export function ExpensesPanel({ vehicle, canLog }: { vehicle: { id: string; unit
       },
       { id: 'title', label: 'columns.title', hideable: false, mobile: true, sortField: 'TITLE', cell: (r) => r.title },
       { id: 'amount', label: 'columns.amount', include: 'withAmount', mobile: true, sortField: 'AMOUNT', cell: (r) => (r.amount == null || !r.currency ? none : format.money(r.amount, r.currency)) },
+      // What was taken off the amount (the amount is what was paid): hidden until wanted, not sortable.
+      { id: 'discount', label: 'columns.discount', include: 'withDiscount', defaultHidden: true, cell: (r) => (r.discount == null || !r.currency ? none : format.money(r.discount, r.currency)) },
       { id: 'category', label: 'columns.category', include: 'withCategory', sortField: 'CATEGORY', cell: (r) => r.category ?? none },
       { id: 'odometer', label: 'columns.odometer', include: 'withOdometer', sortField: 'ODOMETER', cell: (r) => (r.odometer == null ? none : format.distance(r.odometer, units.distance)) },
       { id: 'note', label: 'columns.note', include: 'withNote', cell: (r) => r.note || none },

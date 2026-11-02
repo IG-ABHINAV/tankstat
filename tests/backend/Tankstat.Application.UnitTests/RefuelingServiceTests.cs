@@ -15,8 +15,9 @@ public class RefuelingServiceTests
 {
     private static readonly DateOnly Day = new(2026, 9, 1);
 
-    private static RefuelingInput Input(DateOnly? date = null, decimal volume = 40, decimal cost = 60, string currency = "EUR", long odometer = 1000, bool full = true, string? note = null) =>
-        new(date ?? Day, volume, cost, currency, odometer, full, note);
+    private static RefuelingInput Input(
+        DateOnly? date = null, decimal volume = 40, decimal cost = 60, string currency = "EUR", long odometer = 1000, bool full = true, string? note = null, decimal? discount = null) =>
+        new(date ?? Day, volume, cost, currency, odometer, full, note, Discount: discount);
 
     /// <summary>Alice owns a car; Bob and Carol exist; Alice is signed in.</summary>
     private sealed record Scene(World W, User Alice, User Bob, User Carol, Vehicle Car);
@@ -46,6 +47,33 @@ public class RefuelingServiceTests
         Assert.Equal((s.Alice.Id, s.Alice.Id, s.Car.Id), (log.OwnerId, log.CreatedById, log.VehicleId));
         Assert.Equal((41.5m, 79.9m, "HUF", 12345L, "Shell"), (log.Volume, log.TotalCost, log.Currency, log.Odometer, log.Note));
         Assert.Same(log, Assert.Single(s.W.Refuelings.Items));
+    }
+
+    [Fact]
+    public async Task Log_StoresTheDiscount_AnUpdateWithoutOneKeepsIt_AndZeroClearsIt()
+    {
+        var s = await Setup();
+
+        var log = await Log(s, Input(volume: 43, cost: 34744, currency: "HUF", discount: 430));
+        Assert.Equal((34744m, 430m, 808m, 818m), (log.TotalCost, log.Discount, log.PricePerUnit, log.PricePerUnitBeforeDiscount));
+
+        var kept = await s.W.RefuelingService.UpdateAsync(log.Id, Input(volume: 43, cost: 34744, currency: "HUF"), default); // a build from before discounts
+        Assert.Equal(430m, kept.Discount);
+
+        var cleared = await s.W.RefuelingService.UpdateAsync(log.Id, Input(volume: 43, cost: 34744, currency: "HUF", discount: 0), default);
+        Assert.Null(cleared.Discount);
+        Assert.Equal(808m, cleared.PricePerUnitBeforeDiscount);
+    }
+
+    [Fact]
+    public async Task Log_RefusesADiscountWithoutATotal()
+    {
+        var s = await Setup();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => Log(s, new RefuelingInput(Day, 40, null, "EUR", 1000, true, null, Discount: 5)));
+
+        Assert.Equal("cost.discountWithoutAmount", ex.Key);
+        Assert.Empty(s.W.Refuelings.Items);
     }
 
     [Fact]

@@ -35,8 +35,11 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
     /// <summary>The linked cost (amount and currency), null until known; load it (Include) before reading <see cref="TotalCost"/> or <see cref="Currency"/>.</summary>
     public Cost? Cost { get; private set; }
 
-    /// <summary>What the fill-up cost, in <see cref="Currency"/>.</summary>
+    /// <summary>What the fill-up cost, in <see cref="Currency"/>: what was paid, after <see cref="Discount"/>.</summary>
     public decimal? TotalCost => Cost?.Amount;
+
+    /// <summary>What was taken off at the till, in <see cref="Currency"/>; null when none (see <see cref="Measurements.Cost.Discount"/>).</summary>
+    public decimal? Discount => Cost?.Discount;
 
     /// <summary>The currency this fill-up was paid in (it can differ from log to log, e.g. when travelling).</summary>
     public string? Currency => Cost?.Currency;
@@ -87,6 +90,9 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
 
     /// <summary>Total cost divided by volume (derived, not stored); null while either is unknown.</summary>
     public decimal? PricePerUnit => Volume is { } volume && Cost is { } cost ? (volume == 0 ? 0 : Math.Round(cost.Amount / volume, 3)) : null;
+
+    /// <summary>The pump's price per unit: what the fuel cost before the discount, per unit of volume (the same as <see cref="PricePerUnit"/> without one).</summary>
+    public decimal? PricePerUnitBeforeDiscount => Volume is { } volume && Cost is { } cost ? (volume == 0 ? 0 : Math.Round(cost.AmountBeforeDiscount / volume, 3)) : null;
 
     /// <summary>
     /// Counts the saves of what a client can edit (the values, the trash, what a photo filled in), from 1: a client that edits an old copy
@@ -141,7 +147,7 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
         };
         refueling.Apply(date, volume, isFullTank, missedPreviousFillUp, note);
         reading?.Update(date, reading.Value);
-        cost?.Update(date, cost.Amount, cost.Currency);
+        cost?.Update(date, cost.Amount, cost.Currency, cost.Discount);
         refueling.ReviewState = LogReview.AfterSave(refueling.Missing, refueling.Missing, readingPhotos);
         return refueling;
     }
@@ -153,14 +159,16 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
     /// <param name="currency">The currency of the cost; ignored without <paramref name="totalCost"/>.</param>
     /// <param name="by">Who changed it (see <see cref="ChangedById"/>).</param>
     /// <param name="readingPhotos">A photo of the log is still being read: only then may values be left empty.</param>
+    /// <param name="discount">What was taken off <paramref name="totalCost"/> at the till; null, the usual case, means none (<c>cost.discountWithoutAmount</c> without a total).</param>
     public LinkedChanges Update(
         DateOnly date, decimal? volume, decimal? totalCost, string? currency, long? odometer, bool isFullTank, bool missedPreviousFillUp, string? note,
-        bool readingPhotos = false, Guid? by = null)
+        bool readingPhotos = false, Guid? by = null, decimal? discount = null)
     {
         if (IsDeleted) throw new DomainException("refueling.trashedCannotEdit", "A log in the trash cannot be edited; restore it first.");
+        Measurements.Cost.RequireAmountForDiscount(totalCost, discount);
         Apply(date, volume, isFullTank, missedPreviousFillUp, note);
         var (createdReading, removedReading) = SetReading(date, odometer);
-        var (createdCost, removedCost) = SetCost(date, totalCost, currency);
+        var (createdCost, removedCost) = SetCost(date, totalCost, currency, discount);
         ReviewState = LogReview.AfterSave(Missing, Missing, readingPhotos);
         FilledFromPhoto = LogValues.None;
         Bump(EntityChange.Edited, by);
@@ -190,9 +198,11 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
         }
         if (Cost is null && LogReview.UsableAmount(values.Total) is { } total && values.Currency is { } currency)
         {
-            createdCost = Cost.Create(OwnerId, VehicleId, Date, total, currency);
+            // The discount only with the total it was taken off: a cost a person entered keeps what they said (an empty discount is none).
+            var discount = LogReview.UsableAmount(values.Discount);
+            createdCost = Cost.Create(OwnerId, VehicleId, Date, total, currency, discount);
             (Cost, CostId) = (createdCost, createdCost.Id);
-            FilledFromPhoto |= LogValues.Total;
+            FilledFromPhoto |= LogValues.Total | (createdCost.Discount is null ? LogValues.None : LogValues.Discount);
         }
         // Every value a photo fills in sets its FilledFromPhoto flag, so a change of the flags is a change of the values: an edit of the copy
         // from before is stale. A value added here later must set its flag too.
@@ -244,7 +254,7 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
         return (null, null);
     }
 
-    private (Cost? Created, Cost? Removed) SetCost(DateOnly date, decimal? amount, string? currency)
+    private (Cost? Created, Cost? Removed) SetCost(DateOnly date, decimal? amount, string? currency, decimal? discount)
     {
         if (amount is null)
         {
@@ -254,11 +264,11 @@ public sealed class Refueling : IOwned, ISoftDeletable, ISynced
         }
         if (Cost is null)
         {
-            var created = Cost.Create(OwnerId, VehicleId, date, amount.Value, currency);
+            var created = Cost.Create(OwnerId, VehicleId, date, amount.Value, currency, discount);
             (Cost, CostId) = (created, created.Id);
             return (created, null);
         }
-        Cost.Update(date, amount.Value, currency);
+        Cost.Update(date, amount.Value, currency, discount);
         return (null, null);
     }
 
