@@ -82,7 +82,7 @@ test('draws a chart of costs in two currencies on a scale for each, with only th
   await expectSoundLayout(page)
 })
 
-test('draws a moving average and a year earlier as lines over the bars, on the bars\' scale, the bars still one width and evenly placed', async ({ page }) => {
+test('draws a moving average and a year earlier as lines over the bars, on the bars\' scale, the bars still one width and evenly placed', async ({ page, isMobile }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   // A refuelling every month of the last two years, so the year earlier has a value in every month too.
@@ -131,6 +131,17 @@ test('draws a moving average and a year earlier as lines over the bars, on the b
     { role: 'YEAR_EARLIER', drawn: true, dashed: true, inside: true },
   ])
   await expectSoundLayout(page)
+
+  // The composed chart keeps its tooltip in the page, on screen inside a card (#32); a pointer that hovers is a desktop's.
+  if (!isMobile) {
+    await figure.locator('.MuiBarChart-element').nth(6).hover()
+    const tooltip = page.locator('.MuiChartsTooltip-root').first()
+    await expect(tooltip).toBeVisible()
+    const box = (await tooltip.boundingBox())!
+    const viewport = page.viewportSize()!
+    expect(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height).toBe(true)
+    await expect(tooltip).toContainText('moving average')
+  }
 })
 
 test('a saved chart of the fuel price before discounts adds the discount back, while the preset Fuel price stays on what was paid', async ({ page }) => {
