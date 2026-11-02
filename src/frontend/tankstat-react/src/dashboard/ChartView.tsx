@@ -125,9 +125,10 @@ export function ChartView({
   const keys = [...new Set(data.series.flatMap((s) => s.points.map((p) => p.key)))]
   const rows: Record<string, string | number | null>[] = keys.map((key) => ({ key, label: keyLabel(key), ...Object.fromEntries(data.series.map((s) => [seriesId(s), s.points.find((p) => p.key === key)?.value ?? null])) }))
   const colour = (i: number) => PALETTE[i % PALETTE.length]
-  const several = data.series.length > 1
   const values = data.series.filter(isValue)
-  const overlays = data.series.filter((s) => !isValue(s))
+  // A year earlier with nothing logged in it is not drawn (a note says so, below); the table still lists it.
+  const overlays = data.series.filter((s) => !isValue(s) && (s.role !== 'YEAR_EARLIER' || s.points.some((p) => p.value)))
+  const several = values.length + overlays.length > 1
   // How a series is drawn: the first measure as the chart's kind, a second one as its own; the lines drawn from the values always as lines.
   const kindOf = (s: Series) => (s.metric === firstMetric ? recipe.kind : (recipe.secondKind ?? 'LINE'))
   const hasBars = values.some((s) => kindOf(s) === 'BAR')
