@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addTile, chartKey, flow, LAYOUT_PRESETS, moveTile, pack, pinTile, presetKey, removeTile, resizeTile, resolveLayout, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
+import { addTile, chartKey, flow, LAYOUT_PRESETS, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, resizeTile, resolveLayout, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
 
 const chart = (id: string) => ({ id, title: `Chart ${id}` })
 const tile = (id: string, x: number, y: number, w = 2, h = 8, pinned = false): Tile => ({ id, x, y, w, h, pinned })
@@ -23,7 +23,24 @@ describe('resolveLayout', () => {
       'chart:b@0,27 2x8',
       'chart:c@2,27 2x8',
     ])
-    expect(layout.available).toEqual({ figures: [], ready: [], saved: [] })
+    expect(layout.available.saved).toEqual([])
+    expect(layout.available.figures).toEqual(['spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend']) // the trend figures are not on Standard
+    expect(layout.available.ready.map((c) => c.id)).toEqual(['spendSoFar', 'costPerDistance', 'consumptionTrend', 'distanceYearEarlier', 'distanceAndConsumption'])
+  })
+
+  it('offers Spending and Usage: the trend figures with the charts that go with them, in the same shape as Standard', () => {
+    const ids = (tiles: readonly Tile[]) => tiles.map((t) => `${t.id}@${t.x},${t.y}`)
+
+    expect(ids(LAYOUT_PRESETS.spending.tiles)).toEqual([
+      'thisMonth@0,0', 'spendingTrend@1,0', 'costPerDistance@2,0', 'lastFillUp@3,0',
+      'preset:monthlyCosts@0,3', 'preset:spendSoFar@2,3', 'preset:categories@0,11', 'preset:costPerDistance@2,11', 'preset:fuelPrice@0,19',
+    ])
+    expect(ids(LAYOUT_PRESETS.usage.tiles)).toEqual([
+      'odometer@0,0', 'distanceTrend@1,0', 'consumption@2,0', 'consumptionTrend@3,0',
+      'preset:distanceYearEarlier@0,3', 'preset:consumptionTrend@2,3', 'preset:distanceAndConsumption@0,11', 'preset:distance@2,11',
+    ])
+    expect(READY_CHARTS.find((c) => c.id === 'spendSoFar')?.recipe).toMatchObject({ range: 'THIS_YEAR', runningTotal: true, compareYearEarlier: true })
+    expect(READY_CHARTS.find((c) => c.id === 'distanceAndConsumption')?.recipe).toMatchObject({ secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' })
   })
 
   it('follows a stored layout: its places, saved charts it does not mention at the bottom, the ones taken off left out', () => {
@@ -32,8 +49,8 @@ describe('resolveLayout', () => {
 
     expect(places(layout.tiles)).toEqual(['chart:b@0,0 2x8', 'odometer@3,0 1x3', 'preset:distance@2,3 2x8', 'chart:a@0,8 2x8'])
     expect(layout.hidden.map((c) => c.id)).toEqual(['c'])
-    expect(layout.available.figures).toEqual(['thisMonth', 'consumption', 'lastFillUp'])
-    expect(layout.available.ready.map((c) => c.id)).toEqual(['monthlyCosts', 'consumption', 'fuelPrice', 'categories'])
+    expect(layout.available.figures).toEqual(['thisMonth', 'consumption', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend'])
+    expect(layout.available.ready.map((c) => c.id)).toEqual(['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'spendSoFar', 'costPerDistance', 'consumptionTrend', 'distanceYearEarlier', 'distanceAndConsumption'])
     expect(layout.available.saved.map((c) => c.id)).toEqual(['c'])
   })
 
@@ -49,7 +66,10 @@ describe('resolveLayout', () => {
     const layout = resolveLayout({ tiles: [tile('lastFillUp', 0, 0, 1, 3, true)], hidden: [chartKey('b')] }, [chart('a'), chart('b')])
 
     expect(toLayout(layout.tiles, layout.hidden)).toEqual({ tiles: [tile('lastFillUp', 0, 0, 1, 3, true), tile(chartKey('a'), 1, 0)], hidden: [chartKey('b')] })
-    expect(LAYOUT_PRESETS.standard.tiles.map((t) => t.id)).toEqual(['thisMonth', 'consumption', 'odometer', 'lastFillUp', 'preset:monthlyCosts', 'preset:consumption', 'preset:fuelPrice', 'preset:categories', 'preset:distance'])
+    expect(LAYOUT_PRESETS.standard.tiles.map((t) => `${t.id}@${t.x},${t.y}`)).toEqual([
+      'thisMonth@0,0', 'consumption@1,0', 'odometer@2,0', 'lastFillUp@3,0',
+      'preset:monthlyCosts@0,3', 'preset:consumption@2,3', 'preset:fuelPrice@0,11', 'preset:categories@2,11', 'preset:distance@0,19',
+    ])
   })
 })
 

@@ -99,6 +99,27 @@ query VehicleDashboard($id: UUID!) {
         month
         amount
       }
+      # The trend figures (the home cards never ask: worked out per vehicle from the same data).
+      trends {
+        spending {
+          currency
+          recent
+          earlier
+        }
+        costPerDistance {
+          currency
+          recent
+          earlier
+        }
+        consumption {
+          recent
+          earlier
+        }
+        distance {
+          recent
+          earlier
+        }
+      }
     }
   }
   vehicleCharts(vehicleId: $id) {

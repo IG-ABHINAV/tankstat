@@ -1283,6 +1283,10 @@
       "consumptionHint": "last 10 full fill-ups",
       "odometer": "Odometer",
       "lastFillUp": "Last fill-up",
+      "spendingTrend": "Spending, last 12 months",
+      "costPerDistance": "Cost per distance, last 12 months",
+      "consumptionTrend": "Consumption, last 10 fill-ups",
+      "distanceTrend": "Distance this year",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
       "none": "–",
       "title": "Key figures"
@@ -1296,6 +1300,8 @@
     "showTable": "Show the data as a table",
     "hideTable": "Hide the table",
     "editChart": "Edit the chart {{title}}",
+    "copyChart": "Copy {{title}} as my chart",
+    "copyTitle": "Copy as my chart",
     "deleteChart": "Delete the chart {{title}}",
     "deleteTitle": "Delete this chart?",
     "deleteDescription": "“{{title}}” is removed for everyone it is shared with. The data itself is not affected.",
@@ -1327,7 +1333,25 @@
       "consumption": "Consumption",
       "fuelPrice": "Fuel price",
       "categories": "Expenses by category",
-      "distance": "Distance per month"
+      "distance": "Distance per month",
+      "spendSoFar": "Spent so far this year",
+      "costPerDistance": "Cost per distance",
+      "consumptionTrend": "Consumption trend",
+      "distanceYearEarlier": "Distance, this year and last",
+      "distanceAndConsumption": "Distance and consumption"
+    },
+    "trend": {
+      "moreThanBefore": "{{change}} more than the 12 months before",
+      "lessThanBefore": "{{change}} less than the 12 months before",
+      "sameAsBefore": "the same as the 12 months before",
+      "moreFuel": "uses {{change}} more fuel than the 10 fill-ups before",
+      "lessFuel": "uses {{change}} less fuel than the 10 fill-ups before",
+      "sameFuel": "uses as much fuel as the 10 fill-ups before",
+      "moreThanLastYear": "{{change}} more than last year to this day",
+      "lessThanLastYear": "{{change}} less than last year to this day",
+      "sameAsLastYear": "the same as last year to this day",
+      "nothingBefore": "nothing to compare with yet",
+      "tooFew": "needs 3 fill-ups in each ten"
     },
     "customize": {
       "button": "Customize",
@@ -1377,7 +1401,9 @@
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {
-      "standard": "Standard"
+      "standard": "Standard",
+      "spending": "Spending",
+      "usage": "Usage"
     }
   },
   "charts": {

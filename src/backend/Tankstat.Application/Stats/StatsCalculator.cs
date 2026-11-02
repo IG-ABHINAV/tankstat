@@ -294,6 +294,37 @@ public static class StatsCalculator
             data.Fuel.Count == 0 ? null : data.Fuel.Max(f => f.Date),
             data.Readings.Count == 0 ? null : data.Readings.Max(r => r.Value),
             consumptions.Count == 0 ? null : Math.Round(consumptions.Average(), 2),
-            currency, trend[^1].Amount, trend[^2].Amount, trend, data.Fuel.Count, data.Expenses.Count, spending);
+            currency, trend[^1].Amount, trend[^2].Amount, trend, data.Fuel.Count, data.Expenses.Count, spending, Trends(data, today, currency));
+    }
+
+    public const int TrendFillUps = 10;
+    public const int MinTrendFillUps = 3;
+
+    /// <summary>The trend figures: the last 12 whole months against the 12 before, the last fill-ups against the ones before, this year against last.</summary>
+    private static DashboardTrends Trends(StatsData data, DateOnly today, string? mainCurrency)
+    {
+        var thisMonth = MonthStart(today);
+        var recent = (Start: thisMonth.AddMonths(-12), End: thisMonth.AddDays(-1));
+        var earlier = (Start: thisMonth.AddMonths(-24), End: thisMonth.AddMonths(-12).AddDays(-1));
+
+        IEnumerable<(string Currency, DateOnly Date, decimal Amount)> costs = data.Fuel.Select(f => (f.Currency, f.Date, f.Amount)).Concat(data.Expenses.Select(e => (e.Currency, e.Date, e.Amount)));
+        decimal Spent(string c, (DateOnly Start, DateOnly End) w) => costs.Where(x => x.Currency == c && x.Date >= w.Start && x.Date <= w.End).Sum(x => x.Amount);
+        var currencies = costs.Where(x => x.Date >= earlier.Start && x.Date <= recent.End).Select(x => x.Currency).Distinct()
+            .OrderByDescending(c => c == mainCurrency).ThenByDescending(c => Spent(c, recent)).ThenBy(c => c, StringComparer.Ordinal).ToList();
+        var spending = currencies.Select(c => new CurrencyChange(c, Spent(c, recent), Spent(c, earlier))).ToList();
+        decimal? PerDistance(decimal amount, (DateOnly Start, DateOnly End) w)
+        {
+            var distance = DistanceIn(data.Readings, w);
+            return distance > 0 ? Math.Round(amount / distance * 100, 3) : null;
+        }
+        var perDistance = currencies.Select(c => new CurrencyChange(c, PerDistance(Spent(c, recent), recent), PerDistance(Spent(c, earlier), earlier))).ToList();
+
+        var consumptions = data.Fuel.Where(f => f.Consumption is not null).OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).Select(f => f.Consumption!.Value).ToList();
+        var lastTen = consumptions.Take(TrendFillUps).ToList();
+        var tenBefore = consumptions.Skip(TrendFillUps).Take(TrendFillUps).ToList();
+        var consumption = lastTen.Count >= MinTrendFillUps && tenBefore.Count >= MinTrendFillUps ? new ValueChange(Math.Round(lastTen.Average(), 2), Math.Round(tenBefore.Average(), 2)) : null;
+
+        var distance = new ValueChange(DistanceIn(data.Readings, (new DateOnly(today.Year, 1, 1), today)), DistanceIn(data.Readings, (new DateOnly(today.Year - 1, 1, 1), today.AddYears(-1))));
+        return new DashboardTrends(spending, perDistance, consumption, distance);
     }
 }

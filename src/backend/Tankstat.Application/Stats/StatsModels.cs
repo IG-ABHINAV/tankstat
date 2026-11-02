@@ -65,4 +65,19 @@ public sealed record CurrencySpend(string Currency, decimal ThisMonth, decimal L
 /// </summary>
 public sealed record VehicleSummary(
     DateOnly? LastFillUpDate, long? LatestOdometer, decimal? AverageConsumption, string? Currency, decimal ThisMonthSpend, decimal LastMonthSpend,
-    IReadOnlyList<MonthAmount> SpendTrend, int FillUpCount, int ExpenseCount, IReadOnlyList<CurrencySpend> Spending);
+    IReadOnlyList<MonthAmount> SpendTrend, int FillUpCount, int ExpenseCount, IReadOnlyList<CurrencySpend> Spending, DashboardTrends Trends);
+
+/// <summary>A figure now against the same figure a step back; null where it cannot be worked out (nothing driven, too few fill-ups).</summary>
+public sealed record ValueChange(decimal? Recent, decimal? Earlier);
+
+/// <summary>A money figure in one currency now against a step back (never converted).</summary>
+public sealed record CurrencyChange(string Currency, decimal? Recent, decimal? Earlier);
+
+/// <summary>
+/// Where a vehicle's figures are heading, for the dashboard's trend figures (#211). This month is left out: it is still running.
+/// </summary>
+/// <param name="Spending">The last 12 whole months against the 12 before them, per currency used in either, the main currency first.</param>
+/// <param name="CostPerDistance">The same windows, money per 100 distance units driven in each (null where nothing was driven).</param>
+/// <param name="Consumption">The mean of the last 10 stored consumptions against the mean of the 10 before them; null with fewer than 3 in either.</param>
+/// <param name="Distance">This year to today against last year up to the same day.</param>
+public sealed record DashboardTrends(IReadOnlyList<CurrencyChange> Spending, IReadOnlyList<CurrencyChange> CostPerDistance, ValueChange? Consumption, ValueChange Distance);

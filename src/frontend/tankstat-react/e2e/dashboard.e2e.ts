@@ -128,3 +128,30 @@ test('arranges a dashboard of one\'s own, then goes back to the vehicle\'s', asy
   await expect(page.getByText('You see your own arrangement of this dashboard.')).toBeHidden()
   await expect.poll(() => chartTitles(page)).toEqual(['Monthly costs', 'Consumption', 'Fuel price', 'Expenses by category', 'Distance per month'])
 })
+
+test('starts from the Usage preset, then copies a ready-made chart as one\'s own', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id)
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('combobox', { name: 'Start from a preset' }).click()
+  await page.getByRole('option', { name: 'Usage' }).click()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Started from Usage.')
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month'])
+  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, last 10 fill-ups'])
+  await expectSoundLayout(page)
+
+  await page.getByRole('button', { name: 'Copy Distance per month as my chart' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Copy as my chart' })
+  await expect(dialog.getByLabel('Title')).toHaveValue('Distance per month')
+  await dialog.getByLabel('Title').fill('My distance')
+  await dialog.getByRole('button', { name: 'Save chart' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'My distance' })).toBeVisible() // at the first free spot, the original still there
+  await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
+})

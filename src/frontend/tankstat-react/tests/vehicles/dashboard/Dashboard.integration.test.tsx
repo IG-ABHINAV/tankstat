@@ -214,7 +214,9 @@ it('customizes the vehicle\'s dashboard in place: a figure moved earlier, a read
   await tileMenu(ui, 'My chart', 'Remove')
   await ui.click(screen.getByRole('button', { name: 'Add widget' }))
   const panel = screen.getByRole('region', { name: 'Add widget' })
-  expect(within(panel).getAllByRole('button').map((b) => b.textContent)).toEqual(['ConsumptionReady-made chart', 'My chartShared chart'])
+  const offered = within(panel).getAllByRole('button').map((b) => b.textContent)
+  expect(offered).toEqual(expect.arrayContaining(['ConsumptionReady-made chart', 'My chartShared chart']))
+  expect(offered).toHaveLength(4 + 1 + 5 + 1) // the trend figures, the chart taken off, the ready-made charts Standard leaves out, the saved one
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
@@ -308,6 +310,74 @@ it('with sign-in off, everyone is the same visitor: the vehicle\'s dashboard onl
   expect(screen.queryByRole('button', { name: 'Back to Standard' })).not.toBeInTheDocument() // nothing arranged yet
   await ui.click(screen.getByRole('button', { name: 'Cancel' }))
   expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
+})
+
+// ---- the trend figures, the presets, a copied chart ------------------------------------------------------------
+
+it('words the trend figures with an arrow and a change, never by colour alone', async () => {
+  setup(fakeVehicle(), [], undefined, {
+    signedIn: true,
+    arranged: (s) => (s.dashboard.shared = layout({ tiles: [fakeTile('spendingTrend', 0, 0, 1, 3), fakeTile('costPerDistance', 1, 0, 1, 3), fakeTile('consumptionTrend', 2, 0, 1, 3), fakeTile('distanceTrend', 3, 0, 1, 3)] })),
+  })
+
+  const region = await screen.findByRole('region', { name: 'Dashboard' })
+  expect(await within(region).findByText('HUF 560,000')).toBeInTheDocument()
+  expect(within(region).getByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument()
+  expect(within(region).getByText('HUF 4,480 / 100 km')).toBeInTheDocument()
+  expect(within(region).getByText('HUF 480 / 100 km (12%) more than the 12 months before')).toBeInTheDocument()
+  expect(within(region).getByText('6.5 L/100 km')).toBeInTheDocument()
+  expect(within(region).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument()
+  expect(within(region).getByText('12,500 km')).toBeInTheDocument()
+  expect(within(region).getByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument()
+})
+
+it('says when a trend figure has nothing to compare with', async () => {
+  setup(fakeVehicle({ summary: fakeSummary({ trends: { spending: [], costPerDistance: [], consumption: null, distance: { recent: 0, earlier: 0 } } }) }), [], undefined, {
+    signedIn: true,
+    arranged: (s) => (s.dashboard.shared = layout({ tiles: [fakeTile('spendingTrend', 0, 0, 1, 3), fakeTile('consumptionTrend', 1, 0, 1, 3), fakeTile('distanceTrend', 2, 0, 1, 3)] })),
+  })
+
+  const region = await screen.findByRole('region', { name: 'Dashboard' })
+  await within(region).findByText('Spending, last 12 months')
+  expect(within(region).getAllByText('–')).toHaveLength(2) // spending and consumption have no figure
+  expect(within(region).getByText('needs 3 fill-ups in each ten')).toBeInTheDocument()
+  expect(within(region).getByText('nothing to compare with yet')).toBeInTheDocument()
+})
+
+it('starts from the Usage preset: its figures and charts, saved as tiles', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await screen.findByRole('heading', { name: 'Monthly costs' })
+  await ui.click(screen.getByRole('button', { name: 'Customize' }))
+
+  await choose(ui, 'Start from a preset', 'Usage')
+  expect(said()).toHaveTextContent('Started from Usage.')
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  expect((state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string }[] } }).input.tiles.map((t) => t.id)).toEqual([
+    'odometer', 'distanceTrend', 'consumption', 'consumptionTrend',
+    'preset:distanceYearEarlier', 'preset:consumptionTrend', 'preset:distanceAndConsumption', 'preset:distance',
+  ])
+  await waitFor(async () => expect(await chartTitles()).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month']))
+  expect(figureLabels()).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, last 10 fill-ups'])
+})
+
+it('copies a ready-made chart as one\'s own: the builder starts from its recipe and title, the original stays', async () => {
+  const { ui, state } = setup(fakeVehicle(), [])
+  await screen.findByRole('heading', { name: 'Monthly costs' })
+
+  await ui.click(screen.getByRole('button', { name: 'Copy Monthly costs as my chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Copy as my chart' })
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Monthly costs')
+  expect(within(dialog).getByRole('switch', { name: 'Split into fuel and expenses' })).toBeChecked()
+  await ui.clear(within(dialog).getByLabelText('Title'))
+  await ui.type(within(dialog).getByLabelText('Title'), 'Costs, my way')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save chart' }))
+
+  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
+  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: null, title: 'Costs, my way', config: { metric: 'TOTAL_SPEND', stacked: true, range: 'LAST12_MONTHS' } } })
+  expect(await screen.findByRole('heading', { name: 'Costs, my way' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Monthly costs' })).toBeInTheDocument()
 })
 
 // ---- the builder ----------------------------------------------------------------------------------------------

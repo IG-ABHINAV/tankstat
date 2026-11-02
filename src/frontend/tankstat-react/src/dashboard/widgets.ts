@@ -7,7 +7,7 @@ import { NEW_RECIPE, type ChartRecipe } from './chartFormat.ts'
  */
 
 /** The key figures a dashboard can show; their texts are `dashboard.kpi.*`. */
-export const FIGURES = ['thisMonth', 'consumption', 'odometer', 'lastFillUp'] as const
+export const FIGURES = ['thisMonth', 'consumption', 'odometer', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend'] as const
 export type FigureId = (typeof FIGURES)[number]
 
 /** The key figures' grid while the figures load: one column on a phone, two from a small tablet, four on a desktop. */
@@ -22,6 +22,11 @@ export const READY_CHARTS = [
   { id: 'fuelPrice', recipe: recipe({ metric: 'AVERAGE_PRICE_PER_UNIT', kind: 'LINE' }) },
   { id: 'categories', recipe: recipe({ metric: 'EXPENSE_COST', grouping: 'CATEGORY', kind: 'DONUT' }) },
   { id: 'distance', recipe: recipe({ metric: 'DISTANCE', kind: 'BAR' }) },
+  { id: 'spendSoFar', recipe: recipe({ metric: 'TOTAL_SPEND', kind: 'LINE', range: 'THIS_YEAR', runningTotal: true, compareYearEarlier: true }) },
+  { id: 'costPerDistance', recipe: recipe({ metric: 'COST_PER_DISTANCE', kind: 'LINE', trend: 'MOVING_AVERAGE' }) },
+  { id: 'consumptionTrend', recipe: recipe({ metric: 'AVERAGE_CONSUMPTION', kind: 'LINE', grouping: 'QUARTER', range: 'ALL', trend: 'LINEAR' }) },
+  { id: 'distanceYearEarlier', recipe: recipe({ metric: 'DISTANCE', kind: 'BAR', compareYearEarlier: true }) },
+  { id: 'distanceAndConsumption', recipe: recipe({ metric: 'DISTANCE', kind: 'BAR', secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' }) },
 ] as const satisfies readonly { id: string; recipe: ChartRecipe }[]
 export type ReadyChart = (typeof READY_CHARTS)[number]
 
@@ -72,19 +77,17 @@ export const MIN_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figu
 
 const tile = (id: string, x: number, y: number, w: number, h: number): Tile => ({ id, x, y, w, h, pinned: false })
 
+/** A preset's tiles: four figures in a row at the top, then the charts two by two. */
+const presetTiles = (figures: readonly FigureId[], charts: readonly ReadyChart['id'][]): Tile[] => [
+  ...figures.map((f, i) => tile(f, i, 0, 1, 3)),
+  ...charts.map((c, i) => tile(presetKey(c), (i % 2) * 2, 3 + Math.floor(i / 2) * 8, 2, 8)),
+]
+
 /** The layouts a dashboard can start from, named `dashboard.layoutPresets.<id>`: Standard is the dashboard as it always was. */
 export const LAYOUT_PRESETS = {
-  standard: {
-    tiles: [
-      ...FIGURES.map((f, i) => tile(f, i, 0, 1, 3)),
-      tile(presetKey('monthlyCosts'), 0, 3, 2, 8),
-      tile(presetKey('consumption'), 2, 3, 2, 8),
-      tile(presetKey('fuelPrice'), 0, 11, 2, 8),
-      tile(presetKey('categories'), 2, 11, 2, 8),
-      tile(presetKey('distance'), 0, 19, 2, 8),
-    ],
-    hidden: [],
-  },
+  standard: { tiles: presetTiles(['thisMonth', 'consumption', 'odometer', 'lastFillUp'], ['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'distance']), hidden: [] },
+  spending: { tiles: presetTiles(['thisMonth', 'spendingTrend', 'costPerDistance', 'lastFillUp'], ['monthlyCosts', 'spendSoFar', 'categories', 'costPerDistance', 'fuelPrice']), hidden: [] },
+  usage: { tiles: presetTiles(['odometer', 'distanceTrend', 'consumption', 'consumptionTrend'], ['distanceYearEarlier', 'consumptionTrend', 'distanceAndConsumption', 'distance']), hidden: [] },
 } as const satisfies Record<string, Layout>
 export type LayoutPresetId = keyof typeof LAYOUT_PRESETS
 

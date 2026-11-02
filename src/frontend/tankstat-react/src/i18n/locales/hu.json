@@ -1283,6 +1283,10 @@
       "consumptionHint": "az utolsó 10 teli tankolás",
       "odometer": "Kilométeróra",
       "lastFillUp": "Utolsó tankolás",
+      "spendingTrend": "Költés, utolsó 12 hónap",
+      "costPerDistance": "Költség távolságra, utolsó 12 hónap",
+      "consumptionTrend": "Fogyasztás, utolsó 10 tankolás",
+      "distanceTrend": "Idei megtett távolság",
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
       "none": "–",
       "title": "Fő adatok"
@@ -1296,6 +1300,8 @@
     "showTable": "Az adatok megjelenítése táblázatként",
     "hideTable": "A táblázat elrejtése",
     "editChart": "A(z) {{title}} grafikon szerkesztése",
+    "copyChart": "{{title}} másolása saját grafikonként",
+    "copyTitle": "Másolás saját grafikonként",
     "deleteChart": "A(z) {{title}} grafikon törlése",
     "deleteTitle": "Törlöd ezt a grafikont?",
     "deleteDescription": "A(z) „{{title}}” mindenkinek eltűnik, akivel meg van osztva. Maguk az adatok nem változnak.",
@@ -1327,7 +1333,25 @@
       "consumption": "Fogyasztás",
       "fuelPrice": "Üzemanyagár",
       "categories": "Költségek kategóriánként",
-      "distance": "Havi megtett távolság"
+      "distance": "Havi megtett távolság",
+      "spendSoFar": "Idei költés eddig",
+      "costPerDistance": "Költség távolságra vetítve",
+      "consumptionTrend": "Fogyasztási trend",
+      "distanceYearEarlier": "Megtett távolság idén és tavaly",
+      "distanceAndConsumption": "Távolság és fogyasztás"
+    },
+    "trend": {
+      "moreThanBefore": "{{change}}-kal/-kel több, mint az azt megelőző 12 hónapban",
+      "lessThanBefore": "{{change}}-kal/-kel kevesebb, mint az azt megelőző 12 hónapban",
+      "sameAsBefore": "ugyanannyi, mint az azt megelőző 12 hónapban",
+      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint az előző 10 tankolásnál",
+      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint az előző 10 tankolásnál",
+      "sameFuel": "ugyanannyi üzemanyagot használ, mint az előző 10 tankolásnál",
+      "moreThanLastYear": "{{change}}-kal/-kel több, mint tavaly ugyaneddig",
+      "lessThanLastYear": "{{change}}-kal/-kel kevesebb, mint tavaly ugyaneddig",
+      "sameAsLastYear": "ugyanannyi, mint tavaly ugyaneddig",
+      "nothingBefore": "még nincs mivel összevetni",
+      "tooFew": "mindkét tízben 3 tankolás kell hozzá"
     },
     "customize": {
       "button": "Testreszabás",
@@ -1377,7 +1401,9 @@
     },
     "sectionLabel": "Irányítópult",
     "layoutPresets": {
-      "standard": "Alap"
+      "standard": "Alap",
+      "spending": "Költés",
+      "usage": "Használat"
     }
   },
   "charts": {

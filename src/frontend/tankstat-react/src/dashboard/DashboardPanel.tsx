@@ -5,7 +5,7 @@ import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type DragEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
@@ -270,7 +270,35 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     const widget = widgetOf(tile.id)
     if (widget?.kind === 'figure') return <Figure id={widget.id} summary={s} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
-    if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
+    if (widget?.kind === 'ready') {
+      const title = t(`dashboard.presets.${widget.chart.id}`)
+      return (
+        <ChartCard
+          vehicleId={vehicle.id}
+          title={title}
+          recipe={widget.chart.recipe}
+          units={vehicle.units}
+          fill
+          headingLevel={2}
+          actions={
+            // A ready-made chart copied as one's own: the builder starts from its recipe, the original stays.
+            !edit ? (
+              <ChartBuilderDialog
+                vehicle={vehicle}
+                canShare={canShare}
+                start={{ title, recipe: widget.chart.recipe }}
+                onSaved={() => refetch()}
+                trigger={
+                  <IconAction size="large" label={t('dashboard.copyChart', { title })}>
+                    <Copy size={16} aria-hidden />
+                  </IconAction>
+                }
+              />
+            ) : undefined
+          }
+        />
+      )
+    }
     const saved = charts.find((c) => c.id === widget?.id)
     return saved ? savedCard(saved) : null
   }

@@ -139,6 +139,12 @@ export interface FakeSummary {
   expenseCount: number
   spendTrend: { month: string; amount: number }[]
   spending: { currency: string; thisMonth: number; lastMonth: number }[]
+  trends: {
+    spending: { currency: string; recent: number | null; earlier: number | null }[]
+    costPerDistance: { currency: string; recent: number | null; earlier: number | null }[]
+    consumption: { recent: number | null; earlier: number | null } | null
+    distance: { recent: number | null; earlier: number | null }
+  }
 }
 
 /**
@@ -156,6 +162,12 @@ export const fakeSummary = (over: Partial<FakeSummary> = {}): FakeSummary => {
     fillUpCount: 5,
     expenseCount: 2,
     spendTrend: ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].map((month, i) => ({ month, amount: 10000 * i })),
+    trends: {
+      spending: [{ currency: 'HUF', recent: 560000, earlier: 500000 }],
+      costPerDistance: [{ currency: 'HUF', recent: 4480, earlier: 4000 }],
+      consumption: { recent: 6.5, earlier: 7 },
+      distance: { recent: 12500, earlier: 11000 },
+    },
     ...over,
   } as FakeSummary
   if (over.spending) return summary

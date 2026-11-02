@@ -442,4 +442,63 @@ public class StatsCalculatorTests
         Assert.Equal(0m, s.ThisMonthSpend);
         Assert.Equal([new CurrencySpend("EUR", 0m, 0m)], s.Spending); // the main currency is always listed, at zero when idle
     }
+
+    // ---- the trend figures -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Trends_CompareTheLastTwelveWholeMonthsWithTheTwelveBefore_PerCurrency_ThisMonthLeftOut()
+    {
+        var data = Data(
+            [Fill("2026-10-05", 40, 999, 9000), Fill("2026-09-30", 40, 100, 8000), Fill("2025-10-01", 40, 200, 5000), Fill("2025-09-30", 40, 50, 4000), Fill("2024-10-01", 40, 20, 1000),
+             Fill("2026-03-01", 10, 10, 7000, currency: "EUR")],
+            [Cost("2026-01-10", 300), Cost("2025-01-10", 30)]);
+
+        var t = StatsCalculator.Summary(data, Today).Trends;
+
+        Assert.Equal([new CurrencyChange("HUF", 600m, 100m), new CurrencyChange("EUR", 10m, 0m)], t.Spending); // Oct 2025..Sep 2026 vs Oct 2024..Sep 2025; October 2026 left out
+    }
+
+    [Fact]
+    public void Trends_CostPerDistance_IsPerHundredDistanceUnits_NullWithNothingDriven()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2025-09-30"), 10000), new OdometerPoint(DateOnly.Parse("2026-09-30"), 12000) };
+        var data = Data([Fill("2026-05-01", 40, 30000, 11000)], readings: readings);
+
+        var t = StatsCalculator.Summary(data, Today).Trends;
+
+        Assert.Equal([new CurrencyChange("HUF", 1500m, null)], t.CostPerDistance); // 30 000 over 2 000 km; nothing driven the year before
+    }
+
+    [Fact]
+    public void Trends_Consumption_IsTheLastTenAgainstTheTenBefore_NullWithFewerThanThreeInEither()
+    {
+        var fills = Enumerable.Range(0, 20).Select(i => Fill(new DateOnly(2026, 1, 1).AddDays(i).ToString("yyyy-MM-dd"), 30, 100, 1000 + i * 100, consumption: i < 10 ? 8m : 6m)).ToArray();
+        var few = Data([Fill("2026-09-01", 30, 100, 1000, consumption: 6m), Fill("2026-09-02", 30, 100, 1100, consumption: 7m), Fill("2026-09-03", 30, 100, 1200, consumption: 8m), Fill("2026-09-04", 30, 100, 1300, consumption: 9m)]);
+
+        var t = StatsCalculator.Summary(Data(fills), Today).Trends;
+
+        Assert.Equal(new ValueChange(6m, 8m), t.Consumption); // the last ten (by date and odometer) use 6, the ten before 8
+        Assert.Null(StatsCalculator.Summary(few, Today).Trends.Consumption);
+    }
+
+    [Fact]
+    public void Trends_Distance_IsThisYearAgainstLastYearUpToTheSameDay_ALeapDayIncluded()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2022-12-31"), 0), new OdometerPoint(DateOnly.Parse("2023-02-28"), 500), new OdometerPoint(DateOnly.Parse("2023-03-01"), 700), new OdometerPoint(DateOnly.Parse("2023-12-31"), 2000), new OdometerPoint(DateOnly.Parse("2024-02-29"), 2300) };
+
+        var t = StatsCalculator.Summary(Data(readings: readings), new DateOnly(2024, 2, 29)).Trends;
+
+        Assert.Equal(new ValueChange(300m, 500m), t.Distance); // 2024 to 29 Feb; 2023 to 28 Feb, the same day a year back
+    }
+
+    [Fact]
+    public void Trends_OfAVehicleWithoutData_AreEmpty()
+    {
+        var t = StatsCalculator.Summary(Data(), Today).Trends;
+
+        Assert.Empty(t.Spending);
+        Assert.Empty(t.CostPerDistance);
+        Assert.Null(t.Consumption);
+        Assert.Equal(new ValueChange(0m, 0m), t.Distance);
+    }
 }

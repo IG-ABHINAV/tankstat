@@ -57,12 +57,15 @@ export function ChartBuilderDialog({
   trigger,
   vehicle,
   chart,
+  start,
   canShare,
   onSaved,
 }: {
   trigger: ReactNode
   vehicle: { id: string; units: { distance: DistanceUnit; volume: VolumeUnit } }
   chart?: EditableChart
+  /** A new chart that starts from a recipe and title (a ready-made chart copied as one's own). */
+  start?: { title: string; recipe: ChartRecipe }
   /** Sharing with everyone who sees the vehicle needs Edit access to its logs. */
   canShare: boolean
   onSaved: () => void | Promise<unknown>
@@ -74,11 +77,12 @@ export function ChartBuilderDialog({
   return (
     <>
       <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />
-      <DialogFrame open={open} onClose={() => setOpen(false)} maxWidth={640} title={chart ? t('charts.dialogEdit') : t('charts.dialogAdd')} description={t('charts.dialogDescription')}>
+      <DialogFrame open={open} onClose={() => setOpen(false)} maxWidth={640} title={chart ? t('charts.dialogEdit') : start ? t('dashboard.copyTitle') : t('charts.dialogAdd')} description={t('charts.dialogDescription')}>
         {open && (
           <BuilderForm
             vehicle={vehicle}
             chart={chart}
+            start={start}
             canShare={canShare}
             onSaved={async () => {
               await onSaved()
@@ -92,10 +96,22 @@ export function ChartBuilderDialog({
   )
 }
 
-function BuilderForm({ vehicle, chart, canShare, onSaved }: { vehicle: { id: string; units: { distance: DistanceUnit; volume: VolumeUnit } }; chart?: EditableChart; canShare: boolean; onSaved: () => Promise<unknown> }) {
+function BuilderForm({
+  vehicle,
+  chart,
+  start,
+  canShare,
+  onSaved,
+}: {
+  vehicle: { id: string; units: { distance: DistanceUnit; volume: VolumeUnit } }
+  chart?: EditableChart
+  start?: { title: string; recipe: ChartRecipe }
+  canShare: boolean
+  onSaved: () => Promise<unknown>
+}) {
   const { t } = useTranslation()
-  const [title, setTitle] = useState(chart?.title ?? '')
-  const [recipe, setRecipe] = useState<ChartRecipe>(chart?.recipe ?? NEW_RECIPE)
+  const [title, setTitle] = useState(chart?.title ?? start?.title ?? '')
+  const [recipe, setRecipe] = useState<ChartRecipe>(chart?.recipe ?? start?.recipe ?? NEW_RECIPE)
   const [shared, setShared] = useState(chart?.isShared ?? false)
   const [save, { loading, error }] = useMutation(SaveChartDocument)
   const previewId = useId()

@@ -315,6 +315,12 @@ type CreatedUser {
   reset: PasswordResetLink!
 }
 
+type CurrencyChange {
+  currency: String!
+  recent: Decimal
+  earlier: Decimal
+}
+
 type CurrencySpend {
   currency: String!
   thisMonth: Decimal!
@@ -340,6 +346,13 @@ type DashboardTileInfo {
   w: Int!
   h: Int!
   pinned: Boolean!
+}
+
+type DashboardTrends {
+  spending: [CurrencyChange!]!
+  costPerDistance: [CurrencyChange!]!
+  consumption: ValueChange
+  distance: ValueChange!
 }
 
 type Expense {
@@ -841,6 +854,11 @@ type UserSessionInfo {
   current: Boolean!
 }
 
+type ValueChange {
+  recent: Decimal
+  earlier: Decimal
+}
+
 type Vehicle {
   id: UUID!
   ownerId: UUID!
@@ -910,6 +928,7 @@ type VehicleSummary {
   fillUpCount: Int!
   expenseCount: Int!
   spending: [CurrencySpend!]!
+  trends: DashboardTrends!
 }
 
 input AddExpenseInput {
