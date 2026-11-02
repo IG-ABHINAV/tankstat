@@ -1469,6 +1469,7 @@ enum SettingsGroup {
   PHOTO_READING
   BACKUPS
   LOGGING
+  TELEMETRY
 }
 
 enum SettingSource {

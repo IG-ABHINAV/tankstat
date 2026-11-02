@@ -48,6 +48,14 @@ describe('which settings are used', () => {
     expect(unusedReason('Recognition:MinConfidence', valueOf({ 'Recognition:Provider': 'OpenAiCompatible' }))).toBeNull()
   })
 
+  it('telemetry without an endpoint leaves its other settings unused, the endpoint itself never', () => {
+    const noEndpoint = valueOf({ OTEL_EXPORTER_OTLP_ENDPOINT: '' })
+    for (const key of ['OTEL_EXPORTER_OTLP_PROTOCOL', 'OTEL_EXPORTER_OTLP_HEADERS', 'OTEL_SERVICE_NAME', 'Telemetry:TraceDatabase'])
+      expect(unusedReason(key, noEndpoint)).toEqual({ kind: 'empty', setting: 'OTEL_EXPORTER_OTLP_ENDPOINT' })
+    expect(unusedReason('OTEL_EXPORTER_OTLP_ENDPOINT', noEndpoint)).toBeNull()
+    expect(unusedReason('Telemetry:TraceDatabase', valueOf({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4317' }))).toBeNull()
+  })
+
   it('greys nothing out on a guess: a deciding value that cannot be known leaves everything used', () => {
     expect(unusedReason('Auth:Oidc:Authority', valueOf({}))).toBeNull()
     expect(unusedReason('Smtp:Port', valueOf({ 'Auth:Mode': 'Standalone' }))).toBeNull()

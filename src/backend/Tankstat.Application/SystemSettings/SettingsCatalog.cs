@@ -5,6 +5,7 @@ using Tankstat.Application.Backups;
 using Tankstat.Application.Notifications;
 using Tankstat.Application.Recognition;
 using Tankstat.Application.Sync;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
 using Tankstat.Domain.Measurements;
@@ -24,6 +25,7 @@ public enum SettingsGroup
     PhotoReading,
     Backups,
     Logging,
+    Telemetry,
 }
 
 /// <summary>What a setting's value is, which decides how it is checked and edited.</summary>
@@ -175,6 +177,14 @@ public static class SettingsCatalog
         new(SettingsGroup.Logging, LoggingAspNetCore, SettingKind.Choice, LogLevels),
         new(SettingsGroup.Logging, LoggingEfCore, SettingKind.Choice, LogLevels),
         new(SettingsGroup.Logging, LoggingHttpClient, SettingKind.Choice, LogLevels),
+
+        // The OpenTelemetry SDK's own settings under their standard names (the SDK reads them from the configuration), like Logging's are the
+        // framework's; read when the host is built, so a change waits for a restart. Only the database switch is the app's (TelemetryOptions).
+        new(SettingsGroup.Telemetry, OtelSettings.Endpoint, SettingKind.Text),
+        new(SettingsGroup.Telemetry, OtelSettings.Protocol, SettingKind.Choice, OtelSettings.Protocols),
+        new(SettingsGroup.Telemetry, OtelSettings.Headers, SettingKind.Secret),
+        new(SettingsGroup.Telemetry, OtelSettings.ServiceName, SettingKind.Text),
+        new(SettingsGroup.Telemetry, TelemetryOptions.TraceDatabaseKey, SettingKind.Boolean),
     ];
 
     private static readonly Dictionary<string, SettingDefinition> ByKey = All.ToDictionary(d => d.Key, StringComparer.OrdinalIgnoreCase);
@@ -199,6 +209,7 @@ public static class SettingsCatalog
         (SyncOptions.SectionName, typeof(SyncOptions)),
         (RecognitionOptions.SectionName, typeof(RecognitionOptions)),
         (BackupOptions.SectionName, typeof(BackupOptions)),
+        (TelemetryOptions.SectionName, typeof(TelemetryOptions)),
     ];
 
     /// <summary>The level the logging framework uses when no source sets the default category (every other category follows that one).</summary>
@@ -224,6 +235,7 @@ public static class SettingsCatalog
     {
         if (setting.IsSecret || setting.IsList) return null;
         if (setting.Group == SettingsGroup.Logging) return setting.Key == LoggingDefault ? FrameworkLogLevel : null;
+        if (OtelSettings.IsOtelKey(setting.Key)) return OtelSettings.DefaultOf(setting.Key); // the SDK's own, not an options class's
         // The options class whose section holds the key; a section inside another (Auth:Standalone of the password requirements) is tried
         // before the outer one, which does not know the key.
         object? current = null;
@@ -286,6 +298,18 @@ public static class SettingsCatalog
                 if (BackupSchedule.ParseDays(value) is null) return $"{setting.Key} must be days of the week such as Monday,Thursday, or {BackupSchedule.NoDay}.";
                 break;
         }
+        return OtelProblem(setting.Key, value);
+    }
+
+    /// <summary>The OpenTelemetry settings' own shapes, as the SDK reads them: it throws on some (headers) and quietly drops others (a protocol in other letters).</summary>
+    private static string? OtelProblem(string key, string value)
+    {
+        if (key.Equals(OtelSettings.Endpoint, StringComparison.OrdinalIgnoreCase) && !OtelSettings.IsEndpoint(value))
+            return $"{key} must be an absolute http or https address.";
+        if (key.Equals(OtelSettings.Protocol, StringComparison.OrdinalIgnoreCase) && !OtelSettings.IsProtocol(value))
+            return $"{key} must be one of {string.Join(", ", OtelSettings.Protocols)}, written so.";
+        if (key.Equals(OtelSettings.Headers, StringComparison.OrdinalIgnoreCase) && !OtelSettings.AreHeaders(value))
+            return $"{key} must be key=value pairs separated by commas.";
         return null;
     }
 
@@ -302,8 +326,8 @@ public static class SettingsCatalog
 
     /// <summary>
     /// The wrong shapes among the managed settings that <paramref name="valueOf"/> has a value for, as the start sees them: only what the app
-    /// could not start with, named by its setting. Lists are not checked (every string is one); photo reading is not either, because its
-    /// settings never stop the app (RecognitionSetup turns reading off and says why); nor is the log levels' floor, a rule for what the page
+    /// could not start with, named by its setting. Lists are not checked (every string is one); photo reading and telemetry are not either,
+    /// because their settings never stop the app (RecognitionSetup turns reading off and says why, TelemetryGate the export); nor is the log levels' floor, a rule for what the page
     /// writes (<see cref="Validate"/>), not something the app refuses to start with; nor an empty value, which the app runs with where a
     /// setting may be unset (the binder reads <c>Backups:Keep</c> as no limit, the logging filter skips an empty level) and the binder refuses
     /// elsewhere, naming the setting itself.
@@ -313,7 +337,7 @@ public static class SettingsCatalog
         var problems = new List<string>();
         foreach (var setting in All)
         {
-            if (setting.IsList || setting.Group == SettingsGroup.PhotoReading) continue;
+            if (setting.IsList || setting.Group is SettingsGroup.PhotoReading or SettingsGroup.Telemetry) continue;
             var value = valueOf(setting.Key);
             if (string.IsNullOrEmpty(value)) continue;
             if (ShapeProblem(setting, value) is { } problem) problems.Add(problem);

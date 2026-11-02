@@ -61,7 +61,11 @@ public sealed partial class CapturedLog : ILoggerProvider, ISupportExternalScope
         return Entries.Any(e => Holds(e.Text, text) || Holds(e.ScopeText, text));
     }
 
-    private static bool Holds(string line, string text)
+    /// <summary>
+    /// Whether <paramref name="line"/> contains <paramref name="text"/> as <see cref="Mentions"/> counts it (ignoring case, not strictly inside a
+    /// random id): for what else a privacy test reads, such as the spans and log records the telemetry exporter is handed.
+    /// </summary>
+    public static bool Holds(string line, string text)
     {
         MatchCollection? ids = null;
         for (var at = 0; (at = line.IndexOf(text, at, StringComparison.OrdinalIgnoreCase)) >= 0; at++)

@@ -78,7 +78,8 @@ internal sealed class RestoreStep(
     InstanceGeneration state,
     OneTimeCode code,
     TimeProvider clock,
-    ILogger<RestoreStep> logger) : IHostedService
+    ILogger<RestoreStep> logger,
+    ILogger<OneTimeCode.RestoreLine> codeLogger) : IHostedService
 {
     /// <summary>The folders right below a vehicle's that hold the photos of its logs (not their drafts, which go with every restore).</summary>
     private static readonly HashSet<string> LogPhotoFolders = [.. ImageFolders.LogPhotoKinds];
@@ -162,8 +163,9 @@ internal sealed class RestoreStep(
             restart.RestartNow();
             return;
         }
+        // Its own category keeps the code off the telemetry exporter (OneTimeCode.LogCategory).
         if (auth.Value.Mode == AuthMode.None)
-            logger.LogInformation("Restoring a backup from the app needs the one-time restore code {Code} (sign-in is off, so there is no administrator to ask)", code.Value);
+            codeLogger.LogInformation("Restoring a backup from the app needs the one-time restore code {Code} (sign-in is off, so there is no administrator to ask)", code.Value);
     }
 
     public Task StopAsync(CancellationToken ct) => Task.CompletedTask;

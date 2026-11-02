@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Tankstat is a self-hosted web app: React + TypeScript frontend (Vite) and a .NET 10 backend. Kestrel serves both the API and the built SPA in production.
 
-The README is short on purpose (what it is, the features by name, a quick start, the development commands, links). The user and operator documentation is in `docs/`, one file per topic: `configuration.md` (database, files, defaults, notifications, the app's own settings file, logging), `authentication.md` (modes, settings, access control), `user-guide.md`, `importing.md`, `install-as-an-app.md`, `photo-reading.md`, `backup-and-restore.md`, `self-hosting.md` and `development.md`. When a change alters behaviour or a setting that a docs file describes, update that file (and the README only when a feature's one-line summary changes). `docs/photo-reading.md` prints the built-in system prompt, both contracts and the JSON schema, pinned to the code by `OpenAiCompatiblePromptTests`.
+The README is short on purpose (what it is, the features by name, a quick start, the development commands, links). The user and operator documentation is in `docs/`, one file per topic: `configuration.md` (database, files, defaults, notifications, the app's own settings file, logging, telemetry), `authentication.md` (modes, settings, access control), `user-guide.md`, `importing.md`, `install-as-an-app.md`, `photo-reading.md`, `backup-and-restore.md`, `self-hosting.md` and `development.md`. When a change alters behaviour or a setting that a docs file describes, update that file (and the README only when a feature's one-line summary changes). `docs/photo-reading.md` prints the built-in system prompt, both contracts and the JSON schema, pinned to the code by `OpenAiCompatiblePromptTests`.
 
 Pull request descriptions never carry the claude.ai session link (no `https://claude.ai/code/session_...` line); the "Generated with Claude Code" line stays. Commit trailers are unchanged.
 
@@ -45,6 +45,7 @@ The rules of each area are in `.claude/rules/`, one file per area. Each loads by
 - `ui-settings-and-home-cards.md`: what the UI remembers per user (incl. the time and date formats), the home cards.
 - `frontend.md`: UI structure and shared components, grids, bundle size, charts, libraries and motion.
 - `logging.md`: what is logged at which level, what never is, and the canary tests.
+- `telemetry.md`: OpenTelemetry over OTLP: the gate, the settings, what is exported and what never is, its tests.
 - `pwa.md`: the installable app, updates, chunk recovery.
 - `ci-and-tests.md`: CI and tests kept apart from `appsettings.json` and the developer's environment.
 - `e2e.md`: the real-browser tests (Playwright): the app they start, Docker or native, data, waits, the layout check.

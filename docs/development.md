@@ -49,6 +49,15 @@ mise run dev:api   # API with hot reload on http://localhost:5080 (GraphQL IDE a
 mise run dev:web   # Vite dev server, proxies /graphql, /auth/oidc/, /media and /imports to :5080
 ```
 
+To watch the app's telemetry (traces, metrics and logs; [Configuration](configuration.md#telemetry-opentelemetry)), run a collector UI and point the API at it. The .NET Aspire dashboard takes OTLP over gRPC and prints a sign-in link in its log:
+
+```sh
+docker run --rm -it -p 18888:18888 -p 4317:18889 mcr.microsoft.com/dotnet/aspire-dashboard   # then open http://localhost:18888
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 mise run dev:api
+```
+
+The test hosts never export: they drop a developer's `OTEL_*` and `Telemetry__*` variables.
+
 ## Testing
 
 ```sh

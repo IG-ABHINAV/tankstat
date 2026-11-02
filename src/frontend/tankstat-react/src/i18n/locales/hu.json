@@ -1874,7 +1874,8 @@
       "SYNC": "Offline szinkronizálás",
       "PHOTO_READING": "Fényképolvasás",
       "BACKUPS": "Mentések",
-      "LOGGING": "Naplózás"
+      "LOGGING": "Naplózás",
+      "TELEMETRY": "Telemetria"
     },
     "groupHelp": {
       "AUTH": "Hogyan jelentkeznek be a felhasználók. A mód módosítása a következő újraindításkor lép életbe, és akkor mindenkit kijelentkeztet, téged is.",
@@ -1884,7 +1885,8 @@
       "SYNC": "Meddig emlékszik a kiszolgáló az eszközök küldte változásokra és a végleges törlésekre, az offline adatokat őrző eszközök kedvéért.",
       "PHOTO_READING": "OpenAI-kompatibilis API mögötti látómodell, amely nyugtákat és műszerfalakat olvas; szolgáltató nélkül kikapcsolva. Felhős cím esetén minden fénykép oda kerül.",
       "BACKUPS": "Mikor készülnek mentések maguktól, hányat őriz meg a szerver, mi kerül beléjük és hogyan titkosítja őket. A mentés, a feltöltés és a visszaállítás a Mentések oldalon van.",
-      "LOGGING": "Naplószint kategóriánként. Az ASP.NET Core kategóriák sosem mennek a Warning alá: a kéréssoraik a jelszó-visszaállító linkek tokenjeit tartalmazzák."
+      "LOGGING": "Naplószint kategóriánként. Az ASP.NET Core kategóriák sosem mennek a Warning alá: a kéréssoraik a jelszó-visszaállító linkek tokenjeit tartalmazzák.",
+      "TELEMETRY": "Nyomkövetések, metrikák és naplósorok OpenTelemetry (OTLP) protokollon egy általad választott gyűjtőnek vagy háttérrendszernek; végpont nélkül kikapcsolva. A naplóhoz hasonlóan csak azonosítókat, számokat és okokat küld, sosem azt, amit valaki begépelt, és sosem az egyszeri kódot."
     },
     "groupForm": "{{group}} beállításai",
     "source": {
@@ -1990,7 +1992,7 @@
       "Backups__KeepDays": "Minden mentés után, amelyet az alkalmazás készít, törlődnek az ennyi napnál régebbi tankstat-backup-… nevű fájlok (a frissítések előtti biztonsági mentések külön maradnak, a legújabb három); a legújabb mindig megmarad. A feltöltött és a más néven bemásolt fájlok sosem törlődnek. Üresen nincs korkorlát.",
       "Backups__Photos": "Csak akkor számít, ha a bejegyzések fényképeinek saját mappája van (Storage:PhotosPath): ezek korlát nélkül nőnek, ezért csak bekapcsolva kerülnek a mentésbe. Egy mappával mindig benne vannak.",
       "Backups__Environment": "Mit kezd a mentés az itteni környezeti változókban megadott beállításokkal: a „Csak a nevek” (Record) csak a nevüket írja a mentésbe, és ha közülük valamelyiknek nincs értéke egy kiszolgálón, ott a visszaállítást elutasítja, amíg be nem állítod; a „Nevek és értékek” (Merge) a kiszolgáló futó értékeit is beírja a mentés beállításfájl-másolatába (soha nem a kiszolgáló saját fájljába), így egy másik kiszolgálón a visszaállítás magával hozza őket, a titkokat csak akkor, ha a „Titkok a mentésekben” be van kapcsolva.",
-      "Backups__Secrets": "Minden mentés beállításfájlja a titkokat is tartalmazza (az OIDC-kliens titkát, az SMTP-jelszót, a modell API-kulcsát), így egy másik kiszolgálón a visszaállítás magával hozza őket. Alapból ki van kapcsolva. Egy nem titkosított mentésben aki hozzájut a fájlhoz, olvashatja őket: a mentések titkosításához készíts kulcskészletet a Mentések oldalon. A „Csak a nevek” beállítás mellett (Beállítások a környezetből) csak így kerülnek a kiszolgáló beállításfájljában tárolt titkok a mentésbe; a környezeti változókban megadott titkok csak a „Nevek és értékek” mellett. A mentés mindkét esetben megnevez minden titkot, amelyet kihagy.",
+      "Backups__Secrets": "Minden mentés beállításfájlja a titkokat is tartalmazza (az OIDC-kliens titkát, az SMTP-jelszót, a modell API-kulcsát, a telemetria fejléceit), így egy másik kiszolgálón a visszaállítás magával hozza őket. Alapból ki van kapcsolva. Egy nem titkosított mentésben aki hozzájut a fájlhoz, olvashatja őket: a mentések titkosításához készíts kulcskészletet a Mentések oldalon. A „Csak a nevek” beállítás mellett (Beállítások a környezetből) csak így kerülnek a kiszolgáló beállításfájljában tárolt titkok a mentésbe; a környezeti változókban megadott titkok csak a „Nevek és értékek” mellett. A mentés mindkét esetben megnevez minden titkot, amelyet kihagy.",
       "Backups__Encryption__Recipient": "Az age-címzett (age1…), akinek a mentések titkosítva készülnek. A sóval egy párt alkot, egyazon kulcskészletből: mindkettőt a Mentések oldal Kulcskészlet készítése gombjával lehet előállítani, és csak együtt szabad módosítani. Üresen a mentések titkosítatlanok, és nincsenek bennük a bejelentkezést védő kulcsok.",
       "Backups__Encryption__Salt": "A só, amellyel a kulcs a jelmondatból készül; a címzettel együtt kapod meg, és összetartoznak. Egy másik kulcskészlet sójával (vagy kézzel módosított sóval) az utána készült mentéseket már nem nyitja meg a jelmondat, csak az azonosító. A régebbi mentésekhez a saját jelmondatuk kell.",
       "Backups__PassphraseMinLength": "Legalább ilyen hosszú legyen egy titkosított mentésekhez beírt jelmondat a Mentések oldalon és a backup keygen parancsnál (12 és 128 között, alapból 12). A kitalált jelmondatra és arra, amely egy meglévő mentést nyit meg, nem vonatkozik.",
@@ -1999,7 +2001,12 @@
       "Logging__LogLevel__Tankstat": "Az alkalmazás saját sorai: az Information azt mutatja, amit egy üzemeltető keres, a Debug minden szokásos változást azonosítóval.",
       "Logging__LogLevel__Microsoft_AspNetCore": "A webszerver sorai. Sosem lehet Warning alatt: a kéréssoraiban ott vannak a jelszó-visszaállító linkek tokenjei.",
       "Logging__LogLevel__Microsoft_EntityFrameworkCore": "Az adatbázisréteg sorai; az Information minden SQL-parancsot kiír.",
-      "Logging__LogLevel__System_Net_Http_HttpClient": "A kimenő kérések, például a fotóolvasó szerverhez; az Information kérésenként egy sort ír."
+      "Logging__LogLevel__System_Net_Http_HttpClient": "A kimenő kérések, például a fotóolvasó szerverhez; az Information kérésenként egy sort ír.",
+      "OTEL_EXPORTER_OTLP_ENDPOINT": "A gyűjtő vagy háttérrendszer, ahová a telemetria kerül, például http://otel-collector:4317 (gRPC) vagy http://otel-collector:4318 (HTTP). Üresen (alapértelmezés) semmit sem küld. A hálózatodon kívüli cím minden nyomkövetést, metrikát és naplósort oda küld.",
+      "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc (alapértelmezés, általában a 4317-es port) vagy http/protobuf (általában a 4318-as port), ahogy a végpont várja.",
+      "OTEL_EXPORTER_OTLP_HEADERS": "Minden küldéssel együtt megy, vesszővel elválasztott kulcs=érték párokként, például egy háttérrendszer API-kulcsa (x-api-key=...). Sosem jelenik meg újra.",
+      "OTEL_SERVICE_NAME": "A név, amely alatt a telemetria a háttérrendszerben megjelenik; alapból tankstat.",
+      "Telemetry__TraceDatabase": "Minden adatbázis-parancsról is küld egy spant, az SQL-szövegével együtt. Béta: az EF Core instrumentációja előzetes kiadás, és a parancsba írt értékek elrejtése elvéthet egyet, így egy érték eljuthat a háttérrendszerbe; amit begépelnek, az paraméterként megy, ezeket sosem küldi el. Alapból ki van kapcsolva, és csak végponttal működik."
     },
     "sections": {
       "sessions": "Munkamenetek (Standalone és OIDC)",
@@ -2075,7 +2082,12 @@
       "Logging__LogLevel__Tankstat": "Tankstat",
       "Logging__LogLevel__Microsoft_AspNetCore": "ASP.NET Core",
       "Logging__LogLevel__Microsoft_EntityFrameworkCore": "Entity Framework Core",
-      "Logging__LogLevel__System_Net_Http_HttpClient": "HTTP-kliens"
+      "Logging__LogLevel__System_Net_Http_HttpClient": "HTTP-kliens",
+      "OTEL_EXPORTER_OTLP_ENDPOINT": "OTLP-végpont",
+      "OTEL_EXPORTER_OTLP_PROTOCOL": "Protokoll",
+      "OTEL_EXPORTER_OTLP_HEADERS": "Fejlécek",
+      "OTEL_SERVICE_NAME": "Szolgáltatásnév",
+      "Telemetry__TraceDatabase": "Adatbázis-parancsok követése"
     },
     "choices": {
       "authMode": {
@@ -2103,10 +2115,14 @@
       "backupEnvironment": {
         "Record": "Csak a nevek",
         "Merge": "Nevek és értékek"
+      },
+      "otlpProtocol": {
+        "grpc": "gRPC, általában a 4317-es port",
+        "http/protobuf": "HTTP, általában a 4318-as port"
       }
     },
     "choiceWithValue": "{{words}} ({{value}})",
     "noSignInWarning": "Nem biztonságos: bejelentkezés nélkül bárki, aki eléri a szervert, minden adatot lát és módosíthat, az adminisztrációs oldalak pedig nem érhetők el. Csak kipróbálásra, megbízható hálózaton használd, éles üzemben soha.",
-    "secretsPlainWarning": "A mentések nincsenek titkosítva, így bekapcsolva minden mentés olvashatóan tartalmazza a titkokat: aki hozzájut egy fájlhoz, egy lemezről, egy másolatból vagy egy megosztásból, olvashatja az OIDC-kliens titkát, az SMTP-jelszót és a modell API-kulcsát. A titkosításukhoz készíts kulcskészletet a Mentések oldalon."
+    "secretsPlainWarning": "A mentések nincsenek titkosítva, így bekapcsolva minden mentés olvashatóan tartalmazza a titkokat: aki hozzájut egy fájlhoz, egy lemezről, egy másolatból vagy egy megosztásból, olvashatja az OIDC-kliens titkát, az SMTP-jelszót, a modell API-kulcsát és a telemetria fejléceit. A titkosításukhoz készíts kulcskészletet a Mentések oldalon."
   }
 }

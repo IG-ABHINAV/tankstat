@@ -730,6 +730,48 @@ it('a mail server left empty leaves the rest of the e-mail settings unused, and 
   expect(sectionHeader(photos, 'Model server')).toHaveAttribute('aria-expanded', 'true')
 })
 
+it('telemetry without an endpoint leaves its other settings unused, waits for a restart, and names the standard variables', async () => {
+  const ui = userEvent.setup()
+  const base = fixture()
+  settingsServer({
+    ...base,
+    groups: [
+      ...base.groups,
+      {
+        __typename: 'SystemSettingsGroup',
+        name: 'TELEMETRY', appliesAtOnce: false,
+        settings: [
+          setting({ key: 'OTEL_EXPORTER_OTLP_ENDPOINT' }),
+          setting({ key: 'OTEL_EXPORTER_OTLP_PROTOCOL', kind: 'CHOICE', choices: ['grpc', 'http/protobuf'], defaultValue: 'grpc' }),
+          setting({ key: 'OTEL_EXPORTER_OTLP_HEADERS', kind: 'SECRET', isSecret: true }),
+          setting({ key: 'OTEL_SERVICE_NAME', defaultValue: 'tankstat' }),
+          setting({ key: 'Telemetry:TraceDatabase', kind: 'BOOLEAN', defaultValue: 'false' }),
+        ],
+      },
+    ],
+  })
+  renderWithApollo(<App />, '/admin/settings?tab=telemetry')
+
+  const telemetry = await group('Telemetry')
+  expect(telemetry.getByText('Changes here take effect after a restart of the server.')).toBeInTheDocument()
+  // The SDK's own settings, under the names every collector's documentation uses; the database switch is the app's.
+  await ui.hover(telemetry.getByRole('button', { name: 'About OTLP endpoint' }))
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(/Environment variable: OTEL_EXPORTER_OTLP_ENDPOINT$/)
+  await ui.hover(telemetry.getByRole('button', { name: 'About Trace database commands' }))
+  await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(/Environment variable: Telemetry__TraceDatabase$/))
+  await ui.unhover(telemetry.getByRole('button', { name: 'About Trace database commands' }))
+  expect(telemetry.getByLabelText('OTLP endpoint')).toBeEnabled()
+  expect(telemetry.getByLabelText('Service name')).toBeDisabled()
+  expect(telemetry.getByLabelText('Service name')).toHaveAccessibleDescription(/Not used while OTLP endpoint is empty\.$/)
+  expect(telemetry.getByRole('switch', { name: 'Trace database commands' })).toBeDisabled()
+
+  await ui.type(telemetry.getByLabelText('OTLP endpoint'), 'http://collector:4317')
+  expect(telemetry.getByLabelText('Service name')).toBeEnabled()
+  expect(telemetry.getByRole('switch', { name: 'Trace database commands' })).toBeEnabled()
+  await ui.click(telemetry.getByRole('combobox', { name: 'Protocol' }))
+  expect(await screen.findByRole('option', { name: 'HTTP, usually port 4318 (http/protobuf)' })).toBeInTheDocument()
+})
+
 it('days of the week are checkboxes named by the setting: every day by default, and none ticked saves no day', async () => {
   const ui = userEvent.setup()
   const base = fixture()

@@ -1,6 +1,6 @@
 # Configuration
 
-For operators: the database, uploaded files, defaults, notification limits, the app's own settings file and the log. Authentication has [a page of its own](authentication.md).
+For operators: the database, uploaded files, defaults, notification limits, the app's own settings file, the log and telemetry. Authentication has [a page of its own](authentication.md).
 
 Every setting below can be given in `appsettings.json`, in [the app's own settings file](#the-apps-own-settings-file) or as an environment variable, where `:` becomes `__` (double underscore). The order is the standard ASP.NET Core one with that file added, lowest first: `appsettings.json` < `appsettings.{Environment}.json` < the app's own settings file (`Settings:Path`) < environment variables < command line; a setting given higher up wins, so an environment variable (`Section__Key`) always overrides both files. The same holds for the [authentication](authentication.md) and [photo reading](photo-reading.md) settings.
 
@@ -74,7 +74,7 @@ What to know about it:
 
 ## Logging
 
-The app writes its log to the console (`docker logs`, the terminal) with the standard .NET logger; there is nothing to install. The shipped `Logging` settings in `appsettings.json` keep the app's own lines (category `Tankstat`) at `Information` and silence what used to drown them: Entity Framework's SQL commands and the HTTP client's per-request lines.
+The app writes its log to the console (`docker logs`, the terminal) with the standard .NET logger; there is nothing to install. With [telemetry](#telemetry-opentelemetry) on, the same lines also go to the OpenTelemetry exporter. The shipped `Logging` settings in `appsettings.json` keep the app's own lines (category `Tankstat`) at `Information` and silence what used to drown them: Entity Framework's SQL commands and the HTTP client's per-request lines.
 
 | Level | What is logged |
 | --- | --- |
@@ -83,7 +83,7 @@ The app writes its log to the console (`docker logs`, the terminal) with the sta
 | `Information` | start-up (database migrations applied or up to date, the app's own settings file in use, every device signed out because the authentication mode changed, the photos of logs moved to their own folder, a setup reopened in `Standalone` completed again by a start in another mode), an administrator's change of the system settings (by the names of the settings) and restart of the server, sign-ins and sign-outs, password changes and reset requests, what an administrator does to users and to access, sharing a vehicle's logs, imports, emptied trashes, a backup a stopped run left half written that a start removed (its file name), a backup written (its file name, counts and whether it is encrypted), the backup schedule at start and whenever a new time is saved (its time and time zone), backup settings or a minimum password length usable again after they were not, that backups are not scheduled any more once the time is cleared, a missed backup written at start, a backup retention removed (its file name) or retention held back while a restore waits, on the administration page a backup started, a key set for encrypted backups made (never the keys), a backup uploaded (its file name and size) or downloaded (its file name), each by user id, and a backup under way stopped with the app, a restore asked for and each step of one applied at start (the backup's file name, the tables and files loaded, the new generation), a backup that reads SQL Server under `SERIALIZABLE` (snapshot isolation is off, so writers wait while the tables are read), which model and server photo reading uses and where its system prompt comes from, a database or model server that is back, and the setup of a new instance: an instance that counts as set up because its database held data from before, a setup the environment completed (by the setting that did), the first administrator made or claimed on the setup page (by user id) or open access acknowledged there, a scheduled backup not written while the setup waits and nothing is stored yet |
 | `Debug` | ordinary changes (a vehicle, refueling, expense, schedule, chart, picture or photo added, changed, trashed or restored), every GraphQL request with its time and operation, errors a client causes (a validation failure, something missing, a request the server turns down), sessions that are no longer valid and why, a database that would not say how large it is (the administration page shows its size as unknown), and the trail of each photo a model reads (see [Reading photos with an OpenAI-compatible model](photo-reading.md#following-a-photo-through-the-log)) |
 
-**Only ids, counts and reasons are logged** by the app's own lines: users, vehicles, logs and pictures by id, never e-mail addresses, names, license plates, notes, amounts, odometer readings, passwords, reset links, API keys, the subject an identity provider sends, or values read from photos (why a value was dropped is logged as a code such as `OdometerBelowLatest`, never the value). There are two exceptions. One is opt-in: `Recognition__OpenAiCompatible__LogTraffic=true` also writes the prompts and what a model read, never the photo or the key, to debug a model ([details](photo-reading.md#seeing-what-is-sent-to-the-model)). The other is deliberate: while a new instance waits for its setup, and with sign-in off (`Auth__Mode=None`) at every start, the start writes the instance's **one-time code** to the log (`XXXX-XXXX-XXXX`, a new one at every start; while the setup waits as a `Warning`), because there is no administrator to guard the setup or a restore asked for from the app, so whoever may read the log may set the instance up or restore ([details](backup-and-restore.md#restoring-a-backup)). A backup's passphrase or identity is never logged. A failed sign-in names the account by its id (or says "unknown account"), not by the address that was typed. A settings file left out at start is described by the names of the settings at fault, never by what was written in them. Nothing a client sends is logged as it came: not GraphQL variables or documents, not the text of a request error, fields are named the way the schema names them, and the endpoints of the picture and import uploads appear as their route pattern, not as the path that was asked for.
+**Only ids, counts and reasons are logged** by the app's own lines: users, vehicles, logs and pictures by id, never e-mail addresses, names, license plates, notes, amounts, odometer readings, passwords, reset links, API keys, the subject an identity provider sends, or values read from photos (why a value was dropped is logged as a code such as `OdometerBelowLatest`, never the value). There are two exceptions. One is opt-in: `Recognition__OpenAiCompatible__LogTraffic=true` also writes the prompts and what a model read, never the photo or the key, to debug a model ([details](photo-reading.md#seeing-what-is-sent-to-the-model)). The other is deliberate: while a new instance waits for its setup, and with sign-in off (`Auth__Mode=None`) at every start, the start writes the instance's **one-time code** to the log, never to the [telemetry](#telemetry-opentelemetry) exporter (`XXXX-XXXX-XXXX`, a new one at every start; while the setup waits as a `Warning`), because there is no administrator to guard the setup or a restore asked for from the app, so whoever may read the log may set the instance up or restore ([details](backup-and-restore.md#restoring-a-backup)). A backup's passphrase or identity is never logged. A failed sign-in names the account by its id (or says "unknown account"), not by the address that was typed. A settings file left out at start is described by the names of the settings at fault, never by what was written in them. Nothing a client sends is logged as it came: not GraphQL variables or documents, not the text of a request error, fields are named the way the schema names them, and the endpoints of the picture and import uploads appear as their route pattern, not as the path that was asked for.
 
 That promise has an edge. The text of an unexpected error is written as the framework or the database wrote it, and a database server can quote the values of a failed statement in it (for a duplicate key, for example). Lines of the framework and its libraries (`Microsoft.*`, `System.*`) are written as they come, such as an identity provider's error description. And **do not lower `Microsoft.AspNetCore` below `Warning`**: its request lines hold the whole address of a request, which includes the token of a password reset link.
 
@@ -103,3 +103,63 @@ Logging__Console__FormatterOptions__IncludeScopes=true                      #   
 ```
 
 With scopes on, each line of a signed-in user's request carries `UserId: <id>`, next to the framework's own scopes (trace and connection ids and the **request path**, which is what the client asked for). Prefer the `json` formatter with scopes: it escapes the path. A narrower category works like the first line, for example `Logging__LogLevel__Tankstat.Application.Users=Debug` for sign-ins and user administration only (a name with dots can be set through Docker or `env`, not through the shell's `export`). The browser has a log of its own: a failed request or a crashed page is written to the browser's console, and nothing is sent to the server.
+
+## Telemetry (OpenTelemetry)
+
+Tankstat can send its traces, metrics and logs over OTLP to an OpenTelemetry collector or backend of your choice: the OpenTelemetry Collector, Grafana Alloy, Jaeger, the .NET Aspire dashboard, SigNoz, Honeycomb and so on. **It is off by default**: until an endpoint is set nothing is registered and nothing leaves the server. The settings are the OpenTelemetry SDK's own, under the names every collector's documentation uses. Give them in the environment, the app's own settings file, or the **Telemetry** tab of the Server settings page. They are read at start, so a change takes effect after a restart.
+
+| Setting | What it does |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where every signal goes, such as `http://otel-collector:4317` (gRPC) or `http://otel-collector:4318` (HTTP). **The switch**: empty, nothing is sent. An address outside your network sends every trace, metric and log line there. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` (the default) or `http/protobuf`, written exactly so: the SDK takes no other spelling. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers sent with every export, `key=value` pairs separated by commas, such as a backend's API key. A secret: the page never shows it back, and a backup carries it only with `Backups__Secrets`. |
+| `OTEL_SERVICE_NAME` | The service the telemetry is filed under; `tankstat` by default. |
+| `Telemetry__TraceDatabase` | `true` also traces every database command. A beta that may leak data, off by default: see [Database spans](#database-spans-beta) below. |
+
+The SDK's other settings work as the [OpenTelemetry .NET SDK](https://opentelemetry.io/docs/languages/dotnet/exporters/) reads them, in the environment only: `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_TIMEOUT`, `OTEL_SDK_DISABLED=true` (everything off), and a signal's own `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` (or `_PROTOCOL`, `_HEADERS`). A signal's own endpoint only sends that signal elsewhere, and only beside `OTEL_EXPORTER_OTLP_ENDPOINT`: alone it would send the other signals to the SDK's default `localhost:4317`, so the start leaves telemetry off and says so.
+
+**Telemetry never stops a start.** A setting the SDK cannot use (an endpoint that is not an absolute `http` or `https` address, a protocol in other letters, headers that are not `key=value` pairs) leaves it off with a `Warning` naming the setting, never its value: an endpoint or a header can hold a token. When it is on, the start says so at `Information` ("OpenTelemetry export is on: traces, metrics and logs over grpc, as service tankstat"), never with the endpoint or the headers. An endpoint that refuses or does not answer only loses what was to be sent. A collector that never answers at all can make a stop wait for the export's timeout, 10 seconds by default (`OTEL_EXPORTER_OTLP_TIMEOUT`, in milliseconds), which is also Docker's default stop grace.
+
+What is sent:
+
+- **Traces:** a span per request, named by its route pattern, never by the address asked for. Below it are the GraphQL request (its operation name, the hash of its document and how many errors it had) and the server's outgoing calls (the photo-reading model server, an identity provider's discovery). With database spans on, every database command is traced too.
+- **Metrics:** ASP.NET Core's (request durations, active requests, connections, routing, sign-ins), the HTTP client's, the .NET runtime's (`System.Runtime`) and EF Core's (`Microsoft.EntityFrameworkCore`: queries, saves, active contexts).
+- **Logs:** the same lines the console gets, through the same `Logging` levels, each with the trace and span id of the request it belongs to, and the request's scopes (`UserId`, and the path asked for without its query).
+
+**It keeps the log's promise**: ids, counts and reasons, never what someone typed or a client sent.
+
+- **GraphQL:** neither a request's variables nor its document is sent, nor its `extensions` or a field's alias. An error is only counted, since the app's messages can quote what was typed (a schedule's title, an odometer reading).
+- **Addresses:** the values of a query string are sent as `Redacted`, which covers the token of a password reset link (`/?resetToken=Redacted`). **Never set `OTEL_DOTNET_EXPERIMENTAL_ASPNETCORE_DISABLE_URL_QUERY_REDACTION` or `OTEL_DOTNET_EXPERIMENTAL_HTTPCLIENT_DISABLE_URL_QUERY_REDACTION`**.
+- **Removed before anything is sent:** the browser's `User-Agent` and the values of database parameters.
+- **The one-time code** (see [Logging](#logging)) is in the console log only, never exported.
+
+**The edge** is the log's, with two additions:
+
+- **The log's own edge:** the text of an unexpected error and the framework's own lines go as they come.
+- **Two values a client sent:** every request's span carries the path the client asked for (`url.path`, never its query) and the host it named (`server.address`, the `Host` header, or what a proxy forwards).
+- **The log-level floor applies to the exporter too.** **Do not lower `Microsoft.AspNetCore` below `Warning` for the exporter either.** A level of the exporter's own, such as `Logging__OpenTelemetry__LogLevel__Microsoft.AspNetCore=Information`, would send its request lines, which hold the reset links' tokens, to the backend. The Server settings page checks only `Logging:LogLevel`.
+
+In a Compose file:
+
+```yaml
+services:
+  app:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_HEADERS: x-api-key=${OTLP_API_KEY}   # only if the backend asks for one
+```
+
+### Database spans (beta)
+
+`Telemetry__TraceDatabase=true` (or *Trace database commands* on the Telemetry tab) adds a span for every database command, through EF Core's instrumentation. It is off by default and counts only while telemetry is exported: set without an endpoint, it does nothing, and the start says so. While it is on, every start logs a `Warning` that it is, so it is not left on by mistake.
+
+**It is a beta.** [`OpenTelemetry.Instrumentation.EntityFrameworkCore`](https://www.nuget.org/packages/OpenTelemetry.Instrumentation.EntityFrameworkCore) is a pre-release. [Its README](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/blob/main/src/OpenTelemetry.Instrumentation.EntityFrameworkCore/README.md) marks it Beta, built on [database conventions](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/db/database-spans.md) still in flux, and breaking changes can come with an update.
+
+**It may leak data.** Each span carries the SQL text of its command (`db.statement`, or `db.query.text` with `OTEL_SEMCONV_STABILITY_OPT_IN=database`). The instrumentation [always records it](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/pull/3072).
+
+- **What people type:** the plate, the note, the amounts and the rest are sent to the database as parameters, not written into the text, so the text normally holds none of it.
+- **Values written into a command:** these are masked by [a sanitiser](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/pull/3022) that covers all four databases Tankstat runs on. Its [changelog](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/blob/main/src/OpenTelemetry.Instrumentation.EntityFrameworkCore/CHANGELOG.md) shows values it missed and later fixed, so one can still get through.
+- **Parameter values:** the parameters themselves (`db.query.parameter.*`, which `OTEL_SEMCONV_STABILITY_OPT_IN=database` with `OTEL_DOTNET_EXPERIMENTAL_EFCORE_ENABLE_TRACE_DB_QUERY_PARAMETERS=true` would add) are removed before anything is sent. Do not set that variable all the same.
+- **Where the database is:** every span also names the database and where it is (`peer.service`: the server, or a SQLite file's full path; `server.address` and `db.namespace` with the newer conventions).
+
+Turn it on to find a slow query, and off again when you are done.

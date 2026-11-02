@@ -94,13 +94,14 @@ public sealed class SetupServiceTests
         w.SetupStore.Phase = SetupPhase.Undecided; // a new database: its start decides
         var service = new SetupService(
             w.SetupStore, w.SetupStatus, w.SetupGate, w.Code, w.Auth, w.Access, w.SystemSettings, w.SystemConfiguration, w.Restart, w.Users, new NoBackups(),
-            new NoSettingsFile(), new NoDatabaseFacts(), new BackupOptions().Create(), w.Options.Create(), new SetupOptions { Enabled = enabled }.Create(), w.Clock, w.Log.For<SetupService>());
+            new NoSettingsFile(), new NoDatabaseFacts(), new BackupOptions().Create(), w.Options.Create(), new SetupOptions { Enabled = enabled }.Create(), w.Clock, w.Log.For<SetupService>(), w.Log.For<OneTimeCode.SetupLine>());
         return new Setup(w, w.SetupStore, w.SetupStatus, w.Code, service);
     }
 
-    private static IEnumerable<LogEntry> CodeLines(Setup s) => s.World.Log.From<SetupService>().Where(e => e.Values.ContainsKey("Code"));
+    // The code's line has a category of its own (kept off the telemetry exporter, OneTimeCode.LogCategory).
+    private static IEnumerable<LogEntry> CodeLines(Setup s) => s.World.Log.From<OneTimeCode.SetupLine>().Where(e => e.Values.ContainsKey("Code"));
 
-    /// <summary>The reopen's line: SetupService's one Warning without a value (the code's names the code, the retired settings' line their names).</summary>
+    /// <summary>The reopen's line: SetupService's one Warning without a value (the retired settings' line names them; the code's is not SetupService's).</summary>
     private static IEnumerable<LogEntry> ReopenLines(Setup s) => s.World.Log.From<SetupService>().Where(e => e.Level == LogLevel.Warning && e.Values.Count == 0);
 
     [Theory]

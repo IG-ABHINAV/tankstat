@@ -366,6 +366,7 @@ const CHOICE_SETS: Record<string, string> = {
   'Recognition:Provider': 'recognitionProvider',
   'Recognition:OpenAiCompatible:ResponseFormat': 'responseFormat',
   'Backups:Environment': 'backupEnvironment',
+  OTEL_EXPORTER_OTLP_PROTOCOL: 'otlpProtocol',
 }
 
 /** Choice sets whose words say it all (user decision): offered without the value after them; the help names the values. */

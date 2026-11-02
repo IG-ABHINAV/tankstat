@@ -84,7 +84,8 @@ internal sealed class AppProcess : IAsyncDisposable
         }
 
         // A clean slate: nothing from the developer's own environment may leak into the run.
-        foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("Auth__") || k.StartsWith("Database__") || k.StartsWith("Smtp__") || k.StartsWith("Recognition__") || k.StartsWith("Storage__") || k.StartsWith("Settings__") || k.StartsWith("Backups__") || k.StartsWith("Setup__") || k.StartsWith("ASPNETCORE_")).ToList())
+        foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("Auth__") || k.StartsWith("Database__") || k.StartsWith("Smtp__") || k.StartsWith("Recognition__") || k.StartsWith("Storage__") || k.StartsWith("Settings__") || k.StartsWith("Backups__") || k.StartsWith("Setup__") || k.StartsWith("ASPNETCORE_")
+            || k.StartsWith("OTEL_", StringComparison.OrdinalIgnoreCase) || k.StartsWith("Telemetry__", StringComparison.OrdinalIgnoreCase)).ToList()) // a developer's collector never sees a test run
             info.Environment.Remove(key);
         info.Environment["ASPNETCORE_CONTENTROOT"] = Path.GetDirectoryName(dll); // finds appsettings.json although the working directory is elsewhere
         info.Environment["DOTNET_NOLOGO"] = "1";

@@ -61,6 +61,25 @@ public class RestartSmokeTests
     }
 
     [Fact]
+    public async Task RestartServer_WithTelemetryOn_StartsTheNextHostWithItToo()
+    {
+        // Each host builds its own providers and disposes them as it stops (a collector that refuses: nothing waits for an export).
+        await using var app = await AppProcess.StartStandaloneAsync(new Dictionary<string, string?>(Standalone) { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://127.0.0.1:9" });
+        await app.Gql("mutation($i: LoginInput!) { login(input: $i) { id } }", new { i = new { email = "root@example.com", password = "initial-password-1" } });
+        var signedIn = new Dictionary<string, string> { ["Cookie"] = app.CookieHeader };
+        const string on = "OpenTelemetry export is on";
+        Assert.True(await app.LogsAsync(on), app.Log);
+
+        Assert.True((await app.Gql("mutation { restartServer }", headers: signedIn)).Data().GetProperty("restartServer").GetBoolean());
+
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while (System.Text.RegularExpressions.Regex.Count(app.Log, on) < 2 && DateTime.UtcNow < deadline) await Task.Delay(200);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(app.Log, on));
+        await WhenBackAsync(app, d => d.GetProperty("session").GetProperty("user").ValueKind == System.Text.Json.JsonValueKind.Object, signedIn);
+        Assert.False(app.HasExited);
+    }
+
+    [Fact]
     public async Task RestoreBackup_RestartsTheHostInTheSameProcess_WhichStartsWithTheBackupsData()
     {
         var work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"tankstat-smoke-{Guid.NewGuid():N}")).FullName;

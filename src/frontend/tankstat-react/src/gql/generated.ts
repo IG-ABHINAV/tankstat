@@ -479,7 +479,8 @@ export type SettingsGroup =
   | 'NOTIFICATIONS'
   | 'PHOTO_READING'
   | 'SMTP'
-  | 'SYNC';
+  | 'SYNC'
+  | 'TELEMETRY';
 
 export type SetupFinishInput = {
   acknowledgeOpenAccess?: boolean;

@@ -105,7 +105,15 @@ internal sealed class TestApp : IDisposable
         // tests that a start logs no Warning would fail on that machine only.
         foreach (var key in Tankstat.Application.Setup.SetupService.RetiredSettings)
             if (environment[key] is not null) all[key] = null;
-        foreach (var (key, value) in settings) all[key] = value;
+        // Nor the developer's or the runner's telemetry (an OTLP endpoint of their own): a test host never exports to it. Program.cs decides
+        // on telemetry before the host is built, where these settings do not exist yet, so they travel as command-line arguments (below), an
+        // empty one standing for none; the telemetry tests set theirs through their settings, which come after this.
+        var telemetry = environment.AsEnumerable().Select(e => e.Key).Where(IsTelemetryKey).ToDictionary(k => k, _ => (string?)"", StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in settings)
+        {
+            all[key] = value;
+            if (IsTelemetryKey(key)) telemetry[key] = value ?? "";
+        }
         _ownSettingsFile = settings.GetValueOrDefault("Settings:Path") is null;
         SettingsPath = settings.GetValueOrDefault("Settings:Path") ?? Path.Combine(Path.GetTempPath(), $"tankstat-it-{Guid.NewGuid():N}-settings.json");
 
@@ -113,6 +121,7 @@ internal sealed class TestApp : IDisposable
         {
             b.UseEnvironment("Development"); // introspection etc.; never uses the dev appsettings of a real database
             b.UseSetting("Settings:Path", SettingsPath); // read before the host is built: a command-line argument, see the class comment
+            foreach (var (key, value) in telemetry) b.UseSetting(key, value); // read before the host is built too (TelemetryGate)
             b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(all));
             b.ConfigureLogging(l => l.AddProvider(Log));
             b.ConfigureServices(s =>
@@ -123,6 +132,9 @@ internal sealed class TestApp : IDisposable
             host?.Invoke(b);
         });
     }
+
+    private static bool IsTelemetryKey(string key) =>
+        key.StartsWith("OTEL_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("Telemetry:", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The first administrator of a Standalone host (<see cref="StandaloneSettings"/>), made by the setup in its database's template.</summary>
     public const string AdminEmail = "root@example.com";

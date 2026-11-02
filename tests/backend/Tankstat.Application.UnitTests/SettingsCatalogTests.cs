@@ -6,6 +6,7 @@ using Tankstat.Application.Notifications;
 using Tankstat.Application.Recognition;
 using Tankstat.Application.Sync;
 using Tankstat.Application.SystemSettings;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
 
@@ -24,6 +25,7 @@ public class SettingsCatalogTests
         (typeof(SyncOptions), SyncOptions.SectionName),
         (typeof(RecognitionOptions), RecognitionOptions.SectionName),
         (typeof(Tankstat.Application.Backups.BackupOptions), Tankstat.Application.Backups.BackupOptions.SectionName),
+        (typeof(TelemetryOptions), TelemetryOptions.SectionName),
     ];
 
     [Fact]
@@ -45,12 +47,14 @@ public class SettingsCatalogTests
             else Assert.Equal(kind, definition.Kind);
             if (choices is not null) Assert.Equal(choices, definition.Choices);
         }
-        foreach (var definition in SettingsCatalog.All.Where(d => d.Group != SettingsGroup.Logging))
+        // The logging framework's settings and the OpenTelemetry SDK's (its standard OTEL_* names, which it reads itself) have no class of ours.
+        foreach (var definition in SettingsCatalog.All.Where(d => d.Group != SettingsGroup.Logging && !OtelSettings.IsOtelKey(d.Key)))
             Assert.True(expected.ContainsKey(definition.Key), $"{definition.Key} is in the catalog but no options class binds it");
+        Assert.All(SettingsCatalog.All.Where(d => OtelSettings.IsOtelKey(d.Key)), d => Assert.Equal(SettingsGroup.Telemetry, d.Group));
     }
 
     [Fact]
-    public void ChoicesAreThere_ExactlyForChoices_AndSecretsAreTheThree()
+    public void ChoicesAreThere_ExactlyForChoices_AndSecretsAreTheFour()
     {
         Assert.All(SettingsCatalog.All, d => Assert.Equal(d.Kind == SettingKind.Choice, d.Choices is { Count: > 0 }));
         Assert.All(SettingsCatalog.All.Where(d => d.AlsoAccepted is not null), d =>
@@ -59,7 +63,7 @@ public class SettingsCatalogTests
             Assert.Empty(d.AlsoAccepted!.Intersect(d.Choices!, StringComparer.OrdinalIgnoreCase)); // accepted besides the choices, never offered twice
         });
         Assert.Equal(
-            ["Auth:Oidc:ClientSecret", "Smtp:Password", "Recognition:OpenAiCompatible:ApiKey"],
+            ["Auth:Oidc:ClientSecret", "Smtp:Password", "Recognition:OpenAiCompatible:ApiKey", OtelSettings.Headers],
             SettingsCatalog.All.Where(d => d.IsSecret).Select(d => d.Key));
         Assert.Equal(SettingsCatalog.Groups, SettingsCatalog.All.Select(d => d.Group).Distinct()); // the page's order
         Assert.Equal(SettingsCatalog.All.Count, SettingsCatalog.All.Select(d => d.Key.ToLowerInvariant()).Distinct().Count());
@@ -91,6 +95,18 @@ public class SettingsCatalogTests
     [InlineData("Backups:Days", "None", null)]
     [InlineData("Backups:Days", "zzzz", "days of the week")]
     [InlineData("Auth:PublicUrl", "anything at all", null)]
+    [InlineData(OtelSettings.Endpoint, "http://collector:4317", null)]
+    [InlineData(OtelSettings.Endpoint, "https://otlp.example.com/otlp", null)]
+    [InlineData(OtelSettings.Endpoint, "collector:4317", "absolute http or https address")]
+    [InlineData(OtelSettings.Endpoint, "ftp://collector/zzzz", "absolute http or https address")]
+    [InlineData(OtelSettings.Protocol, "http/protobuf", null)]
+    [InlineData(OtelSettings.Protocol, "GRPC", "written so")] // the SDK takes only its own spelling: in other letters it would run gRPC unasked
+    [InlineData(OtelSettings.Protocol, "zzzz", "grpc, http/protobuf")]
+    [InlineData(OtelSettings.Headers, "x-api-key=zzzz,x-team=zzzz2", null)]
+    [InlineData(OtelSettings.Headers, "x-api-key%3Dzzzz", null)] // the SDK URL-decodes the whole value first
+    [InlineData(OtelSettings.Headers, "zzzz", "key=value pairs")] // the SDK would throw at start
+    [InlineData(OtelSettings.Headers, "a=zzzz,", "key=value pairs")] // an empty pair after the comma, too
+    [InlineData(TelemetryOptions.TraceDatabaseKey, "yes", "true or false")]
     public void Validate_ChecksTheShapeOfAValue_AndNamesTheSettingAndTheRule(string key, string value, string? refusal)
     {
         var problem = SettingsCatalog.Validate(SettingsCatalog.Find(key)!, value);
@@ -117,7 +133,7 @@ public class SettingsCatalogTests
         Assert.Equal(below, SettingsCatalog.IsBelowLogLevelFloor(key, value));
 
     [Fact]
-    public void Problems_NamesEveryWrongShape_AndSkipsListsUnsetSettingsPhotoReadingAndTheFloor()
+    public void Problems_NamesEveryWrongShape_AndSkipsListsUnsetSettingsPhotoReadingTelemetryAndTheFloor()
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -126,6 +142,8 @@ public class SettingsCatalogTests
             ["Auth:AdminEmails"] = "not a list, but lists are never checked here",
             ["Auth:Mode"] = "Kerberos",
             ["Recognition:MinConfidence"] = "zzzz", // photo reading never stops the app: RecognitionSetup turns it off instead
+            [OtelSettings.Endpoint] = "zzzz", // nor does telemetry: TelemetryGate leaves it off and says why
+            [TelemetryOptions.TraceDatabaseKey] = "zzzz",
             ["Logging:LogLevel:Microsoft.AspNetCore"] = "Information", // the floor is a rule for what the page writes, not for the start
             ["Backups:Keep"] = "", // empty: the binder reads it as no limit (a whole number it may not be is the binder's to refuse, by name)
         };
@@ -135,6 +153,7 @@ public class SettingsCatalogTests
         Assert.Equal(["Auth:Mode", "Smtp:Port"], problems.Select(p => p.Split(' ')[0]));
         Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find("Logging:LogLevel:Microsoft.AspNetCore")!, "Information")); // the page still refuses it
         Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find("Recognition:MinConfidence")!, "zzzz"));
+        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find(OtelSettings.Endpoint)!, "zzzz"));
     }
 
     private static IEnumerable<(string Key, SettingKind Kind, string[]? Choices)> Keys(Type type, string prefix)
@@ -164,6 +183,9 @@ public class SettingsCatalogTests
     [InlineData("Recognition:MinConfidence", "0.6")] // invariantly, whatever the server's culture
     [InlineData("Recognition:OpenAiCompatible:TimeoutSeconds", "120")]
     [InlineData("Logging:LogLevel:Default", "Information")] // the framework's, when no source sets the default category
+    [InlineData(OtelSettings.Protocol, "grpc")] // the SDK's
+    [InlineData(OtelSettings.ServiceName, "tankstat")] // the app's, which it names the service itself when nothing does
+    [InlineData(TelemetryOptions.TraceDatabaseKey, "false")]
     public void TheBuiltInDefault_IsTheOptionsClassesOwnValue_WrittenAsThePageWritesIt(string key, string expected) =>
         Assert.Equal(expected, SettingsCatalog.BuiltInDefault(key));
 
@@ -171,6 +193,8 @@ public class SettingsCatalogTests
     [InlineData("Auth:Oidc:ClientSecret")] // a secret: nothing is said of one
     [InlineData("Auth:Oidc:Scopes")] // a list: what is given is added to the built-in scopes, so they are not the value
     [InlineData("Auth:PublicUrl")] // empty: there is none
+    [InlineData(OtelSettings.Endpoint)] // none: no endpoint, no telemetry
+    [InlineData(OtelSettings.Headers)] // a secret
     [InlineData("Logging:LogLevel:Microsoft.AspNetCore")] // another category follows the default one: no fixed level of its own
     [InlineData("Database:Provider")] // not a setting the page manages
     public void ThereIsNoBuiltInDefault_ForASecret_AList_AnEmptyValue_AFollowingLogCategory_OrASettingThePageDoesNotManage(string key) =>

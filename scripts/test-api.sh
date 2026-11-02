@@ -21,6 +21,10 @@ export Settings__Path="${files}/settings.json"
 # A backups folder of its own and no schedule or retention of the developer's: a start writes a missed backup and prunes the folder.
 export Backups__Path="${files}/backups"
 unset Backups__Every Backups__Days Backups__Keep Backups__KeepDays
+# Nor a telemetry endpoint of the developer's (.NET reads the names in any case).
+for name in $(compgen -e); do
+  case "${name^^}" in OTEL_* | TELEMETRY__*) unset "$name" ;; esac
+done
 dotnet src/backend/Tankstat.Api/bin/Release/net10.0/Tankstat.Api.dll --urls "$TANKSTAT_API_URL" &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true; rm -f "$db"; rm -rf "$files"' EXIT

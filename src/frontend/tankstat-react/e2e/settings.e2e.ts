@@ -15,6 +15,7 @@ const TABS = [
   ['photo_reading', 'Photo reading'],
   ['backups', 'Backups'],
   ['logging', 'Logging'],
+  ['telemetry', 'Telemetry'],
 ] as const
 
 for (const [tab, name] of TABS) {
