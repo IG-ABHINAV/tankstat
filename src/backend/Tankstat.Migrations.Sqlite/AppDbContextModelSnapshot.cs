@@ -102,19 +102,13 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Charts")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Figures")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Hidden")
                         .IsRequired()
                         .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -211,19 +205,13 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Charts")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Figures")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Hidden")
                         .IsRequired()
                         .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("UpdatedAt")

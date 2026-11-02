@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Tankstat.Migrations.MySql
+namespace Tankstat.Migrations.Sqlite
 {
     /// <inheritdoc />
     public partial class AddDashboardLayouts : Migration
@@ -15,12 +15,11 @@ namespace Tankstat.Migrations.MySql
                 name: "UserDashboardLayouts",
                 columns: table => new
                 {
-                    VehicleId = table.Column<Guid>(type: "char(36)", nullable: false),
-                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
-                    Figures = table.Column<string>(type: "varchar(4000)", maxLength: 4000, nullable: false),
-                    Charts = table.Column<string>(type: "varchar(4000)", maxLength: 4000, nullable: false),
-                    Hidden = table.Column<string>(type: "varchar(4000)", maxLength: 4000, nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                    VehicleId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    UserId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    Tiles = table.Column<string>(type: "TEXT", nullable: false),
+                    Hidden = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -31,18 +30,16 @@ namespace Tankstat.Migrations.MySql
                         principalTable: "Vehicles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySQL:Charset", "utf8mb4");
+                });
 
             migrationBuilder.CreateTable(
                 name: "VehicleDashboardLayouts",
                 columns: table => new
                 {
-                    VehicleId = table.Column<Guid>(type: "char(36)", nullable: false),
-                    Figures = table.Column<string>(type: "varchar(4000)", maxLength: 4000, nullable: false),
-                    Charts = table.Column<string>(type: "varchar(4000)", maxLength: 4000, nullable: false),
-                    Hidden = table.Column<string>(type: "varchar(4000)", maxLength: 4000, nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                    VehicleId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    Tiles = table.Column<string>(type: "TEXT", nullable: false),
+                    Hidden = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -53,8 +50,7 @@ namespace Tankstat.Migrations.MySql
                         principalTable: "Vehicles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySQL:Charset", "utf8mb4");
+                });
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserDashboardLayouts_VehicleId",

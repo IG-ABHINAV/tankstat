@@ -328,10 +328,18 @@ type DashboardInfo {
 }
 
 type DashboardLayoutInfo {
-  figures: [String!]!
-  charts: [String!]!
+  tiles: [DashboardTileInfo!]!
   hidden: [String!]!
   updatedAt: DateTime!
+}
+
+type DashboardTileInfo {
+  id: String!
+  x: Int!
+  y: Int!
+  w: Int!
+  h: Int!
+  pinned: Boolean!
 }
 
 type Expense {
@@ -1009,6 +1017,15 @@ input CreateUserInput {
   isAdmin: Boolean!
 }
 
+input DashboardTileInput {
+  id: String!
+  x: Int!
+  y: Int!
+  w: Int!
+  h: Int!
+  pinned: Boolean
+}
+
 input DeleteUserInput {
   userId: UUID!
   data: UserDataDisposition
@@ -1118,8 +1135,7 @@ input SaveChartInput {
 input SaveDashboardLayoutInput {
   vehicleId: UUID!
   personal: Boolean!
-  figures: [String!]!
-  charts: [String!]!
+  tiles: [DashboardTileInput!]!
   hidden: [String!]!
 }
 

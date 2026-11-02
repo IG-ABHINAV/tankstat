@@ -24,7 +24,10 @@ public class DashboardServiceTests
         return new Scene(w, alice, bob, await w.VehicleService.AddAsync("Car", null, FuelType.Petrol, MeasurementUnits.Metric, default));
     }
 
-    private static DashboardLayoutValues Layout(string[]? charts = null, string[]? hidden = null) => new(["odometer", "thisMonth"], charts ?? ["preset:distance"], hidden ?? []);
+    private static DashboardLayoutValues Layout(string[]? charts = null, string[]? hidden = null) =>
+        new([new DashboardTile("odometer", 0, 0, 1, 3), .. (charts ?? ["preset:distance"]).Select((c, i) => new DashboardTile(c, 0, 3 + i * 8, 2, 8))], hidden ?? []);
+
+    private static IEnumerable<string> ChartsOf(DashboardLayout layout) => layout.Tiles.Select(t => t.Id).Where(id => id != "odometer");
 
     private static string Ref(VehicleChart chart) => $"chart:{chart.Id}";
 
@@ -41,8 +44,8 @@ public class DashboardServiceTests
         await s.W.Dashboards.SaveAsync(s.Car.Id, personal: true, Layout(["preset:consumption"]), default);
 
         var bobs = (await s.W.Dashboards.GetAsync(s.Car.Id, default))!;
-        Assert.Equal(["preset:distance"], bobs.Shared!.Charts);
-        Assert.Equal(["preset:consumption"], bobs.Personal!.Charts);
+        Assert.Equal(["preset:distance"], ChartsOf(bobs.Shared!));
+        Assert.Equal(["preset:consumption"], ChartsOf(bobs.Personal!));
         Assert.False(bobs.CanChangeShared);
         s.W.Current.SignInAs(s.Alice);
         Assert.Null((await s.W.Dashboards.GetAsync(s.Car.Id, default))!.Personal);
@@ -79,9 +82,9 @@ public class DashboardServiceTests
 
         var vehicles = s.W.DashboardLayouts.Shared.Single();
         var alices = s.W.DashboardLayouts.Personal.Single();
-        Assert.Equal([Ref(shared), "preset:distance"], vehicles.Charts); // a private chart is no one else's: not on the vehicle's dashboard
+        Assert.Equal([Ref(shared), "preset:distance"], ChartsOf(vehicles)); // a private chart is no one else's: not on the vehicle's dashboard
         Assert.Equal([Ref(shared)], vehicles.Hidden);
-        Assert.Equal([Ref(mine), Ref(shared)], alices.Charts);
+        Assert.Equal([Ref(mine), Ref(shared)], ChartsOf(alices));
         Assert.Equal([Ref(mine)], alices.Hidden);
     }
 
@@ -94,7 +97,7 @@ public class DashboardServiceTests
 
         await s.W.Dashboards.SaveAsync(s.Car.Id, personal: true, Layout([Ref(foreign)]), default);
 
-        Assert.Empty(s.W.DashboardLayouts.Personal.Single().Charts);
+        Assert.Empty(ChartsOf(s.W.DashboardLayouts.Personal.Single()));
     }
 
     [Fact]
@@ -115,7 +118,7 @@ public class DashboardServiceTests
     {
         var s = await Setup();
 
-        var key = (await Assert.ThrowsAsync<DomainException>(() => s.W.Dashboards.SaveAsync(s.Car.Id, personal: true, new(["Odometer!"], [], []), default))).Key;
+        var key = (await Assert.ThrowsAsync<DomainException>(() => s.W.Dashboards.SaveAsync(s.Car.Id, personal: true, new([new DashboardTile("Odometer!", 0, 0, 1, 3)], []), default))).Key;
 
         Assert.Equal("dashboard.itemInvalid", key);
         Assert.Empty(s.W.DashboardLayouts.Personal);

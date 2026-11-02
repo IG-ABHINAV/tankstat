@@ -966,11 +966,22 @@ export interface FakeChart {
   createdBy: Person
 }
 
+export interface FakeTile {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  pinned: boolean
+}
+
 export interface FakeLayout {
-  figures: string[]
-  charts: string[]
+  tiles: FakeTile[]
   hidden: string[]
 }
+
+/** A tile of a fake layout: a chart two columns wide and eight rows tall unless said otherwise. */
+export const fakeTile = (id: string, x: number, y: number, w = 2, h = 8, pinned = false): FakeTile => ({ id, x, y, w, h, pinned })
 
 export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   id: 'c1',
@@ -1051,9 +1062,9 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
     }),
     graphql.mutation('SaveDashboardLayout', ({ variables }) => {
       record('SaveDashboardLayout', variables)
-      const { personal, figures, charts, hidden } = variables.input as FakeLayout & { personal: boolean }
+      const { personal, tiles, hidden } = variables.input as FakeLayout & { personal: boolean }
       if (!personal && !state.dashboard.canChangeShared) return HttpResponse.json(gqlError('no', 'FORBIDDEN', 'dashboard.needEditToChange'))
-      state.dashboard[personal ? 'personal' : 'shared'] = { figures, charts, hidden }
+      state.dashboard[personal ? 'personal' : 'shared'] = { tiles: tiles.map((t) => ({ ...t, pinned: t.pinned ?? false })), hidden }
       return HttpResponse.json({ data: { saveDashboardLayout: true } })
     }),
     graphql.mutation('ResetDashboardLayout', ({ variables }) => {

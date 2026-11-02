@@ -142,8 +142,12 @@ public class DashboardApiTests : IDisposable
             new { i = new { vehicleId = id, title = "Shared", shared = true, config = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "BAR", range = "LAST6_MONTHS", stacked = false } } }))
             .Data().GetProperty("saveVehicleChart").GetProperty("id").GetString();
         const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
-        const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { canChangeShared shared { figures charts hidden updatedAt } personal { charts } } } }";
-        object Layout(bool personal, params string[] charts) => new { i = new { vehicleId = id, personal, figures = new[] { "odometer" }, charts, hidden = Array.Empty<string>() } };
+        const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { canChangeShared shared { tiles { id x y w h pinned } hidden updatedAt } personal { tiles { id } } } } }";
+        object Layout(bool personal, params string[] charts) => new
+        {
+            i = new { vehicleId = id, personal, tiles = charts.Select((c, k) => new { id = c, x = 0, y = k * 8, w = 2, h = 8, pinned = k == 0 }).Prepend(new { id = "odometer", x = 2, y = 0, w = 1, h = 3, pinned = false }).ToArray(), hidden = Array.Empty<string>() },
+        };
+        static IEnumerable<string?> Ids(JsonElement layout) => layout.GetProperty("tiles").EnumerateArray().Select(t => t.GetProperty("id").GetString());
 
         var standard = (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard");
         Assert.Equal((JsonValueKind.Null, true), (standard.GetProperty("shared").ValueKind, standard.GetProperty("canChangeShared").GetBoolean()));
@@ -154,8 +158,9 @@ public class DashboardApiTests : IDisposable
         var bobs = (await bob.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard");
         Assert.Equal("dashboard.needEditToChange", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
         Assert.False(bobs.GetProperty("canChangeShared").GetBoolean());
-        Assert.Equal(["preset:distance", $"chart:{shared}"], bobs.GetProperty("shared").GetProperty("charts").EnumerateArray().Select(c => c.GetString()));
-        Assert.Equal(["preset:consumption"], bobs.GetProperty("personal").GetProperty("charts").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal(["odometer", "preset:distance", $"chart:{shared}"], Ids(bobs.GetProperty("shared")));
+        Assert.True(bobs.GetProperty("shared").GetProperty("tiles")[1].GetProperty("pinned").GetBoolean());
+        Assert.Equal(["odometer", "preset:consumption"], Ids(bobs.GetProperty("personal")));
         Assert.Equal(JsonValueKind.Null, (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").ValueKind);
 
         await bob.Gql("mutation($id: UUID!) { resetDashboardLayout(vehicleId: $id, personal: true) }", new { id });

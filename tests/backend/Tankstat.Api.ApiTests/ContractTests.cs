@@ -126,7 +126,8 @@ public class ContractTests
     [InlineData("ChartData", "unit", "series")]
     [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope", "metric", "unit")]
     [InlineData("DashboardInfo", "shared", "personal", "canChangeShared")]
-    [InlineData("DashboardLayoutInfo", "figures", "charts", "hidden", "updatedAt")]
+    [InlineData("DashboardLayoutInfo", "tiles", "hidden", "updatedAt")]
+    [InlineData("DashboardTileInfo", "id", "x", "y", "w", "h", "pinned")]
     [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind", "isShared", "createdAt", "canEdit", "createdBy")]
     [InlineData("Refueling", "id", "vehicleId", "createdBy", "date", "volume", "totalCost", "discount", "currency", "odometer", "pricePerUnit", "pricePerUnitBeforeDiscount", "consumption", "isFullTank", "missedPreviousFillUp", "note", "deletedAt", "canEdit", "canDelete", "vehicle", "photos", "reviewState", "filledFromPhoto", "version", "updatedAt", "changedAt", "changedBy", "lastChange")]
     [InlineData("Expense", "id", "amount", "discount", "currency", "odometer", "reviewState", "filledFromPhoto")]
@@ -156,7 +157,8 @@ public class ContractTests
     [InlineData("ChangePasswordInput", "currentPassword", "newPassword", "newPasswordConfirmation")]
     [InlineData("ResetPasswordInput", "token", "newPassword", "newPasswordConfirmation")]
     [InlineData("SetupFinishInput", "code", "email", "password", "passwordConfirmation", "acknowledgeOpenAccess")]
-    [InlineData("SaveDashboardLayoutInput", "vehicleId", "personal", "figures", "charts", "hidden")]
+    [InlineData("SaveDashboardLayoutInput", "vehicleId", "personal", "tiles", "hidden")]
+    [InlineData("DashboardTileInput", "id", "x", "y", "w", "h", "pinned")]
     [InlineData("ChartConfigInput", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind")]
     public async Task Schema_InputTypeTakesContractFields(string type, params string[] fields)
     {

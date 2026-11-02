@@ -55,12 +55,23 @@ public sealed class VehicleSummaryExtensions
         await dashboards.GetAsync(vehicle.Id, ct) is { } view ? new DashboardInfo(DashboardLayoutInfo.From(view.Shared), DashboardLayoutInfo.From(view.Personal), view.CanChangeShared) : null;
 }
 
-/// <param name="Figures">The key figures shown, in order.</param>
-/// <param name="Charts">The charts shown, in order: <c>preset:&lt;id&gt;</c> for a ready-made one, <c>chart:&lt;id&gt;</c> for a saved one.</param>
-/// <param name="Hidden">The saved charts taken off the dashboard (a saved chart it does not mention is shown at its end).</param>
-public sealed record DashboardLayoutInfo(IReadOnlyList<string> Figures, IReadOnlyList<string> Charts, IReadOnlyList<string> Hidden, DateTimeOffset UpdatedAt)
+/// <param name="Id">A key figure by its id, a ready-made chart as <c>preset:&lt;id&gt;</c>, a saved chart as <c>chart:&lt;id&gt;</c>.</param>
+/// <param name="X">The column (0 to 3) and <paramref name="Y"/> the row of the tile's top left in a grid of four columns.</param>
+/// <param name="W">Columns wide (1 to 4) and <paramref name="H"/> rows tall.</param>
+/// <param name="Pinned">Never moved by dragging the other tiles.</param>
+public sealed record DashboardTileInfo(string Id, int X, int Y, int W, int H, bool Pinned);
+
+/// <param name="Tiles">The tiles shown (a saved chart none names is shown at the end).</param>
+/// <param name="Hidden">The saved charts taken off the dashboard.</param>
+public sealed record DashboardLayoutInfo(IReadOnlyList<DashboardTileInfo> Tiles, IReadOnlyList<string> Hidden, DateTimeOffset UpdatedAt)
 {
-    public static DashboardLayoutInfo? From(DashboardLayout? layout) => layout is null ? null : new(layout.Figures, layout.Charts, layout.Hidden, layout.UpdatedAt);
+    public static DashboardLayoutInfo? From(DashboardLayout? layout) =>
+        layout is null ? null : new(layout.Tiles.Select(t => new DashboardTileInfo(t.Id, t.X, t.Y, t.W, t.H, t.Pinned)).ToList(), layout.Hidden, layout.UpdatedAt);
+}
+
+public sealed record DashboardTileInput(string Id, int X, int Y, int W, int H, bool? Pinned)
+{
+    public DashboardTile ToDomain() => new(Id, X, Y, W, H, Pinned ?? false);
 }
 
 /// <param name="Shared">The vehicle's dashboard, which everyone who sees it gets; null for the Standard preset.</param>
@@ -69,7 +80,7 @@ public sealed record DashboardLayoutInfo(IReadOnlyList<string> Figures, IReadOnl
 public sealed record DashboardInfo(DashboardLayoutInfo? Shared, DashboardLayoutInfo? Personal, bool CanChangeShared);
 
 /// <param name="Personal">The user's own arrangement (View access is enough), else the vehicle's (Edit access to its logs).</param>
-public sealed record SaveDashboardLayoutInput(Guid VehicleId, bool Personal, IReadOnlyList<string> Figures, IReadOnlyList<string> Charts, IReadOnlyList<string> Hidden);
+public sealed record SaveDashboardLayoutInput(Guid VehicleId, bool Personal, IReadOnlyList<DashboardTileInput> Tiles, IReadOnlyList<string> Hidden);
 
 [ExtendObjectType(OperationTypeNames.Query)]
 public sealed class DashboardQueries
@@ -100,7 +111,7 @@ public sealed class DashboardMutations
     /// <summary>Saves the vehicle's dashboard or the user's own arrangement of it, replacing the one there was.</summary>
     public async Task<bool> SaveDashboardLayout(SaveDashboardLayoutInput input, [Service] DashboardService dashboards, CancellationToken ct)
     {
-        await dashboards.SaveAsync(input.VehicleId, input.Personal, new DashboardLayoutValues(input.Figures, input.Charts, input.Hidden), ct);
+        await dashboards.SaveAsync(input.VehicleId, input.Personal, new DashboardLayoutValues(input.Tiles.Select(t => t.ToDomain()).ToList(), input.Hidden), ct);
         return true;
     }
 

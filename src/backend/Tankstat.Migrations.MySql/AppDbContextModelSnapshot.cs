@@ -104,20 +104,14 @@ namespace Tankstat.Migrations.MySql
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("char(36)");
 
-                    b.Property<string>("Charts")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("varchar(4000)");
-
-                    b.Property<string>("Figures")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("varchar(4000)");
-
                     b.Property<string>("Hidden")
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("varchar(4000)");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(6)");
@@ -213,20 +207,14 @@ namespace Tankstat.Migrations.MySql
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("char(36)");
 
-                    b.Property<string>("Charts")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("varchar(4000)");
-
-                    b.Property<string>("Figures")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("varchar(4000)");
-
                     b.Property<string>("Hidden")
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("varchar(4000)");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(6)");

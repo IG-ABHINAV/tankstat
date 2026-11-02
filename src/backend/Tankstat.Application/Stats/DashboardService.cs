@@ -42,7 +42,7 @@ public sealed class DashboardService(IVehicleRepository vehicles, IDashboardLayo
         var visible = await charts.ListVisibleAsync(vehicleId, user.Id, ct); // shared, plus the user's own
         var allowed = visible.Where(c => personal || c.IsShared).Select(c => c.Id).ToHashSet();
         bool Keep(string entry) => DashboardLayoutValues.ChartIdOf(entry) is not { } id || allowed.Contains(id);
-        var kept = checkedValues with { Charts = checkedValues.Charts.Where(Keep).ToList(), Hidden = checkedValues.Hidden.Where(Keep).ToList() };
+        var kept = checkedValues with { Tiles = checkedValues.Tiles.Where(t => Keep(t.Id)).ToList(), Hidden = checkedValues.Hidden.Where(Keep).ToList() };
 
         var now = clock.GetUtcNow();
         if (personal) await layouts.SavePersonalAsync(UserDashboardLayout.Create(user.Id, vehicleId, kept, now), ct);

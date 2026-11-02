@@ -111,7 +111,8 @@ public class StatsRepositoryTests
         var alice = Guid.NewGuid();
         var chart = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero);
-        DashboardLayoutValues Values(params string[] charts) => new(["thisMonth", "odometer"], charts, [$"chart:{chart}"]);
+        DashboardLayoutValues Values(params string[] charts) =>
+            new([new DashboardTile("thisMonth", 0, 0, 1, 3, Pinned: true), .. charts.Select((c, i) => new DashboardTile(c, 1, i * 8, 2, 8))], [$"chart:{chart}"]);
 
         await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, Values("preset:monthlyCosts"), now), default);
         await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, Values("preset:distance", $"chart:{chart}"), now.AddMinutes(1)), default); // replaces it
@@ -122,11 +123,11 @@ public class StatsRepositoryTests
             repo.SavePersonalAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:b"), now), default));
 
         var shared = (await repo.FindSharedAsync(car.Id, default))!;
-        Assert.Equal(["preset:distance", $"chart:{chart}"], shared.Charts);
-        Assert.Equal(["thisMonth", "odometer"], shared.Figures);
+        Assert.Equal(["thisMonth", "preset:distance", $"chart:{chart}"], shared.Tiles.Select(t => t.Id));
+        Assert.Equal(new DashboardTile("thisMonth", 0, 0, 1, 3, true), shared.Tiles[0]); // the places and the pin come back as they were
         Assert.Equal(now.AddMinutes(1), shared.UpdatedAt);
-        Assert.Empty((await repo.FindPersonalAsync(alice, car.Id, default))!.Charts);
-        Assert.Contains((await repo.FindPersonalAsync(Owner, car.Id, default))!.Charts.Single(), new[] { "preset:a", "preset:b" });
+        Assert.Single((await repo.FindPersonalAsync(alice, car.Id, default))!.Tiles);
+        Assert.Contains((await repo.FindPersonalAsync(Owner, car.Id, default))!.Tiles[1].Id, new[] { "preset:a", "preset:b" });
 
         await repo.RemovePersonalAsync(alice, car.Id, default);
         Assert.Null(await repo.FindPersonalAsync(alice, car.Id, default));

@@ -113,7 +113,8 @@ test('draws a moving average and a year earlier as lines over the bars, on the b
 
   // The two lines: drawn (a path with a shape), dashed or dotted, and inside the chart's own box.
   const figure = page.getByRole('img', { name: 'Costs and trend: chart', exact: true }).locator('xpath=ancestor::figure[1]')
-  const lines = await figure.evaluate((root) =>
+  // Polled: the lines animate in, and a line still morphing can reach past the chart's box.
+  const lines = () => figure.evaluate((root) =>
     ['MOVING_AVERAGE', 'YEAR_EARLIER'].map((role) => {
       const path = root.querySelector(`path[data-series$="|${role}"]`)
       const box = path?.getBoundingClientRect()
@@ -126,7 +127,7 @@ test('draws a moving average and a year earlier as lines over the bars, on the b
       }
     }),
   )
-  expect(lines).toEqual([
+  await expect.poll(lines).toEqual([
     { role: 'MOVING_AVERAGE', drawn: true, dashed: true, inside: true },
     { role: 'YEAR_EARLIER', drawn: true, dashed: true, inside: true },
   ])
@@ -167,7 +168,7 @@ test('draws a second measure on a scale of its own: distance as bars on the left
 
   await expect.poll(async () => (await measureChart(page, 'Distance and consumption')).bars.length).toBeGreaterThanOrEqual(11)
   const figure = page.getByRole('img', { name: 'Distance and consumption: chart', exact: true }).locator('xpath=ancestor::figure[1]')
-  const drawn = await figure.evaluate((root) => {
+  const measure = () => figure.evaluate((root) => {
     const svg = [...root.querySelectorAll('svg')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]
     const box = svg.getBoundingClientRect()
     const within = (element: Element | null) => {
@@ -181,7 +182,8 @@ test('draws a second measure on a scale of its own: distance as bars on the left
       line: within(svg.querySelector('path[data-series^="AVERAGE_CONSUMPTION|"]')),
     }
   })
-  expect(drawn).toEqual({ left: { labels: expect.any(Number), inside: true }, right: { labels: expect.any(Number), inside: true }, line: true })
+  await expect.poll(measure).toEqual({ left: { labels: expect.any(Number), inside: true }, right: { labels: expect.any(Number), inside: true }, line: true }) // the line animates in
+  const drawn = await measure()
   expect(drawn.left.labels).toBeGreaterThan(1)
   expect(drawn.right.labels).toBeGreaterThan(1)
   await expect(figure.getByText(/scale of its own/)).toHaveCount(0) // one scale per side, each read by its axis

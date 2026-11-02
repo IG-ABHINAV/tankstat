@@ -13,7 +13,7 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
 
 function Kpi({ label, value, hint, children }: { label: string; value: string; hint?: string; children?: ReactNode }) {
   return (
-    <Card sx={{ p: 2 }}>
+    <Card sx={{ p: 2, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         {label}
       </Typography>

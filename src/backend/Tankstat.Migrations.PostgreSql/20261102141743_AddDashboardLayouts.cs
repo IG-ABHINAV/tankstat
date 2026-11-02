@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Tankstat.Migrations.SqlServer
+namespace Tankstat.Migrations.PostgreSql
 {
     /// <inheritdoc />
     public partial class AddDashboardLayouts : Migration
@@ -15,12 +15,11 @@ namespace Tankstat.Migrations.SqlServer
                 name: "UserDashboardLayouts",
                 columns: table => new
                 {
-                    VehicleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Figures = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    Charts = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    Hidden = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    VehicleId = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Tiles = table.Column<string>(type: "text", nullable: false),
+                    Hidden = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -37,11 +36,10 @@ namespace Tankstat.Migrations.SqlServer
                 name: "VehicleDashboardLayouts",
                 columns: table => new
                 {
-                    VehicleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Figures = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    Charts = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    Hidden = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    VehicleId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Tiles = table.Column<string>(type: "text", nullable: false),
+                    Hidden = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {

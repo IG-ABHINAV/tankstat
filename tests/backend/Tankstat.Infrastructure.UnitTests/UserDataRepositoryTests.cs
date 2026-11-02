@@ -254,7 +254,7 @@ public class UserDataRepositoryTests
         var alice = await AddUser(db, "alice@x.co");
         var bob = await AddUser(db, "bob@x.co");
         var (bobs, _) = await AddVehicleWithExpense(db, bob.Id, bob.Id);
-        var layout = new Tankstat.Domain.Charts.DashboardLayoutValues(["odometer"], [], []);
+        var layout = new Tankstat.Domain.Charts.DashboardLayoutValues([new Tankstat.Domain.Charts.DashboardTile("odometer", 0, 0, 1, 3)], []);
         await using (var seed = await Context(db))
         {
             seed.UserDashboardLayouts.Add(Tankstat.Domain.Charts.UserDashboardLayout.Create(alice.Id, bobs.Id, layout, Now));

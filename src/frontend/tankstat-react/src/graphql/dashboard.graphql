@@ -127,8 +127,14 @@ query VehicleDashboard($id: UUID!) {
 }
 
 fragment DashboardLayoutFields on DashboardLayoutInfo {
-  figures
-  charts
+  tiles {
+    id
+    x
+    y
+    w
+    h
+    pinned
+  }
   hidden
 }
 
