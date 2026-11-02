@@ -88,7 +88,7 @@ public class RecurringGraphQLTests(ApiFixture api)
     private static string Id(JsonElement added) => added.GetProperty("data").GetProperty("addRecurringExpense").GetProperty("id").GetString()!;
 
     [Fact]
-    public async Task ADiscount_GoesWithTheExpenseLoggedForTheVisit_AndAnExpensesOwnIsClearedByAnUpdateWithoutOne()
+    public async Task ADiscount_GoesWithTheExpenseLoggedForTheVisit_IsKeptByAnUpdateWithoutOne_AndClearedByZero()
     {
         var vehicle = await AddVehicle();
         var id = Id(await AddItem(vehicle));
@@ -98,8 +98,13 @@ public class RecurringGraphQLTests(ApiFixture api)
         var expense = done.GetProperty("data").GetProperty("markRecurringExpensesDone").GetProperty("expense");
         Assert.Equal((33000m, 2000m), (expense.GetProperty("amount").GetDecimal(), expense.GetProperty("discount").GetDecimal()));
 
-        var updated = await Send("mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { amount discount } }",
+        const string update = "mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { amount discount } }";
+        var kept = await Send(update, // a build from before discounts sends none: the discount stays
             new { i = new { id = expense.GetProperty("id").GetString(), date = "2026-09-20", title = "Oil change", amount = 33000, odometer = 62000 } });
+        Assert.Equal(2000m, kept.GetProperty("data").GetProperty("updateExpense").GetProperty("discount").GetDecimal());
+
+        var updated = await Send(update,
+            new { i = new { id = expense.GetProperty("id").GetString(), date = "2026-09-20", title = "Oil change", amount = 33000, discount = 0, odometer = 62000 } });
         Assert.Equal(JsonValueKind.Null, updated.GetProperty("data").GetProperty("updateExpense").GetProperty("discount").ValueKind);
 
         var refused = await Send("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }",

@@ -95,13 +95,14 @@ export function sortLogs(kind: LogKind, rows: readonly LogRow[], field: string, 
 }
 
 /**
- * A log as a query answers it: who may edit it follows its vehicle today. A refuelling downloaded before discounts existed has neither the
+ * A log as a query answers it: who may edit it follows its vehicle today. An expense downloaded before discounts existed has none (null).
+ * A refuelling downloaded before discounts existed has neither the
  * discount nor the pump's price: none and the price paid, worked out the server's way, so no query reads a field it lacks. The server's own
  * prices are never worked out again.
  */
 function asAnswer(row: LogRow, vehicle: VehicleRow | undefined): Record<string, unknown> {
   const { pulledAt: _pulledAt, ...fields } = row
-  const known = row.__typename === 'Refueling' ? withDiscount(fields) : fields
+  const known = row.__typename === 'Refueling' ? withDiscount(fields) : row.__typename === 'Expense' ? { ...fields, discount: fields.discount ?? null } : fields
   return { ...known, canEdit: atLeast(vehicle?.logAccess, 'EDIT'), canDelete: atLeast(vehicle?.logAccess, 'DELETE') }
 }
 
@@ -134,7 +135,8 @@ function withPrices(row: LogRow): LogRow {
 function withValues(kind: LogKind, row: LogRow, input: Record<string, unknown> | undefined): LogRow {
   const values = Object.fromEntries(VALUES[kind].filter((k) => input && k in input).map((k) => [k, input![k]]))
   const next: LogRow = { ...row, ...values, reviewState: 'NONE', filledFromPhoto: [] }
-  return kind === 'refuelings' ? withPrices(next) : next
+  // An edit sends 0 for an emptied discount, which the server keeps as none: so does the row.
+  return kind === 'refuelings' ? withPrices(next) : { ...next, discount: (num(next.discount) ?? 0) > 0 ? num(next.discount) : null }
 }
 
 /** A log added on this device and not sent yet: what the server would answer, without what only the server works out. */

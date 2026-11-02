@@ -63,7 +63,7 @@ export const currentValues = (entity: ChangeEntity, current: Current): ChangeVal
  */
 export const KEEP_WHEN_NULL: Record<ChangeEntity, readonly string[]> = {
   refuelings: ['currency', 'missedPreviousFillUp', 'discount'],
-  expenses: ['currency'],
+  expenses: ['currency', 'discount'],
   vehicles: ['units'],
   recurring: ['lastDoneDate', 'warnDays', 'warnDistance'],
 }

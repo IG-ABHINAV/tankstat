@@ -17,8 +17,13 @@ describe('toChangeInput', () => {
     expect(toChangeInput(change({ id: 'x', action: 'trash', targetId: 'r9', expectedVersion: 4 }))).toEqual({ id: 'x', expectedVersion: 4, deleteRefueling: 'r9' })
     expect(toChangeInput(change({ id: 'u', entity: 'vehicles', action: 'update', targetId: 'v1', expectedVersion: 2, input: { id: 'v1', name: 'Golf', fuelType: 'PETROL', units: { distance: 'KILOMETERS', volume: 'LITERS' } } })))
       .toEqual({ id: 'u', expectedVersion: 2, updateVehicle: { id: 'v1', name: 'Golf', fuelType: 'PETROL', units: { distance: 'KILOMETERS', volume: 'LITERS' } } })
-    expect(toChangeInput(change({ id: 'd', entity: 'recurring', action: 'markDone', targetId: 'e1', targetIds: ['s1', 's2'], input: { ids: ['s1'], date: '2026-10-02', amount: 50, currency: 'EUR', title: 'Oil', category: '', expenseId: 'e1', photoIds: [] } })))
-      .toEqual({ id: 'd', expectedVersion: null, markRecurringExpensesDone: { ids: ['s1', 's2'], date: '2026-10-02', amount: 50, currency: 'EUR', title: 'Oil', category: '', expenseId: 'e1', photoIds: [] } })
+    expect(toChangeInput(change({ id: 'd', entity: 'recurring', action: 'markDone', targetId: 'e1', targetIds: ['s1', 's2'], input: { ids: ['s1'], date: '2026-10-02', amount: 50, discount: 5, currency: 'EUR', title: 'Oil', category: '', expenseId: 'e1', photoIds: [] } })))
+      .toEqual({ id: 'd', expectedVersion: null, markRecurringExpensesDone: { ids: ['s1', 's2'], date: '2026-10-02', amount: 50, discount: 5, currency: 'EUR', title: 'Oil', category: '', expenseId: 'e1', photoIds: [] } })
+    // The discount of a log reaches the server with the change (the allowlists keep it).
+    expect(toChangeInput(change({ id: 'e', entity: 'expenses', action: 'add', targetId: 'e2', input: { id: 'e2', vehicleId: 'v1', date: '2026-10-02', title: 'Tyres', amount: 18800, discount: 1200, currency: 'HUF', photoIds: [] } })))
+      .toEqual({ id: 'e', expectedVersion: null, addExpense: { id: 'e2', vehicleId: 'v1', date: '2026-10-02', title: 'Tyres', amount: 18800, discount: 1200, currency: 'HUF', photoIds: [] } })
+    expect(toChangeInput(change({ id: 'f', action: 'update', targetId: 'r1', expectedVersion: 3, input: { id: 'r1', date: '2026-10-01', volume: 43, totalCost: 34744, discount: 430, currency: 'HUF', odometer: 2000, isFullTank: true } })))
+      .toEqual({ id: 'f', expectedVersion: 3, updateRefueling: { id: 'r1', date: '2026-10-01', volume: 43, totalCost: 34744, discount: 430, currency: 'HUF', odometer: 2000, isFullTank: true } })
     expect(toChangeInput(change({ id: 's', entity: 'recurring', action: 'trash', targetId: 's3' }))).toEqual({ id: 's', expectedVersion: null, deleteRecurringExpense: 's3' })
   })
 

@@ -104,6 +104,7 @@ test('adds, edits and trashes an expense', async ({ page }) => {
   await add.getByLabel('Title').fill('Parking')
   await add.getByLabel('Amount').fill('1500')
   await add.getByLabel('Discount').fill('300') // a coupon: the amount is what was paid
+  await expectSoundLayout(page) // the row of amount, discount and currency, at both sizes
   await add.getByRole('button', { name: 'Add expense' }).click()
   await expect(add).toBeHidden()
   await expect(row(page, 'Parking')).toBeVisible()
@@ -135,6 +136,9 @@ test('adds a recurring expense and marks it as done', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Mark Oil change as done' }).click()
   const done = page.getByRole('dialog', { name: 'Mark as done: Oil change' })
+  await done.getByLabel('Amount (optional)').fill('35000')
+  await done.getByLabel('Discount').fill('2000') // taken off at the workshop: kept with the visit's expense
+  await expectSoundLayout(page) // the row of amount (with its hint), discount and currency, at both sizes
   await done.getByRole('button', { name: 'Mark as done' }).click()
   await expect(done).toBeHidden()
   await expect(page.getByRole('row').filter({ hasText: 'Oil change' })).toBeVisible()

@@ -168,6 +168,7 @@ public class ReadingChecksTests
 
     [Theory]
     [InlineData(DocumentKind.FuelReceipt)]
+    [InlineData(DocumentKind.ExpenseReceipt)] // which has no other check of its discount
     public void ADiscountAboveHalfTheTotal_IsNotBelieved(DocumentKind kind)
     {
         var checks = ReadingChecks.Check(kind, [Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Discount, "34744")], Hints()); // the total copied
@@ -208,11 +209,11 @@ public class ReadingChecksTests
     }
 
     [Fact]
-    public void AnExpenseReceiptsDiscount_IsKept_WithNothingToCheckItAgainst()
+    public void AnExpenseReceiptsDiscount_IsKept_WithOnlyItsTotalToCheckItAgainst()
     {
         var checks = ReadingChecks.Check(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.Discount, "-1200"), Read(ReadingFieldName.Total, "18800")], Hints());
 
-        Assert.Equal("Discount=1200@0.9 Total=18800@0.9", Shown(checks.Kept)); // no litres or price to multiply: kept as read
+        Assert.Equal("Total=18800@0.9 Discount=1200@0.9", Shown(checks.Kept)); // no litres or price to multiply: kept as read, below half the total
         Assert.Empty(checks.Issues);
     }
 

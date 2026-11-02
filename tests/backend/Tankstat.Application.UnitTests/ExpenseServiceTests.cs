@@ -28,14 +28,17 @@ public class ExpenseServiceTests
         new(date ?? Day, title, category, amount, "EUR", odometer, null, discount);
 
     [Fact]
-    public async Task ADiscount_IsStoredWithTheAmount_AnUpdateWithoutOneClearsIt_AndNoAmountRefusesIt()
+    public async Task ADiscount_IsStoredWithTheAmount_AnUpdateWithoutOneKeepsIt_ZeroClearsIt_AndNoAmountRefusesIt()
     {
         var s = await Setup();
 
         var added = await s.W.ExpenseService.AddAsync(s.Car.Id, Input(amount: 18800, discount: 1200), default);
         Assert.Equal((18800m, 1200m), (added.Amount, added.Discount));
 
-        var updated = await s.W.ExpenseService.UpdateAsync(added.Id, Input(amount: 18800), default);
+        var kept = await s.W.ExpenseService.UpdateAsync(added.Id, Input(amount: 18800), default); // a build from before discounts
+        Assert.Equal(1200m, kept.Discount);
+
+        var updated = await s.W.ExpenseService.UpdateAsync(added.Id, Input(amount: 18800, discount: 0), default);
         Assert.Null(updated.Discount);
 
         var refused = await Assert.ThrowsAsync<DomainException>(() =>

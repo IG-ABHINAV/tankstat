@@ -175,7 +175,7 @@ it('keeps a discount with the amount paid: shown in its column on request, back 
   await ui.clear(within(dialog).getByLabelText('Discount'))
   await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
 
-  await waitFor(() => expect(state.calls.UpdateExpense).toEqual([{ input: expect.objectContaining({ id: 'e4', amount: 18800, discount: null }) }]))
+  await waitFor(() => expect(state.calls.UpdateExpense).toEqual([{ input: expect.objectContaining({ id: 'e4', amount: 18800, discount: 0 }) }])) // 0 clears; left out would keep it
 })
 
 it('moves an expense to the trash after a confirmation, not before', async () => {

@@ -283,6 +283,17 @@ describe('answering offline, the device\'s own data', () => {
     expect(await answerLocally(rows, undefined, { vehicleId: 'v1' })).toBeUndefined()
   })
 
+  it('an expense downloaded before discounts is answered with none, one downloaded since with its own', async () => {
+    const rows = await device()
+    await rows.putLogs('expenses', [expense('old', { date: '2026-08-01', amount: 3000 }), expense('new', { date: '2026-09-15', amount: 18800, discount: 1200 })])
+
+    const answer = await answerLocally(rows, 'Expenses', { vehicleId: 'v1' })
+
+    const [fresh, old] = answer!.expenses as Record<string, unknown>[]
+    expect(fresh).toMatchObject({ id: 'new', discount: 1200 })
+    expect(old).toMatchObject({ id: 'old', discount: null }) // asked for by the grid and the details: never a field the row lacks
+  })
+
   it('a refuelling kept before its photo is read has no price per unit yet', async () => {
     const rows = await device()
     await enqueue({ id: 'n', entity: 'refuelings', action: 'add', vehicleId: 'v1', targetId: 'n', input: { id: 'n', date: '2026-10-01', photoIds: ['local:receipt'] } })

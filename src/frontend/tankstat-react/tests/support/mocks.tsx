@@ -917,7 +917,9 @@ export function fakeExpenseBackend(vehicle: FakeVehicle, expenses: FakeExpense[]
     graphql.mutation('UpdateExpense', ({ variables }) => {
       record('UpdateExpense', variables)
       const i = state.expenses.findIndex((e) => e.id === variables.input.id)
-      state.expenses[i] = { ...state.expenses[i], ...variables.input, reviewState: 'NONE', filledFromPhoto: [] }
+      // Like the server: a discount left out stays, 0 is none.
+      const discount = variables.input.discount === undefined || variables.input.discount === null ? state.expenses[i].discount : variables.input.discount || null
+      state.expenses[i] = { ...state.expenses[i], ...variables.input, discount, reviewState: 'NONE', filledFromPhoto: [] }
       return HttpResponse.json({ data: { updateExpense: { id: variables.input.id } } })
     }),
     graphql.mutation('DeleteExpense', ({ variables }) => {

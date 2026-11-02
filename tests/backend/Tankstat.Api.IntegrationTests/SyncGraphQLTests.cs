@@ -69,6 +69,26 @@ public class SyncGraphQLTests : IDisposable
     }
 
     [Fact]
+    public async Task AnExpensesAndAVisitsDiscount_KeptOffline_AreApplied_AndAnOlderBuildsUpdateKeepsIt()
+    {
+        var people = await _app.Users();
+        var (car, expense, schedule, visit) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        const string read = "query($e: UUID!, $v: UUID!) { expense(id: $e) { amount discount } visit: expense(id: $v) { amount discount } }";
+
+        await Send(people.Alice,
+            new { id = car, addVehicle = new { id = car, name = "Golf", fuelType = "PETROL" } },
+            new { id = expense, addExpense = new { id = expense, vehicleId = car, date = "2026-09-05", title = "Tyres", amount = 18800, discount = 1200, currency = "HUF" } },
+            new { id = schedule, addRecurringExpense = new { id = schedule, vehicleId = car, title = "Service", kind = "TIME", intervalMonths = 12, lastDoneDate = "2026-01-01" } },
+            new { id = visit, markRecurringExpensesDone = new { ids = new[] { schedule }, date = "2026-09-10", amount = 33000, discount = 2000, currency = "HUF", expenseId = visit } });
+        var both = (await people.Alice.Gql(read, new { e = expense, v = visit })).Data();
+        Assert.Equal((1200m, 2000m), (both.GetProperty("expense").GetProperty("discount").GetDecimal(), both.GetProperty("visit").GetProperty("discount").GetDecimal()));
+
+        var old = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = 1, updateExpense = new { id = expense, date = "2026-09-05", title = "Tyres", amount = 18800, currency = "HUF" } });
+        Assert.Equal("APPLIED", old.GetProperty("results")[0].GetProperty("status").GetString());
+        Assert.Equal(1200m, (await people.Alice.Gql(read, new { e = expense, v = visit })).Data().GetProperty("expense").GetProperty("discount").GetDecimal());
+    }
+
+    [Fact]
     public async Task AChangeMadeFromAnOldVersion_IsParked_AndChangesNothing()
     {
         var people = await _app.Users();

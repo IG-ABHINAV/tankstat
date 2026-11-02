@@ -325,6 +325,18 @@ it("a row's own Done leaves the selection in the list alone", async () => {
   expect(screen.getByRole('checkbox', { name: 'Select Wipers' })).toBeChecked()
 })
 
+it('a discount without an amount is said at its field before anything is sent: the server would refuse the whole visit', async () => {
+  const { ui, state } = setup(fakeVehicle(), [fakeRecurring({ kind: 'TIME', intervalDistance: null, lastDoneOdometer: null })])
+  await row('Oil change')
+
+  const dialog = await doneDialog(ui, 'Oil change')
+  await ui.type(within(dialog).getByLabelText('Discount'), '2000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Mark as done' }))
+
+  expect(within(dialog).getByLabelText('Discount')).toHaveAccessibleDescription(/A discount needs the amount it was taken off\./)
+  expect(state.calls.MarkRecurringExpensesDone).toBeUndefined()
+})
+
 it('without an amount only the schedules move on: nothing is required beyond the day', async () => {
   const { ui, state } = setup(fakeVehicle(), [fakeRecurring({ kind: 'TIME', intervalDistance: null, lastDoneOdometer: null })])
   await row('Oil change')

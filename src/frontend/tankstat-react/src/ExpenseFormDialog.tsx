@@ -51,7 +51,7 @@ export interface ExpenseValues {
   category: string | null
   /** What was paid, after the discount. */
   amount: number | null
-  /** What was taken off the amount; null when none (also what an edit sends to clear one). */
+  /** What was taken off the amount; null when none on an add, 0 to clear one on an edit (null there keeps the expense's). */
   discount: number | null
   currency: string
   odometer: number | null
@@ -156,7 +156,7 @@ export function ExpenseFormDialog({
             editing={editing}
             categories={categories.data?.expenseCategories ?? []}
             photosBusy={queue.busy || queue.failed > 0 || adding}
-            read={mergeReadings(drafts.readings.values())}
+            read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.
@@ -266,6 +266,7 @@ function ExpenseForm({
     explanation,
     undefined,
     editing,
+    { discount: 'amount' }, // a photo's discount was taken off its own total: next to an amount the user entered, it is only offered
   )
   const merging = useMergeFields(merge)
   const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
@@ -297,7 +298,9 @@ function ExpenseForm({
         title: text('title'),
         category: text('category') || null,
         amount: text('amount') === '' ? null : parseDecimal(text('amount'))!,
-        discount: text('discount') === '' ? null : parseDecimal(text('discount'))!,
+        // Emptied in an edit: 0, which clears it (left out, the server keeps the expense's). With the amount left to a photo: none, the
+        // photo brings both.
+        discount: text('discount') === '' || text('amount') === '' ? (editing ? 0 : null) : parseDecimal(text('discount'))!,
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,

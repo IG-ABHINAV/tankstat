@@ -18,7 +18,7 @@ namespace Tankstat.Application.Expenses;
 /// <param name="Amount">Null only while a photo of the expense is still being read: it fills the amount in later.</param>
 /// <param name="Currency">Required with an amount when adding; when updating, omit it to keep the expense's currency.</param>
 /// <param name="Odometer">Null when the odometer was not noted (a photo that is still being read may fill it in).</param>
-/// <param name="Discount">What was taken off <c>Amount</c>, which is what was paid; null is none (an update without one clears it).</param>
+/// <param name="Discount">What was taken off <c>Amount</c>, which is what was paid; on an update null keeps the expense's (a build from before discounts sends none) and 0 is none.</param>
 public sealed record ExpenseInput(DateOnly Date, string Title, string? Category, decimal? Amount, string? Currency, long? Odometer, string? Note, decimal? Discount = null);
 
 /// <summary>
@@ -88,7 +88,8 @@ public sealed class ExpenseService(
         var readingPhotos = (input.Amount is null || input.Odometer is null) && await filler.MayWaitForLogPhotosAsync(LogType.Expense, id, ct);
         var waited = expense.ReviewState;
 
-        var changes = expense.Update(input.Date, input.Title, input.Category, input.Amount, input.Currency ?? expense.Currency, input.Odometer, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id, input.Discount);
+        var changes = expense.Update(input.Date, input.Title, input.Category, input.Amount, input.Currency ?? expense.Currency, input.Odometer, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id,
+            input.Discount ?? expense.Discount); // left out is kept (a build from before discounts knows none), 0 is none
         await expenses.UpdateAsync(expense, changes, ct);
         if (waited != ReviewState.None && expense.ReviewState == ReviewState.None)
             await filler.ReviewedAsync(LogType.Expense, id, expense.CreatedById, ct);

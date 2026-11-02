@@ -134,7 +134,7 @@ export function RecurringDoneDialog({
             selected={selected}
             photosBusy={queue.busy || queue.failed > 0}
             photosPicked={queue.items.length > 0}
-            read={mergeReadings(drafts.readings.values())}
+            read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
             reading={drafts.pending.length > 0}
             readLater={readLater}
@@ -224,11 +224,20 @@ function DoneFields({
     discount: t('recurring.discount'),
     currency: t('recurring.currency'),
   }
-  const fill = useReadFill({ date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', discount: '', currency: d.currency ?? '' }, READ_INTO, read, labels, readingDone, {
-    ...explanation,
-    last: last ? formatDistance(last.value, vehicle.units.distance) : undefined,
-  })
+  const fill = useReadFill(
+    { date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', discount: '', currency: d.currency ?? '' },
+    READ_INTO,
+    read,
+    labels,
+    readingDone,
+    { ...explanation, last: last ? formatDistance(last.value, vehicle.units.distance) : undefined },
+    undefined,
+    false,
+    { discount: 'amount' }, // a photo's discount was taken off its own total: next to an amount the user typed, it is only offered
+  )
   const hasAmount = fill.values.amount.trim() !== ''
+  // The amount is optional here: a discount without it would stop the whole visit on the server, so it is said at the field first.
+  const discountWithoutAmount = !hasAmount && fill.values.discount.trim() !== '' && parseDecimal(fill.values.discount) !== undefined
   const logsExpense = hasAmount || reading || readLater
   const titleValue = title ?? defaultTitle(done)
   const categoryValue = category ?? defaultCategory(done)
@@ -269,7 +278,7 @@ function DoneFields({
           date: text('date'),
           odometer: text('odometer') === '' ? null : Number(text('odometer')),
           amount: hasAmount ? (parseDecimal(text('amount')) ?? null) : null,
-          discount: text('discount') === '' ? null : (parseDecimal(text('discount')) ?? null), // without an amount the server refuses it, said at the field
+          discount: hasAmount && text('discount') !== '' ? (parseDecimal(text('discount')) ?? null) : null, // without an amount the field says so before this
           currency: hasAmount ? text('currency').toUpperCase() : null,
           title: titleValue.trim(),
           category: categoryValue.trim(), // empty: no category (null would mean "the schedules' one" to the server)
@@ -338,7 +347,10 @@ function DoneFields({
             <Field
               name="discount"
               label={labels.discount}
-              invalid={{ message: t('forms.numberInvalid'), test: (v) => v !== '' && parseDecimal(v) === undefined }}
+              invalid={{
+                message: discountWithoutAmount ? t('errors.cost.discountWithoutAmount') : t('forms.numberInvalid'),
+                test: (v) => v.trim() !== '' && (parseDecimal(v) === undefined || !hasAmount),
+              }}
               extra={note('discount')}
             >
               <FieldInput inputMode="decimal" autoComplete="off" value={fill.values.discount} onChange={(e) => fill.change('discount', e.target.value)} />

@@ -22,7 +22,7 @@ public sealed record AddExpenseInput(
 
 /// <param name="Amount">May be omitted only while a photo of the expense is still being read.</param>
 /// <param name="Currency">Omit to keep the expense's currency.</param>
-/// <param name="Discount">What was taken off the amount; omitted or null is none (an earlier one is cleared).</param>
+/// <param name="Discount">What was taken off the amount; omit (or null) to keep the expense's, and send 0 for none.</param>
 public sealed record UpdateExpenseInput(
     Guid Id, DateOnly Date, string Title, string? Category, decimal? Amount, string? Currency, long? Odometer, string? Note, decimal? Discount = null);
 
