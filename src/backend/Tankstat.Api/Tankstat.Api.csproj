@@ -7,10 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="HotChocolate.AspNetCore" Version="16.7.1" />
+    <PackageReference Include="HotChocolate.AspNetCore" Version="16.7.3" />
     <!-- Telemetry (docs/configuration.md, Telemetry): HotChocolate.Diagnostics goes with HotChocolate.AspNetCore's version. The EF Core
          instrumentation is a beta, registered only behind Telemetry:TraceDatabase; 1.20.0-beta.1 or later (no exception message in the span). -->
-    <PackageReference Include="HotChocolate.Diagnostics" Version="16.7.1" />
+    <PackageReference Include="HotChocolate.Diagnostics" Version="16.7.3" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.14" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
