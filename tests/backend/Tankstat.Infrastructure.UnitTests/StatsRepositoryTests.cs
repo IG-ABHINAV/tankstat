@@ -101,4 +101,42 @@ public class StatsRepositoryTests
         await vehicles.PurgeAsync(OwnerScope.All, default);
         Assert.Empty(await repo.ListVisibleAsync(car.Id, alice, default)); // gone with the vehicle
     }
+
+    [Fact]
+    public async Task DashboardLayouts_AreStoredPerVehicleAndPerUser_ReplacedByTheNextSave_AndRemovedWithTheVehicle()
+    {
+        await using var db = new TestDatabase();
+        var car = await AddVehicle(db);
+        var repo = db.Get<IDashboardLayoutRepository>();
+        var alice = Guid.NewGuid();
+        var chart = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero);
+        DashboardLayoutValues Values(params string[] charts) => new(["thisMonth", "odometer"], charts, [$"chart:{chart}"]);
+
+        await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, Values("preset:monthlyCosts"), now), default);
+        await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, Values("preset:distance", $"chart:{chart}"), now.AddMinutes(1)), default); // replaces it
+        await repo.SavePersonalAsync(UserDashboardLayout.Create(alice, car.Id, Values(), now), default);
+        // Two first saves of one person's layout at once: the one that loses the insert becomes an update.
+        await Task.WhenAll(
+            repo.SavePersonalAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:a"), now), default),
+            repo.SavePersonalAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:b"), now), default));
+
+        var shared = (await repo.FindSharedAsync(car.Id, default))!;
+        Assert.Equal(["preset:distance", $"chart:{chart}"], shared.Charts);
+        Assert.Equal(["thisMonth", "odometer"], shared.Figures);
+        Assert.Equal(now.AddMinutes(1), shared.UpdatedAt);
+        Assert.Empty((await repo.FindPersonalAsync(alice, car.Id, default))!.Charts);
+        Assert.Contains((await repo.FindPersonalAsync(Owner, car.Id, default))!.Charts.Single(), new[] { "preset:a", "preset:b" });
+
+        await repo.RemovePersonalAsync(alice, car.Id, default);
+        Assert.Null(await repo.FindPersonalAsync(alice, car.Id, default));
+
+        var vehicles = db.Get<IVehicleRepository>();
+        var trashed = (await vehicles.FindAsync(car.Id, default))!;
+        trashed.MarkDeleted(DateTimeOffset.UtcNow);
+        await vehicles.UpdateAsync(trashed, default);
+        await vehicles.PurgeAsync(OwnerScope.All, default);
+        Assert.Null(await repo.FindSharedAsync(car.Id, default)); // gone with the vehicle
+        Assert.Null(await repo.FindPersonalAsync(Owner, car.Id, default));
+    }
 }

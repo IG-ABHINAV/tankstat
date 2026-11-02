@@ -44,6 +44,7 @@ internal sealed class UserDataRepository(IDbContextFactory<AppDbContext> dbFacto
         await db.UiSettings.Where(s => s.UserId == userId).ExecuteDeleteAsync(ct);
         await db.GridSettings.Where(g => g.UserId == userId).ExecuteDeleteAsync(ct);
         await db.VehicleOrders.Where(o => o.UserId == userId).ExecuteDeleteAsync(ct);
+        await db.UserDashboardLayouts.Where(l => l.UserId == userId).ExecuteDeleteAsync(ct);
         // Changes they sent from their devices: kept with the data when it moves (below), else they go (the vehicle's own go with it).
         await db.SyncChanges.Where(c => c.SubmittedById == userId).ExecuteDeleteAsync(ct);
         await db.OfflineSettings.Where(o => o.UserId == userId).ExecuteDeleteAsync(ct);

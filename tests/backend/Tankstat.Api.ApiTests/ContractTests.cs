@@ -64,7 +64,7 @@ public class ContractTests
 
     [Theory]
     [InlineData("Query", "health", "vehicles", "myVehicles", "myVehicleCount", "vehicle", "session", "notices", "users", "canSetUserPasswords", "accessSettings", "accessGrants", "trash", "vehicleCount", "trashCount", "trashDeletableCount", "vehicleDefaults", "refuelings", "refuelingCount", "refueling", "logDefaults", "refuelingTrash", "refuelingTrashCount", "refuelingTrashDeletableCount", "vehicleLogAccess", "shareCandidates", "notifications", "notificationCount", "recognitionStatus", "photoDrafts", "uiSettings", "mySessions", "offlineChanges", "offlineSettings", "parkedChanges", "systemSettings", "backups", "backupDetails", "setup", "setupRestorePoints", "setupBackupDetails", "setupUploadLimitMb", "passwordRequirements")]
-    [InlineData("Mutation", "addVehicle", "logRefueling", "login", "logout", "changePassword", "requestPasswordReset", "resetPassword", "createUser", "issuePasswordReset", "setUserAdmin", "setUserDisabled", "updateUser", "setUserPassword", "deleteUser", "setDefaultAccess", "setAccessGrant", "updateVehicle", "deleteVehicle", "restoreVehicle", "emptyTrash", "logRefueling", "updateRefueling", "deleteRefueling", "restoreRefueling", "emptyRefuelingTrash", "setVehicleLogAccess", "markNotificationsRead", "updateUiSettings", "saveGridSettings", "resetGridSettings", "setVehicleOrder", "addRecurringExpense", "updateRecurringExpense", "deleteRecurringExpense", "markRecurringExpensesDone", "revokeSession", "revokeOtherSessions", "updateOfflineSettings", "syncChanges", "resolveSyncChange", "updateSystemSettings", "restartServer", "restoreBackup", "runBackup", "deleteBackup", "holdBackup", "prepareBackupEncryption", "setupClaimAdministrator", "setupFinish")]
+    [InlineData("Mutation", "addVehicle", "logRefueling", "login", "logout", "changePassword", "requestPasswordReset", "resetPassword", "createUser", "issuePasswordReset", "setUserAdmin", "setUserDisabled", "updateUser", "setUserPassword", "deleteUser", "setDefaultAccess", "setAccessGrant", "updateVehicle", "deleteVehicle", "restoreVehicle", "emptyTrash", "logRefueling", "updateRefueling", "deleteRefueling", "restoreRefueling", "emptyRefuelingTrash", "setVehicleLogAccess", "markNotificationsRead", "updateUiSettings", "saveGridSettings", "resetGridSettings", "setVehicleOrder", "addRecurringExpense", "updateRecurringExpense", "deleteRecurringExpense", "markRecurringExpensesDone", "saveDashboardLayout", "resetDashboardLayout", "revokeSession", "revokeOtherSessions", "updateOfflineSettings", "syncChanges", "resolveSyncChange", "updateSystemSettings", "restartServer", "restoreBackup", "runBackup", "deleteBackup", "holdBackup", "prepareBackupEncryption", "setupClaimAdministrator", "setupFinish")]
     [InlineData("Session", "mode", "user", "instance")]
     [InlineData("InstanceInfo", "generation", "restorePoint")]
     [InlineData("BackupOverviewInfo", "folder", "migration", "restorePoints", "sizes", "run", "settings")]
@@ -89,7 +89,7 @@ public class ContractTests
     [InlineData("SystemSetting", "key", "kind", "choices", "value", "isSet", "isSecret", "source", "editable", "restartPending", "defaultValue", "appliesAtOnce")]
     [InlineData("PasswordRequirementsInfo", "minLength", "maxLength")]
     [InlineData("SettingsFileInfo", "path", "exists", "ignored", "problems")]
-    [InlineData("Vehicle", "id", "ownerId", "name", "licensePlate", "fuelType", "units", "deletedAt", "canEdit", "logAccess", "owner", "refuelingCount", "version", "updatedAt", "logCountSince", "parkedChangeCount", "changedAt", "changedBy", "lastChange")]
+    [InlineData("Vehicle", "id", "ownerId", "name", "licensePlate", "fuelType", "units", "deletedAt", "canEdit", "logAccess", "owner", "refuelingCount", "version", "updatedAt", "logCountSince", "parkedChangeCount", "changedAt", "changedBy", "lastChange", "summary", "dashboard")]
     [InlineData("MeasurementUnits", "distance", "volume")]
     [InlineData("UserRef", "id", "displayName", "avatarUrl")]
     [InlineData("LogDefaults", "lastOdometer", "lastDate", "currency")]
@@ -125,6 +125,8 @@ public class ContractTests
     [InlineData("CurrencySpend", "currency", "thisMonth", "lastMonth")]
     [InlineData("ChartData", "unit", "series")]
     [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope", "metric", "unit")]
+    [InlineData("DashboardInfo", "shared", "personal", "canChangeShared")]
+    [InlineData("DashboardLayoutInfo", "figures", "charts", "hidden", "updatedAt")]
     [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind", "isShared", "createdAt", "canEdit", "createdBy")]
     [InlineData("Refueling", "id", "vehicleId", "createdBy", "date", "volume", "totalCost", "discount", "currency", "odometer", "pricePerUnit", "pricePerUnitBeforeDiscount", "consumption", "isFullTank", "missedPreviousFillUp", "note", "deletedAt", "canEdit", "canDelete", "vehicle", "photos", "reviewState", "filledFromPhoto", "version", "updatedAt", "changedAt", "changedBy", "lastChange")]
     [InlineData("Expense", "id", "amount", "discount", "currency", "odometer", "reviewState", "filledFromPhoto")]
@@ -154,6 +156,7 @@ public class ContractTests
     [InlineData("ChangePasswordInput", "currentPassword", "newPassword", "newPasswordConfirmation")]
     [InlineData("ResetPasswordInput", "token", "newPassword", "newPasswordConfirmation")]
     [InlineData("SetupFinishInput", "code", "email", "password", "passwordConfirmation", "acknowledgeOpenAccess")]
+    [InlineData("SaveDashboardLayoutInput", "vehicleId", "personal", "figures", "charts", "hidden")]
     [InlineData("ChartConfigInput", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind")]
     public async Task Schema_InputTypeTakesContractFields(string type, params string[] fields)
     {

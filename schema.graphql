@@ -157,6 +157,10 @@ type Mutation {
     @cost(weight: "10")
   saveVehicleChart(input: SaveChartInput!): VehicleChart! @cost(weight: "10")
   deleteVehicleChart(id: UUID!): Boolean! @cost(weight: "10")
+  saveDashboardLayout(input: SaveDashboardLayoutInput!): Boolean!
+    @cost(weight: "10")
+  resetDashboardLayout(vehicleId: UUID!, personal: Boolean!): Boolean!
+    @cost(weight: "10")
   updateUiSettings(input: UpdateUiSettingsInput!): UiSettingsInfo!
     @cost(weight: "10")
   saveGridSettings(input: GridSettingsInput!): GridSettingsInfo!
@@ -315,6 +319,19 @@ type CurrencySpend {
   currency: String!
   thisMonth: Decimal!
   lastMonth: Decimal!
+}
+
+type DashboardInfo {
+  shared: DashboardLayoutInfo
+  personal: DashboardLayoutInfo
+  canChangeShared: Boolean!
+}
+
+type DashboardLayoutInfo {
+  figures: [String!]!
+  charts: [String!]!
+  hidden: [String!]!
+  updatedAt: DateTime!
 }
 
 type Expense {
@@ -839,6 +856,7 @@ type Vehicle {
   expenseCount: Int! @cost(weight: "10")
   recurring: [RecurringExpenseInfo!]! @cost(weight: "10")
   summary: VehicleSummary @cost(weight: "10")
+  dashboard: DashboardInfo @cost(weight: "10")
   parkedChangeCount: Int! @cost(weight: "10")
   logCountSince(from: LocalDate): LogCountSince! @cost(weight: "10")
 }
@@ -1095,6 +1113,14 @@ input SaveChartInput {
   title: String!
   config: ChartConfigInput!
   shared: Boolean!
+}
+
+input SaveDashboardLayoutInput {
+  vehicleId: UUID!
+  personal: Boolean!
+  figures: [String!]!
+  charts: [String!]!
+  hidden: [String!]!
 }
 
 input SetAccessGrantInput {

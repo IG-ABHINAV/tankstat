@@ -46,7 +46,30 @@ public sealed class VehicleSummaryExtensions
 {
     /// <summary>Key figures for the vehicle's card and dashboard.</summary>
     public Task<VehicleSummary?> GetSummary([Parent] Vehicle vehicle, [Service] StatsService stats, CancellationToken ct) => stats.SummaryAsync(vehicle.Id, ct);
+
+    /// <summary>
+    /// How the vehicle's dashboard is arranged: the vehicle's own and the user's, each null until someone made one (the Standard preset).
+    /// Resolved per vehicle, so only the dashboard's query asks for it, never a list of vehicles. Null when the vehicle is not visible.
+    /// </summary>
+    public async Task<DashboardInfo?> GetDashboard([Parent] Vehicle vehicle, [Service] DashboardService dashboards, CancellationToken ct) =>
+        await dashboards.GetAsync(vehicle.Id, ct) is { } view ? new DashboardInfo(DashboardLayoutInfo.From(view.Shared), DashboardLayoutInfo.From(view.Personal), view.CanChangeShared) : null;
 }
+
+/// <param name="Figures">The key figures shown, in order.</param>
+/// <param name="Charts">The charts shown, in order: <c>preset:&lt;id&gt;</c> for a ready-made one, <c>chart:&lt;id&gt;</c> for a saved one.</param>
+/// <param name="Hidden">The saved charts taken off the dashboard (a saved chart it does not mention is shown at its end).</param>
+public sealed record DashboardLayoutInfo(IReadOnlyList<string> Figures, IReadOnlyList<string> Charts, IReadOnlyList<string> Hidden, DateTimeOffset UpdatedAt)
+{
+    public static DashboardLayoutInfo? From(DashboardLayout? layout) => layout is null ? null : new(layout.Figures, layout.Charts, layout.Hidden, layout.UpdatedAt);
+}
+
+/// <param name="Shared">The vehicle's dashboard, which everyone who sees it gets; null for the Standard preset.</param>
+/// <param name="Personal">The user's own arrangement, which wins over the vehicle's for them alone; null when they made none.</param>
+/// <param name="CanChangeShared">Whether the user may change the vehicle's dashboard (Edit access to its logs).</param>
+public sealed record DashboardInfo(DashboardLayoutInfo? Shared, DashboardLayoutInfo? Personal, bool CanChangeShared);
+
+/// <param name="Personal">The user's own arrangement (View access is enough), else the vehicle's (Edit access to its logs).</param>
+public sealed record SaveDashboardLayoutInput(Guid VehicleId, bool Personal, IReadOnlyList<string> Figures, IReadOnlyList<string> Charts, IReadOnlyList<string> Hidden);
 
 [ExtendObjectType(OperationTypeNames.Query)]
 public sealed class DashboardQueries
@@ -71,6 +94,20 @@ public sealed class DashboardMutations
     public async Task<bool> DeleteVehicleChart(Guid id, [Service] ChartService charts, CancellationToken ct)
     {
         await charts.DeleteAsync(id, ct);
+        return true;
+    }
+
+    /// <summary>Saves the vehicle's dashboard or the user's own arrangement of it, replacing the one there was.</summary>
+    public async Task<bool> SaveDashboardLayout(SaveDashboardLayoutInput input, [Service] DashboardService dashboards, CancellationToken ct)
+    {
+        await dashboards.SaveAsync(input.VehicleId, input.Personal, new DashboardLayoutValues(input.Figures, input.Charts, input.Hidden), ct);
+        return true;
+    }
+
+    /// <summary>Forgets the vehicle's dashboard (back to the Standard preset) or the user's own (back to the vehicle's).</summary>
+    public async Task<bool> ResetDashboardLayout(Guid vehicleId, bool personal, [Service] DashboardService dashboards, CancellationToken ct)
+    {
+        await dashboards.ResetAsync(vehicleId, personal, ct);
         return true;
     }
 }

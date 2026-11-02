@@ -94,6 +94,39 @@ namespace Tankstat.Migrations.Sqlite
                     b.ToTable("ResourceGrants", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Charts.UserDashboardLayout", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Charts")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Figures")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Hidden")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId", "VehicleId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("UserDashboardLayouts", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Charts.VehicleChart", b =>
                 {
                     b.Property<Guid>("Id")
@@ -171,6 +204,34 @@ namespace Tankstat.Migrations.Sqlite
                     b.HasIndex("VehicleId", "CreatedById");
 
                     b.ToTable("VehicleCharts", (string)null);
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Charts.VehicleDashboardLayout", b =>
+                {
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Charts")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Figures")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Hidden")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("VehicleId");
+
+                    b.ToTable("VehicleDashboardLayouts", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Images.StoredImage", b =>
@@ -1268,7 +1329,25 @@ namespace Tankstat.Migrations.Sqlite
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Charts.UserDashboardLayout", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Charts.VehicleChart", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Charts.VehicleDashboardLayout", b =>
                 {
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
                         .WithMany()

@@ -131,6 +131,40 @@ public class DashboardApiTests : IDisposable
     }
 
     [Fact]
+    public async Task ADashboardsLayouts_TheVehiclesForEveryone_APersonalOneForItsOwner_AndAViewerCannotChangeTheVehicles()
+    {
+        var people = await _app.Users();
+        var (alice, bob) = (people.Alice, people.Bob);
+        var id = await CarWithLogs(alice);
+        // A viewer: the administrator grants Bob View on Alice's data (a vehicle's logs are shared with Edit or more).
+        await people.Admin.Gql("mutation($i: SetAccessGrantInput!) { setAccessGrant(input: $i) }", new { i = new { ownerId = people.AliceId, granteeId = people.BobId, level = "VIEW" } });
+        var shared = (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }",
+            new { i = new { vehicleId = id, title = "Shared", shared = true, config = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "BAR", range = "LAST6_MONTHS", stacked = false } } }))
+            .Data().GetProperty("saveVehicleChart").GetProperty("id").GetString();
+        const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
+        const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { canChangeShared shared { figures charts hidden updatedAt } personal { charts } } } }";
+        object Layout(bool personal, params string[] charts) => new { i = new { vehicleId = id, personal, figures = new[] { "odometer" }, charts, hidden = Array.Empty<string>() } };
+
+        var standard = (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard");
+        Assert.Equal((JsonValueKind.Null, true), (standard.GetProperty("shared").ValueKind, standard.GetProperty("canChangeShared").GetBoolean()));
+        Assert.True((await alice.Gql(save, Layout(false, "preset:distance", $"chart:{shared}"))).Data().GetProperty("saveDashboardLayout").GetBoolean());
+        var refused = await bob.Gql(save, Layout(false, "preset:consumption"));
+        await bob.Gql(save, Layout(true, "preset:consumption"));
+
+        var bobs = (await bob.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard");
+        Assert.Equal("dashboard.needEditToChange", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+        Assert.False(bobs.GetProperty("canChangeShared").GetBoolean());
+        Assert.Equal(["preset:distance", $"chart:{shared}"], bobs.GetProperty("shared").GetProperty("charts").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal(["preset:consumption"], bobs.GetProperty("personal").GetProperty("charts").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal(JsonValueKind.Null, (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").ValueKind);
+
+        await bob.Gql("mutation($id: UUID!) { resetDashboardLayout(vehicleId: $id, personal: true) }", new { id });
+        Assert.Equal(JsonValueKind.Null, (await bob.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").ValueKind);
+        var invalid = await alice.Gql(save, Layout(true, "not a chart"));
+        Assert.Equal("dashboard.itemInvalid", invalid.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
+
+    [Fact]
     public async Task StrangersGetNothing()
     {
         var (alice, bob, _) = await Users();

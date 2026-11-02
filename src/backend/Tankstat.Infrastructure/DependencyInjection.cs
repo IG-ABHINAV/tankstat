@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<IStatsRepository, StatsRepository>();
         services.AddScoped<IVehicleChartRepository, VehicleChartRepository>();
+        services.AddScoped<IDashboardLayoutRepository, DashboardLayoutRepository>();
         services.AddScoped<IUiSettingsRepository, UiSettingsRepository>();
         services.AddScoped<IVehicleOrderRepository, VehicleOrderRepository>();
         services.AddScoped<IOfflineSettingsRepository, OfflineSettingsRepository>();
