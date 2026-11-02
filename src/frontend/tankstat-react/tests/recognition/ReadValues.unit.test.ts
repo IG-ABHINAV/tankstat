@@ -71,14 +71,14 @@ describe('filling the form', () => {
 })
 
 describe('fields worked out from others', () => {
-  it('keeps the order the fields were last typed in, a photo value taken with "Use" counting as typed', () => {
+  it('keeps the fields the user typed in, a photo value taken with "Use" counting as typed', () => {
     let state = changeField(start({ date: '', volume: '', currency: '' }), 'volume', '40')
     state = changeField(state, 'date', '2026-10-01')
     state = changeField(state, 'volume', '41')
 
-    expect([...state.touched]).toEqual(['date', 'volume'])
+    expect(state.touched).toEqual(new Set(['date', 'volume']))
     const offered = applyRead(state, fields, { DATE: { value: '2026-09-17', confidence: 0.9 } }).state
-    expect([...takeOffered(offered, 'date').touched]).toEqual(['volume', 'date'])
+    expect(takeOffered(offered, 'date').touched).toEqual(new Set(['date', 'volume']))
   })
 
   it('a calculated value is nobody\'s: it leaves the typed fields and loses the photo mark, a matching offer goes', () => {

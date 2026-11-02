@@ -40,7 +40,7 @@ describe('volume, unit price and total', () => {
     expect(amounts(type(type(open(), 'totalCost', '24000'), 'unitPrice', '600'))).toEqual({ volume: '40', unitPrice: '600', totalCost: '24000' })
   })
 
-  it('with all three filled the unit price follows a change of the volume or the total, the total a change of the unit price, and the litres never move', () => {
+  it('with all three filled the unit price follows a change of the volume or the total; a total typed never gives way to the pump price, nor do the litres', () => {
     let state = type(type(open(), 'volume', '40'), 'unitPrice', '600') // the total is worked out
     expect(state.calculated).toEqual(new Set(['totalCost']))
 
@@ -48,12 +48,13 @@ describe('volume, unit price and total', () => {
     expect(amounts(state)).toEqual({ volume: '40', unitPrice: '615', totalCost: '24600' })
     expect(state.calculated).toEqual(new Set(['unitPrice']))
 
-    state = type(state, 'unitPrice', '620') // the pump price typed on purpose: the total follows, never the litres
-    expect(amounts(state)).toEqual({ volume: '40', unitPrice: '620', totalCost: '24800' })
-    expect(state.calculated).toEqual(new Set(['totalCost']))
+    state = type(state, 'unitPrice', '620') // the pump price typed on purpose: the amount paid is the receipt's and stays, as do the litres
+    expect(amounts(state)).toEqual({ volume: '40', unitPrice: '620', totalCost: '24600' })
+    expect(state.calculated).toEqual(new Set())
 
-    state = type(state, 'volume', '41') // the litres corrected while the total is only worked out: the total follows again
-    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '620', totalCost: '25420' })
+    state = type(state, 'volume', '41') // the litres corrected: the unit price follows, the amount paid stays
+    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '600', totalCost: '24600' })
+    expect(state.calculated).toEqual(new Set(['unitPrice']))
 
     state = type(state, 'totalCost', '24700') // the amount paid typed: the unit price follows
     expect(amounts(state)).toEqual({ volume: '41', unitPrice: '602.439', totalCost: '24700' })
@@ -136,12 +137,28 @@ describe('amounts read from photos', () => {
     expect(amounts(photo(typed, { VOLUME: '40' }))).toEqual({ volume: '40', unitPrice: '600', totalCost: '25000' })
   })
 
-  it('offers a different value next to a calculated amount, and "Use it" makes the total follow, never the litres', () => {
+  it('offers a different value next to a calculated amount, and "Use it" takes it: the typed total and the litres stay', () => {
     const state = photo(type(type(open(), 'volume', '40'), 'totalCost', '24000'), { UNIT_PRICE: '599.9' })
 
     expect(amounts(state)).toEqual({ volume: '40', unitPrice: '600', totalCost: '24000' })
     expect(state.offered).toEqual({ unitPrice: '599.9' })
-    expect(amounts(use(state, 'unitPrice'))).toEqual({ volume: '40', unitPrice: '599.9', totalCost: '23996' })
+    expect(amounts(use(state, 'unitPrice'))).toEqual({ volume: '40', unitPrice: '599.9', totalCost: '24000' })
+  })
+
+  it('a total typed or read from a photo never gives way to the pump price: the litres and the amount paid are the receipt\'s', () => {
+    // Typed: 43 L and 34 744 Ft paid (808 per litre), then the pump's 818: the total stays (#204).
+    const typed = type(type(type(open(), 'volume', '43'), 'totalCost', '34744'), 'unitPrice', '818')
+    expect(amounts(typed)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
+    expect(typed.calculated).toEqual(new Set())
+
+    // Read from a photo: the fuel's own amount, then the litres typed and the pump's price.
+    const read = type(type(photo(open(), { TOTAL: '34744' }), 'volume', '43'), 'unitPrice', '818')
+    expect(amounts(read)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
+
+    // Emptied by the user, the total is worked out again from the next change.
+    const emptied = type(type(typed, 'totalCost', ''), 'unitPrice', '820')
+    expect(amounts(emptied)).toEqual({ volume: '43', unitPrice: '820', totalCost: '35260' })
+    expect(emptied.calculated).toEqual(new Set(['totalCost']))
   })
 
   it('works out again what it calculated before an amount a photo showed, keystroke after keystroke', () => {

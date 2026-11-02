@@ -87,8 +87,9 @@ const WAITS_FOR: Record<LogValue, FillableField> = { ODOMETER: 'odometer', VOLUM
  * Add a log (no `refuelingId`) or edit one. A new log starts from sensible values: today, the vehicle's latest odometer
  * reading (as a hint, so the number is never entered by accident) and the currency of the latest log. Volume and odometer are
  * entered in the vehicle's own units; the server checks the reading against the neighbouring ones. Of volume, unit price and total,
- * any two give the third; with all three filled the unit price follows a change of the volume or the total and the total a change of
- * the unit price, while the litres never move by themselves (`keepAmountsInStep`). When photo reading is on, the
+ * any two give the third; with all three filled a change moves the amount worked out before, else the unit price, else the total (when
+ * the unit price changed, unless the user typed the total or a photo read it), and a volume that holds a value never moves by itself
+ * (`keepAmountsInStep`). When photo reading is on, the
  * photos of a new log are read on the server and fill in what the user has not typed yet; while one is still being read, volume,
  * total and odometer may be left empty: the server fills them in later and marks the log for review (editing it then checks it).
  */

@@ -190,7 +190,7 @@ it('works out the unit price from the volume and total on a receipt, and then ne
   expect(status).not.toHaveTextContent('Price per L')
 })
 
-it('offers the unit price on a photo next to a calculated one, and "Use it" makes the total follow, never the litres', async () => {
+it('offers the unit price on a photo next to a calculated one, and "Use it" takes it: the typed total and the litres stay', async () => {
   const { ui } = setupRefuelings(fakeRecognition({ results: [[{ name: 'UNIT_PRICE', value: '599.9' }]], queuedPolls: 0 }))
   const dialog = await openAddRefueling(ui)
   await ui.type(within(dialog).getByLabelText(/^Volume/), '40')
@@ -205,7 +205,7 @@ it('offers the unit price on a photo next to a calculated one, and "Use it" make
 
   expect(within(dialog).getByLabelText('Price per L')).toHaveValue('599.9')
   expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('40') // the litres never move by themselves (#204)
-  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('23996')
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('24000') // nor does the amount paid the user typed: the receipt's
 })
 
 it('keeps the total following the volume typed key by key next to a unit price read from a photo', async () => {
