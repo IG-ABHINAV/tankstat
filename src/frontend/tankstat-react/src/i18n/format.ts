@@ -55,6 +55,14 @@ export function useFormat() {
 
   return useMemo(() => {
     const number = (value: number, options?: Intl.NumberFormatOptions) => new Intl.NumberFormat(language, options).format(value)
+    /** Amount in the currency it was paid in; an unknown code falls back to "12.50 XYZ". */
+    const money = (amount: number, currency: string) => {
+      try {
+        return new Intl.NumberFormat(language, { style: 'currency', currency }).format(amount)
+      } catch {
+        return `${number(amount, { minimumFractionDigits: 2 })} ${currency}`
+      }
+    }
     const clock = timeFormat ? HOUR_CYCLES[timeFormat] : {}
     return {
       number,
@@ -108,14 +116,7 @@ export function useFormat() {
         const day = new Date(`${isoDate}T00:00:00Z`)
         return dateFormat ? numericDate(day, dateFormat, 'UTC') : new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeZone: 'UTC' }).format(day)
       },
-      /** Amount in the currency it was paid in; an unknown code falls back to "12.50 XYZ". */
-      money: (amount: number, currency: string) => {
-        try {
-          return new Intl.NumberFormat(language, { style: 'currency', currency }).format(amount)
-        } catch {
-          return `${number(amount, { minimumFractionDigits: 2 })} ${currency}`
-        }
-      },
+      money,
       distance: (value: number, unit: DistanceUnit) =>
         new Intl.NumberFormat(language, { style: 'unit', unit: DISTANCE_UNITS[unit], unitDisplay: 'short', maximumFractionDigits: 0 }).format(value),
       volume: (value: number, unit: VolumeUnit) => `${number(value, { maximumFractionDigits: 2 })} ${t(`units.volumeShort.${unit}`)}`,
@@ -129,16 +130,8 @@ export function useFormat() {
           distance: t(`units.distanceShort.${units.distance}`),
         })
       },
-      /** Money per 100 of the vehicle's distance units ("HUF 4,500 / 100 km"); an unknown code falls back like `money`. */
-      costPerDistance: (value: number, currency: string, unit: DistanceUnit) => {
-        let amount: string
-        try {
-          amount = new Intl.NumberFormat(language, { style: 'currency', currency }).format(value)
-        } catch {
-          amount = `${number(value, { minimumFractionDigits: 2 })} ${currency}`
-        }
-        return t('units.costPerDistance', { amount, distance: t(`units.distanceShort.${unit}`) })
-      },
+      /** Money per 100 of the vehicle's distance units ("HUF 4,500 / 100 km"), written as `money` writes an amount. */
+      costPerDistance: (value: number, currency: string, unit: DistanceUnit) => t('units.costPerDistance', { amount: money(value, currency), distance: t(`units.distanceShort.${unit}`) }),
       pricePerUnit: (value: number, currency: string, unit: VolumeUnit) => `${(() => {
         try {
           return new Intl.NumberFormat(language, { style: 'currency', currency, maximumFractionDigits: 3 }).format(value)
