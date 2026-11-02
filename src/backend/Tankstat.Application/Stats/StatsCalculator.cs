@@ -73,6 +73,7 @@ public static class StatsCalculator
         ChartMetric.AverageConsumption => ChartUnit.Consumption,
         ChartMetric.FillUps => ChartUnit.Count,
         ChartMetric.CostPerDistance or ChartMetric.FuelCostPerDistance => ChartUnit.CostPerDistance,
+        ChartMetric.AveragePricePerUnit or ChartMetric.AveragePricePerUnitBeforeDiscount => ChartUnit.PricePerVolume,
         _ => ChartUnit.Currency,
     };
 

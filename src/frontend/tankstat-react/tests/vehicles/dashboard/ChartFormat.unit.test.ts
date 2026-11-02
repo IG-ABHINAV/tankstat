@@ -74,7 +74,7 @@ describe('chartAxes', () => {
   const eur = series('fuel', 'EUR', { '2026-01': 54 })
 
   it('gives every currency of a chart of costs a scale of its own, and shows none of them when there are several', () => {
-    const axes = chartAxes({ series: [huf, series('expenses', 'HUF', { '2026-01': 4000 }), eur] })
+    const axes = chartAxes({ series: [huf, series('expenses', 'HUF', { '2026-01': 4000 }), eur] }, 'TOTAL_SPEND')
 
     expect(axes.axes).toEqual([
       { id: 'CURRENCY:HUF', unit: 'CURRENCY', currency: 'HUF', side: 'left', shown: false },
@@ -85,13 +85,13 @@ describe('chartAxes', () => {
   })
 
   it('shows the axis of a single currency, in that currency', () => {
-    expect(chartAxes({ series: [huf] })).toMatchObject({ axes: [{ id: 'CURRENCY:HUF', currency: 'HUF', shown: true }], shown: true, ownScales: false })
+    expect(chartAxes({ series: [huf] }, 'TOTAL_SPEND')).toMatchObject({ axes: [{ id: 'CURRENCY:HUF', currency: 'HUF', shown: true }], shown: true, ownScales: false })
   })
 
   it('gives a cost per distance a scale per currency too, and draws a line drawn from a series on its series\' scale', () => {
     const per = (currency: string, role: Series['role'] = 'VALUE') => series('total', currency, { '2026-01': 30 }, role, 'COST_PER_DISTANCE', 'COST_PER_DISTANCE')
     const earlier = per('HUF', 'YEAR_EARLIER')
-    const axes = chartAxes({ series: [per('HUF'), per('EUR'), earlier] })
+    const axes = chartAxes({ series: [per('HUF'), per('EUR'), earlier] }, 'COST_PER_DISTANCE')
 
     expect(axes.axes.map((a) => a.id)).toEqual(['COST_PER_DISTANCE:HUF', 'COST_PER_DISTANCE:EUR'])
     expect(axes.axisOf(earlier)).toBe(axes.axisOf(per('HUF')))
@@ -99,7 +99,7 @@ describe('chartAxes', () => {
   })
 
   it('shares one axis for any other unit', () => {
-    const axes = chartAxes({ series: [series('value', null, { '2026-01': 40 }, 'VALUE', 'VOLUME', 'FUEL_VOLUME')] })
+    const axes = chartAxes({ series: [series('value', null, { '2026-01': 40 }, 'VALUE', 'VOLUME', 'FUEL_VOLUME')] }, 'FUEL_VOLUME')
     expect(axes).toMatchObject({ axes: [{ id: 'VOLUME', currency: null, side: 'left', shown: true }], shown: true })
   })
 
@@ -109,12 +109,16 @@ describe('chartAxes', () => {
     const fuel = series('fuel', 'HUF', { '2026-01': 20000 }, 'VALUE', 'CURRENCY', 'FUEL_COST')
     const expenses = series('expenses', 'HUF', { '2026-01': 5000 }, 'VALUE', 'CURRENCY', 'EXPENSE_COST')
 
-    expect(chartAxes({ series: [distance, consumption] }).axes).toEqual([
+    expect(chartAxes({ series: [distance, consumption] }, 'DISTANCE').axes).toEqual([
       { id: 'DISTANCE', unit: 'DISTANCE', currency: null, side: 'left', shown: true },
       { id: 'CONSUMPTION', unit: 'CONSUMPTION', currency: null, side: 'right', shown: true },
     ])
-    expect(chartAxes({ series: [fuel, expenses] }).axes.map((a) => [a.id, a.side])).toEqual([['CURRENCY:HUF', 'left']]) // one forint scale for both
-    const twoCurrencies = chartAxes({ series: [distance, { ...fuel, metric: 'AVERAGE_PRICE_PER_UNIT' }, { ...fuel, currency: 'EUR', metric: 'AVERAGE_PRICE_PER_UNIT' }] })
+    expect(chartAxes({ series: [fuel, expenses] }, 'FUEL_COST').axes.map((a) => [a.id, a.side])).toEqual([['CURRENCY:HUF', 'left']]) // one forint scale for both
+    // A price is not an amount: its own scale on the right, and the first measure is the recipe's even with no series of its own in the range.
+    const price = series('fuel', 'HUF', { '2026-01': 620 }, 'VALUE', 'PRICE_PER_VOLUME', 'AVERAGE_PRICE_PER_UNIT')
+    expect(chartAxes({ series: [fuel, price] }, 'FUEL_COST').axes.map((a) => [a.id, a.side])).toEqual([['CURRENCY:HUF', 'left'], ['PRICE_PER_VOLUME:HUF', 'right']])
+    expect(chartAxes({ series: [distance] }, 'FUEL_COST').axes.map((a) => [a.id, a.side])).toEqual([['DISTANCE', 'right']])
+    const twoCurrencies = chartAxes({ series: [distance, { ...fuel, metric: 'AVERAGE_PRICE_PER_UNIT', unit: 'PRICE_PER_VOLUME' }, { ...fuel, currency: 'EUR', metric: 'AVERAGE_PRICE_PER_UNIT', unit: 'PRICE_PER_VOLUME' }] }, 'DISTANCE')
     expect(twoCurrencies.axes.filter((a) => a.side === 'right').map((a) => a.shown)).toEqual([false, false])
     expect([twoCurrencies.shown, twoCurrencies.ownScales]).toEqual([true, true])
   })
@@ -127,7 +131,7 @@ describe('barPlaces', () => {
   const fuelEur = series('fuel', 'EUR', { '2026-01': 54, '2026-02': 120, '2026-03': 0 })
 
   it('stacked: a bar per currency the period has, side by side, and the top of each stack is rounded', () => {
-    const places = barPlaces({ series: [fuelHuf, expensesHuf, fuelEur] }, periods, true)
+    const places = barPlaces({ series: [fuelHuf, expensesHuf, fuelEur] }, periods, true, 'TOTAL_SPEND')
 
     // January has both currencies: HUF first (fuel at the bottom, expenses on top), EUR beside it.
     expect(places.at(fuelHuf, 0)).toEqual({ place: 0, of: 2, top: false })
@@ -141,7 +145,7 @@ describe('barPlaces', () => {
   })
 
   it('not stacked: a bar per series the period has', () => {
-    const places = barPlaces({ series: [fuelHuf, expensesHuf, fuelEur] }, periods, false)
+    const places = barPlaces({ series: [fuelHuf, expensesHuf, fuelEur] }, periods, false, 'TOTAL_SPEND')
 
     expect([places.at(fuelHuf, 0), places.at(expensesHuf, 0), places.at(fuelEur, 0)]).toEqual([
       { place: 0, of: 3, top: true },
@@ -153,8 +157,8 @@ describe('barPlaces', () => {
 
   it('finds a value by its period, whatever order the series lists its points in', () => {
     const shuffled = series('fuel', 'EUR', { '2026-03': 10, '2026-01': 0 })
-    expect(barPlaces({ series: [shuffled] }, periods, true).at(shuffled, 2)).toEqual({ place: 0, of: 1, top: true })
-    expect(barPlaces({ series: [shuffled] }, periods, true).at(shuffled, 0)).toBeNull()
+    expect(barPlaces({ series: [shuffled] }, periods, true, 'TOTAL_SPEND').at(shuffled, 2)).toEqual({ place: 0, of: 1, top: true })
+    expect(barPlaces({ series: [shuffled] }, periods, true, 'TOTAL_SPEND').at(shuffled, 0)).toBeNull()
   })
 })
 
@@ -164,7 +168,7 @@ describe('barPlaces with a second measure', () => {
     const expenses = series('expenses', 'HUF', { '2026-01': 50 })
     const distance = series('total', null, { '2026-01': 500 }, 'VALUE', 'DISTANCE', 'DISTANCE')
 
-    const places = barPlaces({ series: [fuel, expenses, distance] }, ['2026-01'], true)
+    const places = barPlaces({ series: [fuel, expenses, distance] }, ['2026-01'], true, 'TOTAL_SPEND')
 
     expect([places.at(fuel, 0), places.at(expenses, 0), places.at(distance, 0)]).toEqual([
       { place: 0, of: 2, top: false },

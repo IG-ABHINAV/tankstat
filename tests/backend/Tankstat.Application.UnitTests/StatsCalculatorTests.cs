@@ -188,7 +188,7 @@ public class StatsCalculatorTests
 
         Assert.Equal([null, 809.887m, null], Values(paid.Series.Single())); // 42 924 / 53
         Assert.Equal([null, 818m, null], Values(pump.Series.Single())); // 43 354 / 53
-        Assert.Equal(paid.Unit, pump.Unit);
+        Assert.Equal((ChartUnit.PricePerVolume, ChartUnit.PricePerVolume), (paid.Unit, pump.Unit)); // a price, not an amount: its own scale beside a cost
     }
 
     [Fact]
