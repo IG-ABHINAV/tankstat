@@ -17,6 +17,7 @@ internal sealed class VehicleChartConfiguration : IEntityTypeConfiguration<Vehic
         b.Property(c => c.Grouping).HasConversion<string>().HasMaxLength(32);
         b.Property(c => c.Kind).HasConversion<string>().HasMaxLength(32);
         b.Property(c => c.Range).HasConversion<string>().HasMaxLength(32);
+        b.Property(c => c.Trend).HasConversion<string>().HasMaxLength(32).HasDefaultValue(ChartTrend.None); // charts from before trends have none
         b.Ignore(c => c.Config);
         b.HasOne<Vehicle>().WithMany().HasForeignKey(c => c.VehicleId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(c => new { c.VehicleId, c.CreatedById });

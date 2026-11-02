@@ -21,6 +21,20 @@ public enum ChartUnit
     Distance,
     Consumption,
     Count,
+    /// <summary>Money per 100 distance units, in the series' currency.</summary>
+    CostPerDistance,
+}
+
+/// <summary>What a series shows: the values themselves, or a line drawn from them.</summary>
+public enum ChartSeriesRole
+{
+    Value,
+    /// <summary>The mean of the last three periods of a value series.</summary>
+    MovingAverage,
+    /// <summary>A straight line fitted to a value series.</summary>
+    Linear,
+    /// <summary>The same periods a year earlier, keyed by the periods they line up with.</summary>
+    YearEarlier,
 }
 
 /// <param name="Key">The period ("2026-09", "2026-Q3", "2026") or the expense category (empty for uncategorised).</param>
@@ -29,7 +43,9 @@ public sealed record ChartPoint(string Key, decimal? Value);
 
 /// <param name="Kind">"total", "fuel" or "expenses" (translated by the client).</param>
 /// <param name="Currency">The currency of a cost series; null for the others.</param>
-public sealed record ChartSeries(string Kind, string? Currency, IReadOnlyList<ChartPoint> Points);
+/// <param name="Role">What the series shows; a trend or a year earlier belongs to the value series of the same kind and currency.</param>
+/// <param name="Slope">For a <see cref="ChartSeriesRole.Linear"/> trend: how much it changes per period, in the series' unit.</param>
+public sealed record ChartSeries(string Kind, string? Currency, IReadOnlyList<ChartPoint> Points, ChartSeriesRole Role = ChartSeriesRole.Value, decimal? Slope = null);
 
 public sealed record ChartData(ChartUnit Unit, IReadOnlyList<ChartSeries> Series);
 

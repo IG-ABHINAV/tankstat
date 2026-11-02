@@ -1,4 +1,4 @@
-import type { ChartDataQuery, ChartGrouping, ChartKind, ChartMetric, ChartRange } from '../gql/generated.ts'
+import type { ChartDataQuery, ChartGrouping, ChartKind, ChartMetric, ChartRange, ChartTrend } from '../gql/generated.ts'
 import { PLACEHOLDER_PAIRS, SERIES_COLORS } from '../theme/scales.ts'
 
 export type ChartData = ChartDataQuery['vehicleChartData']
@@ -13,12 +13,21 @@ export interface ChartRecipe {
   stacked: boolean
   from: string | null
   to: string | null
+  /** A line over the values showing where they are heading (only over time). */
+  trend: ChartTrend
+  /** Each period shows the sum so far (only a metric that adds up, over time, without a trend line). */
+  runningTotal: boolean
+  /** The same periods a year earlier beside them (only over time). */
+  compareYearEarlier: boolean
 }
 
 /** Series colours that work on the dark and the light scheme alike. */
 export const PALETTE: readonly string[] = SERIES_COLORS
 
-export const seriesId = (s: Series) => `${s.kind}|${s.currency ?? ''}`
+export const seriesId = (s: Series) => `${s.kind}|${s.currency ?? ''}|${s.role}`
+
+/** The values themselves, as opposed to a line drawn from them (a trend, a year earlier), which is always drawn as a line over them. */
+export const isValue = (s: Series) => s.role === 'VALUE'
 
 /** A period as the server writes its key: a month ("2026-09") or a quarter ("2026-Q3"); null for anything else (a year, a category). */
 export type Period = { year: string; month: number; quarter?: undefined } | { year: string; quarter: number; month?: undefined }
@@ -89,11 +98,14 @@ export interface ChartAxes {
  * scale of its own, and the highest value of each reaches the same height (#159). Any other unit shares one axis.
  */
 export function chartAxes(data: Pick<ChartData, 'unit' | 'series'>): ChartAxes {
-  if (data.unit !== 'CURRENCY') return { axes: [{ id: 'value', currency: null }], axisOf: () => 'value', shown: true }
+  if (!perCurrency(data.unit)) return { axes: [{ id: 'value', currency: null }], axisOf: () => 'value', shown: true }
   const currencies = [...new Set(data.series.map((s) => s.currency ?? ''))]
   const id = (currency: string) => `currency:${currency}`
   return { axes: currencies.map((c) => ({ id: id(c), currency: c || null })), axisOf: (s) => id(s.currency ?? ''), shown: currencies.length <= 1 }
 }
+
+/** Units of money, kept per currency and never converted: every currency gets a scale of its own, and nothing spent shows as a dash. */
+export const perCurrency = (unit: ChartData['unit']) => unit === 'CURRENCY' || unit === 'COST_PER_DISTANCE'
 
 /** Where a bar goes among a period's bars: its place, how many there are, and whether it ends its stack (its top corners are rounded). */
 export interface BarPlace {
@@ -130,14 +142,36 @@ export function barPlaces(data: Pick<ChartData, 'series'>, periods: readonly str
 /** Metrics that add up (and so can be shown as the parts of a donut). */
 export const ADDITIVE: ChartMetric[] = ['TOTAL_SPEND', 'FUEL_COST', 'EXPENSE_COST', 'FUEL_VOLUME', 'DISTANCE', 'FILL_UPS']
 
-/** The same rules the server enforces, so the builder only offers what is valid. */
+/** The same rules the server enforces (`ChartConfig.Validated`), so the builder only offers what is valid. */
 export function normalise(r: ChartRecipe): ChartRecipe {
   const grouping = r.grouping === 'CATEGORY' && r.metric !== 'EXPENSE_COST' ? 'MONTH' : r.grouping
   const kind = r.kind === 'DONUT' && !ADDITIVE.includes(r.metric) ? 'BAR' : r.kind
   const stacked = r.stacked && r.metric === 'TOTAL_SPEND' && grouping !== 'CATEGORY'
   const custom = r.range === 'CUSTOM'
-  return { ...r, grouping, kind, stacked, from: custom ? r.from : null, to: custom ? r.to : null }
+  const overTime = isOverTime({ grouping, kind })
+  const runningTotal = r.runningTotal && overTime && ADDITIVE.includes(r.metric)
+  return {
+    ...r,
+    grouping,
+    kind,
+    stacked,
+    from: custom ? r.from : null,
+    to: custom ? r.to : null,
+    // A running total has no trend line: the builder drops the one that was there when either is chosen (`withTrend`, `withRunningTotal`).
+    trend: overTime && !runningTotal ? r.trend : 'NONE',
+    runningTotal,
+    compareYearEarlier: r.compareYearEarlier && overTime,
+  }
 }
+
+/** Trend lines, running totals and comparisons are for charts over time: not a donut, not by category. */
+export const isOverTime = (r: Pick<ChartRecipe, 'grouping' | 'kind'>) => r.grouping !== 'CATEGORY' && r.kind !== 'DONUT'
+
+/** Choosing a trend line turns a running total off (the two do not go together). */
+export const withTrend = (r: ChartRecipe, trend: ChartTrend): ChartRecipe => normalise({ ...r, trend, runningTotal: trend === 'NONE' && r.runningTotal })
+
+/** Choosing a running total takes the trend line away. */
+export const withRunningTotal = (r: ChartRecipe, runningTotal: boolean): ChartRecipe => normalise({ ...r, runningTotal, trend: runningTotal ? 'NONE' : r.trend })
 
 export const isReady = (r: ChartRecipe) => r.range !== 'CUSTOM' || (r.from !== null && r.to !== null && r.from <= r.to)
 
@@ -150,7 +184,29 @@ export function placeholderGradient(id: string): string {
 }
 
 /** What a new chart starts from. */
-export const NEW_RECIPE: ChartRecipe = { metric: 'TOTAL_SPEND', grouping: 'MONTH', kind: 'BAR', range: 'LAST12_MONTHS', stacked: false, from: null, to: null }
+export const NEW_RECIPE: ChartRecipe = {
+  metric: 'TOTAL_SPEND',
+  grouping: 'MONTH',
+  kind: 'BAR',
+  range: 'LAST12_MONTHS',
+  stacked: false,
+  from: null,
+  to: null,
+  trend: 'NONE',
+  runningTotal: false,
+  compareYearEarlier: false,
+}
 
 /** The inputs of the chart query for a recipe (dates only count for a custom range). */
-export const toConfig = (r: ChartRecipe) => ({ metric: r.metric, grouping: r.grouping, kind: r.kind, range: r.range, stacked: r.stacked, from: r.range === 'CUSTOM' ? r.from : null, to: r.range === 'CUSTOM' ? r.to : null })
+export const toConfig = (r: ChartRecipe) => ({
+  metric: r.metric,
+  grouping: r.grouping,
+  kind: r.kind,
+  range: r.range,
+  stacked: r.stacked,
+  from: r.range === 'CUSTOM' ? r.from : null,
+  to: r.range === 'CUSTOM' ? r.to : null,
+  trend: r.trend,
+  runningTotal: r.runningTotal,
+  compareYearEarlier: r.compareYearEarlier,
+})

@@ -936,6 +936,9 @@
       "categoryNeedsExpenses": "A kategória szerinti csoportosítás csak a költségekhez érhető el.",
       "donutNeedsTotals": "A fánkdiagramhoz összegezhető adat kell (költség, mennyiség, távolság vagy tankolások száma).",
       "stackNeedsTotalSpend": "A bontás üzemanyagra és költségekre csak a teljes költésnél érhető el.",
+      "trendNeedsPeriods": "A trendvonalhoz, a göngyölített összeghez és az összevetéshez időbeli grafikon kell, nem fánk vagy kategóriák.",
+      "runningTotalNeedsTotals": "A göngyölített összeghez összegezhető adat kell (költség, mennyiség, távolság vagy tankolások száma).",
+      "trendWithRunningTotal": "A göngyölített összeghez nem tartozhat trendvonal.",
       "datesRequired": "Add meg az időszak első és utolsó napját.",
       "datesReversed": "Az első nap nem lehet az utolsó után.",
       "rangeTooLong": "Az időszak legfeljebb {{max}} év lehet.",
@@ -1052,7 +1055,8 @@
       "perDistance": "{{value}} {{volume}}/100 {{distance}}",
       "mpgUs": "{{value}} mérföld/gallon (US)",
       "mpgImperial": "{{value}} mérföld/gallon (imp.)"
-    }
+    },
+    "costPerDistance": "{{amount}} / 100 {{distance}}"
   },
   "refuelings": {
     "title": "Tankolások",
@@ -1291,6 +1295,9 @@
     "deleteConfirm": "Grafikon törlése",
     "chartLabel": "{{title}}: grafikon",
     "ownScales": "Minden pénznem saját léptékben látszik; az összegek a buboréksúgóban és a táblázatban vannak.",
+    "trendSentence": "{{series}}: a trendvonal {{from}} értékről {{to}} értékre halad.",
+    "noTrend": "Trendvonalhoz még nincs elég időszak.",
+    "nothingYearEarlier": "Egy évvel korábban ezekben az időszakokban nem volt bejegyzés.",
     "table": {
       "period": "Időszak",
       "category": "Kategória",
@@ -1300,7 +1307,12 @@
       "total": "Összesen",
       "fuel": "Üzemanyag",
       "expenses": "Költségek",
-      "value": "Érték"
+      "value": "Érték",
+      "role": {
+        "MOVING_AVERAGE": "mozgóátlag",
+        "LINEAR": "trend",
+        "YEAR_EARLIER": "egy évvel korábban"
+      }
     },
     "uncategorised": "Kategória nélkül",
     "presets": {
@@ -1326,10 +1338,16 @@
       "from": "Ettől",
       "to": "Eddig",
       "stacked": "Bontás üzemanyagra és költségekre",
+      "trend": "Trendvonal",
+      "runningTotal": "Göngyölített összeg",
+      "compareYearEarlier": "Összevetés az egy évvel korábbival",
       "shared": "Megosztás mindenkivel, aki látja ezt a járművet"
     },
     "hints": {
       "stacked": "Az üzemanyag és a költségek egymás tetején látszanak.",
+      "trend": "Egy vonal az értékek fölött, amely mutatja, merre tartanak.",
+      "runningTotal": "Minden időszak az addigi összeget mutatja.",
+      "compareYearEarlier": "Halványabb vonalként hozzáadja ugyanezeket az időszakokat egy évvel korábbról.",
       "shared": "Mások látják ezt a grafikont, de csak te módosíthatod.",
       "donut": "A fánkdiagramhoz összegezhető adat kell (költség, mennyiség, távolság, tankolások száma).",
       "category": "A kategória szerinti csoportosítás csak a költségekhez érhető el."
@@ -1343,6 +1361,8 @@
       "AVERAGE_CONSUMPTION": "Átlagos fogyasztás",
       "AVERAGE_PRICE_PER_UNIT": "Átlagos üzemanyagár",
       "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT": "Átlagos üzemanyagár kedvezmények nélkül",
+      "COST_PER_DISTANCE": "Költség távolságra vetítve (üzemanyag és költségek)",
+      "FUEL_COST_PER_DISTANCE": "Üzemanyagköltség távolságra vetítve",
       "FILL_UPS": "Tankolások száma"
     },
     "groupings": {
@@ -1366,6 +1386,11 @@
       "LAST_YEAR": "Tavaly",
       "ALL": "Teljes időszak",
       "CUSTOM": "Egyéni (ettől – eddig)"
+    },
+    "trends": {
+      "NONE": "Nincs",
+      "MOVING_AVERAGE": "Mozgóátlag (3 időszak)",
+      "LINEAR": "Lineáris trend"
     }
   },
   "photos": {

@@ -17,6 +17,10 @@ public enum ChartMetric
     FillUps,
     /// <summary>Fuel cost before the discounts taken off at the till, divided by fuel volume: the pump's price per unit.</summary>
     AveragePricePerUnitBeforeDiscount,
+    /// <summary>Fuel and expenses per 100 distance units driven in the period (per currency).</summary>
+    CostPerDistance,
+    /// <summary>Fuel cost per 100 distance units driven in the period (per currency).</summary>
+    FuelCostPerDistance,
 }
 
 /// <summary>How values are grouped on the horizontal axis.</summary>
@@ -55,10 +59,24 @@ public enum ChartRange
     Custom,
 }
 
+/// <summary>A line drawn over a chart's values to show where they are heading.</summary>
+public enum ChartTrend
+{
+    None,
+    /// <summary>The mean of the last three periods.</summary>
+    MovingAverage,
+    /// <summary>A straight line fitted to the values (least squares).</summary>
+    Linear,
+}
+
 /// <summary>The choices that define a chart. Only combinations that make sense are valid.</summary>
 /// <param name="From">First day of a <see cref="ChartRange.Custom"/> range; null for every other range.</param>
 /// <param name="To">Last day of a custom range.</param>
-public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, ChartKind Kind, ChartRange Range, bool Stacked, DateOnly? From = null, DateOnly? To = null)
+/// <param name="Trend">A trend line over the values (a chart over time only).</param>
+/// <param name="RunningTotal">Each period shows the sum so far (a metric that adds up, over time only).</param>
+/// <param name="CompareYearEarlier">The same periods a year earlier, as a series of their own (over time only).</param>
+public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, ChartKind Kind, ChartRange Range, bool Stacked, DateOnly? From = null, DateOnly? To = null,
+    ChartTrend Trend = ChartTrend.None, bool RunningTotal = false, bool CompareYearEarlier = false)
 {
     public const int MaxCustomYears = 30;
 
@@ -68,7 +86,7 @@ public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, Cha
 
     public ChartConfig Validated()
     {
-        if (!Enum.IsDefined(Metric) || !Enum.IsDefined(Grouping) || !Enum.IsDefined(Kind) || !Enum.IsDefined(Range))
+        if (!Enum.IsDefined(Metric) || !Enum.IsDefined(Grouping) || !Enum.IsDefined(Kind) || !Enum.IsDefined(Range) || !Enum.IsDefined(Trend))
             throw new DomainException("chart.invalid", "This chart is not valid.");
         if (Grouping == ChartGrouping.Category && Metric != ChartMetric.ExpenseCost)
             throw new DomainException("chart.categoryNeedsExpenses", "Grouping by category is only available for expense costs.");
@@ -78,6 +96,12 @@ public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, Cha
             throw new DomainException("chart.stackNeedsTotalSpend", "Splitting into fuel and expenses is only available for total spend.");
         if (Stacked && Grouping == ChartGrouping.Category)
             throw new DomainException("chart.invalid", "This chart is not valid.");
+        if ((Trend != ChartTrend.None || RunningTotal || CompareYearEarlier) && (Grouping == ChartGrouping.Category || Kind == ChartKind.Donut))
+            throw new DomainException("chart.trendNeedsPeriods", "Trend lines, running totals and comparisons need a chart over time, not a donut or categories.");
+        if (RunningTotal && !IsAdditive(Metric))
+            throw new DomainException("chart.runningTotalNeedsTotals", "A running total needs a metric that adds up (costs, volume, distance or fill-ups).");
+        if (RunningTotal && Trend != ChartTrend.None)
+            throw new DomainException("chart.trendWithRunningTotal", "A running total cannot have a trend line.");
         if (Range == ChartRange.Custom)
         {
             if (From is null || To is null) throw new DomainException("chart.datesRequired", "Choose the first and the last day of the period.");

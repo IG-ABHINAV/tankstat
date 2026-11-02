@@ -101,6 +101,9 @@ namespace Tankstat.Migrations.MySql
                     b.Property<Guid>("Id")
                         .HasColumnType("char(36)");
 
+                    b.Property<bool>("CompareYearEarlier")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -136,6 +139,9 @@ namespace Tankstat.Migrations.MySql
                     b.Property<DateOnly?>("RangeTo")
                         .HasColumnType("date");
 
+                    b.Property<bool>("RunningTotal")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("tinyint(1)");
 
@@ -143,6 +149,13 @@ namespace Tankstat.Migrations.MySql
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("varchar(80)");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)")
+                        .HasDefaultValue("None");
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("char(36)");

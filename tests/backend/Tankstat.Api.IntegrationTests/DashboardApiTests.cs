@@ -88,6 +88,29 @@ public class DashboardApiTests : IDisposable
     }
 
     [Fact]
+    public async Task ASavedChart_KeepsItsTrendOptions_AndTheDataCarriesTheirSeries()
+    {
+        var (alice, _, _) = await Users();
+        var id = await CarWithLogs(alice);
+        var aYearAgo = new DateTime(DateTime.UtcNow.Year - 1, DateTime.UtcNow.Month, 1).ToString("yyyy-MM-dd");
+        await alice.Gql("mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
+            new { i = new { vehicleId = id, date = aYearAgo, volume = 30, totalCost = 15000, currency = "HUF", odometer = 500, isFullTank = true } });
+        var config = new { metric = "TOTAL_SPEND", grouping = "MONTH", kind = "BAR", range = "LAST3_MONTHS", stacked = false, trend = "MOVING_AVERAGE", compareYearEarlier = true };
+
+        var saved = (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { trend runningTotal compareYearEarlier } }",
+            new { i = new { vehicleId = id, title = "Trend", shared = false, config } })).Data().GetProperty("saveVehicleChart");
+        var data = (await alice.Gql("query($id: UUID!, $c: ChartConfigInput!) { vehicleChartData(vehicleId: $id, config: $c) { series { kind role slope points { key } } } }",
+            new { id, c = config })).Data().GetProperty("vehicleChartData").GetProperty("series").EnumerateArray().ToList();
+        var olderClient = (await alice.Gql("query($id: UUID!) { vehicleChartData(vehicleId: $id, config: { metric: TOTAL_SPEND, grouping: MONTH, kind: BAR, range: LAST3_MONTHS, stacked: false }) { series { role } } }",
+            new { id })).Data().GetProperty("vehicleChartData").GetProperty("series").EnumerateArray().Select(s => s.GetProperty("role").GetString()).ToList();
+
+        Assert.Equal(("MOVING_AVERAGE", false, true), (saved.GetProperty("trend").GetString(), saved.GetProperty("runningTotal").GetBoolean(), saved.GetProperty("compareYearEarlier").GetBoolean()));
+        Assert.Equal(["VALUE", "YEAR_EARLIER", "MOVING_AVERAGE"], data.Select(s => s.GetProperty("role").GetString()));
+        Assert.Equal(data[0].GetProperty("points").EnumerateArray().Select(p => p.GetProperty("key").GetString()), data[1].GetProperty("points").EnumerateArray().Select(p => p.GetProperty("key").GetString()));
+        Assert.Equal(["VALUE"], olderClient); // a request without the new fields still draws the values alone
+    }
+
+    [Fact]
     public async Task StrangersGetNothing()
     {
         var (alice, bob, _) = await Users();

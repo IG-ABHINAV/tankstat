@@ -69,33 +69,131 @@ public static class StatsCalculator
             ChartMetric.Distance => ChartUnit.Distance,
             ChartMetric.AverageConsumption => ChartUnit.Consumption,
             ChartMetric.FillUps => ChartUnit.Count,
+            ChartMetric.CostPerDistance or ChartMetric.FuelCostPerDistance => ChartUnit.CostPerDistance,
             _ => ChartUnit.Currency,
         };
         if (RangeOf(config, today, data) is not { } range) return new ChartData(unit, []);
         var (from, to) = range;
 
+        if (config.Grouping == ChartGrouping.Category)
+            return new ChartData(unit, CategorySeries(data.Expenses.Where(e => e.Date >= from && e.Date <= to).ToList()));
+
+        var values = Measure(config.Metric, config.Stacked, config.Grouping, data, from, to);
+        if (config.RunningTotal) values = values.Select(Running).ToList();
+        var series = new List<ChartSeries>(values);
+        if (config.CompareYearEarlier) series.AddRange(YearEarlier(config, data, from, to));
+        if (config.Trend != ChartTrend.None) series.AddRange(Trends(config, values, Periods(from, to, config.Grouping), today));
+        return new ChartData(unit, series);
+    }
+
+    /// <summary>
+    /// The value series of a metric over the periods from <paramref name="from"/> to <paramref name="to"/>. Only what happened inside the
+    /// range counts: costs by their date, distance from the readings of the part of each period inside it.
+    /// </summary>
+    private static List<ChartSeries> Measure(ChartMetric metric, bool stacked, ChartGrouping g, StatsData data, DateOnly from, DateOnly to)
+    {
         var fuel = data.Fuel.Where(f => f.Date >= from && f.Date <= to).ToList();
         var expenses = data.Expenses.Where(e => e.Date >= from && e.Date <= to).ToList();
-
-        if (config.Grouping == ChartGrouping.Category) return new ChartData(unit, CategorySeries(expenses));
-
-        var periods = Periods(from, to, config.Grouping);
-        var keys = periods.Select(p => Key(p, config.Grouping)).ToList();
-        IReadOnlyList<ChartSeries> series = config.Metric switch
+        var periods = Periods(from, to, g);
+        var keys = periods.Select(p => Key(p, g)).ToList();
+        (DateOnly Start, DateOnly End) Inside(DateOnly period)
         {
-            ChartMetric.TotalSpend when config.Stacked => Money(keys, config.Grouping, fuel, expenses, includeFuel: true, includeExpenses: true, split: true),
-            ChartMetric.TotalSpend => Money(keys, config.Grouping, fuel, expenses, includeFuel: true, includeExpenses: true, split: false),
-            ChartMetric.FuelCost => Money(keys, config.Grouping, fuel, expenses, includeFuel: true, includeExpenses: false, split: false),
-            ChartMetric.ExpenseCost => Money(keys, config.Grouping, fuel, expenses, includeFuel: false, includeExpenses: true, split: false),
-            ChartMetric.FuelVolume => [new ChartSeries(Fuel, null, keys.Select(k => new ChartPoint(k, fuel.Where(f => Key(f.Date, config.Grouping) == k).Sum(f => f.Volume))).ToList())],
-            ChartMetric.FillUps => [new ChartSeries(Fuel, null, keys.Select(k => new ChartPoint(k, fuel.Count(f => Key(f.Date, config.Grouping) == k))).ToList())],
-            ChartMetric.AverageConsumption => [new ChartSeries(Fuel, null, keys.Select(k => Mean(k, fuel.Where(f => Key(f.Date, config.Grouping) == k && f.Consumption is not null).Select(f => f.Consumption!.Value))).ToList())],
-            ChartMetric.AveragePricePerUnit => PricePerUnit(keys, config.Grouping, fuel, f => f.Amount),
-            ChartMetric.AveragePricePerUnitBeforeDiscount => PricePerUnit(keys, config.Grouping, fuel, f => f.Amount + f.Discount),
-            ChartMetric.Distance => [new ChartSeries(Total, null, periods.Select(p => new ChartPoint(Key(p, config.Grouping), DistanceIn(data.Readings, Bounds(p, config.Grouping)))).ToList())],
+            var (start, end) = Bounds(period, g);
+            return (start < from ? from : start, end > to ? to : end);
+        }
+        var distances = periods.Select(p => DistanceIn(data.Readings, Inside(p))).ToList();
+
+        return metric switch
+        {
+            ChartMetric.TotalSpend when stacked => Money(keys, g, fuel, expenses, includeFuel: true, includeExpenses: true, split: true),
+            ChartMetric.TotalSpend => Money(keys, g, fuel, expenses, includeFuel: true, includeExpenses: true, split: false),
+            ChartMetric.FuelCost => Money(keys, g, fuel, expenses, includeFuel: true, includeExpenses: false, split: false),
+            ChartMetric.ExpenseCost => Money(keys, g, fuel, expenses, includeFuel: false, includeExpenses: true, split: false),
+            ChartMetric.FuelVolume => [new ChartSeries(Fuel, null, keys.Select(k => new ChartPoint(k, fuel.Where(f => Key(f.Date, g) == k).Sum(f => f.Volume))).ToList())],
+            ChartMetric.FillUps => [new ChartSeries(Fuel, null, keys.Select(k => new ChartPoint(k, fuel.Count(f => Key(f.Date, g) == k))).ToList())],
+            ChartMetric.AverageConsumption => [new ChartSeries(Fuel, null, keys.Select(k => Mean(k, fuel.Where(f => Key(f.Date, g) == k && f.Consumption is not null).Select(f => f.Consumption!.Value))).ToList())],
+            ChartMetric.AveragePricePerUnit => PricePerUnit(keys, g, fuel, f => f.Amount),
+            ChartMetric.AveragePricePerUnitBeforeDiscount => PricePerUnit(keys, g, fuel, f => f.Amount + f.Discount),
+            ChartMetric.Distance => [new ChartSeries(Total, null, keys.Select((k, i) => new ChartPoint(k, distances[i])).ToList())],
+            ChartMetric.CostPerDistance => PerDistance(Money(keys, g, fuel, expenses, includeFuel: true, includeExpenses: true, split: false), distances),
+            ChartMetric.FuelCostPerDistance => PerDistance(Money(keys, g, fuel, expenses, includeFuel: true, includeExpenses: false, split: false), distances),
             _ => [],
         };
-        return new ChartData(unit, series);
+    }
+
+    /// <summary>Each period's cost per 100 distance units driven in it (per currency, never converted); none where nothing was driven.</summary>
+    private static List<ChartSeries> PerDistance(List<ChartSeries> costs, List<decimal> distances) =>
+        costs.Select(c => c with { Points = c.Points.Select((p, i) => p with { Value = distances[i] > 0 ? Math.Round(p.Value!.Value / distances[i] * 100, 3) : null }).ToList() }).ToList();
+
+    /// <summary>The sum so far in every period (only for metrics that add up, whose values are never missing).</summary>
+    private static ChartSeries Running(ChartSeries s)
+    {
+        var sum = 0m;
+        return s with { Points = s.Points.Select(p => p with { Value = sum += p.Value ?? 0 }).ToList() };
+    }
+
+    /// <summary>
+    /// The same periods a year earlier, keyed by the periods they line up with ("2025-09" becomes "2026-09"), so the table and the chart put
+    /// them side by side. A stacked chart compares each currency's total.
+    /// </summary>
+    private static IEnumerable<ChartSeries> YearEarlier(ChartConfig config, StatsData data, DateOnly from, DateOnly to)
+    {
+        var earlier = Measure(config.Metric, stacked: false, config.Grouping, data, from.AddYears(-1), to.AddYears(-1));
+        if (config.RunningTotal) earlier = earlier.Select(Running).ToList();
+        return earlier.Select(s => s with
+        {
+            Points = s.Points.Select(p => p with { Key = $"{int.Parse(p.Key[..4], System.Globalization.CultureInfo.InvariantCulture) + 1}{p.Key[4..]}" }).ToList(),
+            Role = ChartSeriesRole.YearEarlier,
+        });
+    }
+
+    public const int MovingAverageWindow = 3;
+
+    /// <summary>The fewest points a linear trend is fitted to.</summary>
+    public const int MinTrendPoints = 3;
+
+    /// <summary>
+    /// A trend line per value series (on a stacked chart, per currency's total). For a metric that adds up, a period that has not ended yet
+    /// is left out of it: half a month's costs would pull the line down. An average (consumption, price) is as good in a period so far.
+    /// </summary>
+    private static IEnumerable<ChartSeries> Trends(ChartConfig config, List<ChartSeries> values, List<DateOnly> periods, DateOnly today)
+    {
+        var bases = config.Stacked
+            ? values.GroupBy(s => s.Currency).Select(c => new ChartSeries(Total, c.Key,
+                c.First().Points.Select((p, i) => new ChartPoint(p.Key, c.Sum(s => s.Points[i].Value ?? 0))).ToList())).ToList()
+            : values;
+        var additive = ChartConfig.IsAdditive(config.Metric);
+        bool Usable(int i, decimal? value) => value is not null && (!additive || Bounds(periods[i], config.Grouping).End < today);
+
+        foreach (var s in bases)
+        {
+            if (config.Trend == ChartTrend.MovingAverage)
+            {
+                var points = s.Points.Select((p, i) =>
+                {
+                    if (i < MovingAverageWindow - 1 || !Usable(i, p.Value)) return p with { Value = null };
+                    var window = Enumerable.Range(i - MovingAverageWindow + 1, MovingAverageWindow).Where(j => Usable(j, s.Points[j].Value)).Select(j => s.Points[j].Value!.Value).ToList();
+                    return p with { Value = Math.Round(window.Average(), 3) };
+                }).ToList();
+                yield return new ChartSeries(s.Kind, s.Currency, points, ChartSeriesRole.MovingAverage);
+            }
+            else if (Fit(s.Points.Select((p, i) => (i, p.Value)).Where(x => Usable(x.i, x.Value)).Select(x => ((decimal)x.i, x.Value!.Value)).ToList()) is { } line)
+            {
+                var points = s.Points.Select((p, i) => p with { Value = Math.Round(line.Intercept + line.Slope * i, 3) }).ToList();
+                yield return new ChartSeries(s.Kind, s.Currency, points, ChartSeriesRole.Linear, Math.Round(line.Slope, 3));
+            }
+        }
+    }
+
+    /// <summary>The least-squares line through the points (x = the period's index), or null with fewer than <see cref="MinTrendPoints"/>.</summary>
+    private static (decimal Intercept, decimal Slope)? Fit(List<(decimal X, decimal Y)> points)
+    {
+        if (points.Count < MinTrendPoints) return null;
+        var meanX = points.Average(p => p.X);
+        var meanY = points.Average(p => p.Y);
+        var spread = points.Sum(p => (p.X - meanX) * (p.X - meanX));
+        var slope = points.Sum(p => (p.X - meanX) * (p.Y - meanY)) / spread;
+        return (meanY - slope * meanX, slope);
     }
 
     private static ChartPoint Mean(string key, IEnumerable<decimal> values)

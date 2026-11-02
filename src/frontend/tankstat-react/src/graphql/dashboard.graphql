@@ -101,6 +101,9 @@ query VehicleDashboard($id: UUID!) {
     rangeFrom
     rangeTo
     stacked
+    trend
+    runningTotal
+    compareYearEarlier
     isShared
     canEdit
     createdBy {
@@ -117,6 +120,9 @@ query ChartData($vehicleId: UUID!, $config: ChartConfigInput!) {
     series {
       kind
       currency
+      # A trend or a year earlier is drawn as a line over the values of the same kind and currency.
+      role
+      slope
       points {
         key
         value

@@ -71,7 +71,8 @@ public class StatsRepositoryTests
         var repo = db.Get<IVehicleChartRepository>();
         var alice = Guid.NewGuid();
         var bob = Guid.NewGuid();
-        var config = new ChartConfig(ChartMetric.TotalSpend, ChartGrouping.Quarter, ChartKind.Area, ChartRange.Custom, true, new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30));
+        var config = new ChartConfig(ChartMetric.TotalSpend, ChartGrouping.Quarter, ChartKind.Area, ChartRange.Custom, true, new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30),
+            ChartTrend.MovingAverage, RunningTotal: false, CompareYearEarlier: true);
         var now = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
         await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Private", config, false, now), default);
         await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Shared", config with { Stacked = false, Kind = ChartKind.Bar }, true, now.AddMinutes(1)), default);
@@ -81,7 +82,7 @@ public class StatsRepositoryTests
 
         Assert.Equal(["Private", "Shared"], forAlice.Select(c => c.Title));
         Assert.Equal(["Shared"], forBob.Select(c => c.Title));
-        Assert.Equal(config, forAlice[0].Config); // the whole recipe, custom dates included
+        Assert.Equal(config, forAlice[0].Config); // the whole recipe, custom dates and trend options included
         Assert.Equal(2, await repo.CountByUserAsync(car.Id, alice, default));
         Assert.Equal(0, await repo.CountByUserAsync(car.Id, bob, default));
 

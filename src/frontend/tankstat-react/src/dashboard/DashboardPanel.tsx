@@ -156,7 +156,18 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
         ) : (
           <Box sx={chartGrid}>
             {data.vehicleCharts.map((c) => {
-              const r: ChartRecipe = { metric: c.metric, grouping: c.grouping, kind: c.kind, range: c.range, stacked: c.stacked, from: c.rangeFrom ?? null, to: c.rangeTo ?? null }
+              const r: ChartRecipe = {
+                metric: c.metric,
+                grouping: c.grouping,
+                kind: c.kind,
+                range: c.range,
+                stacked: c.stacked,
+                from: c.rangeFrom ?? null,
+                to: c.rangeTo ?? null,
+                trend: c.trend,
+                runningTotal: c.runningTotal,
+                compareYearEarlier: c.compareYearEarlier,
+              }
               return (
                 <ChartCard
                   key={c.id}

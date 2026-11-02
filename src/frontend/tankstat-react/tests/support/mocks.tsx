@@ -956,6 +956,9 @@ export interface FakeChart {
   rangeFrom: string | null
   rangeTo: string | null
   stacked: boolean
+  trend: string
+  runningTotal: boolean
+  compareYearEarlier: boolean
   isShared: boolean
   canEdit: boolean
   createdBy: Person
@@ -971,13 +974,19 @@ export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   rangeFrom: null,
   rangeTo: null,
   stacked: false,
+  trend: 'NONE',
+  runningTotal: false,
+  compareYearEarlier: false,
   isShared: false,
   canEdit: true,
   createdBy: person('Alice'),
   ...over,
 })
 
-/** A small in-memory backend for a vehicle's dashboard: key figures, saved charts and chart data (a fixed answer per unit). */
+/**
+ * A small in-memory backend for a vehicle's dashboard: key figures, saved charts and chart data (a fixed answer per unit; a trend line or a
+ * year earlier asked for comes as a series of its own, as the server's do).
+ */
 export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] = []) {
   const state = {
     vehicle,
@@ -991,13 +1000,23 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
   const months = ['2026-08', '2026-09', '2026-10']
   const answer = (config: Record<string, unknown>) => {
     const metric = String(config.metric)
-    const unit = metric === 'FUEL_VOLUME' ? 'VOLUME' : metric === 'DISTANCE' ? 'DISTANCE' : metric === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION' : metric === 'FILL_UPS' ? 'COUNT' : 'CURRENCY'
-    const cost = unit === 'CURRENCY'
+    const perDistance = metric === 'COST_PER_DISTANCE' || metric === 'FUEL_COST_PER_DISTANCE'
+    const unit = metric === 'FUEL_VOLUME' ? 'VOLUME' : metric === 'DISTANCE' ? 'DISTANCE' : metric === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION' : metric === 'FILL_UPS' ? 'COUNT' : perDistance ? 'COST_PER_DISTANCE' : 'CURRENCY'
+    const cost = unit === 'CURRENCY' || perDistance
     const keys = config.grouping === 'CATEGORY' ? ['Service', 'Parking', ''] : months
     const kinds = config.stacked ? ['fuel', 'expenses'] : [config.metric === 'EXPENSE_COST' ? 'expenses' : cost ? 'total' : 'fuel']
+    const line = (kind: string, role: string, value: (i: number) => number | null, slope: number | null = null) =>
+      ({ kind, currency: cost ? 'HUF' : null, role, slope, points: keys.map((key, i) => ({ key, value: value(i) })) })
+    const values = kinds.map((kind, k) => line(kind, 'VALUE', (i) => (i + 1) * 1000 * (k + 1)))
+    const base = config.stacked ? 'total' : kinds[0]
     return {
       unit,
-      series: kinds.map((kind, k) => ({ kind, currency: cost ? 'HUF' : null, points: keys.map((key, i) => ({ key, value: (i + 1) * 1000 * (k + 1) })) })),
+      series: [
+        ...values,
+        ...(config.compareYearEarlier ? [line(base, 'YEAR_EARLIER', (i) => (i + 1) * 500)] : []),
+        ...(config.trend === 'MOVING_AVERAGE' ? [line(base, 'MOVING_AVERAGE', (i) => (i < 2 ? null : 2000))] : []),
+        ...(config.trend === 'LINEAR' ? [line(base, 'LINEAR', (i) => 1000 + i * 1000, 1000)] : []),
+      ],
     }
   }
 
@@ -1013,7 +1032,21 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
       record('SaveChart', variables)
       if (state.failWith) return HttpResponse.json(gqlError(state.failWith.message, 'VALIDATION_FAILED', state.failWith.key, state.failWith.args))
       const { id, title, shared, config } = variables.input as { id: string | null; title: string; shared: boolean; config: Record<string, unknown> }
-      const entry = fakeChart({ id: id ?? `c${state.nextId++}`, title, isShared: shared, metric: String(config.metric), grouping: String(config.grouping), kind: String(config.kind), range: String(config.range), stacked: Boolean(config.stacked), rangeFrom: (config.from as string) ?? null, rangeTo: (config.to as string) ?? null })
+      const entry = fakeChart({
+        id: id ?? `c${state.nextId++}`,
+        title,
+        isShared: shared,
+        metric: String(config.metric),
+        grouping: String(config.grouping),
+        kind: String(config.kind),
+        range: String(config.range),
+        stacked: Boolean(config.stacked),
+        rangeFrom: (config.from as string) ?? null,
+        rangeTo: (config.to as string) ?? null,
+        trend: String(config.trend ?? 'NONE'),
+        runningTotal: Boolean(config.runningTotal),
+        compareYearEarlier: Boolean(config.compareYearEarlier),
+      })
       state.charts = id ? state.charts.map((c) => (c.id === id ? entry : c)) : [...state.charts, entry]
       return HttpResponse.json({ data: { saveVehicleChart: { id: entry.id } } })
     }),

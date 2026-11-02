@@ -82,6 +82,57 @@ test('draws a chart of costs in two currencies on a scale for each, with only th
   await expectSoundLayout(page)
 })
 
+test('draws a moving average and a year earlier as lines over the bars, on the bars\' scale, the bars still one width and evenly placed', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // A refuelling every month of the last two years, so the year earlier has a value in every month too.
+  let odometer = 10_000
+  for (let back = 23; back >= 0; back--) {
+    odometer += 500
+    await graphql(page, 'mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }', {
+      i: { vehicleId: vehicle.id, date: monthStart(back), volume: 40, totalCost: 20_000 + (back % 5) * 2_000, currency: 'HUF', odometer, isFullTank: true },
+    })
+  }
+  await graphql(page, 'mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }', {
+    i: {
+      vehicleId: vehicle.id,
+      title: 'Costs and trend',
+      shared: false,
+      config: { metric: 'TOTAL_SPEND', grouping: 'MONTH', kind: 'BAR', range: 'LAST12_MONTHS', stacked: false, trend: 'MOVING_AVERAGE', compareYearEarlier: true },
+    },
+  })
+  await openVehicle(page, vehicle.id)
+
+  await expect.poll(async () => (await measureChart(page, 'Costs and trend')).bars.length).toBe(12)
+  const { bars } = await measureChart(page, 'Costs and trend')
+  const width = bars[0].width
+  for (const bar of bars) expect(Math.abs(bar.width - width)).toBeLessThanOrEqual(1)
+  const centres = bars.map((bar) => bar.x + bar.width / 2).sort((a, b) => a - b)
+  const step = centres[1] - centres[0]
+  for (let i = 1; i < centres.length; i++) expect(Math.abs(centres[i] - centres[i - 1] - step)).toBeLessThanOrEqual(2)
+
+  // The two lines: drawn (a path with a shape), dashed or dotted, and inside the chart's own box.
+  const figure = page.getByRole('img', { name: 'Costs and trend: chart', exact: true }).locator('xpath=ancestor::figure[1]')
+  const lines = await figure.evaluate((root) =>
+    ['MOVING_AVERAGE', 'YEAR_EARLIER'].map((role) => {
+      const path = root.querySelector(`path[data-series$="|${role}"]`)
+      const box = path?.getBoundingClientRect()
+      const svg = path?.closest('svg')?.getBoundingClientRect()
+      return {
+        role,
+        drawn: Boolean(path?.getAttribute('d')),
+        dashed: path ? getComputedStyle(path).strokeDasharray !== 'none' : false,
+        inside: Boolean(box && svg && box.left >= svg.left - 1 && box.right <= svg.right + 1 && box.top >= svg.top - 1 && box.bottom <= svg.bottom + 1),
+      }
+    }),
+  )
+  expect(lines).toEqual([
+    { role: 'MOVING_AVERAGE', drawn: true, dashed: true, inside: true },
+    { role: 'YEAR_EARLIER', drawn: true, dashed: true, inside: true },
+  ])
+  await expectSoundLayout(page)
+})
+
 test('a saved chart of the fuel price before discounts adds the discount back, while the preset Fuel price stays on what was paid', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)

@@ -165,7 +165,7 @@ it('builds a chart from a metric, grouping, type and a preset period, with a liv
 
   await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
   expect(state.calls.SaveChart![0]).toEqual({
-    input: { id: null, vehicleId: 'v1', title: 'Volume per quarter', shared: false, config: { metric: 'FUEL_VOLUME', grouping: 'QUARTER', kind: 'LINE', range: 'LAST6_MONTHS', stacked: false, from: null, to: null } },
+    input: { id: null, vehicleId: 'v1', title: 'Volume per quarter', shared: false, config: { metric: 'FUEL_VOLUME', grouping: 'QUARTER', kind: 'LINE', range: 'LAST6_MONTHS', stacked: false, from: null, to: null, trend: 'NONE', runningTotal: false, compareYearEarlier: false } },
   })
   expect(await screen.findByRole('heading', { name: 'Volume per quarter' })).toBeInTheDocument()
 })
@@ -219,6 +219,51 @@ it('does not send dates for a preset period, even after a custom one was chosen 
 
   await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
   expect((state.calls.SaveChart![0] as { input: { config: unknown } }).input.config).toMatchObject({ range: 'LAST3_MONTHS', from: null, to: null })
+})
+
+it('offers a trend line, a running total and a year earlier for a chart over time, never a trend with a running total, and sends them', async () => {
+  const { ui, state } = setup(fakeVehicle(), [])
+  await screen.findByText(/Compose your own charts/)
+  await ui.click(screen.getByRole('button', { name: 'Add chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add chart' })
+  await ui.type(within(dialog).getByLabelText('Title'), 'Where it goes')
+  const runningTotal = () => within(dialog).queryByRole('switch', { name: 'Running total' })
+
+  await choose(ui, 'Trend line', 'Linear trend')
+  await ui.click(runningTotal()!)
+  expect(screen.getByRole('combobox', { name: 'Trend line' })).toHaveTextContent('None') // a running total has no trend line
+  await choose(ui, 'Trend line', 'Moving average (3 periods)')
+  expect(runningTotal()).not.toBeChecked() // and the other way round
+  await ui.click(within(dialog).getByRole('switch', { name: 'Compare with a year earlier' }))
+
+  await choose(ui, 'What to measure', 'Average consumption')
+  expect(runningTotal()).not.toBeInTheDocument() // an average does not add up
+  await choose(ui, 'What to measure', 'Expense cost')
+  await choose(ui, 'Group by', 'Expense category')
+  expect(screen.queryByRole('combobox', { name: 'Trend line' })).not.toBeInTheDocument() // not over time
+  expect(within(dialog).queryByRole('switch', { name: 'Compare with a year earlier' })).not.toBeInTheDocument()
+
+  await choose(ui, 'Group by', 'Month')
+  await choose(ui, 'Trend line', 'Moving average (3 periods)')
+  await ui.click(within(dialog).getByRole('switch', { name: 'Compare with a year earlier' }))
+  await waitFor(() => expect(state.chartRequests.at(-1)!.config).toMatchObject({ metric: 'EXPENSE_COST', trend: 'MOVING_AVERAGE', compareYearEarlier: true }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save chart' }))
+
+  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
+  expect((state.calls.SaveChart![0] as { input: { config: unknown } }).input.config).toMatchObject({ metric: 'EXPENSE_COST', grouping: 'MONTH', trend: 'MOVING_AVERAGE', runningTotal: false, compareYearEarlier: true })
+})
+
+it('offers the cost per distance among what to measure', async () => {
+  const { ui, state } = setup(fakeVehicle(), [])
+  await screen.findByText(/Compose your own charts/)
+  await ui.click(screen.getByRole('button', { name: 'Add chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add chart' })
+
+  await choose(ui, 'What to measure', 'Fuel cost per distance')
+  await waitFor(() => expect(state.chartRequests.at(-1)!.config).toMatchObject({ metric: 'FUEL_COST_PER_DISTANCE' }))
+  await ui.click(await within(dialog).findByRole('button', { name: 'Show the data as a table' }))
+
+  expect(within(dialog).getByRole('rowheader', { name: 'Aug 2026' }).closest('tr')).toHaveTextContent('HUF 1,000 / 100 km') // the preview's table in its unit
 })
 
 it('only offers combinations that make sense', async () => {
@@ -289,7 +334,9 @@ it('viewers can make their own charts but are not offered sharing', async () => 
 })
 
 it('edits a saved chart, starting from its recipe', async () => {
-  const { ui, state } = setup(fakeVehicle(), [fakeChart({ id: 'c1', title: 'Old', metric: 'FUEL_VOLUME', grouping: 'YEAR', kind: 'AREA', range: 'CUSTOM', rangeFrom: '2025-01-01', rangeTo: '2025-12-31' })])
+  const { ui, state } = setup(fakeVehicle(), [
+    fakeChart({ id: 'c1', title: 'Old', metric: 'FUEL_VOLUME', grouping: 'YEAR', kind: 'AREA', range: 'CUSTOM', rangeFrom: '2025-01-01', rangeTo: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true }),
+  ])
   await screen.findByRole('heading', { name: 'Old' })
 
   await ui.click(screen.getByRole('button', { name: 'Edit the chart Old' }))
@@ -298,13 +345,15 @@ it('edits a saved chart, starting from its recipe', async () => {
   expect(screen.getByRole('combobox', { name: 'What to measure' })).toHaveTextContent('Fuel volume')
   expect(screen.getByRole('combobox', { name: 'Group by' })).toHaveTextContent('Year')
   expect(screen.getByRole('combobox', { name: 'Chart type' })).toHaveTextContent('Area')
+  expect(screen.getByRole('combobox', { name: 'Trend line' })).toHaveTextContent('Linear trend')
+  expect(within(dialog).getByRole('switch', { name: 'Compare with a year earlier' })).toBeChecked()
   expect(dateValue(await findDateField('From', dialog))).toBe('2025-01-01')
   await ui.clear(within(dialog).getByLabelText('Title'))
   await ui.type(within(dialog).getByLabelText('Title'), 'New name')
   await ui.click(within(dialog).getByRole('button', { name: 'Save chart' }))
 
   await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
-  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: 'c1', title: 'New name', config: { range: 'CUSTOM', from: '2025-01-01', to: '2025-12-31' } } })
+  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: 'c1', title: 'New name', config: { range: 'CUSTOM', from: '2025-01-01', to: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true } } })
   expect(await screen.findByRole('heading', { name: 'New name' })).toBeInTheDocument()
 })
 

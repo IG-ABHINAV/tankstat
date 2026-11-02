@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { barPlaces, chartAxes, labelStep, MONTH_LABEL_PX, parsePeriod, periodLabel, shortPeriodLabels, type Series } from '../../../src/dashboard/chartFormat.ts'
+import { barPlaces, chartAxes, isValue, labelStep, MONTH_LABEL_PX, NEW_RECIPE, normalise, parsePeriod, periodLabel, seriesId, shortPeriodLabels, toConfig, withRunningTotal, withTrend, type ChartRecipe, type Series } from '../../../src/dashboard/chartFormat.ts'
 
-const series = (kind: string, currency: string | null, values: Record<string, number | null>): Series => ({
+const series = (kind: string, currency: string | null, values: Record<string, number | null>, role: Series['role'] = 'VALUE'): Series => ({
   kind,
   currency,
+  role,
+  slope: null,
   points: Object.entries(values).map(([key, value]) => ({ key, value })),
 })
 
@@ -77,6 +79,15 @@ describe('chartAxes', () => {
     expect(chartAxes({ unit: 'CURRENCY', series: [huf] })).toMatchObject({ axes: [{ id: 'currency:HUF', currency: 'HUF' }], shown: true })
   })
 
+  it('gives a cost per distance a scale per currency too, and draws a line drawn from a series on its series\' scale', () => {
+    const earlier = series('fuel', 'HUF', { '2026-01': 30000 }, 'YEAR_EARLIER')
+    const axes = chartAxes({ unit: 'COST_PER_DISTANCE', series: [huf, eur, earlier] })
+
+    expect(axes.axes.map((a) => a.id)).toEqual(['currency:HUF', 'currency:EUR'])
+    expect(axes.axisOf(earlier)).toBe(axes.axisOf(huf))
+    expect(axes.shown).toBe(false)
+  })
+
   it('shares one axis for any other unit', () => {
     const axes = chartAxes({ unit: 'VOLUME', series: [series('value', null, { '2026-01': 40 })] })
     expect(axes).toMatchObject({ axes: [{ id: 'value', currency: null }], shown: true })
@@ -118,5 +129,47 @@ describe('barPlaces', () => {
     const shuffled = series('fuel', 'EUR', { '2026-03': 10, '2026-01': 0 })
     expect(barPlaces({ series: [shuffled] }, periods, true).at(shuffled, 2)).toEqual({ place: 0, of: 1, top: true })
     expect(barPlaces({ series: [shuffled] }, periods, true).at(shuffled, 0)).toBeNull()
+  })
+})
+
+describe('the recipe of a chart over time', () => {
+  const recipe = (over: Partial<ChartRecipe>): ChartRecipe => ({ ...NEW_RECIPE, ...over })
+
+  it('keeps a trend line, a running total and a year earlier only for a chart over time, as the server does', () => {
+    expect(normalise(recipe({ trend: 'LINEAR', compareYearEarlier: true, kind: 'DONUT' }))).toMatchObject({ trend: 'NONE', compareYearEarlier: false })
+    expect(normalise(recipe({ metric: 'EXPENSE_COST', grouping: 'CATEGORY', runningTotal: true, trend: 'MOVING_AVERAGE' }))).toMatchObject({ trend: 'NONE', runningTotal: false })
+    expect(normalise(recipe({ metric: 'AVERAGE_CONSUMPTION', runningTotal: true }))).toMatchObject({ runningTotal: false }) // an average does not add up
+    expect(normalise(recipe({ metric: 'COST_PER_DISTANCE', runningTotal: true }))).toMatchObject({ runningTotal: false })
+    expect(normalise(recipe({ trend: 'LINEAR', runningTotal: true }))).toMatchObject({ trend: 'NONE', runningTotal: true })
+    expect(normalise(recipe({ trend: 'LINEAR', compareYearEarlier: true }))).toMatchObject({ trend: 'LINEAR', compareYearEarlier: true })
+  })
+
+  it('takes the trend line away when a running total is chosen, and the running total when a trend line is', () => {
+    expect(withRunningTotal(recipe({ trend: 'LINEAR' }), true)).toMatchObject({ trend: 'NONE', runningTotal: true })
+    expect(withTrend(recipe({ runningTotal: true }), 'MOVING_AVERAGE')).toMatchObject({ trend: 'MOVING_AVERAGE', runningTotal: false })
+    expect(withTrend(recipe({ runningTotal: true }), 'NONE')).toMatchObject({ trend: 'NONE', runningTotal: true })
+  })
+
+  it('asks the server for them, and dates only for a custom range', () => {
+    expect(toConfig(recipe({ trend: 'LINEAR', compareYearEarlier: true, from: '2026-01-01', to: '2026-02-01' }))).toEqual({
+      metric: 'TOTAL_SPEND',
+      grouping: 'MONTH',
+      kind: 'BAR',
+      range: 'LAST12_MONTHS',
+      stacked: false,
+      from: null,
+      to: null,
+      trend: 'LINEAR',
+      runningTotal: false,
+      compareYearEarlier: true,
+    })
+  })
+
+  it('tells the values from the lines drawn from them', () => {
+    const value = series('total', 'HUF', {})
+    const average = series('total', 'HUF', {}, 'MOVING_AVERAGE')
+
+    expect([isValue(value), isValue(average)]).toEqual([true, false])
+    expect(seriesId(value)).not.toBe(seriesId(average))
   })
 })

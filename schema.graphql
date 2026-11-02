@@ -300,6 +300,8 @@ type ChartSeries {
   kind: String!
   currency: String
   points: [ChartPoint!]!
+  role: ChartSeriesRole!
+  slope: Decimal
 }
 
 type CreatedUser {
@@ -848,6 +850,9 @@ type VehicleChart {
   kind: ChartKind!
   range: ChartRange!
   stacked: Boolean!
+  trend: ChartTrend!
+  runningTotal: Boolean!
+  compareYearEarlier: Boolean!
   rangeFrom: LocalDate
   rangeTo: LocalDate
   isShared: Boolean!
@@ -961,6 +966,9 @@ input ChartConfigInput {
   stacked: Boolean!
   from: LocalDate
   to: LocalDate
+  trend: ChartTrend
+  runningTotal: Boolean
+  compareYearEarlier: Boolean
 }
 
 input ConfirmImportInput {
@@ -1243,6 +1251,8 @@ enum ChartMetric {
   AVERAGE_PRICE_PER_UNIT
   FILL_UPS
   AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT
+  COST_PER_DISTANCE
+  FUEL_COST_PER_DISTANCE
 }
 
 enum ChartRange {
@@ -1256,12 +1266,26 @@ enum ChartRange {
   CUSTOM
 }
 
+enum ChartSeriesRole {
+  VALUE
+  MOVING_AVERAGE
+  LINEAR
+  YEAR_EARLIER
+}
+
+enum ChartTrend {
+  NONE
+  MOVING_AVERAGE
+  LINEAR
+}
+
 enum ChartUnit {
   CURRENCY
   VOLUME
   DISTANCE
   CONSUMPTION
   COUNT
+  COST_PER_DISTANCE
 }
 
 enum ColorMode {

@@ -99,6 +99,9 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("CompareYearEarlier")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -134,6 +137,9 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<DateOnly?>("RangeTo")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("RunningTotal")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("INTEGER");
 
@@ -141,6 +147,13 @@ namespace Tankstat.Migrations.Sqlite
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("None");
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("TEXT");

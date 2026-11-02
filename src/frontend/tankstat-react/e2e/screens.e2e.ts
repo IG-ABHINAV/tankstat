@@ -3,7 +3,7 @@ import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signIn, sig
 
 // What a person sets up on the screens themselves: a saved chart on the dashboard, the columns of a grid, a server setting.
 
-test('saves a chart on the dashboard', async ({ page }) => {
+test('saves a chart on the dashboard, with a trend line', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id)
@@ -11,12 +11,16 @@ test('saves a chart on the dashboard', async ({ page }) => {
   await page.getByRole('button', { name: 'Add chart' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add chart' })
   await dialog.getByLabel('Title').fill('Fuel by month')
+  await dialog.getByRole('combobox', { name: 'Trend line' }).click()
+  await page.getByRole('option', { name: 'Linear trend' }).click()
   await dialog.getByRole('button', { name: 'Save chart' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Fuel by month' })).toBeVisible()
   await page.reload()
   await pageLoaded(page)
-  await expect(page.getByRole('heading', { name: 'Fuel by month' })).toBeVisible()
+  const card = page.locator('.MuiCard-root').filter({ has: page.getByRole('heading', { name: 'Fuel by month' }) })
+  // The months without spending count as nothing spent, so a year of them has a trend, which the chart words: it was kept with the chart.
+  await expect(card.getByText(/^Total · HUF: the trend line goes from /)).toBeVisible()
 })
 
 test('hides a column of a grid and keeps it hidden', async ({ page }) => {

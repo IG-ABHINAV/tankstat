@@ -14,15 +14,28 @@ import { Field } from '../forms/Field.tsx'
 import { FieldDate } from '../forms/FieldDate.tsx'
 import { FieldInput } from '../forms/FieldInput.tsx'
 import { Form } from '../forms/Form.tsx'
-import { SaveChartDocument, type ChartGrouping, type ChartKind, type ChartMetric, type ChartRange, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
+import { SaveChartDocument, type ChartGrouping, type ChartKind, type ChartMetric, type ChartRange, type ChartTrend, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { useToast } from '../toast/toastContext.ts'
 import { ChartCard } from './ChartCard.tsx'
-import { ADDITIVE, isReady, NEW_RECIPE, normalise, type ChartRecipe } from './chartFormat.ts'
+import { ADDITIVE, isOverTime, isReady, NEW_RECIPE, normalise, toConfig, withRunningTotal, withTrend, type ChartRecipe } from './chartFormat.ts'
 
-const METRICS: ChartMetric[] = ['TOTAL_SPEND', 'FUEL_COST', 'EXPENSE_COST', 'FUEL_VOLUME', 'DISTANCE', 'AVERAGE_CONSUMPTION', 'AVERAGE_PRICE_PER_UNIT', 'AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT', 'FILL_UPS']
+const METRICS: ChartMetric[] = [
+  'TOTAL_SPEND',
+  'FUEL_COST',
+  'EXPENSE_COST',
+  'FUEL_VOLUME',
+  'DISTANCE',
+  'AVERAGE_CONSUMPTION',
+  'AVERAGE_PRICE_PER_UNIT',
+  'AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT',
+  'FILL_UPS',
+  'COST_PER_DISTANCE',
+  'FUEL_COST_PER_DISTANCE',
+]
 const KINDS: ChartKind[] = ['BAR', 'LINE', 'AREA', 'DONUT']
 const RANGES: ChartRange[] = ['LAST1_MONTH', 'LAST3_MONTHS', 'LAST6_MONTHS', 'LAST12_MONTHS', 'THIS_YEAR', 'LAST_YEAR', 'ALL', 'CUSTOM']
+const TRENDS: ChartTrend[] = ['NONE', 'MOVING_AVERAGE', 'LINEAR']
 
 export interface EditableChart {
   id: string
@@ -33,7 +46,8 @@ export interface EditableChart {
 
 /**
  * Compose a chart from the data the app can provide: what to measure, how to group it, the chart type and the period (a preset or a
- * custom from-to range). Only valid combinations are offered, and the preview shows the user's own data as the choices change.
+ * custom from-to range), and for a chart over time a trend line, a running total or the same periods a year earlier. Only valid
+ * combinations are offered, and the preview shows the user's own data as the choices change.
  */
 export function ChartBuilderDialog({
   trigger,
@@ -86,13 +100,15 @@ function BuilderForm({ vehicle, chart, canShare, onSaved }: { vehicle: { id: str
   const groupings: ChartGrouping[] = recipe.metric === 'EXPENSE_COST' ? ['MONTH', 'QUARTER', 'YEAR', 'CATEGORY'] : ['MONTH', 'QUARTER', 'YEAR']
   const kinds = KINDS.filter((k) => k !== 'DONUT' || ADDITIVE.includes(recipe.metric))
   const canStack = recipe.metric === 'TOTAL_SPEND' && recipe.grouping !== 'CATEGORY'
+  const overTime = isOverTime(recipe)
+  const canRunningTotal = overTime && ADDITIVE.includes(recipe.metric)
   const ready = isReady(recipe)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!ready) return
     try {
-      await save({ variables: { input: { id: chart?.id ?? null, vehicleId: vehicle.id, title, shared: canShare && shared, config: { metric: recipe.metric, grouping: recipe.grouping, kind: recipe.kind, range: recipe.range, stacked: recipe.stacked, from: recipe.from, to: recipe.to } } } })
+      await save({ variables: { input: { id: chart?.id ?? null, vehicleId: vehicle.id, title, shared: canShare && shared, config: toConfig(recipe) } } })
       await onSaved()
     } catch {
       // shown through `error`
@@ -128,6 +144,26 @@ function BuilderForm({ vehicle, chart, canShare, onSaved }: { vehicle: { id: str
         )}
 
         {canStack && <LabeledSwitch label={t('charts.fields.stacked')} hint={t('charts.hints.stacked')} checked={recipe.stacked} onChange={(stacked) => change({ stacked })} />}
+        {overTime && (
+          <>
+            <LabeledSelect
+              label={t('charts.fields.trend')}
+              hint={t('charts.hints.trend')}
+              value={recipe.trend}
+              onChange={(trend) => setRecipe((r) => withTrend(r, trend))}
+              options={TRENDS.map((trend) => ({ value: trend, label: t(`charts.trends.${trend}`) }))}
+            />
+            {canRunningTotal && (
+              <LabeledSwitch label={t('charts.fields.runningTotal')} hint={t('charts.hints.runningTotal')} checked={recipe.runningTotal} onChange={(on) => setRecipe((r) => withRunningTotal(r, on))} />
+            )}
+            <LabeledSwitch
+              label={t('charts.fields.compareYearEarlier')}
+              hint={t('charts.hints.compareYearEarlier')}
+              checked={recipe.compareYearEarlier}
+              onChange={(compareYearEarlier) => change({ compareYearEarlier })}
+            />
+          </>
+        )}
         {canShare && <LabeledSwitch label={t('charts.fields.shared')} hint={t('charts.hints.shared')} checked={shared} onChange={setShared} />}
 
         <section aria-labelledby={previewId}>

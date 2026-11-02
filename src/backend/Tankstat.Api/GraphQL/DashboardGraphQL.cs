@@ -7,9 +7,13 @@ namespace Tankstat.Api.GraphQL;
 
 /// <param name="From">First day; only for the custom range.</param>
 /// <param name="To">Last day; only for the custom range.</param>
-public sealed record ChartConfigInput(ChartMetric Metric, ChartGrouping Grouping, ChartKind Kind, ChartRange Range, bool Stacked, DateOnly? From, DateOnly? To)
+/// <param name="Trend">A trend line over the values; null or left out is none (an older client sends none).</param>
+/// <param name="RunningTotal">The sum so far in every period; null or left out is false.</param>
+/// <param name="CompareYearEarlier">The same periods a year earlier beside them; null or left out is false.</param>
+public sealed record ChartConfigInput(ChartMetric Metric, ChartGrouping Grouping, ChartKind Kind, ChartRange Range, bool Stacked, DateOnly? From, DateOnly? To,
+    ChartTrend? Trend = null, bool? RunningTotal = null, bool? CompareYearEarlier = null)
 {
-    public ChartConfig ToDomain() => new(Metric, Grouping, Kind, Range, Stacked, From, To);
+    public ChartConfig ToDomain() => new(Metric, Grouping, Kind, Range, Stacked, From, To, Trend ?? ChartTrend.None, RunningTotal ?? false, CompareYearEarlier ?? false);
 }
 
 /// <param name="Id">Omit to create a chart, give it to change one.</param>

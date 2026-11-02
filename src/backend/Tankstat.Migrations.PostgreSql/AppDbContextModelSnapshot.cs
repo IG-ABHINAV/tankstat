@@ -104,6 +104,9 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("CompareYearEarlier")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -139,6 +142,9 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<DateOnly?>("RangeTo")
                         .HasColumnType("date");
 
+                    b.Property<bool>("RunningTotal")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("boolean");
 
@@ -146,6 +152,13 @@ namespace Tankstat.Migrations.PostgreSql
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("None");
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("uuid");

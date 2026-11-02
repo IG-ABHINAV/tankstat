@@ -129,6 +129,16 @@ export function useFormat() {
           distance: t(`units.distanceShort.${units.distance}`),
         })
       },
+      /** Money per 100 of the vehicle's distance units ("HUF 4,500 / 100 km"); an unknown code falls back like `money`. */
+      costPerDistance: (value: number, currency: string, unit: DistanceUnit) => {
+        let amount: string
+        try {
+          amount = new Intl.NumberFormat(language, { style: 'currency', currency }).format(value)
+        } catch {
+          amount = `${number(value, { minimumFractionDigits: 2 })} ${currency}`
+        }
+        return t('units.costPerDistance', { amount, distance: t(`units.distanceShort.${unit}`) })
+      },
       pricePerUnit: (value: number, currency: string, unit: VolumeUnit) => `${(() => {
         try {
           return new Intl.NumberFormat(language, { style: 'currency', currency, maximumFractionDigits: 3 }).format(value)

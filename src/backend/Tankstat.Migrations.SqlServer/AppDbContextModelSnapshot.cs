@@ -104,6 +104,9 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("CompareYearEarlier")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -139,6 +142,9 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<DateOnly?>("RangeTo")
                         .HasColumnType("date");
 
+                    b.Property<bool>("RunningTotal")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("bit");
 
@@ -146,6 +152,13 @@ namespace Tankstat.Migrations.SqlServer
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("None");
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("uniqueidentifier");

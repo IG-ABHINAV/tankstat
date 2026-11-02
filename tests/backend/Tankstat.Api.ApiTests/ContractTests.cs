@@ -124,8 +124,8 @@ public class ContractTests
     [InlineData("VehicleSummary", "lastFillUpDate", "latestOdometer", "averageConsumption", "currency", "thisMonthSpend", "lastMonthSpend", "spendTrend", "fillUpCount", "expenseCount", "spending")]
     [InlineData("CurrencySpend", "currency", "thisMonth", "lastMonth")]
     [InlineData("ChartData", "unit", "series")]
-    [InlineData("ChartSeries", "kind", "currency", "points")]
-    [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "isShared", "createdAt", "canEdit", "createdBy")]
+    [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope")]
+    [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "trend", "runningTotal", "compareYearEarlier", "isShared", "createdAt", "canEdit", "createdBy")]
     [InlineData("Refueling", "id", "vehicleId", "createdBy", "date", "volume", "totalCost", "discount", "currency", "odometer", "pricePerUnit", "pricePerUnitBeforeDiscount", "consumption", "isFullTank", "missedPreviousFillUp", "note", "deletedAt", "canEdit", "canDelete", "vehicle", "photos", "reviewState", "filledFromPhoto", "version", "updatedAt", "changedAt", "changedBy", "lastChange")]
     [InlineData("Expense", "id", "amount", "discount", "currency", "odometer", "reviewState", "filledFromPhoto")]
     [InlineData("UiSettingsInfo", "navOpen", "language", "colorMode", "surface", "timeFormat", "dateFormat", "defaultTimeFormat", "defaultDateFormat", "grids")]
@@ -154,6 +154,7 @@ public class ContractTests
     [InlineData("ChangePasswordInput", "currentPassword", "newPassword", "newPasswordConfirmation")]
     [InlineData("ResetPasswordInput", "token", "newPassword", "newPasswordConfirmation")]
     [InlineData("SetupFinishInput", "code", "email", "password", "passwordConfirmation", "acknowledgeOpenAccess")]
+    [InlineData("ChartConfigInput", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier")]
     public async Task Schema_InputTypeTakesContractFields(string type, params string[] fields)
     {
         var body = await Query($"{{ __type(name: \"{type}\") {{ inputFields {{ name }} }} }}");
@@ -196,10 +197,13 @@ public class ContractTests
     [InlineData("VolumeUnit", "LITERS", "US_GALLONS", "IMPERIAL_GALLONS")]
     [InlineData("RefuelingSortField", "DATE", "VOLUME", "TOTAL_COST", "ODOMETER", "PRICE_PER_UNIT", "CONSUMPTION", "CREATED_BY", "VEHICLE", "DELETED_AT")]
     [InlineData("ExpenseSortField", "DATE", "TITLE", "CATEGORY", "AMOUNT", "ODOMETER", "CREATED_BY", "VEHICLE", "DELETED_AT")]
-    [InlineData("ChartMetric", "TOTAL_SPEND", "FUEL_COST", "EXPENSE_COST", "FUEL_VOLUME", "DISTANCE", "AVERAGE_CONSUMPTION", "AVERAGE_PRICE_PER_UNIT", "FILL_UPS", "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT")]
+    [InlineData("ChartMetric", "TOTAL_SPEND", "FUEL_COST", "EXPENSE_COST", "FUEL_VOLUME", "DISTANCE", "AVERAGE_CONSUMPTION", "AVERAGE_PRICE_PER_UNIT", "FILL_UPS", "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT", "COST_PER_DISTANCE", "FUEL_COST_PER_DISTANCE")]
     [InlineData("ChartGrouping", "MONTH", "QUARTER", "YEAR", "CATEGORY")]
     [InlineData("ChartKind", "BAR", "LINE", "AREA", "DONUT")]
     [InlineData("ChartRange", "LAST1_MONTH", "LAST3_MONTHS", "LAST6_MONTHS", "LAST12_MONTHS", "THIS_YEAR", "LAST_YEAR", "ALL", "CUSTOM")]
+    [InlineData("ChartTrend", "NONE", "MOVING_AVERAGE", "LINEAR")]
+    [InlineData("ChartSeriesRole", "VALUE", "MOVING_AVERAGE", "LINEAR", "YEAR_EARLIER")]
+    [InlineData("ChartUnit", "CURRENCY", "VOLUME", "DISTANCE", "CONSUMPTION", "COUNT", "COST_PER_DISTANCE")]
     [InlineData("NoticeSeverity", "INFO", "WARNING")]
     [InlineData("NotificationKind", "LOG_ACCESS_CHANGED", "VEHICLE_SHARED", "DATA_ACCESS_CHANGED", "DATA_SHARED", "DEFAULT_ACCESS_CHANGED", "RECURRING_DUE_SOON", "RECURRING_OVERDUE", "LOG_FILLED_FROM_PHOTO", "LOG_NOT_FILLED", "SYNC_CHANGE_PARKED", "MORE_ACTIVITY", "BACKUP_FAILED")]
     [InlineData("NotificationEntityType", "INSTANCE", "VEHICLE", "RECURRING_EXPENSE", "USER", "REFUELING", "EXPENSE", "SYNC_CHANGE")]
