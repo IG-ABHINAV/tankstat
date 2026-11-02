@@ -139,6 +139,12 @@ export interface FakeSummary {
   expenseCount: number
   spendTrend: { month: string; amount: number }[]
   spending: { currency: string; thisMonth: number; lastMonth: number }[]
+  trends: {
+    spending: { currency: string; recent: number | null; earlier: number | null }[]
+    costPerDistance: { currency: string; recent: number | null; earlier: number | null }[]
+    consumption: { recent: number | null; earlier: number | null; recentFillUps: number; earlierFillUps: number } | null
+    distance: { recent: number | null; earlier: number | null } | null
+  }
 }
 
 /**
@@ -156,6 +162,12 @@ export const fakeSummary = (over: Partial<FakeSummary> = {}): FakeSummary => {
     fillUpCount: 5,
     expenseCount: 2,
     spendTrend: ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].map((month, i) => ({ month, amount: 10000 * i })),
+    trends: {
+      spending: [{ currency: 'HUF', recent: 560000, earlier: 500000 }],
+      costPerDistance: [{ currency: 'HUF', recent: 4480, earlier: 4000 }],
+      consumption: { recent: 6.5, earlier: 7, recentFillUps: 10, earlierFillUps: 10 },
+      distance: { recent: 12500, earlier: 11000 },
+    },
     ...over,
   } as FakeSummary
   if (over.spending) return summary
@@ -956,10 +968,32 @@ export interface FakeChart {
   rangeFrom: string | null
   rangeTo: string | null
   stacked: boolean
+  trend: string
+  runningTotal: boolean
+  compareYearEarlier: boolean
+  secondMetric: string | null
+  secondKind: string | null
   isShared: boolean
   canEdit: boolean
   createdBy: Person
 }
+
+export interface FakeTile {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  pinned: boolean
+}
+
+export interface FakeLayout {
+  tiles: FakeTile[]
+  hidden: string[]
+}
+
+/** A tile of a fake layout: a chart two columns wide and eight rows tall unless said otherwise. */
+export const fakeTile = (id: string, x: number, y: number, w = 2, h = 8, pinned = false): FakeTile => ({ id, x, y, w, h, pinned })
 
 export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   id: 'c1',
@@ -971,13 +1005,21 @@ export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   rangeFrom: null,
   rangeTo: null,
   stacked: false,
+  trend: 'NONE',
+  runningTotal: false,
+  compareYearEarlier: false,
+  secondMetric: null,
+  secondKind: null,
   isShared: false,
   canEdit: true,
   createdBy: person('Alice'),
   ...over,
 })
 
-/** A small in-memory backend for a vehicle's dashboard: key figures, saved charts and chart data (a fixed answer per unit). */
+/**
+ * A small in-memory backend for a vehicle's dashboard: key figures, saved charts and chart data (a fixed answer per unit; a trend line or a
+ * year earlier asked for comes as a series of its own, as the server's do).
+ */
 export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] = []) {
   const state = {
     vehicle,
@@ -986,25 +1028,63 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
     chartRequests: [] as { vehicleId: string; config: Record<string, unknown> }[],
     failWith: undefined as { message: string; key: string; args?: Record<string, unknown> } | undefined,
     nextId: 400,
+    /** How the dashboard is arranged: the vehicle's and the user's own (null for none), and whether the user may change the vehicle's. */
+    dashboard: { shared: null as FakeLayout | null, personal: null as FakeLayout | null, canChangeShared: true },
   }
   const record = (name: string, vars: unknown) => (state.calls[name] ??= []).push(vars)
   const months = ['2026-08', '2026-09', '2026-10']
+  const unitOf = (metric: string) =>
+    metric === 'FUEL_VOLUME' ? 'VOLUME'
+    : metric === 'DISTANCE' ? 'DISTANCE'
+    : metric === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION'
+    : metric === 'FILL_UPS' ? 'COUNT'
+    : metric === 'COST_PER_DISTANCE' || metric === 'FUEL_COST_PER_DISTANCE' ? 'COST_PER_DISTANCE'
+    : metric === 'AVERAGE_PRICE_PER_UNIT' || metric === 'AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT' ? 'PRICE_PER_VOLUME'
+    : 'CURRENCY'
   const answer = (config: Record<string, unknown>) => {
     const metric = String(config.metric)
-    const unit = metric === 'FUEL_VOLUME' ? 'VOLUME' : metric === 'DISTANCE' ? 'DISTANCE' : metric === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION' : metric === 'FILL_UPS' ? 'COUNT' : 'CURRENCY'
-    const cost = unit === 'CURRENCY'
+    const unit = unitOf(metric)
+    const cost = unit === 'CURRENCY' || unit === 'COST_PER_DISTANCE' || unit === 'PRICE_PER_VOLUME'
     const keys = config.grouping === 'CATEGORY' ? ['Service', 'Parking', ''] : months
-    const kinds = config.stacked ? ['fuel', 'expenses'] : [config.metric === 'EXPENSE_COST' ? 'expenses' : cost ? 'total' : 'fuel']
+    // As the server names them: a cost or a distance is a total, the other fuel figures are fuel.
+    const kinds = config.stacked ? ['fuel', 'expenses'] : [config.metric === 'EXPENSE_COST' ? 'expenses' : cost || metric === 'DISTANCE' ? 'total' : 'fuel']
+    const line = (kind: string, role: string, value: (i: number) => number | null, slope: number | null = null, of = metric) => {
+      const own = unitOf(of)
+      return { kind, currency: own === 'CURRENCY' || own === 'COST_PER_DISTANCE' || own === 'PRICE_PER_VOLUME' ? 'HUF' : null, role, slope, metric: of, unit: own, points: keys.map((key, i) => ({ key, value: value(i) })) }
+    }
+    const values = kinds.map((kind, k) => line(kind, 'VALUE', (i) => (i + 1) * 1000 * (k + 1)))
+    const base = config.stacked ? 'total' : kinds[0]
+    const second = config.secondMetric ? String(config.secondMetric) : null
     return {
       unit,
-      series: kinds.map((kind, k) => ({ kind, currency: cost ? 'HUF' : null, points: keys.map((key, i) => ({ key, value: (i + 1) * 1000 * (k + 1) })) })),
+      series: [
+        ...values,
+        ...(config.compareYearEarlier ? [line(base, 'YEAR_EARLIER', (i) => (i + 1) * 500)] : []),
+        ...(config.trend === 'MOVING_AVERAGE' ? [line(base, 'MOVING_AVERAGE', (i) => (i < 2 ? null : 2000))] : []),
+        ...(config.trend === 'LINEAR' ? [line(base, 'LINEAR', (i) => 1000 + i * 1000, 1000)] : []),
+        ...(second ? [line(second === 'DISTANCE' ? 'total' : 'fuel', 'VALUE', (i) => 5 + i, null, second)] : []),
+      ],
     }
   }
 
   const handlers = [
-    graphql.query('VehicleDashboard', ({ variables }) =>
-      HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, summary: state.vehicle.summary } : null, vehicleCharts: state.charts } }),
-    ),
+    graphql.query('VehicleDashboard', ({ variables }) => {
+      const layout = (l: FakeLayout | null) => (l ? { __typename: 'DashboardLayoutInfo', ...l } : null)
+      const dashboard = { __typename: 'DashboardInfo', shared: layout(state.dashboard.shared), personal: layout(state.dashboard.personal), canChangeShared: state.dashboard.canChangeShared }
+      return HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, summary: state.vehicle.summary, dashboard } : null, vehicleCharts: state.charts } })
+    }),
+    graphql.mutation('SaveDashboardLayout', ({ variables }) => {
+      record('SaveDashboardLayout', variables)
+      const { personal, tiles, hidden } = variables.input as FakeLayout & { personal: boolean }
+      if (!personal && !state.dashboard.canChangeShared) return HttpResponse.json(gqlError('no', 'FORBIDDEN', 'dashboard.needEditToChange'))
+      state.dashboard[personal ? 'personal' : 'shared'] = { tiles: tiles.map((t) => ({ ...t, pinned: t.pinned ?? false })), hidden }
+      return HttpResponse.json({ data: { saveDashboardLayout: true } })
+    }),
+    graphql.mutation('ResetDashboardLayout', ({ variables }) => {
+      record('ResetDashboardLayout', variables)
+      state.dashboard[variables.personal ? 'personal' : 'shared'] = null
+      return HttpResponse.json({ data: { resetDashboardLayout: true } })
+    }),
     graphql.query('ChartData', ({ variables }) => {
       state.chartRequests.push(variables as never)
       return HttpResponse.json({ data: { vehicleChartData: answer(variables.config as Record<string, unknown>) } })
@@ -1013,7 +1093,23 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
       record('SaveChart', variables)
       if (state.failWith) return HttpResponse.json(gqlError(state.failWith.message, 'VALIDATION_FAILED', state.failWith.key, state.failWith.args))
       const { id, title, shared, config } = variables.input as { id: string | null; title: string; shared: boolean; config: Record<string, unknown> }
-      const entry = fakeChart({ id: id ?? `c${state.nextId++}`, title, isShared: shared, metric: String(config.metric), grouping: String(config.grouping), kind: String(config.kind), range: String(config.range), stacked: Boolean(config.stacked), rangeFrom: (config.from as string) ?? null, rangeTo: (config.to as string) ?? null })
+      const entry = fakeChart({
+        id: id ?? `c${state.nextId++}`,
+        title,
+        isShared: shared,
+        metric: String(config.metric),
+        grouping: String(config.grouping),
+        kind: String(config.kind),
+        range: String(config.range),
+        stacked: Boolean(config.stacked),
+        rangeFrom: (config.from as string) ?? null,
+        rangeTo: (config.to as string) ?? null,
+        trend: String(config.trend ?? 'NONE'),
+        runningTotal: Boolean(config.runningTotal),
+        compareYearEarlier: Boolean(config.compareYearEarlier),
+        secondMetric: (config.secondMetric as string) ?? null,
+        secondKind: (config.secondKind as string) ?? null,
+      })
       state.charts = id ? state.charts.map((c) => (c.id === id ? entry : c)) : [...state.charts, entry]
       return HttpResponse.json({ data: { saveVehicleChart: { id: entry.id } } })
     }),

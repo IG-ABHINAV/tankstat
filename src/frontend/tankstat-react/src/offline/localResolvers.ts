@@ -442,9 +442,9 @@ const recurringExpenses: Resolver = async (_rows, variables, kept) => {
   return { vehicle: { __typename: 'Vehicle', id: vehicleId, ...base, recurring: schedulesOf(vehicleId, (base?.recurring as Record<string, unknown>[] | undefined) ?? []) } }
 }
 
-/** A vehicle added here has no figures or charts until the server has it. */
+/** A vehicle added here has no figures, charts or arrangement (the Standard preset, which needs the server to change) until the server has it. */
 const vehicleDashboard: Resolver = async (_rows, variables) =>
-  addedVehicle(variables.id) ? { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null }, vehicleCharts: [] } : undefined
+  addedVehicle(variables.id) ? { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null, dashboard: null }, vehicleCharts: [] } : undefined
 
 const chartData: Resolver = async (_rows, variables) =>
   addedVehicle(variables.vehicleId) ? { vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } } : undefined

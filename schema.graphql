@@ -157,6 +157,10 @@ type Mutation {
     @cost(weight: "10")
   saveVehicleChart(input: SaveChartInput!): VehicleChart! @cost(weight: "10")
   deleteVehicleChart(id: UUID!): Boolean! @cost(weight: "10")
+  saveDashboardLayout(input: SaveDashboardLayoutInput!): Boolean!
+    @cost(weight: "10")
+  resetDashboardLayout(vehicleId: UUID!, personal: Boolean!): Boolean!
+    @cost(weight: "10")
   updateUiSettings(input: UpdateUiSettingsInput!): UiSettingsInfo!
     @cost(weight: "10")
   saveGridSettings(input: GridSettingsInput!): GridSettingsInfo!
@@ -300,6 +304,17 @@ type ChartSeries {
   kind: String!
   currency: String
   points: [ChartPoint!]!
+  role: ChartSeriesRole!
+  slope: Decimal
+  metric: ChartMetric!
+  unit: ChartUnit!
+}
+
+type ConsumptionChange {
+  recent: Decimal
+  earlier: Decimal
+  recentFillUps: Int!
+  earlierFillUps: Int!
 }
 
 type CreatedUser {
@@ -307,10 +322,44 @@ type CreatedUser {
   reset: PasswordResetLink!
 }
 
+type CurrencyChange {
+  currency: String!
+  recent: Decimal
+  earlier: Decimal
+}
+
 type CurrencySpend {
   currency: String!
   thisMonth: Decimal!
   lastMonth: Decimal!
+}
+
+type DashboardInfo {
+  shared: DashboardLayoutInfo
+  personal: DashboardLayoutInfo
+  canChangeShared: Boolean!
+}
+
+type DashboardLayoutInfo {
+  tiles: [DashboardTileInfo!]!
+  hidden: [String!]!
+  updatedAt: DateTime!
+}
+
+type DashboardTileInfo {
+  id: String!
+  x: Int!
+  y: Int!
+  w: Int!
+  h: Int!
+  pinned: Boolean!
+}
+
+type DashboardTrends {
+  spending: [CurrencyChange!]!
+  costPerDistance: [CurrencyChange!]!
+  consumption: ConsumptionChange
+  distance: ValueChange
 }
 
 type Expense {
@@ -812,6 +861,11 @@ type UserSessionInfo {
   current: Boolean!
 }
 
+type ValueChange {
+  recent: Decimal
+  earlier: Decimal
+}
+
 type Vehicle {
   id: UUID!
   ownerId: UUID!
@@ -835,6 +889,7 @@ type Vehicle {
   expenseCount: Int! @cost(weight: "10")
   recurring: [RecurringExpenseInfo!]! @cost(weight: "10")
   summary: VehicleSummary @cost(weight: "10")
+  dashboard: DashboardInfo @cost(weight: "10")
   parkedChangeCount: Int! @cost(weight: "10")
   logCountSince(from: LocalDate): LogCountSince! @cost(weight: "10")
 }
@@ -848,6 +903,11 @@ type VehicleChart {
   kind: ChartKind!
   range: ChartRange!
   stacked: Boolean!
+  trend: ChartTrend!
+  runningTotal: Boolean!
+  compareYearEarlier: Boolean!
+  secondMetric: ChartMetric
+  secondKind: ChartKind
   rangeFrom: LocalDate
   rangeTo: LocalDate
   isShared: Boolean!
@@ -875,6 +935,7 @@ type VehicleSummary {
   fillUpCount: Int!
   expenseCount: Int!
   spending: [CurrencySpend!]!
+  trends: DashboardTrends!
 }
 
 input AddExpenseInput {
@@ -961,6 +1022,11 @@ input ChartConfigInput {
   stacked: Boolean!
   from: LocalDate
   to: LocalDate
+  trend: ChartTrend
+  runningTotal: Boolean
+  compareYearEarlier: Boolean
+  secondMetric: ChartMetric
+  secondKind: ChartKind
 }
 
 input ConfirmImportInput {
@@ -975,6 +1041,15 @@ input CreateUserInput {
   email: String!
   displayName: String
   isAdmin: Boolean!
+}
+
+input DashboardTileInput {
+  id: String!
+  x: Int!
+  y: Int!
+  w: Int!
+  h: Int!
+  pinned: Boolean
 }
 
 input DeleteUserInput {
@@ -1081,6 +1156,13 @@ input SaveChartInput {
   title: String!
   config: ChartConfigInput!
   shared: Boolean!
+}
+
+input SaveDashboardLayoutInput {
+  vehicleId: UUID!
+  personal: Boolean!
+  tiles: [DashboardTileInput!]!
+  hidden: [String!]!
 }
 
 input SetAccessGrantInput {
@@ -1243,6 +1325,8 @@ enum ChartMetric {
   AVERAGE_PRICE_PER_UNIT
   FILL_UPS
   AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT
+  COST_PER_DISTANCE
+  FUEL_COST_PER_DISTANCE
 }
 
 enum ChartRange {
@@ -1256,12 +1340,27 @@ enum ChartRange {
   CUSTOM
 }
 
+enum ChartSeriesRole {
+  VALUE
+  MOVING_AVERAGE
+  LINEAR
+  YEAR_EARLIER
+}
+
+enum ChartTrend {
+  NONE
+  MOVING_AVERAGE
+  LINEAR
+}
+
 enum ChartUnit {
   CURRENCY
   VOLUME
   DISTANCE
   CONSUMPTION
   COUNT
+  COST_PER_DISTANCE
+  PRICE_PER_VOLUME
 }
 
 enum ColorMode {

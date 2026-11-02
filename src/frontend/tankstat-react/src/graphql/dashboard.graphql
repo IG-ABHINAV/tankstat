@@ -67,10 +67,20 @@ query VehicleCard($id: UUID!) {
   }
 }
 
-# A vehicle's dashboard: the key figures and the saved charts (the user's own and the shared ones). Each chart loads its own data.
+# A vehicle's dashboard: the key figures, how it is arranged (the vehicle's and the user's own; never asked for a list of vehicles: it is
+# resolved per vehicle) and the saved charts (the user's own and the shared ones). Each chart loads its own data.
 query VehicleDashboard($id: UUID!) {
   vehicle(id: $id) {
     id
+    dashboard {
+      canChangeShared
+      shared {
+        ...DashboardLayoutFields
+      }
+      personal {
+        ...DashboardLayoutFields
+      }
+    }
     summary {
       lastFillUpDate
       latestOdometer
@@ -89,6 +99,29 @@ query VehicleDashboard($id: UUID!) {
         month
         amount
       }
+      # The trend figures (the home cards never ask: worked out per vehicle from the same data).
+      trends {
+        spending {
+          currency
+          recent
+          earlier
+        }
+        costPerDistance {
+          currency
+          recent
+          earlier
+        }
+        consumption {
+          recent
+          earlier
+          recentFillUps
+          earlierFillUps
+        }
+        distance {
+          recent
+          earlier
+        }
+      }
     }
   }
   vehicleCharts(vehicleId: $id) {
@@ -101,6 +134,11 @@ query VehicleDashboard($id: UUID!) {
     rangeFrom
     rangeTo
     stacked
+    trend
+    runningTotal
+    compareYearEarlier
+    secondMetric
+    secondKind
     isShared
     canEdit
     createdBy {
@@ -111,12 +149,38 @@ query VehicleDashboard($id: UUID!) {
   }
 }
 
+fragment DashboardLayoutFields on DashboardLayoutInfo {
+  tiles {
+    id
+    x
+    y
+    w
+    h
+    pinned
+  }
+  hidden
+}
+
+mutation SaveDashboardLayout($input: SaveDashboardLayoutInput!) {
+  saveDashboardLayout(input: $input)
+}
+
+mutation ResetDashboardLayout($vehicleId: UUID!, $personal: Boolean!) {
+  resetDashboardLayout(vehicleId: $vehicleId, personal: $personal)
+}
+
 query ChartData($vehicleId: UUID!, $config: ChartConfigInput!) {
   vehicleChartData(vehicleId: $vehicleId, config: $config) {
     unit
     series {
       kind
       currency
+      # A trend or a year earlier is drawn as a line over the values of the same kind and currency.
+      role
+      slope
+      # A chart can have two measures: each series says which it belongs to and the unit it is written in.
+      metric
+      unit
       points {
         key
         value

@@ -82,6 +82,120 @@ test('draws a chart of costs in two currencies on a scale for each, with only th
   await expectSoundLayout(page)
 })
 
+test('draws a moving average and a year earlier as lines over the bars, on the bars\' scale, the bars still one width and evenly placed', async ({ page, isMobile }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // A refuelling every month of the last two years, so the year earlier has a value in every month too.
+  let odometer = 10_000
+  for (let back = 23; back >= 0; back--) {
+    odometer += 500
+    await graphql(page, 'mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }', {
+      i: { vehicleId: vehicle.id, date: monthStart(back), volume: 40, totalCost: 20_000 + (back % 5) * 2_000, currency: 'HUF', odometer, isFullTank: true },
+    })
+  }
+  await graphql(page, 'mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }', {
+    i: {
+      vehicleId: vehicle.id,
+      title: 'Costs and trend',
+      shared: false,
+      config: { metric: 'TOTAL_SPEND', grouping: 'MONTH', kind: 'BAR', range: 'LAST12_MONTHS', stacked: false, trend: 'MOVING_AVERAGE', compareYearEarlier: true },
+    },
+  })
+  await openVehicle(page, vehicle.id)
+
+  await expect.poll(async () => (await measureChart(page, 'Costs and trend')).bars.length).toBe(12)
+  const { bars } = await measureChart(page, 'Costs and trend')
+  const width = bars[0].width
+  for (const bar of bars) expect(Math.abs(bar.width - width)).toBeLessThanOrEqual(1)
+  const centres = bars.map((bar) => bar.x + bar.width / 2).sort((a, b) => a - b)
+  const step = centres[1] - centres[0]
+  for (let i = 1; i < centres.length; i++) expect(Math.abs(centres[i] - centres[i - 1] - step)).toBeLessThanOrEqual(2)
+
+  // The two lines: drawn (a path with a shape), dashed or dotted, and inside the chart's own box.
+  const figure = page.getByRole('img', { name: 'Costs and trend: chart', exact: true }).locator('xpath=ancestor::figure[1]')
+  // Polled: the lines animate in, and a line still morphing can reach past the chart's box.
+  const lines = () => figure.evaluate((root) =>
+    ['MOVING_AVERAGE', 'YEAR_EARLIER'].map((role) => {
+      const path = root.querySelector(`path[data-series$="|${role}"]`)
+      const box = path?.getBoundingClientRect()
+      const svg = path?.closest('svg')?.getBoundingClientRect()
+      return {
+        role,
+        drawn: Boolean(path?.getAttribute('d')),
+        dashed: path ? getComputedStyle(path).strokeDasharray !== 'none' : false,
+        inside: Boolean(box && svg && box.left >= svg.left - 1 && box.right <= svg.right + 1 && box.top >= svg.top - 1 && box.bottom <= svg.bottom + 1),
+      }
+    }),
+  )
+  await expect.poll(lines).toEqual([
+    { role: 'MOVING_AVERAGE', drawn: true, dashed: true, inside: true },
+    { role: 'YEAR_EARLIER', drawn: true, dashed: true, inside: true },
+  ])
+  await expectSoundLayout(page)
+
+  // The composed chart keeps its tooltip in the page, on screen inside a card (#32); a pointer that hovers is a desktop's.
+  if (!isMobile) {
+    await figure.locator('.MuiBarChart-element').nth(6).hover()
+    const tooltip = page.locator('.MuiChartsTooltip-root').first()
+    await expect(tooltip).toBeVisible()
+    const box = (await tooltip.boundingBox())!
+    const viewport = page.viewportSize()!
+    expect(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height).toBe(true)
+    await expect(tooltip).toContainText('moving average')
+  }
+})
+
+test('draws a second measure on a scale of its own: distance as bars on the left, consumption as a line on the right, both inside the chart', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // A full tank every month of the last year: distance per month, and a consumption between every two of them.
+  let odometer = 10_000
+  for (let back = 12; back >= 0; back--) {
+    odometer += 600 + (back % 3) * 100
+    await graphql(page, 'mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }', {
+      i: { vehicleId: vehicle.id, date: monthStart(back), volume: 40 + (back % 4), totalCost: 24_000, currency: 'HUF', odometer, isFullTank: true },
+    })
+  }
+  await graphql(page, 'mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }', {
+    i: {
+      vehicleId: vehicle.id,
+      title: 'Distance and consumption',
+      shared: false,
+      config: { metric: 'DISTANCE', grouping: 'MONTH', kind: 'BAR', range: 'LAST12_MONTHS', stacked: false, secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' },
+    },
+  })
+  await openVehicle(page, vehicle.id)
+
+  await expect.poll(async () => (await measureChart(page, 'Distance and consumption')).bars.length).toBeGreaterThanOrEqual(11)
+  const figure = page.getByRole('img', { name: 'Distance and consumption: chart', exact: true }).locator('xpath=ancestor::figure[1]')
+  const measure = () => figure.evaluate((root) => {
+    const svg = [...root.querySelectorAll('svg')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]
+    const box = svg.getBoundingClientRect()
+    const within = (element: Element | null) => {
+      const b = element?.getBoundingClientRect()
+      return Boolean(b && b.width > 0 && b.left >= box.left - 1 && b.right <= box.right + 1 && b.top >= box.top - 1 && b.bottom <= box.bottom + 1)
+    }
+    const labels = (side: string) => [...svg.querySelectorAll(`.MuiChartsAxis-${side} .MuiChartsAxis-tickLabel`)].map((t) => t.textContent ?? '')
+    return {
+      left: { labels: labels('left').length, inside: within(svg.querySelector('.MuiChartsAxis-left')) },
+      right: { labels: labels('right').length, inside: within(svg.querySelector('.MuiChartsAxis-right')) },
+      line: within(svg.querySelector('path[data-series^="AVERAGE_CONSUMPTION|"]')),
+    }
+  })
+  await expect.poll(measure).toEqual({ left: { labels: expect.any(Number), inside: true }, right: { labels: expect.any(Number), inside: true }, line: true }) // the line animates in
+  const drawn = await measure()
+  expect(drawn.left.labels).toBeGreaterThan(1)
+  expect(drawn.right.labels).toBeGreaterThan(1)
+  await expect(figure.getByText(/scale of its own/)).toHaveCount(0) // one scale per side, each read by its axis
+
+  await figure.getByRole('button', { name: 'Show the data as a table' }).click()
+  const table = page.getByRole('table', { name: 'Distance and consumption' })
+  await expect(table.getByRole('columnheader')).toHaveText(['Period', 'Total', 'Average consumption'])
+  await expect(table).toContainText('km')
+  await expect(table).toContainText('L/100 km')
+  await expectSoundLayout(page)
+})
+
 test('a saved chart of the fuel price before discounts adds the discount back, while the preset Fuel price stays on what was paid', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)

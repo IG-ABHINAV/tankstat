@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tankstat.Application.Access;
 using Tankstat.Application.Expenses;
@@ -8,6 +9,8 @@ using Tankstat.Domain.Charts;
 using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Vehicles;
+using Tankstat.Infrastructure.Persistence;
+using Tankstat.Infrastructure.Persistence.Repositories;
 using Tankstat.TestSupport;
 
 namespace Tankstat.Infrastructure.UnitTests;
@@ -71,7 +74,8 @@ public class StatsRepositoryTests
         var repo = db.Get<IVehicleChartRepository>();
         var alice = Guid.NewGuid();
         var bob = Guid.NewGuid();
-        var config = new ChartConfig(ChartMetric.TotalSpend, ChartGrouping.Quarter, ChartKind.Area, ChartRange.Custom, true, new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30));
+        var config = new ChartConfig(ChartMetric.TotalSpend, ChartGrouping.Quarter, ChartKind.Area, ChartRange.Custom, true, new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30),
+            ChartTrend.MovingAverage, RunningTotal: false, CompareYearEarlier: true, SecondMetric: ChartMetric.Distance, SecondKind: ChartKind.Line);
         var now = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
         await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Private", config, false, now), default);
         await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Shared", config with { Stacked = false, Kind = ChartKind.Bar }, true, now.AddMinutes(1)), default);
@@ -81,7 +85,7 @@ public class StatsRepositoryTests
 
         Assert.Equal(["Private", "Shared"], forAlice.Select(c => c.Title));
         Assert.Equal(["Shared"], forBob.Select(c => c.Title));
-        Assert.Equal(config, forAlice[0].Config); // the whole recipe, custom dates included
+        Assert.Equal(config, forAlice[0].Config); // the whole recipe, custom dates, trend options and the second measure included
         Assert.Equal(2, await repo.CountByUserAsync(car.Id, alice, default));
         Assert.Equal(0, await repo.CountByUserAsync(car.Id, bob, default));
 
@@ -99,5 +103,53 @@ public class StatsRepositoryTests
         await vehicles.UpdateAsync(trashed, default);
         await vehicles.PurgeAsync(OwnerScope.All, default);
         Assert.Empty(await repo.ListVisibleAsync(car.Id, alice, default)); // gone with the vehicle
+    }
+
+    [Fact]
+    public async Task DashboardLayouts_AreStoredPerVehicleAndPerUser_ReplacedByTheNextSave_AndRemovedWithTheVehicle()
+    {
+        await using var db = new TestDatabase();
+        var car = await AddVehicle(db);
+        var repo = db.Get<IDashboardLayoutRepository>();
+        var alice = Guid.NewGuid();
+        var chart = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero);
+        DashboardLayoutValues Values(params string[] charts) =>
+            new([new DashboardTile("thisMonth", 0, 0, 1, 3, Pinned: true), .. charts.Select((c, i) => new DashboardTile(c, 1, i * 8, 2, 8))], [$"chart:{chart}"]);
+
+        await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, Values("preset:monthlyCosts"), now), default);
+        await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, Values("preset:distance", $"chart:{chart}"), now.AddMinutes(1)), default); // replaces it
+        await repo.SavePersonalAsync(UserDashboardLayout.Create(alice, car.Id, Values(), now), default);
+        // Two first saves of one person's layout at once: the one that loses the insert becomes an update.
+        await Task.WhenAll(
+            repo.SavePersonalAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:a"), now), default),
+            repo.SavePersonalAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:b"), now), default));
+
+        var shared = (await repo.FindSharedAsync(car.Id, default))!;
+        Assert.Equal(["thisMonth", "preset:distance", $"chart:{chart}"], shared.Tiles.Select(t => t.Id));
+        Assert.Equal(new DashboardTile("thisMonth", 0, 0, 1, 3, true), shared.Tiles[0]); // the places and the pin come back as they were
+        Assert.Equal(now.AddMinutes(1), shared.UpdatedAt);
+        Assert.Single((await repo.FindPersonalAsync(alice, car.Id, default))!.Tiles);
+        Assert.Contains((await repo.FindPersonalAsync(Owner, car.Id, default))!.Tiles[1].Id, new[] { "preset:a", "preset:b" });
+
+        await repo.RemovePersonalAsync(alice, car.Id, default);
+        Assert.Null(await repo.FindPersonalAsync(alice, car.Id, default));
+        // A save that found the row and lost it to a reset meanwhile (another tab) inserts it instead of failing: the check says the row
+        // is there, and takes it away.
+        var factory = db.Get<IDbContextFactory<AppDbContext>>();
+        await factory.UpsertAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:c"), now), async context =>
+        {
+            await context.UserDashboardLayouts.ExecuteDeleteAsync();
+            return true;
+        }, default);
+        Assert.Equal("preset:c", (await repo.FindPersonalAsync(Owner, car.Id, default))!.Tiles[1].Id);
+
+        var vehicles = db.Get<IVehicleRepository>();
+        var trashed = (await vehicles.FindAsync(car.Id, default))!;
+        trashed.MarkDeleted(DateTimeOffset.UtcNow);
+        await vehicles.UpdateAsync(trashed, default);
+        await vehicles.PurgeAsync(OwnerScope.All, default);
+        Assert.Null(await repo.FindSharedAsync(car.Id, default)); // gone with the vehicle
+        Assert.Null(await repo.FindPersonalAsync(Owner, car.Id, default));
     }
 }

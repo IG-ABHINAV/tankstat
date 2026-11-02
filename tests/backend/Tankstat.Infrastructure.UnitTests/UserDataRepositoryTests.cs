@@ -248,6 +248,29 @@ public class UserDataRepositoryTests
     }
 
     [Fact]
+    public async Task Delete_TakesTheUsersOwnDashboardLayoutsAlong_NeverTheVehiclesOrAnotherUsers()
+    {
+        await using var db = new TestDatabase();
+        var alice = await AddUser(db, "alice@x.co");
+        var bob = await AddUser(db, "bob@x.co");
+        var (bobs, _) = await AddVehicleWithExpense(db, bob.Id, bob.Id);
+        var layout = new Tankstat.Domain.Charts.DashboardLayoutValues([new Tankstat.Domain.Charts.DashboardTile("odometer", 0, 0, 1, 3)], []);
+        await using (var seed = await Context(db))
+        {
+            seed.UserDashboardLayouts.Add(Tankstat.Domain.Charts.UserDashboardLayout.Create(alice.Id, bobs.Id, layout, Now));
+            seed.UserDashboardLayouts.Add(Tankstat.Domain.Charts.UserDashboardLayout.Create(bob.Id, bobs.Id, layout, Now));
+            seed.VehicleDashboardLayouts.Add(Tankstat.Domain.Charts.VehicleDashboardLayout.Create(bobs.Id, layout, Now));
+            await seed.SaveChangesAsync();
+        }
+
+        await db.Get<IUserDataRepository>().DeleteUserAsync(alice.Id, bob.Id, default); // even when her data moves to Bob: a layout is a setting
+
+        await using var ctx = await Context(db);
+        Assert.Equal([bob.Id], await ctx.UserDashboardLayouts.Select(l => l.UserId).ToListAsync());
+        Assert.Equal(1, await ctx.VehicleDashboardLayouts.CountAsync());
+    }
+
+    [Fact]
     public async Task Delete_RefusesTheLastActiveAdministrator_InsideTheTransaction()
     {
         await using var db = new TestDatabase();

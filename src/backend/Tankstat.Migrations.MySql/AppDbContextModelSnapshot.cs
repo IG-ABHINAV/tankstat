@@ -96,10 +96,40 @@ namespace Tankstat.Migrations.MySql
                     b.ToTable("ResourceGrants", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Charts.UserDashboardLayout", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Hidden")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("varchar(4000)");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("UserId", "VehicleId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("UserDashboardLayouts", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Charts.VehicleChart", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("char(36)");
+
+                    b.Property<bool>("CompareYearEarlier")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
@@ -136,6 +166,17 @@ namespace Tankstat.Migrations.MySql
                     b.Property<DateOnly?>("RangeTo")
                         .HasColumnType("date");
 
+                    b.Property<bool>("RunningTotal")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("SecondKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("SecondMetric")
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("tinyint(1)");
 
@@ -143,6 +184,13 @@ namespace Tankstat.Migrations.MySql
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("varchar(80)");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)")
+                        .HasDefaultValue("None");
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("char(36)");
@@ -152,6 +200,28 @@ namespace Tankstat.Migrations.MySql
                     b.HasIndex("VehicleId", "CreatedById");
 
                     b.ToTable("VehicleCharts", (string)null);
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Charts.VehicleDashboardLayout", b =>
+                {
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Hidden")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("varchar(4000)");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("VehicleId");
+
+                    b.ToTable("VehicleDashboardLayouts", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Images.StoredImage", b =>
@@ -1249,7 +1319,25 @@ namespace Tankstat.Migrations.MySql
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Charts.UserDashboardLayout", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Charts.VehicleChart", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Charts.VehicleDashboardLayout", b =>
                 {
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
                         .WithMany()

@@ -936,6 +936,12 @@
       "categoryNeedsExpenses": "Grouping by category is only available for expense costs.",
       "donutNeedsTotals": "A donut chart needs a metric that adds up (costs, volume, distance or fill-ups).",
       "stackNeedsTotalSpend": "Splitting into fuel and expenses is only available for total spend.",
+      "trendNeedsPeriods": "Trend lines, running totals and comparisons need a chart over time, not a donut or categories.",
+      "runningTotalNeedsTotals": "A running total needs a metric that adds up (costs, volume, distance or fill-ups).",
+      "trendWithRunningTotal": "A running total cannot have a trend line.",
+      "secondNeedsPeriods": "A second measure needs a chart over time, not a donut or categories.",
+      "secondSameMetric": "The second measure must be another one than the first.",
+      "secondNeedsKind": "Choose bars, a line or an area for the second measure.",
       "datesRequired": "Choose the first and the last day of the period.",
       "datesReversed": "The first day cannot be after the last day.",
       "rangeTooLong": "The period can be at most {{max}} years.",
@@ -945,6 +951,11 @@
       "needEditToShare": "You need edit access to the vehicle's logs to share a chart.",
       "notYours": "Only the creator can change this chart.",
       "notFound": "This chart does not exist."
+    },
+    "dashboard": {
+      "itemInvalid": "An entry of the dashboard is not valid.",
+      "tooMany": "A dashboard can list at most {{max}} of each.",
+      "needEditToChange": "You need edit access to the vehicle's logs to change its dashboard."
     },
     "photo": {
       "tooMany": "A log can have at most {{max}} photos.",
@@ -1052,7 +1063,8 @@
       "perDistance": "{{value}} {{volume}}/100 {{distance}}",
       "mpgUs": "{{value}} mpg (US)",
       "mpgImperial": "{{value}} mpg (imp.)"
-    }
+    },
+    "costPerDistance": "{{amount}} / 100 {{distance}}"
   },
   "refuelings": {
     "title": "Refuelings",
@@ -1271,12 +1283,14 @@
       "consumptionHint": "last 10 full fill-ups",
       "odometer": "Odometer",
       "lastFillUp": "Last fill-up",
+      "spendingTrend": "Spending, last 12 full months",
+      "costPerDistance": "Cost per distance, last 12 full months",
+      "consumptionTrend": "Consumption, latest fill-ups",
+      "lastFillUps": "last {{count}} fill-ups",
+      "distanceTrend": "Distance this year",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
-      "none": "–",
-      "title": "Key figures"
+      "none": "–"
     },
-    "overview": "Overview",
-    "yourCharts": "Charts",
     "addChart": "Add chart",
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",
@@ -1285,12 +1299,17 @@
     "showTable": "Show the data as a table",
     "hideTable": "Hide the table",
     "editChart": "Edit the chart {{title}}",
+    "copyChart": "Copy {{title}} as my chart",
+    "copyTitle": "Copy as my chart",
     "deleteChart": "Delete the chart {{title}}",
     "deleteTitle": "Delete this chart?",
     "deleteDescription": "“{{title}}” is removed for everyone it is shared with. The data itself is not affected.",
     "deleteConfirm": "Delete chart",
     "chartLabel": "{{title}}: chart",
     "ownScales": "Each currency is drawn on a scale of its own; the amounts are in the tooltip and the table.",
+    "trendSentence": "{{series}}: the trend line goes from {{from}} to {{to}}.",
+    "noTrend": "Not enough periods for a trend line yet.",
+    "nothingYearEarlier": "Nothing was logged in these periods a year earlier.",
     "table": {
       "period": "Period",
       "category": "Category",
@@ -1300,7 +1319,12 @@
       "total": "Total",
       "fuel": "Fuel",
       "expenses": "Expenses",
-      "value": "Value"
+      "value": "Value",
+      "role": {
+        "MOVING_AVERAGE": "moving average",
+        "LINEAR": "trend",
+        "YEAR_EARLIER": "a year earlier"
+      }
     },
     "uncategorised": "Uncategorised",
     "presets": {
@@ -1308,7 +1332,78 @@
       "consumption": "Consumption",
       "fuelPrice": "Fuel price",
       "categories": "Expenses by category",
-      "distance": "Distance per month"
+      "distance": "Distance per month",
+      "spendSoFar": "Spent so far this year",
+      "costPerDistance": "Cost per distance",
+      "consumptionTrend": "Consumption trend",
+      "distanceYearEarlier": "Distance, this year and last",
+      "distanceAndConsumption": "Distance and consumption"
+    },
+    "trend": {
+      "moreThanBefore": "{{change}} more than the 12 months before",
+      "lessThanBefore": "{{change}} less than the 12 months before",
+      "sameAsBefore": "the same as the 12 months before",
+      "moreFuel": "uses {{change}} more fuel than the {{count}} fill-ups before",
+      "lessFuel": "uses {{change}} less fuel than the {{count}} fill-ups before",
+      "sameFuel": "uses as much fuel as the {{count}} fill-ups before",
+      "moreThanLastYear": "{{change}} more than last year to this day",
+      "lessThanLastYear": "{{change}} less than last year to this day",
+      "sameAsLastYear": "the same as last year to this day",
+      "nothingBefore": "nothing to compare with yet",
+      "tooFew": "needs 3 earlier fill-ups to compare with",
+      "nothingDriven": "nothing driven in the last 12 full months"
+    },
+    "customize": {
+      "button": "Customize",
+      "whose": "Whose dashboard",
+      "everyone": "Everyone who sees this vehicle",
+      "mine": "Just me",
+      "preset": "Start from a preset",
+      "choose": "Choose one",
+      "started": "Started from {{name}}.",
+      "privateHint": "Charts only you can see are not on everyone's dashboard; share one to add it there.",
+      "resetShared": "Back to Standard",
+      "resetPersonal": "Use the vehicle's dashboard",
+      "save": "Save dashboard",
+      "cancel": "Cancel",
+      "needsServer": "Changing the dashboard needs a connection to the server.",
+      "yours": "You see your own arrangement of this dashboard.",
+      "noCharts": "Nothing on this dashboard. Customize it to add tiles."
+    },
+    "edit": {
+      "hint": "Drag a tile by its handle, resize it by its corner, or use its menu (which also works with a keyboard).",
+      "statusName": "Last change to the arrangement",
+      "options": "Options for {{name}}",
+      "earlier": "Move earlier",
+      "later": "Move later",
+      "wider": "Wider",
+      "narrower": "Narrower",
+      "taller": "Taller",
+      "shorter": "Shorter",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "remove": "Remove",
+      "pinned": "Pinned",
+      "add": "Add widget",
+      "addHint": "Click one to add it at the bottom, or drag it onto the dashboard.",
+      "nothingToAdd": "Everything is on the dashboard.",
+      "figure": "Key figure",
+      "ready": "Ready-made chart",
+      "savedChart": "Your chart",
+      "sharedChart": "Shared chart",
+      "moved": "{{name}} moved to position {{position}} of {{total}}.",
+      "resized": "{{name}} is now {{w}} wide and {{h}} tall.",
+      "pinnedSaid": "{{name}} pinned.",
+      "unpinnedSaid": "{{name}} unpinned.",
+      "removed": "{{name}} taken off.",
+      "added": "{{name}} added.",
+      "dropped": "{{name}} placed."
+    },
+    "sectionLabel": "Dashboard",
+    "layoutPresets": {
+      "standard": "Standard",
+      "spending": "Spending",
+      "usage": "Usage"
     }
   },
   "charts": {
@@ -1326,10 +1421,19 @@
       "from": "From",
       "to": "To",
       "stacked": "Split into fuel and expenses",
+      "trend": "Trend line",
+      "runningTotal": "Running total",
+      "compareYearEarlier": "Compare with a year earlier",
+      "secondMetric": "Second measure",
+      "secondKind": "Second measure drawn as",
       "shared": "Share with everyone who can see this vehicle"
     },
     "hints": {
       "stacked": "Shows fuel and expenses on top of each other.",
+      "trend": "A line over the values that shows where they are heading.",
+      "runningTotal": "Each period shows the sum so far.",
+      "compareYearEarlier": "Adds the same periods a year earlier as a fainter line.",
+      "secondMetric": "Drawn in the same chart on a scale of its own; the trend options are for the first measure.",
       "shared": "Others can see this chart but only you can change it.",
       "donut": "Donuts need a total (costs, volume, distance, fill-ups).",
       "category": "Grouping by category is only for expense costs."
@@ -1343,6 +1447,8 @@
       "AVERAGE_CONSUMPTION": "Average consumption",
       "AVERAGE_PRICE_PER_UNIT": "Average fuel price",
       "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT": "Average fuel price before discounts",
+      "COST_PER_DISTANCE": "Cost per distance (fuel and expenses)",
+      "FUEL_COST_PER_DISTANCE": "Fuel cost per distance",
       "FILL_UPS": "Number of fill-ups"
     },
     "groupings": {
@@ -1366,7 +1472,13 @@
       "LAST_YEAR": "Last year",
       "ALL": "All time",
       "CUSTOM": "Custom (from – to)"
-    }
+    },
+    "trends": {
+      "NONE": "None",
+      "MOVING_AVERAGE": "Moving average (3 periods)",
+      "LINEAR": "Linear trend"
+    },
+    "secondNone": "None"
   },
   "photos": {
     "waitUpload": "Saving waits until the photos are uploaded.",

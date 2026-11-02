@@ -99,10 +99,40 @@ namespace Tankstat.Migrations.SqlServer
                     b.ToTable("ResourceGrants", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Charts.UserDashboardLayout", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Hidden")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("UserId", "VehicleId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("UserDashboardLayouts", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Charts.VehicleChart", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("CompareYearEarlier")
+                        .HasColumnType("bit");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -139,6 +169,17 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<DateOnly?>("RangeTo")
                         .HasColumnType("date");
 
+                    b.Property<bool>("RunningTotal")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SecondKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SecondMetric")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("bit");
 
@@ -146,6 +187,13 @@ namespace Tankstat.Migrations.SqlServer
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("None");
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("uniqueidentifier");
@@ -155,6 +203,28 @@ namespace Tankstat.Migrations.SqlServer
                     b.HasIndex("VehicleId", "CreatedById");
 
                     b.ToTable("VehicleCharts", (string)null);
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Charts.VehicleDashboardLayout", b =>
+                {
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Hidden")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("Tiles")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("VehicleId");
+
+                    b.ToTable("VehicleDashboardLayouts", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Images.StoredImage", b =>
@@ -1256,7 +1326,25 @@ namespace Tankstat.Migrations.SqlServer
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Charts.UserDashboardLayout", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Charts.VehicleChart", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Charts.VehicleDashboardLayout", b =>
                 {
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
                         .WithMany()

@@ -92,6 +92,7 @@ public static class DependencyInjection
         services.AddScoped<RecurringExpenseService>();
         services.AddScoped<StatsService>();
         services.AddScoped<ChartService>();
+        services.AddScoped<DashboardService>();
         services.AddScoped<UiSettingsService>();
         services.AddScoped<VehicleOrderService>();
         services.AddScoped<OfflineSettingsService>();

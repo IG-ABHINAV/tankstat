@@ -448,7 +448,7 @@ describe('answering offline, the device\'s own data', () => {
     await enqueue({ id: 's1', entity: 'recurring', action: 'add', vehicleId: 'golf', targetId: 's1', input: { id: 's1', title: 'Oil' } })
 
     expect(await answerLocally(rows, 'RecurringExpenses', { vehicleId: 'golf' })).toMatchObject({ vehicle: { __typename: 'Vehicle', id: 'golf', recurring: [{ id: 's1', title: 'Oil' }] } })
-    expect(await answerLocally(rows, 'VehicleDashboard', { id: 'golf' })).toEqual({ vehicle: { __typename: 'Vehicle', id: 'golf', summary: null }, vehicleCharts: [] })
+    expect(await answerLocally(rows, 'VehicleDashboard', { id: 'golf' })).toEqual({ vehicle: { __typename: 'Vehicle', id: 'golf', summary: null, dashboard: null }, vehicleCharts: [] })
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'golf' })).toEqual({ vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } })
     expect(await answerLocally(rows, 'VehicleDashboard', { id: 'v1' })).toBeUndefined()
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'v1' })).toBeUndefined()

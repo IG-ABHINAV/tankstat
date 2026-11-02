@@ -19,6 +19,11 @@ public sealed class VehicleChart
     public ChartKind Kind { get; private set; }
     public ChartRange Range { get; private set; }
     public bool Stacked { get; private set; }
+    public ChartTrend Trend { get; private set; }
+    public bool RunningTotal { get; private set; }
+    public bool CompareYearEarlier { get; private set; }
+    public ChartMetric? SecondMetric { get; private set; }
+    public ChartKind? SecondKind { get; private set; }
 
     /// <summary>The first and last day when <see cref="Range"/> is custom, otherwise null.</summary>
     public DateOnly? RangeFrom { get; private set; }
@@ -28,7 +33,7 @@ public sealed class VehicleChart
     public bool IsShared { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
-    public ChartConfig Config => new(Metric, Grouping, Kind, Range, Stacked, RangeFrom, RangeTo);
+    public ChartConfig Config => new(Metric, Grouping, Kind, Range, Stacked, RangeFrom, RangeTo, Trend, RunningTotal, CompareYearEarlier, SecondMetric, SecondKind);
 
     public static VehicleChart Create(Guid vehicleId, Guid createdById, string title, ChartConfig config, bool shared, DateTimeOffset now)
     {
@@ -55,6 +60,11 @@ public sealed class VehicleChart
         Stacked = config.Stacked;
         RangeFrom = config.From;
         RangeTo = config.To;
+        Trend = config.Trend;
+        RunningTotal = config.RunningTotal;
+        CompareYearEarlier = config.CompareYearEarlier;
+        SecondMetric = config.SecondMetric;
+        SecondKind = config.SecondKind;
         IsShared = shared;
     }
 }

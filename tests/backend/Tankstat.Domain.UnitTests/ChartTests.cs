@@ -6,7 +6,9 @@ namespace Tankstat.Domain.UnitTests;
 public class ChartTests
 {
     private static ChartConfig Config(ChartMetric metric = ChartMetric.TotalSpend, ChartGrouping grouping = ChartGrouping.Month, ChartKind kind = ChartKind.Bar,
-        ChartRange range = ChartRange.Last12Months, bool stacked = false, DateOnly? from = null, DateOnly? to = null) => new(metric, grouping, kind, range, stacked, from, to);
+        ChartRange range = ChartRange.Last12Months, bool stacked = false, DateOnly? from = null, DateOnly? to = null, ChartTrend trend = ChartTrend.None,
+        bool runningTotal = false, bool compare = false, ChartMetric? second = null, ChartKind? secondKind = null) =>
+        new(metric, grouping, kind, range, stacked, from, to, trend, runningTotal, compare, second, secondKind);
 
     private static string Key(Action action) => Assert.Throws<DomainException>(action).Key;
 
@@ -17,6 +19,52 @@ public class ChartTests
         Config(ChartMetric.ExpenseCost, ChartGrouping.Category, ChartKind.Donut).Validated();
         Config(ChartMetric.TotalSpend, stacked: true).Validated();
         Config(ChartMetric.AverageConsumption, kind: ChartKind.Line).Validated();
+        Config(ChartMetric.AverageConsumption, kind: ChartKind.Line, trend: ChartTrend.Linear).Validated();
+        Config(ChartMetric.TotalSpend, stacked: true, trend: ChartTrend.MovingAverage, compare: true).Validated();
+        Config(ChartMetric.Distance, runningTotal: true, compare: true).Validated();
+        Config(ChartMetric.CostPerDistance, kind: ChartKind.Line, trend: ChartTrend.MovingAverage).Validated();
+    }
+
+    [Theory]
+    [InlineData(ChartGrouping.Category, ChartKind.Bar)]
+    [InlineData(ChartGrouping.Month, ChartKind.Donut)]
+    public void TrendsRunningTotalsAndComparisons_NeedAChartOverTime(ChartGrouping grouping, ChartKind kind)
+    {
+        Assert.Equal("chart.trendNeedsPeriods", Key(() => Config(ChartMetric.ExpenseCost, grouping, kind, trend: ChartTrend.Linear).Validated()));
+        Assert.Equal("chart.trendNeedsPeriods", Key(() => Config(ChartMetric.ExpenseCost, grouping, kind, runningTotal: true).Validated()));
+        Assert.Equal("chart.trendNeedsPeriods", Key(() => Config(ChartMetric.ExpenseCost, grouping, kind, compare: true).Validated()));
+    }
+
+    [Theory]
+    [InlineData(ChartMetric.AverageConsumption)]
+    [InlineData(ChartMetric.AveragePricePerUnit)]
+    [InlineData(ChartMetric.CostPerDistance)]
+    public void ARunningTotal_NeedsAMetricThatAddsUp(ChartMetric metric) =>
+        Assert.Equal("chart.runningTotalNeedsTotals", Key(() => Config(metric, kind: ChartKind.Line, runningTotal: true).Validated()));
+
+    [Fact]
+    public void ASecondMeasure_IsAnotherMetric_OverTime_DrawnAsBarsALineOrAnArea()
+    {
+        Config(ChartMetric.Distance, second: ChartMetric.AverageConsumption, secondKind: ChartKind.Line).Validated();
+        Config(ChartMetric.TotalSpend, stacked: true, trend: ChartTrend.Linear, second: ChartMetric.Distance, secondKind: ChartKind.Bar).Validated();
+
+        Assert.Equal("chart.secondNeedsPeriods", Key(() => Config(ChartMetric.ExpenseCost, ChartGrouping.Category, second: ChartMetric.Distance, secondKind: ChartKind.Line).Validated()));
+        Assert.Equal("chart.secondNeedsPeriods", Key(() => Config(kind: ChartKind.Donut, second: ChartMetric.Distance, secondKind: ChartKind.Line).Validated()));
+        Assert.Equal("chart.secondSameMetric", Key(() => Config(ChartMetric.Distance, second: ChartMetric.Distance, secondKind: ChartKind.Line).Validated()));
+        Assert.Equal("chart.secondNeedsKind", Key(() => Config(second: ChartMetric.Distance).Validated()));
+        Assert.Equal("chart.secondNeedsKind", Key(() => Config(second: ChartMetric.Distance, secondKind: ChartKind.Donut).Validated()));
+        Assert.Equal("chart.invalid", Key(() => Config(second: (ChartMetric)99, secondKind: ChartKind.Line).Validated()));
+    }
+
+    [Fact]
+    public void ASecondKind_WithoutASecondMeasure_IsDropped() =>
+        Assert.Null(Config(secondKind: ChartKind.Line).Validated().SecondKind);
+
+    [Fact]
+    public void ARunningTotal_HasNoTrendLine_AndAnUnknownTrendIsInvalid()
+    {
+        Assert.Equal("chart.trendWithRunningTotal", Key(() => Config(runningTotal: true, trend: ChartTrend.Linear).Validated()));
+        Assert.Equal("chart.invalid", Key(() => Config(trend: (ChartTrend)9).Validated()));
     }
 
     [Theory]
@@ -29,6 +77,8 @@ public class ChartTests
     [InlineData(ChartMetric.AverageConsumption)]
     [InlineData(ChartMetric.AveragePricePerUnit)]
     [InlineData(ChartMetric.AveragePricePerUnitBeforeDiscount)]
+    [InlineData(ChartMetric.CostPerDistance)]
+    [InlineData(ChartMetric.FuelCostPerDistance)]
     public void ADonut_NeedsAMetricThatAddsUp(ChartMetric metric) =>
         Assert.Equal("chart.donutNeedsTotals", Key(() => Config(metric, kind: ChartKind.Donut).Validated()));
 
@@ -62,7 +112,8 @@ public class ChartTests
     [Fact]
     public void ASavedChart_KeepsItsRecipe_AndTrimsTheTitle()
     {
-        var config = Config(range: ChartRange.Custom, from: new DateOnly(2026, 1, 1), to: new DateOnly(2026, 3, 31), stacked: true);
+        var config = Config(range: ChartRange.Custom, from: new DateOnly(2026, 1, 1), to: new DateOnly(2026, 3, 31), stacked: true, trend: ChartTrend.MovingAverage, compare: true,
+            second: ChartMetric.Distance, secondKind: ChartKind.Line);
 
         var chart = VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), "  Spending  ", config, shared: true, DateTimeOffset.UtcNow);
 
@@ -87,8 +138,9 @@ public class ChartTests
     {
         var chart = VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), "A", Config(), false, DateTimeOffset.UtcNow);
 
-        chart.Update("B", Config(ChartMetric.FuelVolume, kind: ChartKind.Line), shared: true);
+        chart.Update("B", Config(ChartMetric.FuelVolume, kind: ChartKind.Line, runningTotal: true), shared: true);
 
         Assert.Equal(("B", ChartMetric.FuelVolume, ChartKind.Line, true), (chart.Title, chart.Metric, chart.Kind, chart.IsShared));
+        Assert.Equal((ChartTrend.None, true, false), (chart.Trend, chart.RunningTotal, chart.CompareYearEarlier));
     }
 }

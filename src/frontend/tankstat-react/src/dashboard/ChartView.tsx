@@ -6,18 +6,27 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
-import { BarChart } from '@mui/x-charts/BarChart'
-import { LineChart } from '@mui/x-charts/LineChart'
+import { BarPlot } from '@mui/x-charts/BarChart'
+import { ChartsAxis } from '@mui/x-charts/ChartsAxis'
+import { ChartsAxisHighlight } from '@mui/x-charts/ChartsAxisHighlight'
+import { ChartsClipPath } from '@mui/x-charts/ChartsClipPath'
+import { ChartsDataProvider } from '@mui/x-charts/ChartsDataProvider'
+import { ChartsGrid } from '@mui/x-charts/ChartsGrid'
+import { ChartsLegend } from '@mui/x-charts/ChartsLegend'
+import { ChartsSurface } from '@mui/x-charts/ChartsSurface'
+import { ChartsTooltip } from '@mui/x-charts/ChartsTooltip'
+import { ChartsWrapper } from '@mui/x-charts/ChartsWrapper'
+import { AreaPlot, LineChart, LinePlot, MarkPlot } from '@mui/x-charts/LineChart'
 import { PieChart } from '@mui/x-charts/PieChart'
 import { useReducedMotion } from 'motion/react'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SurfaceTable } from '../components/SurfaceTable.tsx'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
 import { validLocale } from '../i18n/locale.ts'
 import { standaloneLink } from '../theme/components.ts'
-import { barPlaces, chartAxes, labelStep, PALETTE, periodLabel, seriesId, shortPeriodLabels, stackOf, type ChartData, type ChartRecipe, type Series } from './chartFormat.ts'
+import { barPlaces, chartAxes, isValue, labelStep, PALETTE, perCurrency, periodLabel, seriesId, shortPeriodLabels, stackOf, type ChartData, type ChartRecipe, type Series } from './chartFormat.ts'
 import { BarLayoutContext, type BarLayout } from './barLayout.ts'
 import { PlacedBar } from './PlacedBar.tsx'
 
@@ -55,16 +64,34 @@ function useWidth(): [RefObject<HTMLElement | null>, number] {
   return [ref, width]
 }
 
+/** How a line drawn from the values looks: a trend dashed, a year earlier dotted and fainter (never told apart by colour alone). */
+const OVERLAY_LOOK = { trend: { strokeDasharray: '7 5' }, earlier: { strokeDasharray: '2 4', strokeOpacity: 0.75 } } as const
+
 /**
  * A chart of server-calculated data. The picture is for sighted users (hidden from assistive technology); the same numbers are always
- * available as a table next to it, which is what a screen reader reads.
+ * available as a table next to it, which is what a screen reader reads. A trend or a year earlier is always a line over the values, in
+ * its series' colour and on its scale, dashed or dotted; a bar chart is composed from MUI X's parts so its bars and those lines share
+ * the axes.
  */
-export function ChartView({ data, recipe, units, title, height = 240 }: { data: ChartData; recipe: Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'>; units: Units; title: string; height?: number }) {
+export function ChartView({
+  data,
+  recipe,
+  units,
+  title,
+  height = 240,
+}: {
+  data: ChartData
+  recipe: Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> & Partial<Pick<ChartRecipe, 'trend' | 'compareYearEarlier' | 'secondKind'>>
+  units: Units
+  title: string
+  height?: number
+}) {
   const { t, i18n } = useTranslation()
   const format = useFormat()
   const reduce = useReducedMotion() ?? false
   const [table, setTable] = useState(false)
   const [figure, figureWidth] = useWidth()
+  const clipId = useId()
 
   if (noData(data)) {
     return (
@@ -75,41 +102,76 @@ export function ChartView({ data, recipe, units, title, height = 240 }: { data: 
   }
 
   const keyLabel = (key: string) => (key === '' ? t('dashboard.uncategorised') : periodLabel(key, validLocale(i18n.language, i18n.resolvedLanguage)))
-  const name = (s: Series) => `${t(`dashboard.series.${s.kind as 'total' | 'fuel' | 'expenses'}`, { defaultValue: t('dashboard.series.value') })}${s.currency ? ` · ${s.currency}` : ''}`
+  // The first measure's series are named by their kind ("Fuel · HUF"); a second measure's by its metric ("Distance driven"). The recipe
+  // says which is first: the first measure may have no series at all in the range.
+  const firstMetric = recipe.metric
+  const baseName = (s: Series) =>
+    `${s.metric !== firstMetric ? t(`charts.metrics.${s.metric}`) : t(`dashboard.series.${s.kind as 'total' | 'fuel' | 'expenses'}`, { defaultValue: t('dashboard.series.value') })}${s.currency ? ` · ${s.currency}` : ''}`
+  const name = (s: Series) => (isValue(s) ? baseName(s) : `${baseName(s)} · ${t(`dashboard.series.role.${s.role as 'MOVING_AVERAGE' | 'LINEAR' | 'YEAR_EARLIER'}`)}`)
+  // Every series is written in its own measure's unit: a chart of distance and consumption has both.
   const show = (value: number | null | undefined, s: Series) => {
-    // Nothing spent in a currency in a period is no amount: a dash, as a missing value, not "HUF 0" beside the real ones.
-    if (value == null || (data.unit === 'CURRENCY' && value === 0)) return t('common.none')
-    switch (data.unit) {
+    // Nothing spent in a currency in a period is no amount: a dash, as a missing value, not "HUF 0" beside the real ones; a trend line at 0 is a 0.
+    if (value == null || (perCurrency(s.unit) && value === 0 && s.role !== 'LINEAR' && s.role !== 'MOVING_AVERAGE')) return t('common.none')
+    switch (s.unit) {
       case 'CURRENCY': return format.money(value, s.currency ?? '')
+      case 'COST_PER_DISTANCE': return format.costPerDistance(value, s.currency ?? '', units.distance)
+      case 'PRICE_PER_VOLUME': return format.pricePerUnit(value, s.currency ?? '', units.volume)
       case 'VOLUME': return format.volume(value, units.volume)
       case 'DISTANCE': return format.distance(value, units.distance)
       case 'CONSUMPTION': return format.consumption(value, units)
       default: return format.number(value)
     }
   }
-  const axis = (value: number) => (data.unit === 'CURRENCY' || data.unit === 'COUNT' || data.unit === 'DISTANCE' ? format.compact(value) : format.number(value, { maximumFractionDigits: 1 }))
+  const axis = (value: number, unit: Series['unit']) => (unit === 'CURRENCY' || unit === 'COUNT' || unit === 'DISTANCE' ? format.compact(value) : format.number(value, { maximumFractionDigits: 1 }))
 
   const keys = [...new Set(data.series.flatMap((s) => s.points.map((p) => p.key)))]
   const rows: Record<string, string | number | null>[] = keys.map((key) => ({ key, label: keyLabel(key), ...Object.fromEntries(data.series.map((s) => [seriesId(s), s.points.find((p) => p.key === key)?.value ?? null])) }))
   const colour = (i: number) => PALETTE[i % PALETTE.length]
-  const several = data.series.length > 1
-  // Every currency of a chart of costs on a scale of its own (#159): one axis per currency, shown (in its currency) only when there is one.
-  const scales = chartAxes(data)
+  const values = data.series.filter(isValue)
+  // A year earlier with nothing logged in it is not drawn (a note says so, below); the table still lists it.
+  const overlays = data.series.filter((s) => !isValue(s) && (s.role !== 'YEAR_EARLIER' || s.points.some((p) => p.value)))
+  const several = values.length + overlays.length > 1
+  // How a series is drawn: the first measure as the chart's kind, a second one as its own; the lines drawn from the values always as lines.
+  const kindOf = (s: Series) => (s.metric === firstMetric ? recipe.kind : (recipe.secondKind ?? 'LINE'))
+  const hasBars = values.some((s) => kindOf(s) === 'BAR')
+  // Every currency of a chart of costs on a scale of its own (#159), and a second measure's units on the right: one axis per unit (and
+  // currency), each side's shown only when it has one.
+  const scales = chartAxes(data, firstMetric)
+  // A line drawn from a series has that series' colour; one drawn from a stack's total (no series of its own) the next colours.
+  const colours = new Map<Series, string>(values.map((s, i) => [s, colour(i)]))
+  const totals = new Map<string, string>()
+  for (const s of overlays) {
+    const base = values.find((v) => v.metric === s.metric && v.kind === s.kind && v.currency === s.currency)
+    const key = `${s.metric}|${s.kind}|${s.currency ?? ''}`
+    if (!base && !totals.has(key)) totals.set(key, colour(values.length + totals.size))
+    colours.set(s, base ? colours.get(base)! : totals.get(key)!)
+  }
+  const overlayLook = Object.fromEntries(overlays.map((s) => [`& path[data-series="${seriesId(s)}"]`, s.role === 'YEAR_EARLIER' ? OVERLAY_LOOK.earlier : OVERLAY_LOOK.trend]))
+  const stackedHere = (s: Series) => recipe.stacked && s.metric === firstMetric
+  // What every series tells MUI, whatever it is drawn as: its id, name, colour, scale and how its values are written.
+  const base = (s: Series) => ({ id: seriesId(s), dataKey: seriesId(s), label: name(s), color: colours.get(s), yAxisId: scales.axisOf(s), valueFormatter: (value: number | null) => show(value, s) })
+  const valueLine = (s: Series, area: boolean) => ({ ...base(s), curve: 'monotoneX' as const, showMark: rows.length < 25, connectNulls: true, area, stack: area && stackedHere(s) ? stackOf(s) : undefined })
+  const valueBar = (s: Series) => ({ ...base(s), stack: stackedHere(s) ? stackOf(s) : undefined })
+  const overlayLines = overlays.map((s) => ({ ...base(s), curve: s.role === 'LINEAR' ? ('linear' as const) : ('monotoneX' as const), showMark: false, connectNulls: true }))
   const axisWidth = (currency: string | null) => (currency ? 64 : 48)
-  const yAxis = scales.axes.map((a) => ({
+  // The shown axis first: MUI's grid lines follow the first value axis, and a chart whose only readable scale is on the right still gets them.
+  const yAxis = [...scales.axes].sort((a, b) => Number(b.shown) - Number(a.shown)).map((a) => ({
     id: a.id,
-    position: scales.shown ? ('left' as const) : ('none' as const),
+    position: a.shown ? a.side : ('none' as const),
     // Room for an amount with its currency ("HUF 500", "40 E Ft"): MUI's 'auto' measured too little and cut it.
     width: axisWidth(a.currency),
-    valueFormatter: (value: number) => (a.currency ? format.compactMoney(value, a.currency) : axis(value)),
+    valueFormatter: (value: number) => (a.currency ? format.compactMoney(value, a.currency) : axis(value, a.unit)),
     // The highest value of each currency reaches the top, whatever the size of its numbers; from 0, as a bar is, so a line of prices that
     // barely moves does not look like a swing from nothing to everything with no axis to read it by.
-    ...(scales.shown ? {} : { domainLimit: 'strict' as const, min: 0 }),
+    ...(a.shown ? {} : { domainLimit: 'strict' as const, min: 0 }),
   }))
-  const room = recipe.kind === 'BAR' ? LABEL_ROOM.bars : LABEL_ROOM.points
+  const shownOn = (side: 'left' | 'right') => scales.axes.find((a) => a.side === side && a.shown)
+  const [leftAxis, rightAxis] = [shownOn('left'), shownOn('right')]
+  const anyAxis = Boolean(leftAxis || rightAxis)
+  const room = hasBars ? LABEL_ROOM.bars : LABEL_ROOM.points
   // A period is named short along the bottom, every `step`-th one so the named ones fit (more on a phone), its year on every one that
   // starts a year among them; in full in the tooltip. A category is named as it is ("Uncategorised" for none).
-  const step = labelStep(keys.length, figureWidth - room * 2 - (scales.shown ? axisWidth(scales.axes[0].currency) : 0))
+  const step = labelStep(keys.length, figureWidth - room * 2 - (leftAxis ? axisWidth(leftAxis.currency) : 0) - (rightAxis ? axisWidth(rightAxis.currency) : 0))
   const short = shortPeriodLabels(keys, validLocale(i18n.language, i18n.resolvedLanguage), recipe.grouping, step)
   const byPeriod = recipe.grouping === 'MONTH' || recipe.grouping === 'QUARTER'
   const period = (key: string, context: { location: string }) => (context.location === 'tick' && byPeriod ? (short.get(key) ?? '') : keyLabel(key))
@@ -122,33 +184,20 @@ export function ChartView({ data, recipe, units, title, height = 240 }: { data: 
     height,
     // Room for half a period's label beside the edge: MUI cuts a label wider than twice its distance from the edge (the first and the
     // last month), and without a value axis the first one sits at the very edge.
-    margin: { top: 8, right: room, bottom: 0, left: scales.shown ? 0 : room },
+    margin: { top: 8, right: rightAxis ? 0 : room, bottom: 0, left: leftAxis ? 0 : room },
     yAxis,
-    grid: { horizontal: scales.shown },
+    grid: { horizontal: anyAxis },
     hideLegend: !several,
     skipAnimation: reduce,
     disableKeyboardNavigation: true,
     // By axis (the whole period), never by item: a bar is drawn where `PlacedBar` puts it, but MUI finds the one under the pointer at its own place.
     slotProps: { tooltip: { ...tooltipInPage().tooltip, trigger: 'axis' as const } },
   }
-  const lines = (area: boolean) =>
-    data.series.map((s, i) => ({
-      id: seriesId(s),
-      dataKey: seriesId(s),
-      label: name(s),
-      color: colour(i),
-      curve: 'monotoneX' as const,
-      showMark: rows.length < 25,
-      connectNulls: true,
-      area,
-      stack: area && recipe.stacked ? stackOf(s) : undefined,
-      yAxisId: scales.axisOf(s),
-      valueFormatter: (value: number | null) => show(value, s),
-    }))
-  // The bars of a period: only those of the currencies (or series) it has, centred in it (#159). Worked out for a bar chart only.
+  // The bars of a period: only those of the currencies (or series) it has, centred in it (#159). Worked out for a chart with bars only.
+  const bars = values.filter((s) => kindOf(s) === 'BAR')
   const barLayout = (): BarLayout => {
-    const places = barPlaces(data, keys, recipe.stacked)
-    const byId = new Map(data.series.map((s) => [seriesId(s), s]))
+    const places = barPlaces({ series: bars }, keys, recipe.stacked, firstMetric)
+    const byId = new Map(bars.map((s) => [seriesId(s), s]))
     return {
       periodOf: (index) => keys[index],
       at: (id, index) => (byId.has(id) ? places.at(byId.get(id)!, index) : null),
@@ -186,42 +235,74 @@ export function ChartView({ data, recipe, units, title, height = 240 }: { data: 
           </Box>
         ))}
       </Stack>
-    ) : recipe.kind === 'LINE' ? (
-      <LineChart {...cartesian} xAxis={[{ scaleType: 'point', ...periods }]} series={lines(false)} />
-    ) : recipe.kind === 'AREA' ? (
-      <LineChart {...cartesian} xAxis={[{ scaleType: 'point', ...periods }]} series={lines(true)} />
+    ) : !hasBars ? (
+      <LineChart {...cartesian} sx={overlayLook} xAxis={[{ scaleType: 'point', ...periods }]} series={[...values.map((s) => valueLine(s, kindOf(s) === 'AREA')), ...overlayLines]} />
     ) : (
-      // The bars draw themselves (`PlacedBar`), rounded corners included: MUI's `borderRadius` would clip them where MUI placed them.
+      // Composed as MUI's BarChart is: the bars, and any line or area (a second measure, a trend, a year earlier) over them on the same
+      // periods. The bars draw themselves (`PlacedBar`), rounded corners included: MUI's `borderRadius` would clip them where MUI placed them.
       <BarLayoutContext.Provider value={barLayout()}>
-        <BarChart
-          {...cartesian}
-          slots={{ bar: PlacedBar }}
-          xAxis={[{ scaleType: 'band', ...periods, barGapRatio: BAR_GAP_RATIO }]}
-          series={data.series.map((s, i) => ({
-            id: seriesId(s),
-            dataKey: seriesId(s),
-            label: name(s),
-            color: colour(i),
-            stack: recipe.stacked ? stackOf(s) : undefined,
-            yAxisId: scales.axisOf(s),
-            valueFormatter: (value: number | null) => show(value, s),
-          }))}
-        />
+        <ChartsDataProvider
+          dataset={cartesian.dataset}
+          height={height}
+          margin={cartesian.margin}
+          skipAnimation={reduce}
+          disableKeyboardNavigation
+          xAxis={[{ id: 'periods', scaleType: 'band', ...periods, barGapRatio: BAR_GAP_RATIO }]}
+          yAxis={yAxis}
+          series={[
+            ...values.map((s) => (kindOf(s) === 'BAR' ? { type: 'bar' as const, ...valueBar(s) } : { type: 'line' as const, ...valueLine(s, kindOf(s) === 'AREA') })),
+            ...overlayLines.map((line) => ({ type: 'line' as const, ...line })),
+          ]}
+        >
+          <ChartsWrapper hideLegend={!several} sx={overlayLook}>
+            {several && <ChartsLegend />}
+            <ChartsSurface>
+              <ChartsGrid horizontal={anyAxis} />
+              <g clipPath={`url(#${clipId})`}>
+                <AreaPlot />
+                <BarPlot slots={{ bar: PlacedBar }} />
+                <LinePlot />
+                <ChartsAxisHighlight x="band" />
+              </g>
+              {/* Outside the clip, as MUI's own LineChart draws them: a mark at a series' highest value sits on the plot's edge. */}
+              <MarkPlot />
+              <ChartsAxis />
+              <ChartsClipPath id={clipId} />
+            </ChartsSurface>
+            {/* By axis (the whole period), never by item: a bar is drawn where `PlacedBar` puts it, but MUI finds the one under the pointer at its own place. */}
+            <ChartsTooltip trigger="axis" {...tooltipInPage().tooltip} />
+          </ChartsWrapper>
+        </ChartsDataProvider>
       </BarLayoutContext.Provider>
     )
 
   const categories = recipe.grouping === 'CATEGORY'
+  // What the lines drawn from the values say, in words: a linear trend from where it starts to where it ends (in the chart's own units,
+  // so miles per gallon read right too), and why a line asked for is not there.
+  const trendLines = overlays.filter((s) => s.role === 'LINEAR')
+  const hasTrend = overlays.some((s) => (s.role === 'LINEAR' || s.role === 'MOVING_AVERAGE') && s.points.some((p) => p.value != null))
+  const hasEarlier = overlays.some((s) => s.role === 'YEAR_EARLIER' && s.points.some((p) => p.value))
+  const notes = [
+    ...trendLines.map((s) => t('dashboard.trendSentence', { series: baseName(s), from: show(s.points[0]?.value, s), to: show(s.points[s.points.length - 1]?.value, s) })),
+    ...(recipe.trend && recipe.trend !== 'NONE' && !hasTrend ? [t('dashboard.noTrend')] : []),
+    ...(recipe.compareYearEarlier && !hasEarlier ? [t('dashboard.nothingYearEarlier')] : []),
+  ]
   return (
     <Box component="figure" ref={figure} sx={{ m: 0 }}>
       <div role="img" aria-label={t('dashboard.chartLabel', { title })}>
         <div aria-hidden>{picture}</div>
       </div>
       {/* A note, not the figure's caption: the chart's title names it. */}
-      {recipe.kind !== 'DONUT' && !scales.shown && (
+      {recipe.kind !== 'DONUT' && scales.ownScales && (
         <Typography component="p" variant="body2" sx={{ color: 'text.secondary', mt: 0.5, mb: 0 }}>
           {t('dashboard.ownScales')}
         </Typography>
       )}
+      {notes.map((note) => (
+        <Typography key={note} component="p" variant="body2" sx={{ color: 'text.secondary', mt: 0.5, mb: 0 }}>
+          {note}
+        </Typography>
+      ))}
       <Link component="button" type="button" variant="body2" underline="always" aria-expanded={table} onClick={() => setTable(!table)} sx={{ minHeight: 24, mt: 1, ...standaloneLink }}>
         {table ? t('dashboard.hideTable') : t('dashboard.showTable')}
       </Link>

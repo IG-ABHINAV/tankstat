@@ -13,7 +13,10 @@ public class StatsCalculatorTests
     private static ExpensePoint Cost(string date, decimal amount, string? category = "Service", string currency = "HUF") => new(DateOnly.Parse(date), category, amount, currency);
 
     private static ChartConfig Config(ChartMetric metric = ChartMetric.TotalSpend, ChartGrouping grouping = ChartGrouping.Month, ChartRange range = ChartRange.Last3Months,
-        ChartKind kind = ChartKind.Bar, bool stacked = false, DateOnly? from = null, DateOnly? to = null) => new(metric, grouping, kind, range, stacked, from, to);
+        ChartKind kind = ChartKind.Bar, bool stacked = false, DateOnly? from = null, DateOnly? to = null, ChartTrend trend = ChartTrend.None, bool runningTotal = false,
+        bool compare = false, ChartMetric? second = null, ChartKind? secondKind = null) => new(metric, grouping, kind, range, stacked, from, to, trend, runningTotal, compare, second, secondKind);
+
+    private static ChartSeries Role(ChartData chart, ChartSeriesRole role, string? currency = "HUF") => chart.Series.Single(s => s.Role == role && s.Currency == currency);
 
     private static StatsData Data(FuelPoint[]? fuel = null, ExpensePoint[]? expenses = null, OdometerPoint[]? readings = null) =>
         new(fuel ?? [], expenses ?? [], readings ?? (fuel ?? []).Select(f => new OdometerPoint(f.Date, f.Odometer)).ToArray());
@@ -185,7 +188,7 @@ public class StatsCalculatorTests
 
         Assert.Equal([null, 809.887m, null], Values(paid.Series.Single())); // 42 924 / 53
         Assert.Equal([null, 818m, null], Values(pump.Series.Single())); // 43 354 / 53
-        Assert.Equal(paid.Unit, pump.Unit);
+        Assert.Equal((ChartUnit.PricePerVolume, ChartUnit.PricePerVolume), (paid.Unit, pump.Unit)); // a price, not an amount: its own scale beside a cost
     }
 
     [Fact]
@@ -225,6 +228,178 @@ public class StatsCalculatorTests
     public void AnInvalidChart_IsRejected()
     {
         Assert.Throws<Domain.DomainException>(() => StatsCalculator.Chart(Config(ChartMetric.FuelCost, ChartGrouping.Category), Data(), Today));
+    }
+
+    [Fact]
+    public void Distance_CountsOnlyThePartOfAPeriodInsideTheRange()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2026-08-31"), 900), new OdometerPoint(DateOnly.Parse("2026-09-10"), 1000), new OdometerPoint(DateOnly.Parse("2026-09-25"), 1300) };
+
+        var chart = StatsCalculator.Chart(Config(ChartMetric.Distance, range: ChartRange.Custom, from: new DateOnly(2026, 9, 1), to: new DateOnly(2026, 9, 15)), Data(readings: readings), Today);
+
+        Assert.Equal([100m], Values(chart.Series.Single())); // up to the 15th, as the costs: the reading of the 25th is outside
+    }
+
+    // ---- trends, running totals, a year earlier ------------------------------------------------------------
+
+    [Fact]
+    public void ARunningTotal_AddsUpThePeriods()
+    {
+        var data = Data([Fill("2026-08-03", 40, 100, 1000), Fill("2026-09-03", 40, 200, 1500), Fill("2026-10-03", 40, 50, 2000)]);
+
+        var chart = StatsCalculator.Chart(Config(runningTotal: true), data, Today);
+
+        Assert.Equal([100m, 300m, 350m], Values(chart.Series.Single()));
+    }
+
+    [Fact]
+    public void AYearEarlier_IsTheSameDaysAYearBefore_KeyedByThePeriodsItLinesUpWith()
+    {
+        var data = Data([Fill("2026-08-03", 40, 100, 3000), Fill("2025-08-10", 40, 70, 1000), Fill("2025-10-02", 40, 30, 1500), Fill("2025-10-20", 40, 999, 2000)]);
+
+        var chart = StatsCalculator.Chart(Config(compare: true), data, Today);
+
+        Assert.Equal([100m, 0m, 0m], Values(Role(chart, ChartSeriesRole.Value)));
+        var earlier = Role(chart, ChartSeriesRole.YearEarlier);
+        Assert.Equal(["2026-08", "2026-09", "2026-10"], earlier.Points.Select(p => p.Key));
+        Assert.Equal([70m, 0m, 30m], Values(earlier)); // to 2025-10-15, the same day a year before today: the 20th is not in it
+    }
+
+    [Fact]
+    public void AYearEarlier_OfAStackedChart_IsEachCurrencysTotal_AndRunsWithARunningTotal()
+    {
+        var data = Data([Fill("2025-09-03", 40, 100, 1000), Fill("2025-09-04", 10, 7, 1100, currency: "EUR")], [Cost("2025-10-01", 50)]);
+
+        var stacked = StatsCalculator.Chart(Config(stacked: true, compare: true), data, Today);
+        var running = StatsCalculator.Chart(Config(runningTotal: true, compare: true), data, Today);
+
+        Assert.Equal([("total", "HUF"), ("total", "EUR")], stacked.Series.Where(s => s.Role == ChartSeriesRole.YearEarlier).Select(s => (s.Kind, s.Currency)));
+        Assert.Equal([0m, 100m, 150m], Values(Role(running, ChartSeriesRole.YearEarlier)));
+    }
+
+    [Fact]
+    public void AYearEarlier_ByQuarter_LinesUpWithTheQuarters()
+    {
+        var data = Data([Fill("2025-08-03", 40, 70, 1000)]);
+
+        var chart = StatsCalculator.Chart(Config(grouping: ChartGrouping.Quarter, range: ChartRange.ThisYear, compare: true), data, Today);
+
+        Assert.Equal(["2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4"], Role(chart, ChartSeriesRole.YearEarlier).Points.Select(p => p.Key));
+        Assert.Equal([0m, 0m, 70m, 0m], Values(Role(chart, ChartSeriesRole.YearEarlier)));
+    }
+
+    /// <summary>May..September closed at 100..500, October (still running) 60.</summary>
+    private static StatsData RisingCosts() =>
+        Data(Enumerable.Range(0, 5).Select(i => Fill($"2026-{i + 5:00}-03", 40, (i + 1) * 100, 1000 + i * 500)).Append(Fill("2026-10-03", 40, 60, 4000)).ToArray());
+
+    [Fact]
+    public void AMovingAverage_IsTheMeanOfThreePeriods_LeavingOutThePeriodStillRunning()
+    {
+        var chart = StatsCalculator.Chart(Config(range: ChartRange.Last6Months, trend: ChartTrend.MovingAverage), RisingCosts(), Today);
+
+        var average = Role(chart, ChartSeriesRole.MovingAverage);
+        Assert.Equal(("total", null), (average.Kind, average.Slope));
+        Assert.Equal([null, null, 200m, 300m, 400m, null], Values(average));
+    }
+
+    [Fact]
+    public void ALinearTrend_IsFittedToTheClosedPeriods_AndDrawnOverEveryOne()
+    {
+        var chart = StatsCalculator.Chart(Config(range: ChartRange.Last6Months, trend: ChartTrend.Linear), RisingCosts(), Today);
+
+        var line = Role(chart, ChartSeriesRole.Linear);
+        Assert.Equal(100m, line.Slope); // per month
+        Assert.Equal([100m, 200m, 300m, 400m, 500m, 600m], Values(line)); // October's 60 is not over yet: the line goes on past it
+    }
+
+    [Fact]
+    public void ATrend_LeavesOutAPeriodTheRangeCuts_AndNeverGoesBelowZero()
+    {
+        // Every month 100 from March to September, a custom range from mid-March to mid-September: the two half months would weigh half.
+        var steady = Data(Enumerable.Range(3, 7).Select(m => Fill($"2026-{m:00}-20", 40, 100, 1000 + m * 100)).ToArray());
+        var cut = StatsCalculator.Chart(Config(range: ChartRange.Custom, from: new DateOnly(2026, 3, 15), to: new DateOnly(2026, 9, 15), trend: ChartTrend.Linear), steady, Today);
+        // Costs falling to nothing: the fitted line would run on below zero.
+        var falling = Data([Fill("2026-05-03", 40, 300, 1000), Fill("2026-06-03", 40, 200, 1500), Fill("2026-07-03", 40, 100, 2000)]);
+        var floored = StatsCalculator.Chart(Config(range: ChartRange.Last6Months, trend: ChartTrend.Linear), falling, Today);
+
+        Assert.Equal(0m, Role(cut, ChartSeriesRole.Linear).Slope); // fitted to April..August only: flat, the cut months left out
+        Assert.Equal([280m, 200m, 120m, 40m, 0m, 0m], Values(Role(floored, ChartSeriesRole.Linear))); // fitted over May..September (two empty months), floored where it would go below zero
+    }
+
+    [Fact]
+    public void AnAverage_KeepsThePeriodStillRunning_AndFewerThanThreePointsGiveNoLine()
+    {
+        var fills = Data([Fill("2026-08-03", 40, 100, 1000, consumption: 6m), Fill("2026-09-03", 40, 100, 1500, consumption: 7m), Fill("2026-10-03", 40, 100, 2000, consumption: 8m)]);
+
+        var consumption = StatsCalculator.Chart(Config(ChartMetric.AverageConsumption, kind: ChartKind.Line, trend: ChartTrend.Linear), fills, Today);
+        var costs = StatsCalculator.Chart(Config(trend: ChartTrend.Linear), fills, Today);
+
+        var line = consumption.Series.Single(s => s.Role == ChartSeriesRole.Linear);
+        Assert.Equal([6m, 7m, 8m], Values(line)); // October's average counts while October runs
+        Assert.Equal(1m, line.Slope);
+        Assert.DoesNotContain(costs.Series, s => s.Role == ChartSeriesRole.Linear); // only August and September are over
+    }
+
+    [Fact]
+    public void ATrend_OfAStackedChart_FollowsEachCurrencysTotal()
+    {
+        var data = Data(
+            [Fill("2026-05-03", 40, 100, 1000), Fill("2026-06-03", 40, 100, 1500), Fill("2026-07-03", 40, 100, 2000), Fill("2026-07-05", 10, 9, 2100, currency: "EUR")],
+            [Cost("2026-05-04", 50), Cost("2026-06-04", 80), Cost("2026-07-04", 110)]);
+
+        var chart = StatsCalculator.Chart(Config(range: ChartRange.Last6Months, stacked: true, trend: ChartTrend.MovingAverage), data, Today);
+
+        var averages = chart.Series.Where(s => s.Role == ChartSeriesRole.MovingAverage).ToList();
+        Assert.Equal([("total", "HUF"), ("total", "EUR")], averages.Select(s => (s.Kind, s.Currency)));
+        Assert.Equal(180m, averages[0].Points[2].Value); // July: (150 + 180 + 210) / 3, fuel and expenses together
+    }
+
+    [Fact]
+    public void CostPerDistance_IsPerHundredDistanceUnits_PerCurrency_AndNoneWithoutDistance()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2026-07-31"), 1000), new OdometerPoint(DateOnly.Parse("2026-08-31"), 1500), new OdometerPoint(DateOnly.Parse("2026-10-10"), 1800) };
+        var data = Data([Fill("2026-08-10", 40, 20000, 1200), Fill("2026-09-10", 10, 5000, 1500), Fill("2026-10-05", 30, 15000, 1700), Fill("2026-10-06", 10, 30, 1750, currency: "EUR")],
+            [Cost("2026-10-02", 3000)], readings);
+
+        var all = StatsCalculator.Chart(Config(ChartMetric.CostPerDistance, kind: ChartKind.Line), data, Today);
+        var fuel = StatsCalculator.Chart(Config(ChartMetric.FuelCostPerDistance, kind: ChartKind.Line), data, Today);
+
+        Assert.Equal(ChartUnit.CostPerDistance, all.Unit);
+        Assert.Equal([4000m, null, 6000m], Values(Role(all, ChartSeriesRole.Value))); // Aug 20 000 / 500 km; Sep: nothing driven; Oct 18 000 / 300 km
+        Assert.Equal([0m, null, 10m], Values(Role(all, ChartSeriesRole.Value, "EUR"))); // nothing spent in euros in August, over a distance
+        Assert.Equal([4000m, null, 5000m], Values(Role(fuel, ChartSeriesRole.Value)));
+        Assert.Equal("fuel", Role(fuel, ChartSeriesRole.Value).Kind);
+    }
+
+    // ---- a second measure ------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ASecondMeasure_ComesAfterTheFirstsLines_InItsOwnUnit_AndTheOptionsStayTheFirsts()
+    {
+        var data = Data([Fill("2026-08-03", 40, 100, 1000, consumption: 6m), Fill("2026-09-03", 40, 200, 1500, consumption: 7m), Fill("2026-10-03", 40, 300, 2000, consumption: 8m)]);
+
+        var chart = StatsCalculator.Chart(Config(ChartMetric.Distance, compare: true, trend: ChartTrend.Linear, second: ChartMetric.AverageConsumption, secondKind: ChartKind.Line), data, Today);
+
+        Assert.Equal(ChartUnit.Distance, chart.Unit);
+        Assert.Equal(
+            [(ChartMetric.Distance, ChartUnit.Distance, ChartSeriesRole.Value), (ChartMetric.Distance, ChartUnit.Distance, ChartSeriesRole.YearEarlier),
+             (ChartMetric.AverageConsumption, ChartUnit.Consumption, ChartSeriesRole.Value)],
+            chart.Series.Select(s => (s.Metric, s.Unit, s.Role))); // no trend: two closed months of distance are not enough
+        Assert.Equal([6m, 7m, 8m], Values(chart.Series[^1]));
+    }
+
+    [Fact]
+    public void EverySeries_IsStampedWithItsMeasure_ACategoryChartToo()
+    {
+        var data = Data([Fill("2026-08-03", 40, 100, 1000)], [Cost("2026-09-01", 50, "Parking")]);
+
+        var categories = StatsCalculator.Chart(Config(ChartMetric.ExpenseCost, ChartGrouping.Category, kind: ChartKind.Donut), data, Today);
+        var stacked = StatsCalculator.Chart(Config(stacked: true, trend: ChartTrend.MovingAverage, second: ChartMetric.FuelVolume, secondKind: ChartKind.Bar), data, Today);
+
+        Assert.All(categories.Series, s => Assert.Equal((ChartMetric.ExpenseCost, ChartUnit.Currency), (s.Metric, s.Unit)));
+        Assert.Equal(
+            [(ChartMetric.TotalSpend, ChartUnit.Currency), (ChartMetric.TotalSpend, ChartUnit.Currency), (ChartMetric.TotalSpend, ChartUnit.Currency), (ChartMetric.FuelVolume, ChartUnit.Volume)],
+            stacked.Series.Select(s => (s.Metric, s.Unit))); // fuel, expenses, their total's moving average, then the volume (never stacked)
     }
 
     // ---- summary -------------------------------------------------------------------------------------------
@@ -280,5 +455,70 @@ public class StatsCalculatorTests
         Assert.Equal("EUR", s.Currency); // nothing in the last year, so the last used currency
         Assert.Equal(0m, s.ThisMonthSpend);
         Assert.Equal([new CurrencySpend("EUR", 0m, 0m)], s.Spending); // the main currency is always listed, at zero when idle
+    }
+
+    // ---- the trend figures -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Trends_CompareTheLastTwelveWholeMonthsWithTheTwelveBefore_PerCurrency_ThisMonthLeftOut()
+    {
+        var data = Data(
+            [Fill("2026-10-05", 40, 999, 9000), Fill("2026-09-30", 40, 100, 8000), Fill("2025-10-01", 40, 200, 5000), Fill("2025-09-30", 40, 50, 4000), Fill("2024-10-01", 40, 20, 1000),
+             Fill("2026-03-01", 10, 10, 7000, currency: "EUR")],
+            [Cost("2026-01-10", 300), Cost("2025-01-10", 30)]);
+
+        var t = StatsCalculator.Summary(data, Today).Trends;
+
+        Assert.Equal([new CurrencyChange("HUF", 600m, 100m), new CurrencyChange("EUR", 10m, 0m)], t.Spending); // Oct 2025..Sep 2026 vs Oct 2024..Sep 2025; October 2026 left out
+        // The main currency (most spent in over the last year, this month included) comes first even with nothing in these windows: the
+        // figure headlines the currency the card does.
+        var thisMonthOnly = Data([Fill("2026-10-05", 40, 999, 9000, currency: "EUR"), Fill("2025-03-01", 40, 100, 5000)]);
+        Assert.Equal([new CurrencyChange("EUR", 0m, 0m), new CurrencyChange("HUF", 0m, 100m)], StatsCalculator.Summary(thisMonthOnly, Today).Trends.Spending); // March 2025 is in the earlier window
+    }
+
+    [Fact]
+    public void Trends_CostPerDistance_IsPerHundredDistanceUnits_NullWithNothingDriven()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2025-09-30"), 10000), new OdometerPoint(DateOnly.Parse("2026-09-30"), 12000) };
+        var data = Data([Fill("2026-05-01", 40, 30000, 11000)], readings: readings);
+
+        var t = StatsCalculator.Summary(data, Today).Trends;
+
+        Assert.Equal([new CurrencyChange("HUF", 1500m, null)], t.CostPerDistance); // 30 000 over 2 000 km; nothing driven the year before
+    }
+
+    [Fact]
+    public void Trends_Consumption_IsTheLastTenAgainstTheTenBefore_NullWithFewerThanThreeInEither()
+    {
+        var fills = Enumerable.Range(0, 20).Select(i => Fill(new DateOnly(2026, 1, 1).AddDays(i).ToString("yyyy-MM-dd"), 30, 100, 1000 + i * 100, consumption: i < 10 ? 8m : 6m)).ToArray();
+        var few = Data([Fill("2026-09-01", 30, 100, 1000, consumption: 6m), Fill("2026-09-02", 30, 100, 1100, consumption: 7m), Fill("2026-09-03", 30, 100, 1200, consumption: 8m), Fill("2026-09-04", 30, 100, 1300, consumption: 9m)]);
+
+        var t = StatsCalculator.Summary(Data(fills), Today).Trends;
+
+        Assert.Equal(new ConsumptionChange(6m, 8m, 10, 10), t.Consumption); // the last ten (by date and odometer) use 6, the ten before 8
+        Assert.Equal(new ConsumptionChange(7.5m, null, 4, 0), StatsCalculator.Summary(few, Today).Trends.Consumption); // the latest mean as soon as there is one, nothing to compare with
+        var thirteen = Enumerable.Range(0, 13).Select(i => Fill(new DateOnly(2026, 1, 1).AddDays(i).ToString("yyyy-MM-dd"), 30, 100, 1000 + i * 100, consumption: i < 3 ? 8m : 6m)).ToArray();
+        Assert.Equal(new ConsumptionChange(6m, 8m, 10, 3), StatsCalculator.Summary(Data(thirteen), Today).Trends.Consumption); // three before: compared, and said
+    }
+
+    [Fact]
+    public void Trends_Distance_IsThisYearAgainstLastYearUpToTheSameDay_ALeapDayIncluded()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2022-12-31"), 0), new OdometerPoint(DateOnly.Parse("2023-02-28"), 500), new OdometerPoint(DateOnly.Parse("2023-03-01"), 700), new OdometerPoint(DateOnly.Parse("2023-12-31"), 2000), new OdometerPoint(DateOnly.Parse("2024-02-29"), 2300) };
+
+        var t = StatsCalculator.Summary(Data(readings: readings), new DateOnly(2024, 2, 29)).Trends;
+
+        Assert.Equal(new ValueChange(300m, 500m), t.Distance); // 2024 to 29 Feb; 2023 to 28 Feb, the same day a year back
+    }
+
+    [Fact]
+    public void Trends_OfAVehicleWithoutData_AreEmpty()
+    {
+        var t = StatsCalculator.Summary(Data(), Today).Trends;
+
+        Assert.Empty(t.Spending);
+        Assert.Empty(t.CostPerDistance);
+        Assert.Null(t.Consumption);
+        Assert.Null(t.Distance); // no reading at all: no distance, not 0 km
     }
 }

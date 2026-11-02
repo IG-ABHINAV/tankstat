@@ -34,7 +34,7 @@ public class DashboardApiTests : IDisposable
         var id = await CarWithLogs(alice);
 
         var data = (await alice.Gql(@"query($id: UUID!, $c: ChartConfigInput!, $c2: ChartConfigInput!) {
-              vehicle(id: $id) { summary { latestOdometer averageConsumption currency thisMonthSpend fillUpCount expenseCount spendTrend { month amount } spending { currency thisMonth lastMonth } } }
+              vehicle(id: $id) { summary { latestOdometer averageConsumption currency thisMonthSpend fillUpCount expenseCount spendTrend { month amount } spending { currency thisMonth lastMonth } trends { spending { currency recent earlier } distance { recent earlier } consumption { recent earlier recentFillUps earlierFillUps } } } }
               total: vehicleChartData(vehicleId: $id, config: $c) { unit series { kind currency points { key value } } }
               byCategory: vehicleChartData(vehicleId: $id, config: $c2) { series { currency points { key value } } } }",
             new
@@ -51,6 +51,11 @@ public class DashboardApiTests : IDisposable
         Assert.Equal(6, summary.GetProperty("spendTrend").GetArrayLength());
         var spent = Assert.Single(summary.GetProperty("spending").EnumerateArray());
         Assert.Equal(("HUF", 52500m), (spent.GetProperty("currency").GetString(), spent.GetProperty("thisMonth").GetDecimal()));
+        var trends = summary.GetProperty("trends");
+        Assert.Equal(38000m, Assert.Single(trends.GetProperty("spending").EnumerateArray()).GetProperty("recent").GetDecimal()); // the two earlier months; this month is left out
+        var consumption = trends.GetProperty("consumption");
+        Assert.Equal(2, consumption.GetProperty("recentFillUps").GetInt32()); // the mean of the two there are, and nothing before them to compare with
+        Assert.Equal(JsonValueKind.Null, consumption.GetProperty("earlier").ValueKind);
 
         var total = data.GetProperty("total");
         Assert.Equal("CURRENCY", total.GetProperty("unit").GetString());
@@ -85,6 +90,88 @@ public class DashboardApiTests : IDisposable
 
         Assert.True((await alice.Gql("mutation($id: UUID!) { deleteVehicleChart(id: $id) }", new { id = mine.GetProperty("id").GetString() })).Data().GetProperty("deleteVehicleChart").GetBoolean());
         Assert.Single((await alice.Gql(list, new { id })).Data().GetProperty("vehicleCharts").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task ASavedChart_KeepsItsTrendOptions_AndTheDataCarriesTheirSeries()
+    {
+        var (alice, _, _) = await Users();
+        var id = await CarWithLogs(alice);
+        var aYearAgo = new DateTime(DateTime.UtcNow.Year - 1, DateTime.UtcNow.Month, 1).ToString("yyyy-MM-dd");
+        await alice.Gql("mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
+            new { i = new { vehicleId = id, date = aYearAgo, volume = 30, totalCost = 15000, currency = "HUF", odometer = 500, isFullTank = true } });
+        var config = new { metric = "TOTAL_SPEND", grouping = "MONTH", kind = "BAR", range = "LAST3_MONTHS", stacked = false, trend = "MOVING_AVERAGE", compareYearEarlier = true };
+
+        var saved = (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { trend runningTotal compareYearEarlier } }",
+            new { i = new { vehicleId = id, title = "Trend", shared = false, config } })).Data().GetProperty("saveVehicleChart");
+        var data = (await alice.Gql("query($id: UUID!, $c: ChartConfigInput!) { vehicleChartData(vehicleId: $id, config: $c) { series { kind role slope points { key } } } }",
+            new { id, c = config })).Data().GetProperty("vehicleChartData").GetProperty("series").EnumerateArray().ToList();
+        var olderClient = (await alice.Gql("query($id: UUID!) { vehicleChartData(vehicleId: $id, config: { metric: TOTAL_SPEND, grouping: MONTH, kind: BAR, range: LAST3_MONTHS, stacked: false }) { series { role } } }",
+            new { id })).Data().GetProperty("vehicleChartData").GetProperty("series").EnumerateArray().Select(s => s.GetProperty("role").GetString()).ToList();
+
+        Assert.Equal(("MOVING_AVERAGE", false, true), (saved.GetProperty("trend").GetString(), saved.GetProperty("runningTotal").GetBoolean(), saved.GetProperty("compareYearEarlier").GetBoolean()));
+        Assert.Equal(["VALUE", "YEAR_EARLIER", "MOVING_AVERAGE"], data.Select(s => s.GetProperty("role").GetString()));
+        Assert.Equal(data[0].GetProperty("points").EnumerateArray().Select(p => p.GetProperty("key").GetString()), data[1].GetProperty("points").EnumerateArray().Select(p => p.GetProperty("key").GetString()));
+        Assert.Equal(["VALUE"], olderClient); // a request without the new fields still draws the values alone
+    }
+
+    [Fact]
+    public async Task ASecondMeasure_IsSaved_AndItsSeriesSayTheirOwnMetricAndUnit()
+    {
+        var (alice, _, _) = await Users();
+        var id = await CarWithLogs(alice);
+        var config = new { metric = "DISTANCE", grouping = "MONTH", kind = "BAR", range = "LAST3_MONTHS", stacked = false, secondMetric = "AVERAGE_CONSUMPTION", secondKind = "LINE" };
+
+        var saved = (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { secondMetric secondKind } }",
+            new { i = new { vehicleId = id, title = "Distance and consumption", shared = false, config } })).Data().GetProperty("saveVehicleChart");
+        var data = (await alice.Gql("query($id: UUID!, $c: ChartConfigInput!) { vehicleChartData(vehicleId: $id, config: $c) { unit series { metric unit role } } }",
+            new { id, c = config })).Data().GetProperty("vehicleChartData");
+        var refused = await alice.Gql("query($id: UUID!) { vehicleChartData(vehicleId: $id, config: { metric: DISTANCE, grouping: MONTH, kind: BAR, range: ALL, stacked: false, secondMetric: DISTANCE, secondKind: LINE }) { unit } }", new { id });
+
+        Assert.Equal(("AVERAGE_CONSUMPTION", "LINE"), (saved.GetProperty("secondMetric").GetString(), saved.GetProperty("secondKind").GetString()));
+        Assert.Equal("DISTANCE", data.GetProperty("unit").GetString());
+        Assert.Equal([("DISTANCE", "DISTANCE"), ("AVERAGE_CONSUMPTION", "CONSUMPTION")],
+            data.GetProperty("series").EnumerateArray().Select(s => (s.GetProperty("metric").GetString(), s.GetProperty("unit").GetString())));
+        Assert.Equal("chart.secondSameMetric", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
+
+    [Fact]
+    public async Task ADashboardsLayouts_TheVehiclesForEveryone_APersonalOneForItsOwner_AndAViewerCannotChangeTheVehicles()
+    {
+        var people = await _app.Users();
+        var (alice, bob) = (people.Alice, people.Bob);
+        var id = await CarWithLogs(alice);
+        // A viewer: the administrator grants Bob View on Alice's data (a vehicle's logs are shared with Edit or more).
+        await people.Admin.Gql("mutation($i: SetAccessGrantInput!) { setAccessGrant(input: $i) }", new { i = new { ownerId = people.AliceId, granteeId = people.BobId, level = "VIEW" } });
+        var shared = (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }",
+            new { i = new { vehicleId = id, title = "Shared", shared = true, config = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "BAR", range = "LAST6_MONTHS", stacked = false } } }))
+            .Data().GetProperty("saveVehicleChart").GetProperty("id").GetString();
+        const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
+        const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { canChangeShared shared { tiles { id x y w h pinned } hidden updatedAt } personal { tiles { id } } } } }";
+        object Layout(bool personal, params string[] charts) => new
+        {
+            i = new { vehicleId = id, personal, tiles = charts.Select((c, k) => new { id = c, x = 0, y = k * 8, w = 2, h = 8, pinned = k == 0 }).Prepend(new { id = "odometer", x = 2, y = 0, w = 1, h = 3, pinned = false }).ToArray(), hidden = Array.Empty<string>() },
+        };
+        static IEnumerable<string?> Ids(JsonElement layout) => layout.GetProperty("tiles").EnumerateArray().Select(t => t.GetProperty("id").GetString());
+
+        var standard = (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard");
+        Assert.Equal((JsonValueKind.Null, true), (standard.GetProperty("shared").ValueKind, standard.GetProperty("canChangeShared").GetBoolean()));
+        Assert.True((await alice.Gql(save, Layout(false, "preset:distance", $"chart:{shared}"))).Data().GetProperty("saveDashboardLayout").GetBoolean());
+        var refused = await bob.Gql(save, Layout(false, "preset:consumption"));
+        await bob.Gql(save, Layout(true, "preset:consumption"));
+
+        var bobs = (await bob.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard");
+        Assert.Equal("dashboard.needEditToChange", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+        Assert.False(bobs.GetProperty("canChangeShared").GetBoolean());
+        Assert.Equal(["odometer", "preset:distance", $"chart:{shared}"], Ids(bobs.GetProperty("shared")));
+        Assert.True(bobs.GetProperty("shared").GetProperty("tiles")[1].GetProperty("pinned").GetBoolean());
+        Assert.Equal(["odometer", "preset:consumption"], Ids(bobs.GetProperty("personal")));
+        Assert.Equal(JsonValueKind.Null, (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").ValueKind);
+
+        await bob.Gql("mutation($id: UUID!) { resetDashboardLayout(vehicleId: $id, personal: true) }", new { id });
+        Assert.Equal(JsonValueKind.Null, (await bob.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").ValueKind);
+        var invalid = await alice.Gql(save, Layout(true, "not a chart"));
+        Assert.Equal("dashboard.itemInvalid", invalid.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
     }
 
     [Fact]

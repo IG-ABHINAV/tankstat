@@ -69,6 +69,11 @@ it('the vehicle page and its tabs have no violations', async () => {
   await ui.click(screen.getByRole('tab', { name: /Sharing/ }))
   await screen.findByText('Nobody has been given access to the logs yet.')
   await check(view.container)
+
+  // The dashboard as a vehicle without data shows it: the Standard preset's figures and charts (the Customize dialog is scanned by the dashboard's tests).
+  await ui.click(screen.getByRole('tab', { name: /Dashboard/ }))
+  await screen.findByText(/Compose your own charts/)
+  await check(view.container)
 })
 
 it('the trash, account and administration pages have no violations', async () => {

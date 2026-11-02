@@ -190,5 +190,5 @@ test('shows an expense logged through the API on the dashboard', async ({ page }
   const vehicle = await addVehicle(page)
   await addExpense(page, vehicle.id, { title: 'Tyres', date: new Date().toISOString().slice(0, 10), amount: 64000 })
   await openVehicle(page, vehicle.id)
-  await expect(page.getByRole('region', { name: 'Key figures' }).getByText('HUF 64,000').first()).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Dashboard' }).getByText('HUF 64,000').first()).toBeVisible()
 })

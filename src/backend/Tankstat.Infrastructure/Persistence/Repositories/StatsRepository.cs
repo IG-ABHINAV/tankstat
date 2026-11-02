@@ -64,3 +64,37 @@ internal sealed class VehicleChartRepository(IDbContextFactory<AppDbContext> dbF
         await db.SaveChangesAsync(ct);
     }
 }
+
+internal sealed class DashboardLayoutRepository(IDbContextFactory<AppDbContext> dbFactory) : IDashboardLayoutRepository
+{
+    public async Task<VehicleDashboardLayout?> FindSharedAsync(Guid vehicleId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.VehicleDashboardLayouts.AsNoTracking().FirstOrDefaultAsync(l => l.VehicleId == vehicleId, ct);
+    }
+
+    public async Task<UserDashboardLayout?> FindPersonalAsync(Guid userId, Guid vehicleId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.UserDashboardLayouts.AsNoTracking().FirstOrDefaultAsync(l => l.UserId == userId && l.VehicleId == vehicleId, ct);
+    }
+
+    public Task SaveSharedAsync(VehicleDashboardLayout layout, CancellationToken ct) =>
+        dbFactory.UpsertAsync(layout, db => db.VehicleDashboardLayouts.AnyAsync(l => l.VehicleId == layout.VehicleId, ct), ct);
+
+    public Task SavePersonalAsync(UserDashboardLayout layout, CancellationToken ct) =>
+        dbFactory.UpsertAsync(layout, db => db.UserDashboardLayouts.AnyAsync(l => l.UserId == layout.UserId && l.VehicleId == layout.VehicleId, ct), ct);
+
+    public async Task RemoveSharedAsync(Guid vehicleId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await db.VehicleDashboardLayouts.Where(l => l.VehicleId == vehicleId).ExecuteDeleteAsync(ct);
+    }
+
+    public async Task RemovePersonalAsync(Guid userId, Guid vehicleId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await db.UserDashboardLayouts.Where(l => l.UserId == userId && l.VehicleId == vehicleId).ExecuteDeleteAsync(ct);
+    }
+
+}

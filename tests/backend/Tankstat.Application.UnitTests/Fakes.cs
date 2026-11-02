@@ -290,6 +290,18 @@ internal sealed class InMemoryCharts : IVehicleChartRepository
     public Task RemoveAsync(VehicleChart chart, CancellationToken ct) { Items.Remove(chart); return Task.CompletedTask; }
 }
 
+internal sealed class InMemoryDashboardLayouts : IDashboardLayoutRepository
+{
+    public List<VehicleDashboardLayout> Shared { get; } = [];
+    public List<UserDashboardLayout> Personal { get; } = [];
+    public Task<VehicleDashboardLayout?> FindSharedAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Shared.FirstOrDefault(l => l.VehicleId == vehicleId));
+    public Task<UserDashboardLayout?> FindPersonalAsync(Guid userId, Guid vehicleId, CancellationToken ct) => Task.FromResult(Personal.FirstOrDefault(l => l.UserId == userId && l.VehicleId == vehicleId));
+    public Task SaveSharedAsync(VehicleDashboardLayout layout, CancellationToken ct) { Shared.RemoveAll(l => l.VehicleId == layout.VehicleId); Shared.Add(layout); return Task.CompletedTask; }
+    public Task SavePersonalAsync(UserDashboardLayout layout, CancellationToken ct) { Personal.RemoveAll(l => l.UserId == layout.UserId && l.VehicleId == layout.VehicleId); Personal.Add(layout); return Task.CompletedTask; }
+    public Task RemoveSharedAsync(Guid vehicleId, CancellationToken ct) { Shared.RemoveAll(l => l.VehicleId == vehicleId); return Task.CompletedTask; }
+    public Task RemovePersonalAsync(Guid userId, Guid vehicleId, CancellationToken ct) { Personal.RemoveAll(l => l.UserId == userId && l.VehicleId == vehicleId); return Task.CompletedTask; }
+}
+
 internal sealed class InMemoryUiSettings : IUiSettingsRepository
 {
     public List<UiSettings> Items { get; } = [];
@@ -797,6 +809,7 @@ internal sealed class World
     public InMemoryRefuelings Refuelings { get; } = new();
     public InMemoryExpenses Expenses { get; } = new();
     public InMemoryCharts Charts { get; } = new();
+    public InMemoryDashboardLayouts DashboardLayouts { get; } = new();
     public InMemoryUiSettings UiSettingsStore { get; } = new();
     public InMemoryVehicleOrders VehicleOrders { get; } = new();
     public InMemoryUsers Users { get; } = new();
@@ -843,6 +856,7 @@ internal sealed class World
     public NotificationOptions NotificationOptions { get; } = new();
     public RecurringExpenseService RecurringService { get; }
     public ChartService ChartService { get; }
+    public DashboardService Dashboards => new(Vehicles, DashboardLayouts, Charts, Access, Clock, Log.For<DashboardService>());
     public UiSettingsService UiSettings { get; }
     public VehicleOrderService VehicleOrder { get; }
     public InMemoryOfflineSettings OfflineSettingsStore { get; } = new();

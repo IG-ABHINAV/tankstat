@@ -14,8 +14,11 @@ import { graphql } from './graphql.ts'
 // and no schedules; dashboard and recurring tests answer them with their own fakes.
 export const server = setupServer(
   graphql.query('VehicleDashboard', ({ variables }) =>
-    HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null }, vehicleCharts: [] } }),
+    HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null, dashboard: null }, vehicleCharts: [] } }),
   ),
+  // The Standard preset's ready-made charts ask for their data (the grid draws them once it is measured, which can be after the test that
+  // passed through the page has ended): nothing to draw.
+  graphql.query('ChartData', () => HttpResponse.json({ data: { vehicleChartData: { __typename: 'ChartData', unit: 'CURRENCY', series: [] } } })),
   graphql.query('RecurringExpenses', ({ variables }) =>
     HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.vehicleId, recurring: [] } } }),
   ),

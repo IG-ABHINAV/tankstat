@@ -18,3 +18,15 @@ public interface IVehicleChartRepository
     Task UpdateAsync(VehicleChart chart, CancellationToken ct);
     Task RemoveAsync(VehicleChart chart, CancellationToken ct);
 }
+
+public interface IDashboardLayoutRepository
+{
+    Task<VehicleDashboardLayout?> FindSharedAsync(Guid vehicleId, CancellationToken ct);
+    Task<UserDashboardLayout?> FindPersonalAsync(Guid userId, Guid vehicleId, CancellationToken ct);
+    /// <summary>Adds the vehicle's layout or replaces it; of two first saves at once, the later wins.</summary>
+    Task SaveSharedAsync(VehicleDashboardLayout layout, CancellationToken ct);
+    /// <summary>Adds a person's layout or replaces it; of two first saves at once, the later wins.</summary>
+    Task SavePersonalAsync(UserDashboardLayout layout, CancellationToken ct);
+    Task RemoveSharedAsync(Guid vehicleId, CancellationToken ct);
+    Task RemovePersonalAsync(Guid userId, Guid vehicleId, CancellationToken ct);
+}

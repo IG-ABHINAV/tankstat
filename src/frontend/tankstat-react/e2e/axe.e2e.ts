@@ -33,6 +33,18 @@ test('a vehicle page and its add refuelling dialog have no axe violations', asyn
   expect(await violations(page, '[role="dialog"]')).toEqual([])
 })
 
+test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await page.goto(`/vehicles/${vehicle.id}`)
+  await pageLoaded(page)
+  await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
+  expect(await violations(page)).toEqual([])
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await expect(page.getByRole('region', { name: 'Add widget' })).toBeVisible()
+  expect(await violations(page)).toEqual([])
+})
+
 test('the add vehicle dialog has no axe violations', async ({ page }) => {
   await page.goto('/')
   await pageLoaded(page)

@@ -59,6 +59,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RecurringExpense> RecurringExpenses => Set<RecurringExpense>();
     public DbSet<RecurringCompletion> RecurringCompletions => Set<RecurringCompletion>();
     public DbSet<VehicleChart> VehicleCharts => Set<VehicleChart>();
+    public DbSet<VehicleDashboardLayout> VehicleDashboardLayouts => Set<VehicleDashboardLayout>();
+    public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
     public DbSet<OdometerReading> OdometerReadings => Set<OdometerReading>();
     public DbSet<Cost> Costs => Set<Cost>();
     public DbSet<StoredImage> Images => Set<StoredImage>();
