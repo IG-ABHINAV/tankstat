@@ -82,6 +82,24 @@ test('draws a chart of costs in two currencies on a scale for each, with only th
   await expectSoundLayout(page)
 })
 
+test('a saved chart of the fuel price before discounts adds the discount back, while the preset Fuel price stays on what was paid', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await graphql(page, 'mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }', {
+    i: { vehicleId: vehicle.id, date: monthStart(1), volume: 43, totalCost: 34744, discount: 430, currency: 'HUF', odometer: 1000, isFullTank: true },
+  })
+  await graphql(page, 'mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }', {
+    i: { vehicleId: vehicle.id, title: 'Pump price', shared: false, config: { metric: 'AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT', grouping: 'MONTH', kind: 'LINE', range: 'LAST12_MONTHS', stacked: false } },
+  })
+  await openVehicle(page, vehicle.id)
+
+  const figure = page.getByRole('img', { name: 'Pump price: chart', exact: true }).locator('xpath=ancestor::figure[1]')
+  await figure.getByRole('button', { name: 'Show the data as a table' }).click()
+  const table = page.getByRole('table', { name: 'Pump price' })
+  await expect(table).toContainText('818') // (34 744 + 430) / 43: the pump's price
+  await expect(table).not.toContainText('808') // the price paid is the preset's
+})
+
 test('names a category of a bar chart on its axis, and the expenses without one as Uncategorised', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)

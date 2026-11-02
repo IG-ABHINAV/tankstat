@@ -44,6 +44,26 @@ public class SyncGraphQLTests : IDisposable
     }
 
     [Fact]
+    public async Task ADiscountKeptOffline_IsAppliedWithItsLog_AndAnUpdateWithoutOneClearsIt()
+    {
+        var people = await _app.Users();
+        var car = Guid.NewGuid().ToString();
+        var log = Guid.NewGuid().ToString();
+        const string read = "query($id: UUID!) { refueling(id: $id) { totalCost discount pricePerUnit pricePerUnitBeforeDiscount } }";
+
+        await Send(people.Alice,
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Golf", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), logRefueling = new { id = log, vehicleId = car, date = "2026-09-01", volume = 43, totalCost = 34744, discount = 430, currency = "HUF", odometer = 1000, isFullTank = true } });
+        var logged = (await people.Alice.Gql(read, new { id = log })).Data().GetProperty("refueling");
+        Assert.Equal((34744m, 430m, 808m, 818m),
+            (logged.GetProperty("totalCost").GetDecimal(), logged.GetProperty("discount").GetDecimal(), logged.GetProperty("pricePerUnit").GetDecimal(), logged.GetProperty("pricePerUnitBeforeDiscount").GetDecimal()));
+
+        var update = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = 1, updateRefueling = new { id = log, date = "2026-09-01", volume = 43, totalCost = 34744, currency = "HUF", odometer = 1000, isFullTank = true } });
+        Assert.Equal("APPLIED", update.GetProperty("results")[0].GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, (await people.Alice.Gql(read, new { id = log })).Data().GetProperty("refueling").GetProperty("discount").ValueKind);
+    }
+
+    [Fact]
     public async Task AChangeMadeFromAnOldVersion_IsParked_AndChangesNothing()
     {
         var people = await _app.Users();
