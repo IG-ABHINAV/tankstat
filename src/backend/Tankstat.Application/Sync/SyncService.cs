@@ -119,15 +119,15 @@ public sealed class SyncService(
                 try
                 {
                     row = await ApplyAsync(change, me.Id, ct);
+                    // Recorded whatever the request does now: what was applied must be in the ledger, or the same change sent again (the device
+                    // never heard back) would be applied a second time, or parked as a version mismatch with itself.
+                    if (!await ledger.AddAsync(row, CancellationToken.None))
+                        row = (await ledger.FindManyAsync([row.Id], CancellationToken.None)).Single(); // another server took the same batch first
                 }
-                catch (Exception e) when (step.FailedBy(e) || batch.FailedBy(e))
+                catch (Exception e) when (step.FailedBy(e, ct))
                 {
-                    throw; // never reached: the filters only mark the spans (an exception stops the batch, a refusal parks the change)
+                    throw; // never reached: the filter only marks the span (an exception stops the batch, a refusal parks the change)
                 }
-                // Recorded whatever the request does now: what was applied must be in the ledger, or the same change sent again (the device
-                // never heard back) would be applied a second time, or parked as a version mismatch with itself.
-                if (!await ledger.AddAsync(row, CancellationToken.None))
-                    row = (await ledger.FindManyAsync([row.Id], CancellationToken.None)).Single(); // another server took the same batch first
                 var result = row.Status.ToString().ToLowerInvariant();
                 step?.SetTag("tankstat.sync.change.kind", row.Kind.ToString());
                 step?.SetTag("tankstat.vehicle.id", row.VehicleId);
@@ -147,6 +147,10 @@ public sealed class SyncService(
             logger.LogInformation("User {UserId} synced {Count} changes: {Applied} applied, {Parked} parked, {Replayed} sent again, {Purged} old records removed",
                 me.Id, changes.Count, applied, parked, replayed, purged);
             return new SyncOutcome(results, applied, parked);
+        }
+        catch (Exception e) when (batch.FailedBy(e, ct))
+        {
+            throw; // never reached: the filter only marks the span (whatever stopped the batch: an id taken, the ledger, a change)
         }
         finally
         {

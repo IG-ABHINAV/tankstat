@@ -108,12 +108,13 @@ internal sealed class RestoreStep(
         {
             Outcome = await RestoreAsync(marker, ct);
         }
-        catch (Exception e) when (activity.FailedBy(e))
+        catch (Exception e) when (activity.FailedBy(e, ct))
         {
             throw; // never reached: the filter only marks the span
         }
-        activity?.SetTag("tankstat.restore.outcome", Outcome.ToString().ToLowerInvariant());
-        if (Outcome is RestoreOutcome.Refused or RestoreOutcome.Failed) activity.Failed($"restore.{Outcome.ToString().ToLowerInvariant()}");
+        var outcome = Outcome.ToString().ToLowerInvariant();
+        activity?.SetTag("tankstat.restore.outcome", outcome);
+        if (Outcome is RestoreOutcome.Refused or RestoreOutcome.Failed) activity.Failed($"restore.{outcome}");
         return Outcome;
     }
 

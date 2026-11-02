@@ -64,7 +64,7 @@ internal sealed class DatabaseMigrator(
 
             if (backfill) await BackfillConsumptionAsync(ct);
         }
-        catch (Exception e) when (activity.FailedBy(e))
+        catch (Exception e) when (activity.FailedBy(e, ct))
         {
             throw; // never reached: the filter only marks the span
         }

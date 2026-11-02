@@ -23,10 +23,12 @@ public static class AppTraces
 
     /// <summary>
     /// Starts a span of work that goes on by itself (a job): the root of a trace of its own, never the child of a request it may outlive
-    /// (<see cref="Task.Run(Func{Task})"/> carries <see cref="Activity.Current"/> along), linked to that request's span instead.
+    /// (<see cref="Task.Run(Func{Task})"/> carries <see cref="Activity.Current"/> along), linked to that request's span instead. Nothing
+    /// changes while nobody listens: <see cref="Activity.Current"/> stays what it was (the request's, which the log's scopes name).
     /// </summary>
     public static Activity? StartJob(string name)
     {
+        if (!Source.HasListeners()) return null;
         var caller = Activity.Current;
         Activity.Current = null; // a default parent context means the current activity: none, for a root
         return Source.StartActivity(name, ActivityKind.Internal, parentContext: default, links: caller is null ? null : [new ActivityLink(caller.Context)]);
@@ -41,11 +43,13 @@ public static class AppTraces
     }
 
     /// <summary>
-    /// For an exception filter, <c>catch (Exception e) when (activity.FailedBy(e)) { }</c>: marks the span failed by <paramref name="exception"/>
-    /// and catches nothing (false), so the exception goes on as it was, stack and all.
+    /// For an exception filter, <c>catch (Exception e) when (activity.FailedBy(e, ct)) { }</c>: marks the span failed by <paramref name="exception"/>
+    /// and catches nothing (false), so the exception goes on as it was, stack and all. A stop is no failure: a cancellation, or whatever the
+    /// work threw once <paramref name="ct"/> asked it to stop (a database reports a cancelled read as its own exception), leaves the span as it is.
     /// </summary>
-    public static bool FailedBy(this Activity? activity, Exception exception)
+    public static bool FailedBy(this Activity? activity, Exception exception, CancellationToken ct = default)
     {
+        if (exception is OperationCanceledException || ct.IsCancellationRequested) return false;
         activity.Failed(ErrorTypeOf(exception));
         return false;
     }

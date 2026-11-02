@@ -64,7 +64,7 @@ internal sealed class BackupWriter(
             activity?.SetTag("tankstat.backup.bytes", new FileInfo(result.Path).Length);
             return result;
         }
-        catch (Exception e) when (activity.FailedBy(e))
+        catch (Exception e) when (activity.FailedBy(e, ct))
         {
             throw; // never reached: the filter only marks the span
         }

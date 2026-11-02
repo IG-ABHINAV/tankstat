@@ -4,6 +4,7 @@ using Tankstat.Application.Recognition;
 using Tankstat.Application.Refuelings;
 using Tankstat.Application.Sync;
 using Tankstat.Application.Telemetry;
+using Tankstat.Domain;
 using Tankstat.Domain.Recognition;
 using Tankstat.Domain.Sync;
 using Tankstat.Domain.Users;
@@ -126,5 +127,58 @@ public class AppTelemetryTests
         Assert.DoesNotContain(spans.Ended.SelectMany(a => a.TagObjects), t => t.Value?.ToString()?.Contains("zzzz") == true); // never what a change holds
 
         Assert.Equal(["applied", "parked", "repeated"], measured.Of("tankstat.sync.changes").Select(m => (string)m.Tags["tankstat.sync.change.result"]!).Order());
+    }
+
+    [Fact]
+    public async Task ABatchRefusedAsAWhole_FailsItsSpan_ByTheRefusalsKey()
+    {
+        var s = await Setup();
+        var id = Guid.NewGuid();
+        await s.W.Sync.SyncAsync([Log(s, id, 1000, Day)], default);
+        var bob = s.W.AddUser("bob@x.co");
+        s.W.Current.SignInAs(bob);
+        using var spans = new CapturedSpans(AppTraces.SourceName);
+        using var request = new Activity("request").Start(); // the test's own parent, which finds the batch among every test's spans
+
+        await Assert.ThrowsAsync<DomainException>(() => s.W.Sync.SyncAsync([Log(s, id, 1000, Day)], default));
+
+        var batch = Assert.Single(spans.Ended, a => a.ParentSpanId == request.SpanId);
+        Assert.Equal(("tankstat.sync.batch", ActivityStatusCode.Error, "sync.idTaken"), (batch.OperationName, batch.Status, (string?)batch.GetTagItem("error.type")));
+        Assert.Null(batch.StatusDescription); // the key, never the message with its id
+    }
+
+    // ---- the helpers ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public void FailedBy_MarksTheKeyOrTheType_NeverAStop()
+    {
+        using var spans = new CapturedSpans(AppTraces.SourceName);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        var keyed = Marked(new DomainException("some.key", "zzzz the message"));
+        var typed = Marked(new InvalidOperationException("zzzz the message"));
+        var stopped = Marked(new OperationCanceledException());
+        var cutShort = Marked(new InvalidOperationException("zzzz a read cut short"), cancelled.Token); // thrown once the stop was asked for
+
+        Assert.Equal((ActivityStatusCode.Error, "some.key"), (keyed.Status, (string?)keyed.GetTagItem("error.type")));
+        Assert.Equal((ActivityStatusCode.Error, typeof(InvalidOperationException).FullName), (typed.Status, (string?)typed.GetTagItem("error.type")));
+        Assert.Equal((ActivityStatusCode.Unset, null), (stopped.Status, (string?)stopped.GetTagItem("error.type")));
+        Assert.Equal((ActivityStatusCode.Unset, null), (cutShort.Status, (string?)cutShort.GetTagItem("error.type")));
+        var ended = spans.Named("tankstat.test.helpers", "tankstat.test.id", Id);
+        Assert.Equal(4, ended.Count);
+        Assert.DoesNotContain(ended.SelectMany(a => a.TagObjects), t => t.Value?.ToString()?.Contains("zzzz") == true);
+        Assert.All(ended, a => Assert.Null(a.StatusDescription));
+    }
+
+    private static readonly Guid Id = Guid.NewGuid();
+
+    /// <summary>A span of this test's, marked by the filter the way a <c>catch when</c> would, which catches nothing (false), then ended.</summary>
+    private static Activity Marked(Exception e, CancellationToken ct = default)
+    {
+        using var a = AppTraces.Source.StartActivity("tankstat.test.helpers")!;
+        a.SetTag("tankstat.test.id", Id);
+        Assert.False(a.FailedBy(e, ct));
+        return a;
     }
 }
