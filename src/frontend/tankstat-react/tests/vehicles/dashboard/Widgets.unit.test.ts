@@ -33,11 +33,11 @@ describe('resolveLayout', () => {
 
     expect(ids(LAYOUT_PRESETS.spending.tiles)).toEqual([
       'thisMonth@0,0', 'spendingTrend@1,0', 'costPerDistance@2,0', 'lastFillUp@3,0',
-      'preset:monthlyCosts@0,3', 'preset:spendSoFar@2,3', 'preset:categories@0,11', 'preset:costPerDistance@2,11', 'preset:fuelPrice@0,19',
+      'preset:monthlyCosts@0,4', 'preset:spendSoFar@2,4', 'preset:categories@0,12', 'preset:costPerDistance@2,12', 'preset:fuelPrice@0,20',
     ])
     expect(ids(LAYOUT_PRESETS.usage.tiles)).toEqual([
       'odometer@0,0', 'distanceTrend@1,0', 'consumption@2,0', 'consumptionTrend@3,0',
-      'preset:distanceYearEarlier@0,3', 'preset:consumptionTrend@2,3', 'preset:distanceAndConsumption@0,11', 'preset:distance@2,11',
+      'preset:distanceYearEarlier@0,4', 'preset:consumptionTrend@2,4', 'preset:distanceAndConsumption@0,12', 'preset:distance@2,12',
     ])
     expect(READY_CHARTS.find((c) => c.id === 'spendSoFar')?.recipe).toMatchObject({ range: 'THIS_YEAR', runningTotal: true, compareYearEarlier: true })
     expect(READY_CHARTS.find((c) => c.id === 'distanceAndConsumption')?.recipe).toMatchObject({ secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' })
@@ -47,7 +47,7 @@ describe('resolveLayout', () => {
     const stored = { tiles: [tile('odometer', 3, 0, 1, 3), tile(chartKey('b'), 0, 0), tile(presetKey('distance'), 2, 3)], hidden: [chartKey('c')] }
     const layout = resolveLayout(stored, [chart('a'), chart('b'), chart('c')])
 
-    expect(places(layout.tiles)).toEqual(['chart:b@0,0 2x8', 'odometer@3,0 1x3', 'preset:distance@2,3 2x8', 'chart:a@0,8 2x8'])
+    expect(places(layout.tiles)).toEqual(['chart:b@0,0 2x8', 'odometer@3,0 1x4', 'preset:distance@2,4 2x8', 'chart:a@0,8 2x8']) // the figure stored three rows high takes the four it needs, and the chart under it moves down
     expect(layout.hidden.map((c) => c.id)).toEqual(['c'])
     expect(layout.available.figures).toEqual(['thisMonth', 'consumption', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend'])
     expect(layout.available.ready.map((c) => c.id)).toEqual(['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'spendSoFar', 'costPerDistance', 'consumptionTrend', 'distanceYearEarlier', 'distanceAndConsumption'])
@@ -58,17 +58,17 @@ describe('resolveLayout', () => {
     const stored = { tiles: [tile('odometer', 0, 0, 1, 3), tile('tyrePressure', 1, 0, 1, 3), tile('odometer', 2, 0, 1, 3), tile(presetKey('future'), 0, 3), tile(chartKey('gone'), 2, 3)], hidden: [chartKey('gone')] }
     const layout = resolveLayout(stored, [])
 
-    expect(places(layout.tiles)).toEqual(['odometer@0,0 1x3'])
+    expect(places(layout.tiles)).toEqual(['odometer@0,0 1x4'])
     expect(layout.hidden).toEqual([])
   })
 
   it('stores what is on screen, and Standard holds every figure and ready-made chart', () => {
-    const layout = resolveLayout({ tiles: [tile('lastFillUp', 0, 0, 1, 3, true)], hidden: [chartKey('b')] }, [chart('a'), chart('b')])
+    const layout = resolveLayout({ tiles: [tile('lastFillUp', 0, 0, 1, 4, true)], hidden: [chartKey('b')] }, [chart('a'), chart('b')])
 
-    expect(toLayout(layout.tiles, layout.hidden)).toEqual({ tiles: [tile('lastFillUp', 0, 0, 1, 3, true), tile(chartKey('a'), 1, 0)], hidden: [chartKey('b')] })
+    expect(toLayout(layout.tiles, layout.hidden)).toEqual({ tiles: [tile('lastFillUp', 0, 0, 1, 4, true), tile(chartKey('a'), 1, 0)], hidden: [chartKey('b')] })
     expect(LAYOUT_PRESETS.standard.tiles.map((t) => `${t.id}@${t.x},${t.y}`)).toEqual([
       'thisMonth@0,0', 'consumption@1,0', 'odometer@2,0', 'lastFillUp@3,0',
-      'preset:monthlyCosts@0,3', 'preset:consumption@2,3', 'preset:fuelPrice@0,11', 'preset:categories@2,11', 'preset:distance@0,19',
+      'preset:monthlyCosts@0,4', 'preset:consumption@2,4', 'preset:fuelPrice@0,12', 'preset:categories@2,12', 'preset:distance@0,20',
     ])
   })
 })

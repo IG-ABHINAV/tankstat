@@ -470,6 +470,10 @@ public class StatsCalculatorTests
         var t = StatsCalculator.Summary(data, Today).Trends;
 
         Assert.Equal([new CurrencyChange("HUF", 600m, 100m), new CurrencyChange("EUR", 10m, 0m)], t.Spending); // Oct 2025..Sep 2026 vs Oct 2024..Sep 2025; October 2026 left out
+        // The main currency (most spent in over the last year, this month included) comes first even with nothing in these windows: the
+        // figure headlines the currency the card does.
+        var thisMonthOnly = Data([Fill("2026-10-05", 40, 999, 9000, currency: "EUR"), Fill("2025-03-01", 40, 100, 5000)]);
+        Assert.Equal([new CurrencyChange("EUR", 0m, 0m), new CurrencyChange("HUF", 0m, 100m)], StatsCalculator.Summary(thisMonthOnly, Today).Trends.Spending); // March 2025 is in the earlier window
     }
 
     [Fact]
@@ -491,8 +495,10 @@ public class StatsCalculatorTests
 
         var t = StatsCalculator.Summary(Data(fills), Today).Trends;
 
-        Assert.Equal(new ValueChange(6m, 8m), t.Consumption); // the last ten (by date and odometer) use 6, the ten before 8
-        Assert.Null(StatsCalculator.Summary(few, Today).Trends.Consumption);
+        Assert.Equal(new ConsumptionChange(6m, 8m, 10, 10), t.Consumption); // the last ten (by date and odometer) use 6, the ten before 8
+        Assert.Equal(new ConsumptionChange(7.5m, null, 4, 0), StatsCalculator.Summary(few, Today).Trends.Consumption); // the latest mean as soon as there is one, nothing to compare with
+        var thirteen = Enumerable.Range(0, 13).Select(i => Fill(new DateOnly(2026, 1, 1).AddDays(i).ToString("yyyy-MM-dd"), 30, 100, 1000 + i * 100, consumption: i < 3 ? 8m : 6m)).ToArray();
+        Assert.Equal(new ConsumptionChange(6m, 8m, 10, 3), StatsCalculator.Summary(Data(thirteen), Today).Trends.Consumption); // three before: compared, and said
     }
 
     [Fact]
@@ -513,6 +519,6 @@ public class StatsCalculatorTests
         Assert.Empty(t.Spending);
         Assert.Empty(t.CostPerDistance);
         Assert.Null(t.Consumption);
-        Assert.Equal(new ValueChange(0m, 0m), t.Distance);
+        Assert.Null(t.Distance); // no reading at all: no distance, not 0 km
     }
 }

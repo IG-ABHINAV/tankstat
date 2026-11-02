@@ -114,6 +114,8 @@ query VehicleDashboard($id: UUID!) {
         consumption {
           recent
           earlier
+          recentFillUps
+          earlierFillUps
         }
         distance {
           recent

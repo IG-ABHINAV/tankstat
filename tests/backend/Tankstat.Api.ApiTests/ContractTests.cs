@@ -125,6 +125,7 @@ public class ContractTests
     [InlineData("DashboardTrends", "spending", "costPerDistance", "consumption", "distance")]
     [InlineData("CurrencyChange", "currency", "recent", "earlier")]
     [InlineData("ValueChange", "recent", "earlier")]
+    [InlineData("ConsumptionChange", "recent", "earlier", "recentFillUps", "earlierFillUps")]
     [InlineData("CurrencySpend", "currency", "thisMonth", "lastMonth")]
     [InlineData("ChartData", "unit", "series")]
     [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope", "metric", "unit")]

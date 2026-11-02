@@ -142,8 +142,8 @@ export interface FakeSummary {
   trends: {
     spending: { currency: string; recent: number | null; earlier: number | null }[]
     costPerDistance: { currency: string; recent: number | null; earlier: number | null }[]
-    consumption: { recent: number | null; earlier: number | null } | null
-    distance: { recent: number | null; earlier: number | null }
+    consumption: { recent: number | null; earlier: number | null; recentFillUps: number; earlierFillUps: number } | null
+    distance: { recent: number | null; earlier: number | null } | null
   }
 }
 
@@ -165,7 +165,7 @@ export const fakeSummary = (over: Partial<FakeSummary> = {}): FakeSummary => {
     trends: {
       spending: [{ currency: 'HUF', recent: 560000, earlier: 500000 }],
       costPerDistance: [{ currency: 'HUF', recent: 4480, earlier: 4000 }],
-      consumption: { recent: 6.5, earlier: 7 },
+      consumption: { recent: 6.5, earlier: 7, recentFillUps: 10, earlierFillUps: 10 },
       distance: { recent: 12500, earlier: 11000 },
     },
     ...over,

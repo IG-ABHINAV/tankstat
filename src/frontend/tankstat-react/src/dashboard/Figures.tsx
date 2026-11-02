@@ -35,19 +35,21 @@ type Words = 'moreThanBefore' | 'lessThanBefore' | 'sameAsBefore' | 'moreFuel' |
 
 /**
  * A change in words with an arrow, never by colour: "HUF 60,000 (12%) more than the 12 months before". `size` writes the difference in the
- * figure's unit; left out (consumption), the per cent alone says it. Nothing to compare with yet is said so.
+ * figure's unit; left out (consumption), the per cent alone says it; `count` goes into the words (the fill-ups compared with). Nothing to
+ * compare with yet is said so (`none`), and so is a recent window with nothing in it (`noneRecent`), which is the other way round.
  */
-function Change({ recent, earlier, words, size, none }: { recent: number | null | undefined; earlier: number | null | undefined; words: readonly [Words, Words, Words]; size?: (value: number) => string; none: string }) {
+function Change({ recent, earlier, words, size, count, none, noneRecent }: { recent: number | null | undefined; earlier: number | null | undefined; words: readonly [Words, Words, Words]; size?: (value: number) => string; count?: number; none: string; noneRecent?: string }) {
   const { t } = useTranslation()
   const format = useFormat()
   let text: string
   let Icon = Minus
-  if (recent == null || earlier == null || earlier === 0) text = none
+  if (recent == null) text = earlier != null && noneRecent ? noneRecent : none
+  else if (earlier == null || earlier === 0) text = none
   else {
     const diff = recent - earlier
     const percent = format.number(Math.abs(diff) / earlier, { style: 'percent', maximumFractionDigits: 0 })
     const change = size ? `${size(Math.abs(diff))} (${percent})` : percent
-    text = t(`dashboard.trend.${words[diff > 0 ? 0 : diff < 0 ? 1 : 2]}`, { change })
+    text = t(`dashboard.trend.${words[diff > 0 ? 0 : diff < 0 ? 1 : 2]}`, { change, count })
     Icon = diff > 0 ? ArrowUp : diff < 0 ? ArrowDown : Minus
   }
   return (
@@ -78,7 +80,7 @@ export function Figure({ id, summary: s, units }: { id: FigureId; summary: Summa
       const main = trends?.costPerDistance[0]
       return (
         <Kpi label={t('dashboard.kpi.costPerDistance')} value={main?.recent != null ? format.costPerDistance(main.recent, main.currency, units.distance) : none}>
-          {main && <Change recent={main.recent} earlier={main.earlier} words={['moreThanBefore', 'lessThanBefore', 'sameAsBefore']} size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} />}
+          {main && <Change recent={main.recent} earlier={main.earlier} words={['moreThanBefore', 'lessThanBefore', 'sameAsBefore']} size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} noneRecent={t('dashboard.trend.nothingDriven')} />}
         </Kpi>
       )
     }
@@ -86,8 +88,8 @@ export function Figure({ id, summary: s, units }: { id: FigureId; summary: Summa
       const c = trends?.consumption
       // Fuel per distance in both windows (the stored figure), whatever unit the words show it in: more is more fuel, in mpg too.
       return (
-        <Kpi label={t('dashboard.kpi.consumptionTrend')} value={c?.recent != null ? format.consumption(c.recent, units) : none}>
-          {trends && <Change recent={c?.recent} earlier={c?.earlier} words={['moreFuel', 'lessFuel', 'sameFuel']} none={t('dashboard.trend.tooFew')} />}
+        <Kpi label={t('dashboard.kpi.consumptionTrend')} value={c?.recent != null ? format.consumption(c.recent, units) : none} hint={c ? t('dashboard.kpi.lastFillUps', { count: c.recentFillUps }) : undefined}>
+          {trends && <Change recent={c?.recent} earlier={c?.earlier} words={['moreFuel', 'lessFuel', 'sameFuel']} count={c?.earlierFillUps} none={t('dashboard.trend.tooFew')} />}
         </Kpi>
       )
     }

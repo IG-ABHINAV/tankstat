@@ -82,4 +82,7 @@ public sealed record CurrencyChange(string Currency, decimal? Recent, decimal? E
 /// <param name="CostPerDistance">The same windows, money per 100 distance units driven in each (null where nothing was driven).</param>
 /// <param name="Consumption">The mean of the last 10 stored consumptions against the mean of the 10 before them; null with fewer than 3 in either.</param>
 /// <param name="Distance">This year to today against last year up to the same day.</param>
-public sealed record DashboardTrends(IReadOnlyList<CurrencyChange> Spending, IReadOnlyList<CurrencyChange> CostPerDistance, ValueChange? Consumption, ValueChange Distance);
+public sealed record DashboardTrends(IReadOnlyList<CurrencyChange> Spending, IReadOnlyList<CurrencyChange> CostPerDistance, ConsumptionChange? Consumption, ValueChange? Distance);
+
+/// <summary>The mean consumption of the latest fill-ups against the ones before, and how many each half holds (null where too few).</summary>
+public sealed record ConsumptionChange(decimal? Recent, decimal? Earlier, int RecentFillUps, int EarlierFillUps);

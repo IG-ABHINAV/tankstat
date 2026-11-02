@@ -144,7 +144,7 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
   await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month'])
-  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, last 10 fill-ups'])
+  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, latest fill-ups'])
   await expectSoundLayout(page)
 
   await page.getByRole('button', { name: 'Copy Distance per month as my chart' }).click()

@@ -34,7 +34,7 @@ public class DashboardApiTests : IDisposable
         var id = await CarWithLogs(alice);
 
         var data = (await alice.Gql(@"query($id: UUID!, $c: ChartConfigInput!, $c2: ChartConfigInput!) {
-              vehicle(id: $id) { summary { latestOdometer averageConsumption currency thisMonthSpend fillUpCount expenseCount spendTrend { month amount } spending { currency thisMonth lastMonth } trends { spending { currency recent earlier } distance { recent earlier } consumption { recent } } } }
+              vehicle(id: $id) { summary { latestOdometer averageConsumption currency thisMonthSpend fillUpCount expenseCount spendTrend { month amount } spending { currency thisMonth lastMonth } trends { spending { currency recent earlier } distance { recent earlier } consumption { recent earlier recentFillUps earlierFillUps } } } }
               total: vehicleChartData(vehicleId: $id, config: $c) { unit series { kind currency points { key value } } }
               byCategory: vehicleChartData(vehicleId: $id, config: $c2) { series { currency points { key value } } } }",
             new
@@ -53,7 +53,9 @@ public class DashboardApiTests : IDisposable
         Assert.Equal(("HUF", 52500m), (spent.GetProperty("currency").GetString(), spent.GetProperty("thisMonth").GetDecimal()));
         var trends = summary.GetProperty("trends");
         Assert.Equal(38000m, Assert.Single(trends.GetProperty("spending").EnumerateArray()).GetProperty("recent").GetDecimal()); // the two earlier months; this month is left out
-        Assert.Equal(JsonValueKind.Null, trends.GetProperty("consumption").ValueKind); // two consumptions are not enough
+        var consumption = trends.GetProperty("consumption");
+        Assert.Equal(2, consumption.GetProperty("recentFillUps").GetInt32()); // the mean of the two there are, and nothing before them to compare with
+        Assert.Equal(JsonValueKind.Null, consumption.GetProperty("earlier").ValueKind);
 
         var total = data.GetProperty("total");
         Assert.Equal("CURRENCY", total.GetProperty("unit").GetString());

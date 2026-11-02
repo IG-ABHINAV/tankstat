@@ -310,6 +310,13 @@ type ChartSeries {
   unit: ChartUnit!
 }
 
+type ConsumptionChange {
+  recent: Decimal
+  earlier: Decimal
+  recentFillUps: Int!
+  earlierFillUps: Int!
+}
+
 type CreatedUser {
   user: UserAccount!
   reset: PasswordResetLink!
@@ -351,8 +358,8 @@ type DashboardTileInfo {
 type DashboardTrends {
   spending: [CurrencyChange!]!
   costPerDistance: [CurrencyChange!]!
-  consumption: ValueChange
-  distance: ValueChange!
+  consumption: ConsumptionChange
+  distance: ValueChange
 }
 
 type Expense {

@@ -13,6 +13,9 @@ import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_SIZE, ROW_HEIGHT, wid
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
 const COLS = { lg: COLUMNS, sm: 2, xs: 1 } as const
 const FALLBACK_WIDTH = 1280
+/** The chrome of a tile being edited (its 44 px handle row and the gap under it), paid for by a taller row: a four-row figure gains just that. */
+const EDIT_CHROME = 48
+const EDIT_ROW_EXTRA = EDIT_CHROME / MIN_SIZE.figure.h
 type Breakpoint = keyof typeof COLS
 /** The breakpoint of a width, as the library picks it: the widest whose least width is reached. */
 const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
@@ -26,8 +29,8 @@ const CLASS = { handle: 'tk-tile-handle' }
  * The dashboard as a grid of tiles (react-grid-layout, #211): the tiles placed and sized as stored, packed by column, the columns fewer on
  * a tablet or a phone (the tiles flowed in reading order). In edit mode a tile is dragged by its handle, resized by its corner, and moved,
  * sized, pinned or removed by its menu, which is how it is done with a keyboard or a screen reader (the library has neither); a widget can
- * also be dragged in from outside (`dropping`). The library's stylesheet is written here in `sx`, since the app has no stylesheet of its
- * own, and its transitions are off under reduced motion.
+ * also be dragged in from outside (`dropping`); the rows are taller then, so the handle row takes nothing from a tile's content. The
+ * library's stylesheet is written here in `sx`, since the app has no stylesheet of its own, and its transitions are off under reduced motion.
  */
 export function DashboardGrid({
   tiles,
@@ -105,7 +108,7 @@ export function DashboardGrid({
           layouts={layouts}
           breakpoints={BREAKPOINTS}
           cols={COLS}
-          rowHeight={ROW_HEIGHT}
+          rowHeight={editing ? ROW_HEIGHT + EDIT_ROW_EXTRA : ROW_HEIGHT}
           margin={[GAP, GAP]}
           containerPadding={[0, 0]}
           compactor={verticalCompactor}
@@ -123,7 +126,7 @@ export function DashboardGrid({
         >
           {ordered.map((tile, i) => (
             <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {editing ? (
+              {editing ? ( // EDIT_CHROME tall: 44 px of handle and a 4 px gap
                 <EditChrome tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />
               ) : null}
               <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
@@ -162,7 +165,7 @@ function EditChrome({ tile, name, index, count, cols, onAction }: { tile: Tile; 
     { action: 'remove', label: t('dashboard.edit.remove') },
   ]
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: '4px' }}>
       {/* The handle is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself. */}
       <Box className={CLASS.handle} aria-hidden sx={{ flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', borderRadius: '12px', bgcolor: 'action.hover' }}>
         <GripHorizontal size={18} />

@@ -1283,9 +1283,10 @@
       "consumptionHint": "last 10 full fill-ups",
       "odometer": "Odometer",
       "lastFillUp": "Last fill-up",
-      "spendingTrend": "Spending, last 12 months",
-      "costPerDistance": "Cost per distance, last 12 months",
-      "consumptionTrend": "Consumption, last 10 fill-ups",
+      "spendingTrend": "Spending, last 12 full months",
+      "costPerDistance": "Cost per distance, last 12 full months",
+      "consumptionTrend": "Consumption, latest fill-ups",
+      "lastFillUps": "last {{count}} fill-ups",
       "distanceTrend": "Distance this year",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
       "none": "–"
@@ -1342,14 +1343,15 @@
       "moreThanBefore": "{{change}} more than the 12 months before",
       "lessThanBefore": "{{change}} less than the 12 months before",
       "sameAsBefore": "the same as the 12 months before",
-      "moreFuel": "uses {{change}} more fuel than the 10 fill-ups before",
-      "lessFuel": "uses {{change}} less fuel than the 10 fill-ups before",
-      "sameFuel": "uses as much fuel as the 10 fill-ups before",
+      "moreFuel": "uses {{change}} more fuel than the {{count}} fill-ups before",
+      "lessFuel": "uses {{change}} less fuel than the {{count}} fill-ups before",
+      "sameFuel": "uses as much fuel as the {{count}} fill-ups before",
       "moreThanLastYear": "{{change}} more than last year to this day",
       "lessThanLastYear": "{{change}} less than last year to this day",
       "sameAsLastYear": "the same as last year to this day",
       "nothingBefore": "nothing to compare with yet",
-      "tooFew": "needs 3 fill-ups in each ten"
+      "tooFew": "needs 3 earlier fill-ups to compare with",
+      "nothingDriven": "nothing driven in the last 12 full months"
     },
     "customize": {
       "button": "Customize",

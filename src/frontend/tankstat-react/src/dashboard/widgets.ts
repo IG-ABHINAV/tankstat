@@ -191,7 +191,12 @@ export function resolveLayout<S extends { id: string }>(stored: Layout | null, s
     return widget !== null && (widget.kind !== 'saved' || savedIds.has(widget.id))
   }
   const seen = new Set<string>()
-  const tiles = layout.tiles.filter((t) => known(t) && !seen.has(t.id) && seen.add(t.id))
+  // No smaller than its widget needs (a figure stored three rows high before figures took four), and no wider than the grid.
+  const sized = (t: Tile): Tile => {
+    const min = MIN_SIZE[widgetOf(t.id)?.kind ?? 'saved']
+    return { ...t, w: Math.min(COLUMNS, Math.max(min.w, t.w)), h: Math.min(MAX_ROWS, Math.max(min.h, t.h)) }
+  }
+  const tiles = layout.tiles.filter((t) => known(t) && !seen.has(t.id) && seen.add(t.id)).map(sized)
   const hiddenKeys = new Set(layout.hidden)
   const mentioned = new Set([...tiles.map((t) => t.id), ...hiddenKeys])
   // The saved charts the layout does not mention, each at the first free spot, in the order they were made.

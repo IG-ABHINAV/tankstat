@@ -1283,9 +1283,10 @@
       "consumptionHint": "az utolsó 10 teli tankolás",
       "odometer": "Kilométeróra",
       "lastFillUp": "Utolsó tankolás",
-      "spendingTrend": "Költés, utolsó 12 hónap",
-      "costPerDistance": "Költség távolságra, utolsó 12 hónap",
-      "consumptionTrend": "Fogyasztás, utolsó 10 tankolás",
+      "spendingTrend": "Költés, utolsó 12 teljes hónap",
+      "costPerDistance": "Költség távolságra, utolsó 12 teljes hónap",
+      "consumptionTrend": "Fogyasztás, legutóbbi tankolások",
+      "lastFillUps": "utolsó {{count}} tankolás",
       "distanceTrend": "Idei megtett távolság",
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
       "none": "–"
@@ -1342,14 +1343,15 @@
       "moreThanBefore": "{{change}}-kal/-kel több, mint az azt megelőző 12 hónapban",
       "lessThanBefore": "{{change}}-kal/-kel kevesebb, mint az azt megelőző 12 hónapban",
       "sameAsBefore": "ugyanannyi, mint az azt megelőző 12 hónapban",
-      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint az előző 10 tankolásnál",
-      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint az előző 10 tankolásnál",
-      "sameFuel": "ugyanannyi üzemanyagot használ, mint az előző 10 tankolásnál",
+      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint az előző {{count}} tankolásnál",
+      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint az előző {{count}} tankolásnál",
+      "sameFuel": "ugyanannyi üzemanyagot használ, mint az előző {{count}} tankolásnál",
       "moreThanLastYear": "{{change}}-kal/-kel több, mint tavaly ugyaneddig",
       "lessThanLastYear": "{{change}}-kal/-kel kevesebb, mint tavaly ugyaneddig",
       "sameAsLastYear": "ugyanannyi, mint tavaly ugyaneddig",
       "nothingBefore": "még nincs mivel összevetni",
-      "tooFew": "mindkét tízben 3 tankolás kell hozzá"
+      "tooFew": "3 korábbi tankolás kell az összevetéshez",
+      "nothingDriven": "az utolsó 12 teljes hónapban nem volt megtett út"
     },
     "customize": {
       "button": "Testreszabás",

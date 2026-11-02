@@ -288,7 +288,9 @@ public static class StatsCalculator
         }
 
         var trend = Enumerable.Range(0, 6).Select(i => thisMonth.AddMonths(i - 5)).Select(m => new MonthAmount($"{m.Year}-{m.Month:00}", currency is null ? 0 : MonthTotal(m))).ToList();
-        var consumptions = data.Fuel.Where(f => f.Consumption is not null).OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).Take(10).Select(f => f.Consumption!.Value).ToList();
+        // Every stored consumption, latest first (by date, then odometer): the average of the last ten, and the trend's two halves.
+        var consumptions = data.Fuel.Where(f => f.Consumption is not null).OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).Select(f => f.Consumption!.Value).ToList();
+        var lastTen = consumptions.Take(TrendFillUps).ToList();
 
         // Every currency spent in this month or last month, the main one first (also when nothing was spent in it), then by this month.
         var lastMonth = thisMonth.AddMonths(-1);
@@ -302,38 +304,49 @@ public static class StatsCalculator
         return new VehicleSummary(
             data.Fuel.Count == 0 ? null : data.Fuel.Max(f => f.Date),
             data.Readings.Count == 0 ? null : data.Readings.Max(r => r.Value),
-            consumptions.Count == 0 ? null : Math.Round(consumptions.Average(), 2),
-            currency, trend[^1].Amount, trend[^2].Amount, trend, data.Fuel.Count, data.Expenses.Count, spending, Trends(data, today, currency));
+            lastTen.Count == 0 ? null : Math.Round(lastTen.Average(), 2),
+            currency, trend[^1].Amount, trend[^2].Amount, trend, data.Fuel.Count, data.Expenses.Count, spending, Trends(data, today, currency, consumptions));
     }
 
     public const int TrendFillUps = 10;
     public const int MinTrendFillUps = 3;
 
-    /// <summary>The trend figures: the last 12 whole months against the 12 before, the last fill-ups against the ones before, this year against last.</summary>
-    private static DashboardTrends Trends(StatsData data, DateOnly today, string? mainCurrency)
+    /// <summary>
+    /// The trend figures: the last 12 whole months against the 12 before, the latest fill-ups against the ones before, this year against
+    /// last. <paramref name="consumptions"/> are the stored ones, latest first (the summary's list). Worked out for every summary, so it
+    /// walks the rows once: the costs are listed once, the two windows' distances found once.
+    /// </summary>
+    private static DashboardTrends Trends(StatsData data, DateOnly today, string? mainCurrency, List<decimal> consumptions)
     {
         var thisMonth = MonthStart(today);
         var recent = (Start: thisMonth.AddMonths(-12), End: thisMonth.AddDays(-1));
         var earlier = (Start: thisMonth.AddMonths(-24), End: thisMonth.AddMonths(-12).AddDays(-1));
 
-        IEnumerable<(string Currency, DateOnly Date, decimal Amount)> costs = data.Fuel.Select(f => (f.Currency, f.Date, f.Amount)).Concat(data.Expenses.Select(e => (e.Currency, e.Date, e.Amount)));
+        var costs = data.Fuel.Select(f => (f.Currency, f.Date, f.Amount)).Concat(data.Expenses.Select(e => (e.Currency, e.Date, e.Amount))).ToList();
         decimal Spent(string c, (DateOnly Start, DateOnly End) w) => costs.Where(x => x.Currency == c && x.Date >= w.Start && x.Date <= w.End).Sum(x => x.Amount);
-        var currencies = costs.Where(x => x.Date >= earlier.Start && x.Date <= recent.End).Select(x => x.Currency).Distinct()
+        // The main currency first, always (the summary's headline currency, also with nothing spent in it in these windows), then the
+        // others used in either window by what was spent lately.
+        var used = costs.Where(x => x.Date >= earlier.Start && x.Date <= recent.End).Select(x => x.Currency);
+        var currencies = (mainCurrency is null ? used : used.Prepend(mainCurrency)).Distinct()
             .OrderByDescending(c => c == mainCurrency).ThenByDescending(c => Spent(c, recent)).ThenBy(c => c, StringComparer.Ordinal).ToList();
         var spending = currencies.Select(c => new CurrencyChange(c, Spent(c, recent), Spent(c, earlier))).ToList();
-        decimal? PerDistance(decimal amount, (DateOnly Start, DateOnly End) w)
-        {
-            var distance = DistanceIn(data.Readings, w);
-            return distance > 0 ? Math.Round(amount / distance * 100, 3) : null;
-        }
-        var perDistance = currencies.Select(c => new CurrencyChange(c, PerDistance(Spent(c, recent), recent), PerDistance(Spent(c, earlier), earlier))).ToList();
+        var recentDistance = DistanceIn(data.Readings, recent);
+        var earlierDistance = DistanceIn(data.Readings, earlier);
+        decimal? PerDistance(decimal amount, decimal distance) => distance > 0 ? Math.Round(amount / distance * 100, 3) : null;
+        var perDistance = spending.Select(s => new CurrencyChange(s.Currency, PerDistance(s.Recent!.Value, recentDistance), PerDistance(s.Earlier!.Value, earlierDistance))).ToList();
 
-        var consumptions = data.Fuel.Where(f => f.Consumption is not null).OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).Select(f => f.Consumption!.Value).ToList();
+        // The latest ten against the ten before: the latest mean as soon as there is one (the Average consumption figure shows it too),
+        // the earlier one from three fill-ups on, so a comparison never rests on one or two.
         var lastTen = consumptions.Take(TrendFillUps).ToList();
         var tenBefore = consumptions.Skip(TrendFillUps).Take(TrendFillUps).ToList();
-        var consumption = lastTen.Count >= MinTrendFillUps && tenBefore.Count >= MinTrendFillUps ? new ValueChange(Math.Round(lastTen.Average(), 2), Math.Round(tenBefore.Average(), 2)) : null;
+        var consumption = lastTen.Count == 0
+            ? null
+            : new ConsumptionChange(Math.Round(lastTen.Average(), 2), tenBefore.Count >= MinTrendFillUps ? Math.Round(tenBefore.Average(), 2) : null, lastTen.Count, tenBefore.Count);
 
-        var distance = new ValueChange(DistanceIn(data.Readings, (new DateOnly(today.Year, 1, 1), today)), DistanceIn(data.Readings, (new DateOnly(today.Year - 1, 1, 1), today.AddYears(-1))));
+        // Nothing driven is a 0 like the distance chart's; a vehicle without a reading has no distance at all.
+        var distance = data.Readings.Count == 0
+            ? null
+            : new ValueChange(DistanceIn(data.Readings, (new DateOnly(today.Year, 1, 1), today)), DistanceIn(data.Readings, (new DateOnly(today.Year - 1, 1, 1), today.AddYears(-1))));
         return new DashboardTrends(spending, perDistance, consumption, distance);
     }
 }
