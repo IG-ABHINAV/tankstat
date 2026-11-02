@@ -31,7 +31,7 @@ With Docker, `docker logs tankstat` shows it. Every start of the server writes a
 
 Opening the app shows the setup page, which asks for the code and then takes you through the setup as a wizard, step by step:
 
-1. **The settings**, a step per group of the *Server settings* page with the same fields (what the environment sets is shown read-only, and a group with nothing to choose has no step): the sign-in first, whose mode must be chosen (none is preselected, and sign-in off is one of the choices), then the e-mail, photo reading, backups, defaults, notifications, offline sync and logging, each of which can be skipped. *Next* saves a step into the app's own settings file, *Back* goes to the one before.
+1. **The settings**, a step per group of the *Server settings* page with the same fields (what the environment sets is shown read-only, and a group with nothing to choose has no step): the sign-in first, whose mode must be chosen (none is preselected, and sign-in off is one of the choices), then the e-mail, photo reading, backups, defaults, notifications, offline sync, logging and telemetry, each of which can be skipped. *Next* saves a step into the app's own settings file, *Back* goes to the one before.
 2. **The last step**, by the sign-in mode chosen:
    - `Standalone`: an e-mail address and a password make the first administrator.
    - `None`: tick that you understand everyone who reaches the address sees and changes all data, and finish. Until then every page shows the setup, but the API itself is as open as sign-in-off always is.
