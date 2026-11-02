@@ -145,6 +145,14 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<bool>("RunningTotal")
                         .HasColumnType("bit");
 
+                    b.Property<string>("SecondKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SecondMetric")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("bit");
 

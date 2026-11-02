@@ -19,12 +19,16 @@ export interface ChartRecipe {
   runningTotal: boolean
   /** The same periods a year earlier beside them (only over time). */
   compareYearEarlier: boolean
+  /** A second measure in the same chart, on a scale of its own (only over time; the options above are the first's). */
+  secondMetric: ChartMetric | null
+  /** How the second measure is drawn: bars, a line or an area. */
+  secondKind: ChartKind | null
 }
 
 /** Series colours that work on the dark and the light scheme alike. */
 export const PALETTE: readonly string[] = SERIES_COLORS
 
-export const seriesId = (s: Series) => `${s.kind}|${s.currency ?? ''}|${s.role}`
+export const seriesId = (s: Series) => `${s.metric}|${s.kind}|${s.currency ?? ''}|${s.role}`
 
 /** The values themselves, as opposed to a line drawn from them (a trend, a year earlier), which is always drawn as a line over them. */
 export const isValue = (s: Series) => s.role === 'VALUE'
@@ -83,25 +87,48 @@ export function shortPeriodLabels(keys: readonly string[], language: string, gro
   return labels
 }
 
+/** A value axis: the unit it reads (and the currency, for money), the measure's side, and whether it is drawn. */
+export interface ChartAxis {
+  id: string
+  unit: ChartData['unit']
+  currency: string | null
+  /** The first measure's axes are on the left, the second's on the right. */
+  side: 'left' | 'right'
+  /** Only the one scale of its side is drawn: several, each from 0 to its own highest value, have no common axis to read. */
+  shown: boolean
+}
+
 /** The value axes of a chart: what each is called, which series it draws, and whether it is shown. */
 export interface ChartAxes {
-  /** One per currency in a chart of costs (in the order the series name them), else one. */
-  axes: { id: string; currency: string | null }[]
+  /** One per unit, and per currency for money, in the order the series name them: the first measure's, then the second's. */
+  axes: ChartAxis[]
   /** The id of the axis a series is drawn on. */
   axisOf: (s: Series) => string
-  /** False when several currencies each have a scale of their own: then no axis, and no grid lines, would mean anything for all of them. */
+  /** Whether the first measure's axis is drawn (and the grid lines that go with it). */
   shown: boolean
+  /** Whether a measure has several scales (currencies), which the chart then says in words. */
+  ownScales: boolean
 }
 
 /**
  * Costs are never converted (`fuel-log-and-stats.md`), so they have no common measure: in a chart of costs every currency is drawn on a
- * scale of its own, and the highest value of each reaches the same height (#159). Any other unit shares one axis.
+ * scale of its own, and the highest value of each reaches the same height (#159). Any other unit shares one axis. A second measure gets
+ * the axes its own units need on the right, unless the first measure's already read them (the same unit and currency share one scale).
  */
-export function chartAxes(data: Pick<ChartData, 'unit' | 'series'>): ChartAxes {
-  if (!perCurrency(data.unit)) return { axes: [{ id: 'value', currency: null }], axisOf: () => 'value', shown: true }
-  const currencies = [...new Set(data.series.map((s) => s.currency ?? ''))]
-  const id = (currency: string) => `currency:${currency}`
-  return { axes: currencies.map((c) => ({ id: id(c), currency: c || null })), axisOf: (s) => id(s.currency ?? ''), shown: currencies.length <= 1 }
+export function chartAxes(data: Pick<ChartData, 'series'>): ChartAxes {
+  const keyOf = (s: Series) => (perCurrency(s.unit) ? `${s.unit}:${s.currency ?? ''}` : s.unit)
+  const first = data.series[0]?.metric
+  const distinct = (list: Series[]) => [...new Map(list.map((s) => [keyOf(s), s])).values()]
+  const left = distinct(data.series.filter((s) => s.metric === first))
+  const leftKeys = new Set(left.map(keyOf))
+  const right = distinct(data.series.filter((s) => s.metric !== first && !leftKeys.has(keyOf(s))))
+  const axis = (s: Series, side: ChartAxis['side'], count: number): ChartAxis => ({ id: keyOf(s), unit: s.unit, currency: perCurrency(s.unit) ? s.currency : null, side, shown: count === 1 })
+  return {
+    axes: [...left.map((s) => axis(s, 'left', left.length)), ...right.map((s) => axis(s, 'right', right.length))],
+    axisOf: keyOf,
+    shown: left.length <= 1,
+    ownScales: left.length > 1 || right.length > 1,
+  }
 }
 
 /** Units of money, kept per currency and never converted: every currency gets a scale of its own, and nothing spent shows as a dash. */
@@ -124,7 +151,9 @@ export const stackOf = (s: Series) => `currency:${s.currency ?? ''}`
  * periods and series costs one pass, not one per bar.
  */
 export function barPlaces(data: Pick<ChartData, 'series'>, periods: readonly string[], stacked: boolean): { at: (s: Series, index: number) => BarPlace | null } {
-  const groupKey = (s: Series) => (stacked ? stackOf(s) : seriesId(s))
+  // Only the first measure is stacked: a second measure's bars stand beside the stacks, never in one.
+  const first = data.series[0]?.metric
+  const groupKey = (s: Series) => (stacked && s.metric === first ? stackOf(s) : seriesId(s))
   const keys = [...new Set(data.series.map(groupKey))]
   const value = data.series.map((s) => new Map(s.points.map((p) => [p.key, p.value ?? 0])))
   const places = periods.map((period) => {
@@ -150,6 +179,7 @@ export function normalise(r: ChartRecipe): ChartRecipe {
   const custom = r.range === 'CUSTOM'
   const overTime = isOverTime({ grouping, kind })
   const runningTotal = r.runningTotal && overTime && ADDITIVE.includes(r.metric)
+  const secondMetric = overTime && r.secondMetric !== r.metric ? r.secondMetric : null
   return {
     ...r,
     grouping,
@@ -161,6 +191,9 @@ export function normalise(r: ChartRecipe): ChartRecipe {
     trend: overTime && !runningTotal ? r.trend : 'NONE',
     runningTotal,
     compareYearEarlier: r.compareYearEarlier && overTime,
+    secondMetric,
+    // A second measure is drawn as bars, a line or an area: a line unless chosen otherwise.
+    secondKind: secondMetric ? (r.secondKind && r.secondKind !== 'DONUT' ? r.secondKind : 'LINE') : null,
   }
 }
 
@@ -195,6 +228,8 @@ export const NEW_RECIPE: ChartRecipe = {
   trend: 'NONE',
   runningTotal: false,
   compareYearEarlier: false,
+  secondMetric: null,
+  secondKind: null,
 }
 
 /** The inputs of the chart query for a recipe (dates only count for a custom range). */
@@ -209,4 +244,6 @@ export const toConfig = (r: ChartRecipe) => ({
   trend: r.trend,
   runningTotal: r.runningTotal,
   compareYearEarlier: r.compareYearEarlier,
+  secondMetric: r.secondMetric,
+  secondKind: r.secondKind,
 })

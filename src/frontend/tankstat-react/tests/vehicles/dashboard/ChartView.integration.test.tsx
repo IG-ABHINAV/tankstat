@@ -2,11 +2,16 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
 import { ChartView } from '../../../src/dashboard/ChartView.tsx'
-import type { ChartData, ChartRecipe } from '../../../src/dashboard/chartFormat.ts'
+import type { ChartData, ChartRecipe, Series } from '../../../src/dashboard/chartFormat.ts'
 import { ThemeRoot } from '../../../src/theme/ThemeRoot.tsx'
 
 const units = { distance: 'KILOMETERS', volume: 'LITERS' } as const
-const money: ChartData = {
+
+/** A test chart's data, its series written without their measure: the first measure's, in the chart's unit, as the server stamps them. */
+type Loose = { unit: ChartData['unit']; series: (Omit<Series, 'metric' | 'unit'> & Partial<Pick<Series, 'metric' | 'unit'>>)[] }
+const typed = (data: Loose): ChartData => ({ ...data, series: data.series.map((s) => ({ metric: 'TOTAL_SPEND' as const, unit: data.unit, ...s })) })
+
+const money: Loose = {
   unit: 'CURRENCY',
   series: [
     { role: 'VALUE', slope: null, kind: 'fuel', currency: 'HUF', points: [{ key: '2026-08', value: 12000 }, { key: '2026-09', value: 15500 }] },
@@ -15,10 +20,10 @@ const money: ChartData = {
 }
 const recipe = (kind: ChartRecipe['kind']): Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> => ({ kind, metric: 'TOTAL_SPEND', grouping: 'MONTH', stacked: kind === 'BAR' })
 
-const view = (data: ChartData, kind: ChartRecipe['kind']) =>
+const view = (data: Loose, kind: ChartRecipe['kind']) =>
   render(
     <ThemeRoot instant>
-      <ChartView data={data} recipe={recipe(kind)} units={units} title="Monthly costs" />
+      <ChartView data={typed(data)} recipe={recipe(kind)} units={units} title="Monthly costs" />
     </ThemeRoot>,
   )
 
@@ -52,7 +57,7 @@ it('says so instead of drawing an empty chart', () => {
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
 })
 
-const tableOf = async (data: ChartData) => {
+const tableOf = async (data: Loose) => {
   const ui = userEvent.setup()
   view(data, 'LINE')
   await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
@@ -76,7 +81,7 @@ it('lists a chart by category with the expenses that have none as Uncategorised'
   render(
     <ThemeRoot instant>
       <ChartView
-        data={{ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'expenses', currency: 'HUF', points: [{ key: 'Service', value: 35000 }, { key: '', value: 1500 }] }] }}
+        data={typed({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'expenses', currency: 'HUF', points: [{ key: 'Service', value: 35000 }, { key: '', value: 1500 }] }] })}
         recipe={{ kind: 'DONUT', metric: 'EXPENSE_COST', grouping: 'CATEGORY', stacked: false }}
         units={units}
         title="Expenses by category"
@@ -91,7 +96,7 @@ it('lists a chart by category with the expenses that have none as Uncategorised'
   expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Service', 'Uncategorised'])
 })
 
-const twoCurrencies: ChartData = {
+const twoCurrencies: Loose = {
   unit: 'CURRENCY',
   series: [
     { role: 'VALUE', slope: null, kind: 'fuel', currency: 'HUF', points: [{ key: '2026-08', value: 38000 }, { key: '2026-09', value: 0 }] },
@@ -132,7 +137,7 @@ it('names a series of a kind it does not know plainly, and writes an amount with
 
 // ---- lines drawn from the values -------------------------------------------------------------------------------
 
-const line = (role: ChartData['series'][number]['role'], values: (number | null)[], slope: number | null = null): ChartData['series'][number] => ({
+const line = (role: Series['role'], values: (number | null)[], slope: number | null = null): Loose['series'][number] => ({
   kind: 'total',
   currency: 'HUF',
   role,
@@ -140,10 +145,10 @@ const line = (role: ChartData['series'][number]['role'], values: (number | null)
   points: values.map((value, i) => ({ key: `2026-0${i + 7}`, value })),
 })
 
-const drawn = (data: ChartData, over: Partial<ChartRecipe> = {}, viewUnits: typeof units | { distance: 'MILES'; volume: 'US_GALLONS' } = units) =>
+const drawn = (data: Loose, over: Partial<ChartRecipe> = {}, viewUnits: typeof units | { distance: 'MILES'; volume: 'US_GALLONS' } = units) =>
   render(
     <ThemeRoot instant>
-      <ChartView data={data} recipe={{ ...recipe('BAR'), stacked: false, ...over }} units={viewUnits} title="Costs" />
+      <ChartView data={typed(data)} recipe={{ ...recipe('BAR'), stacked: false, ...over }} units={viewUnits} title="Costs" />
     </ThemeRoot>,
   )
 

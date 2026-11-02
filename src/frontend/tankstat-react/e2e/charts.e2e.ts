@@ -144,6 +144,56 @@ test('draws a moving average and a year earlier as lines over the bars, on the b
   }
 })
 
+test('draws a second measure on a scale of its own: distance as bars on the left, consumption as a line on the right, both inside the chart', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // A full tank every month of the last year: distance per month, and a consumption between every two of them.
+  let odometer = 10_000
+  for (let back = 12; back >= 0; back--) {
+    odometer += 600 + (back % 3) * 100
+    await graphql(page, 'mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }', {
+      i: { vehicleId: vehicle.id, date: monthStart(back), volume: 40 + (back % 4), totalCost: 24_000, currency: 'HUF', odometer, isFullTank: true },
+    })
+  }
+  await graphql(page, 'mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }', {
+    i: {
+      vehicleId: vehicle.id,
+      title: 'Distance and consumption',
+      shared: false,
+      config: { metric: 'DISTANCE', grouping: 'MONTH', kind: 'BAR', range: 'LAST12_MONTHS', stacked: false, secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' },
+    },
+  })
+  await openVehicle(page, vehicle.id)
+
+  await expect.poll(async () => (await measureChart(page, 'Distance and consumption')).bars.length).toBeGreaterThanOrEqual(11)
+  const figure = page.getByRole('img', { name: 'Distance and consumption: chart', exact: true }).locator('xpath=ancestor::figure[1]')
+  const drawn = await figure.evaluate((root) => {
+    const svg = [...root.querySelectorAll('svg')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]
+    const box = svg.getBoundingClientRect()
+    const within = (element: Element | null) => {
+      const b = element?.getBoundingClientRect()
+      return Boolean(b && b.width > 0 && b.left >= box.left - 1 && b.right <= box.right + 1 && b.top >= box.top - 1 && b.bottom <= box.bottom + 1)
+    }
+    const labels = (side: string) => [...svg.querySelectorAll(`.MuiChartsAxis-${side} .MuiChartsAxis-tickLabel`)].map((t) => t.textContent ?? '')
+    return {
+      left: { labels: labels('left').length, inside: within(svg.querySelector('.MuiChartsAxis-left')) },
+      right: { labels: labels('right').length, inside: within(svg.querySelector('.MuiChartsAxis-right')) },
+      line: within(svg.querySelector('path[data-series^="AVERAGE_CONSUMPTION|"]')),
+    }
+  })
+  expect(drawn).toEqual({ left: { labels: expect.any(Number), inside: true }, right: { labels: expect.any(Number), inside: true }, line: true })
+  expect(drawn.left.labels).toBeGreaterThan(1)
+  expect(drawn.right.labels).toBeGreaterThan(1)
+  await expect(figure.getByText(/scale of its own/)).toHaveCount(0) // one scale per side, each read by its axis
+
+  await figure.getByRole('button', { name: 'Show the data as a table' }).click()
+  const table = page.getByRole('table', { name: 'Distance and consumption' })
+  await expect(table.getByRole('columnheader')).toHaveText(['Period', 'Total', 'Average consumption'])
+  await expect(table).toContainText('km')
+  await expect(table).toContainText('L/100 km')
+  await expectSoundLayout(page)
+})
+
 test('a saved chart of the fuel price before discounts adds the discount back, while the preset Fuel price stays on what was paid', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)

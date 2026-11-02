@@ -14,7 +14,7 @@ public class StatsCalculatorTests
 
     private static ChartConfig Config(ChartMetric metric = ChartMetric.TotalSpend, ChartGrouping grouping = ChartGrouping.Month, ChartRange range = ChartRange.Last3Months,
         ChartKind kind = ChartKind.Bar, bool stacked = false, DateOnly? from = null, DateOnly? to = null, ChartTrend trend = ChartTrend.None, bool runningTotal = false,
-        bool compare = false) => new(metric, grouping, kind, range, stacked, from, to, trend, runningTotal, compare);
+        bool compare = false, ChartMetric? second = null, ChartKind? secondKind = null) => new(metric, grouping, kind, range, stacked, from, to, trend, runningTotal, compare, second, secondKind);
 
     private static ChartSeries Role(ChartData chart, ChartSeriesRole role, string? currency = "HUF") => chart.Series.Single(s => s.Role == role && s.Currency == currency);
 
@@ -355,6 +355,37 @@ public class StatsCalculatorTests
         Assert.Equal([0m, null, 10m], Values(Role(all, ChartSeriesRole.Value, "EUR"))); // nothing spent in euros in August, over a distance
         Assert.Equal([4000m, null, 5000m], Values(Role(fuel, ChartSeriesRole.Value)));
         Assert.Equal("fuel", Role(fuel, ChartSeriesRole.Value).Kind);
+    }
+
+    // ---- a second measure ------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ASecondMeasure_ComesAfterTheFirstsLines_InItsOwnUnit_AndTheOptionsStayTheFirsts()
+    {
+        var data = Data([Fill("2026-08-03", 40, 100, 1000, consumption: 6m), Fill("2026-09-03", 40, 200, 1500, consumption: 7m), Fill("2026-10-03", 40, 300, 2000, consumption: 8m)]);
+
+        var chart = StatsCalculator.Chart(Config(ChartMetric.Distance, compare: true, trend: ChartTrend.Linear, second: ChartMetric.AverageConsumption, secondKind: ChartKind.Line), data, Today);
+
+        Assert.Equal(ChartUnit.Distance, chart.Unit);
+        Assert.Equal(
+            [(ChartMetric.Distance, ChartUnit.Distance, ChartSeriesRole.Value), (ChartMetric.Distance, ChartUnit.Distance, ChartSeriesRole.YearEarlier),
+             (ChartMetric.AverageConsumption, ChartUnit.Consumption, ChartSeriesRole.Value)],
+            chart.Series.Select(s => (s.Metric, s.Unit, s.Role))); // no trend: two closed months of distance are not enough
+        Assert.Equal([6m, 7m, 8m], Values(chart.Series[^1]));
+    }
+
+    [Fact]
+    public void EverySeries_IsStampedWithItsMeasure_ACategoryChartToo()
+    {
+        var data = Data([Fill("2026-08-03", 40, 100, 1000)], [Cost("2026-09-01", 50, "Parking")]);
+
+        var categories = StatsCalculator.Chart(Config(ChartMetric.ExpenseCost, ChartGrouping.Category, kind: ChartKind.Donut), data, Today);
+        var stacked = StatsCalculator.Chart(Config(stacked: true, trend: ChartTrend.MovingAverage, second: ChartMetric.FuelVolume, secondKind: ChartKind.Bar), data, Today);
+
+        Assert.All(categories.Series, s => Assert.Equal((ChartMetric.ExpenseCost, ChartUnit.Currency), (s.Metric, s.Unit)));
+        Assert.Equal(
+            [(ChartMetric.TotalSpend, ChartUnit.Currency), (ChartMetric.TotalSpend, ChartUnit.Currency), (ChartMetric.TotalSpend, ChartUnit.Currency), (ChartMetric.FuelVolume, ChartUnit.Volume)],
+            stacked.Series.Select(s => (s.Metric, s.Unit))); // fuel, expenses, their total's moving average, then the volume (never stacked)
     }
 
     // ---- summary -------------------------------------------------------------------------------------------

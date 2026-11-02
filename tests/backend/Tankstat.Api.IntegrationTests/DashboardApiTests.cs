@@ -111,6 +111,26 @@ public class DashboardApiTests : IDisposable
     }
 
     [Fact]
+    public async Task ASecondMeasure_IsSaved_AndItsSeriesSayTheirOwnMetricAndUnit()
+    {
+        var (alice, _, _) = await Users();
+        var id = await CarWithLogs(alice);
+        var config = new { metric = "DISTANCE", grouping = "MONTH", kind = "BAR", range = "LAST3_MONTHS", stacked = false, secondMetric = "AVERAGE_CONSUMPTION", secondKind = "LINE" };
+
+        var saved = (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { secondMetric secondKind } }",
+            new { i = new { vehicleId = id, title = "Distance and consumption", shared = false, config } })).Data().GetProperty("saveVehicleChart");
+        var data = (await alice.Gql("query($id: UUID!, $c: ChartConfigInput!) { vehicleChartData(vehicleId: $id, config: $c) { unit series { metric unit role } } }",
+            new { id, c = config })).Data().GetProperty("vehicleChartData");
+        var refused = await alice.Gql("query($id: UUID!) { vehicleChartData(vehicleId: $id, config: { metric: DISTANCE, grouping: MONTH, kind: BAR, range: ALL, stacked: false, secondMetric: DISTANCE, secondKind: LINE }) { unit } }", new { id });
+
+        Assert.Equal(("AVERAGE_CONSUMPTION", "LINE"), (saved.GetProperty("secondMetric").GetString(), saved.GetProperty("secondKind").GetString()));
+        Assert.Equal("DISTANCE", data.GetProperty("unit").GetString());
+        Assert.Equal([("DISTANCE", "DISTANCE"), ("AVERAGE_CONSUMPTION", "CONSUMPTION")],
+            data.GetProperty("series").EnumerateArray().Select(s => (s.GetProperty("metric").GetString(), s.GetProperty("unit").GetString())));
+        Assert.Equal("chart.secondSameMetric", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
+
+    [Fact]
     public async Task StrangersGetNothing()
     {
         var (alice, bob, _) = await Users();

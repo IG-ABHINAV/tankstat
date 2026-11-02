@@ -45,8 +45,12 @@ public sealed record ChartPoint(string Key, decimal? Value);
 /// <param name="Currency">The currency of a cost series; null for the others.</param>
 /// <param name="Role">What the series shows; a trend or a year earlier belongs to the value series of the same kind and currency.</param>
 /// <param name="Slope">For a <see cref="ChartSeriesRole.Linear"/> trend: how much it changes per period, in the series' unit.</param>
-public sealed record ChartSeries(string Kind, string? Currency, IReadOnlyList<ChartPoint> Points, ChartSeriesRole Role = ChartSeriesRole.Value, decimal? Slope = null);
+/// <param name="Metric">The measure the series belongs to (a chart can have two), stamped on every series by <see cref="StatsCalculator.Chart"/>.</param>
+/// <param name="Unit">The unit of that measure, which the series is written in.</param>
+public sealed record ChartSeries(string Kind, string? Currency, IReadOnlyList<ChartPoint> Points, ChartSeriesRole Role = ChartSeriesRole.Value, decimal? Slope = null,
+    ChartMetric Metric = default, ChartUnit Unit = default);
 
+/// <param name="Unit">The first measure's unit; with a second measure, each series says its own.</param>
 public sealed record ChartData(ChartUnit Unit, IReadOnlyList<ChartSeries> Series);
 
 public sealed record MonthAmount(string Month, decimal Amount);

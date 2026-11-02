@@ -75,8 +75,10 @@ public enum ChartTrend
 /// <param name="Trend">A trend line over the values (a chart over time only).</param>
 /// <param name="RunningTotal">Each period shows the sum so far (a metric that adds up, over time only).</param>
 /// <param name="CompareYearEarlier">The same periods a year earlier, as a series of their own (over time only).</param>
+/// <param name="SecondMetric">A second measure drawn in the same chart on a scale of its own (over time only); the options above are the first's.</param>
+/// <param name="SecondKind">How the second measure is drawn: bars, a line or an area.</param>
 public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, ChartKind Kind, ChartRange Range, bool Stacked, DateOnly? From = null, DateOnly? To = null,
-    ChartTrend Trend = ChartTrend.None, bool RunningTotal = false, bool CompareYearEarlier = false)
+    ChartTrend Trend = ChartTrend.None, bool RunningTotal = false, bool CompareYearEarlier = false, ChartMetric? SecondMetric = null, ChartKind? SecondKind = null)
 {
     public const int MaxCustomYears = 30;
 
@@ -86,7 +88,8 @@ public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, Cha
 
     public ChartConfig Validated()
     {
-        if (!Enum.IsDefined(Metric) || !Enum.IsDefined(Grouping) || !Enum.IsDefined(Kind) || !Enum.IsDefined(Range) || !Enum.IsDefined(Trend))
+        if (!Enum.IsDefined(Metric) || !Enum.IsDefined(Grouping) || !Enum.IsDefined(Kind) || !Enum.IsDefined(Range) || !Enum.IsDefined(Trend)
+            || SecondMetric is { } second && !Enum.IsDefined(second) || SecondKind is { } secondKind && !Enum.IsDefined(secondKind))
             throw new DomainException("chart.invalid", "This chart is not valid.");
         if (Grouping == ChartGrouping.Category && Metric != ChartMetric.ExpenseCost)
             throw new DomainException("chart.categoryNeedsExpenses", "Grouping by category is only available for expense costs.");
@@ -102,14 +105,24 @@ public sealed record ChartConfig(ChartMetric Metric, ChartGrouping Grouping, Cha
             throw new DomainException("chart.runningTotalNeedsTotals", "A running total needs a metric that adds up (costs, volume, distance or fill-ups).");
         if (RunningTotal && Trend != ChartTrend.None)
             throw new DomainException("chart.trendWithRunningTotal", "A running total cannot have a trend line.");
+        if (SecondMetric is { } other)
+        {
+            if (Grouping == ChartGrouping.Category || Kind == ChartKind.Donut)
+                throw new DomainException("chart.secondNeedsPeriods", "A second measure needs a chart over time, not a donut or categories.");
+            if (other == Metric) throw new DomainException("chart.secondSameMetric", "The second measure must be another one than the first.");
+            if (SecondKind is null or ChartKind.Donut) throw new DomainException("chart.secondNeedsKind", "Choose bars, a line or an area for the second measure.");
+        }
         if (Range == ChartRange.Custom)
         {
             if (From is null || To is null) throw new DomainException("chart.datesRequired", "Choose the first and the last day of the period.");
             if (From > To) throw new DomainException("chart.datesReversed", "The first day cannot be after the last day.");
             if (To.Value > From.Value.AddYears(MaxCustomYears)) throw new DomainException("chart.rangeTooLong", $"The period can be at most {MaxCustomYears} years.", new { Max = MaxCustomYears });
-            return this;
+            return WithoutUnusedKind();
         }
         // The dates only mean something for a custom range; other ranges are normalised so equal charts compare equal.
-        return this with { From = null, To = null };
+        return WithoutUnusedKind() with { From = null, To = null };
     }
+
+    /// <summary>The second measure's kind only means something with a second measure.</summary>
+    private ChartConfig WithoutUnusedKind() => SecondMetric is null ? this with { SecondKind = null } : this;
 }

@@ -104,6 +104,8 @@ query VehicleDashboard($id: UUID!) {
     trend
     runningTotal
     compareYearEarlier
+    secondMetric
+    secondKind
     isShared
     canEdit
     createdBy {
@@ -123,6 +125,9 @@ query ChartData($vehicleId: UUID!, $config: ChartConfigInput!) {
       # A trend or a year earlier is drawn as a line over the values of the same kind and currency.
       role
       slope
+      # A chart can have two measures: each series says which it belongs to and the unit it is written in.
+      metric
+      unit
       points {
         key
         value

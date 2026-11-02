@@ -939,6 +939,9 @@
       "trendNeedsPeriods": "Trend lines, running totals and comparisons need a chart over time, not a donut or categories.",
       "runningTotalNeedsTotals": "A running total needs a metric that adds up (costs, volume, distance or fill-ups).",
       "trendWithRunningTotal": "A running total cannot have a trend line.",
+      "secondNeedsPeriods": "A second measure needs a chart over time, not a donut or categories.",
+      "secondSameMetric": "The second measure must be another one than the first.",
+      "secondNeedsKind": "Choose bars, a line or an area for the second measure.",
       "datesRequired": "Choose the first and the last day of the period.",
       "datesReversed": "The first day cannot be after the last day.",
       "rangeTooLong": "The period can be at most {{max}} years.",
@@ -1341,6 +1344,8 @@
       "trend": "Trend line",
       "runningTotal": "Running total",
       "compareYearEarlier": "Compare with a year earlier",
+      "secondMetric": "Second measure",
+      "secondKind": "Second measure drawn as",
       "shared": "Share with everyone who can see this vehicle"
     },
     "hints": {
@@ -1348,6 +1353,7 @@
       "trend": "A line over the values that shows where they are heading.",
       "runningTotal": "Each period shows the sum so far.",
       "compareYearEarlier": "Adds the same periods a year earlier as a fainter line.",
+      "secondMetric": "Drawn in the same chart on a scale of its own; the trend options are for the first measure.",
       "shared": "Others can see this chart but only you can change it.",
       "donut": "Donuts need a total (costs, volume, distance, fill-ups).",
       "category": "Grouping by category is only for expense costs."
@@ -1391,7 +1397,8 @@
       "NONE": "None",
       "MOVING_AVERAGE": "Moving average (3 periods)",
       "LINEAR": "Linear trend"
-    }
+    },
+    "secondNone": "None"
   },
   "photos": {
     "waitUpload": "Saving waits until the photos are uploaded.",

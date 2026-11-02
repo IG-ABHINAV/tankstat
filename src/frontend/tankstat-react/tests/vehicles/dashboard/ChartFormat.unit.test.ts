@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { barPlaces, chartAxes, isValue, labelStep, MONTH_LABEL_PX, NEW_RECIPE, normalise, parsePeriod, periodLabel, seriesId, shortPeriodLabels, toConfig, withRunningTotal, withTrend, type ChartRecipe, type Series } from '../../../src/dashboard/chartFormat.ts'
 
-const series = (kind: string, currency: string | null, values: Record<string, number | null>, role: Series['role'] = 'VALUE'): Series => ({
+const series = (
+  kind: string,
+  currency: string | null,
+  values: Record<string, number | null>,
+  role: Series['role'] = 'VALUE',
+  unit: Series['unit'] = 'CURRENCY',
+  metric: Series['metric'] = 'TOTAL_SPEND',
+): Series => ({
   kind,
   currency,
   role,
   slope: null,
+  metric,
+  unit,
   points: Object.entries(values).map(([key, value]) => ({ key, value })),
 })
 
@@ -65,32 +74,49 @@ describe('chartAxes', () => {
   const eur = series('fuel', 'EUR', { '2026-01': 54 })
 
   it('gives every currency of a chart of costs a scale of its own, and shows none of them when there are several', () => {
-    const axes = chartAxes({ unit: 'CURRENCY', series: [huf, series('expenses', 'HUF', { '2026-01': 4000 }), eur] })
+    const axes = chartAxes({ series: [huf, series('expenses', 'HUF', { '2026-01': 4000 }), eur] })
 
     expect(axes.axes).toEqual([
-      { id: 'currency:HUF', currency: 'HUF' },
-      { id: 'currency:EUR', currency: 'EUR' },
+      { id: 'CURRENCY:HUF', unit: 'CURRENCY', currency: 'HUF', side: 'left', shown: false },
+      { id: 'CURRENCY:EUR', unit: 'CURRENCY', currency: 'EUR', side: 'left', shown: false },
     ])
-    expect([axes.axisOf(huf), axes.axisOf(eur)]).toEqual(['currency:HUF', 'currency:EUR'])
-    expect(axes.shown).toBe(false)
+    expect([axes.axisOf(huf), axes.axisOf(eur)]).toEqual(['CURRENCY:HUF', 'CURRENCY:EUR'])
+    expect([axes.shown, axes.ownScales]).toEqual([false, true])
   })
 
   it('shows the axis of a single currency, in that currency', () => {
-    expect(chartAxes({ unit: 'CURRENCY', series: [huf] })).toMatchObject({ axes: [{ id: 'currency:HUF', currency: 'HUF' }], shown: true })
+    expect(chartAxes({ series: [huf] })).toMatchObject({ axes: [{ id: 'CURRENCY:HUF', currency: 'HUF', shown: true }], shown: true, ownScales: false })
   })
 
   it('gives a cost per distance a scale per currency too, and draws a line drawn from a series on its series\' scale', () => {
-    const earlier = series('fuel', 'HUF', { '2026-01': 30000 }, 'YEAR_EARLIER')
-    const axes = chartAxes({ unit: 'COST_PER_DISTANCE', series: [huf, eur, earlier] })
+    const per = (currency: string, role: Series['role'] = 'VALUE') => series('total', currency, { '2026-01': 30 }, role, 'COST_PER_DISTANCE', 'COST_PER_DISTANCE')
+    const earlier = per('HUF', 'YEAR_EARLIER')
+    const axes = chartAxes({ series: [per('HUF'), per('EUR'), earlier] })
 
-    expect(axes.axes.map((a) => a.id)).toEqual(['currency:HUF', 'currency:EUR'])
-    expect(axes.axisOf(earlier)).toBe(axes.axisOf(huf))
+    expect(axes.axes.map((a) => a.id)).toEqual(['COST_PER_DISTANCE:HUF', 'COST_PER_DISTANCE:EUR'])
+    expect(axes.axisOf(earlier)).toBe(axes.axisOf(per('HUF')))
     expect(axes.shown).toBe(false)
   })
 
   it('shares one axis for any other unit', () => {
-    const axes = chartAxes({ unit: 'VOLUME', series: [series('value', null, { '2026-01': 40 })] })
-    expect(axes).toMatchObject({ axes: [{ id: 'value', currency: null }], shown: true })
+    const axes = chartAxes({ series: [series('value', null, { '2026-01': 40 }, 'VALUE', 'VOLUME', 'FUEL_VOLUME')] })
+    expect(axes).toMatchObject({ axes: [{ id: 'VOLUME', currency: null, side: 'left', shown: true }], shown: true })
+  })
+
+  it('puts a second measure on the right, shown when it has one scale, and lets it share the first one\'s when the units are the same', () => {
+    const distance = series('total', null, { '2026-01': 500 }, 'VALUE', 'DISTANCE', 'DISTANCE')
+    const consumption = series('fuel', null, { '2026-01': 6.5 }, 'VALUE', 'CONSUMPTION', 'AVERAGE_CONSUMPTION')
+    const fuel = series('fuel', 'HUF', { '2026-01': 20000 }, 'VALUE', 'CURRENCY', 'FUEL_COST')
+    const expenses = series('expenses', 'HUF', { '2026-01': 5000 }, 'VALUE', 'CURRENCY', 'EXPENSE_COST')
+
+    expect(chartAxes({ series: [distance, consumption] }).axes).toEqual([
+      { id: 'DISTANCE', unit: 'DISTANCE', currency: null, side: 'left', shown: true },
+      { id: 'CONSUMPTION', unit: 'CONSUMPTION', currency: null, side: 'right', shown: true },
+    ])
+    expect(chartAxes({ series: [fuel, expenses] }).axes.map((a) => [a.id, a.side])).toEqual([['CURRENCY:HUF', 'left']]) // one forint scale for both
+    const twoCurrencies = chartAxes({ series: [distance, { ...fuel, metric: 'AVERAGE_PRICE_PER_UNIT' }, { ...fuel, currency: 'EUR', metric: 'AVERAGE_PRICE_PER_UNIT' }] })
+    expect(twoCurrencies.axes.filter((a) => a.side === 'right').map((a) => a.shown)).toEqual([false, false])
+    expect([twoCurrencies.shown, twoCurrencies.ownScales]).toEqual([true, true])
   })
 })
 
@@ -132,6 +158,22 @@ describe('barPlaces', () => {
   })
 })
 
+describe('barPlaces with a second measure', () => {
+  it('stacks only the first measure: a second measure\'s bars stand beside the stack', () => {
+    const fuel = series('fuel', 'HUF', { '2026-01': 100 })
+    const expenses = series('expenses', 'HUF', { '2026-01': 50 })
+    const distance = series('total', null, { '2026-01': 500 }, 'VALUE', 'DISTANCE', 'DISTANCE')
+
+    const places = barPlaces({ series: [fuel, expenses, distance] }, ['2026-01'], true)
+
+    expect([places.at(fuel, 0), places.at(expenses, 0), places.at(distance, 0)]).toEqual([
+      { place: 0, of: 2, top: false },
+      { place: 0, of: 2, top: true },
+      { place: 1, of: 2, top: true },
+    ])
+  })
+})
+
 describe('the recipe of a chart over time', () => {
   const recipe = (over: Partial<ChartRecipe>): ChartRecipe => ({ ...NEW_RECIPE, ...over })
 
@@ -162,7 +204,18 @@ describe('the recipe of a chart over time', () => {
       trend: 'LINEAR',
       runningTotal: false,
       compareYearEarlier: true,
+      secondMetric: null,
+      secondKind: null,
     })
+  })
+
+  it('keeps a second measure only over time and other than the first, drawn as a line unless chosen otherwise', () => {
+    expect(normalise(recipe({ secondMetric: 'DISTANCE' }))).toMatchObject({ secondMetric: 'DISTANCE', secondKind: 'LINE' })
+    expect(normalise(recipe({ secondMetric: 'DISTANCE', secondKind: 'BAR' }))).toMatchObject({ secondKind: 'BAR' })
+    expect(normalise(recipe({ metric: 'DISTANCE', secondMetric: 'DISTANCE', secondKind: 'BAR' }))).toMatchObject({ secondMetric: null, secondKind: null })
+    expect(normalise(recipe({ kind: 'DONUT', secondMetric: 'DISTANCE' }))).toMatchObject({ secondMetric: null, secondKind: null })
+    expect(normalise(recipe({ secondKind: 'BAR' }))).toMatchObject({ secondKind: null })
+    expect(toConfig(recipe({ secondMetric: 'DISTANCE', secondKind: 'BAR' }))).toMatchObject({ secondMetric: 'DISTANCE', secondKind: 'BAR' })
   })
 
   it('tells the values from the lines drawn from them', () => {

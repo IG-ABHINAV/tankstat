@@ -10,10 +10,12 @@ namespace Tankstat.Api.GraphQL;
 /// <param name="Trend">A trend line over the values; null or left out is none (an older client sends none).</param>
 /// <param name="RunningTotal">The sum so far in every period; null or left out is false.</param>
 /// <param name="CompareYearEarlier">The same periods a year earlier beside them; null or left out is false.</param>
+/// <param name="SecondMetric">A second measure in the same chart, on a scale of its own; null or left out is none.</param>
+/// <param name="SecondKind">How the second measure is drawn (bars, a line or an area).</param>
 public sealed record ChartConfigInput(ChartMetric Metric, ChartGrouping Grouping, ChartKind Kind, ChartRange Range, bool Stacked, DateOnly? From, DateOnly? To,
-    ChartTrend? Trend = null, bool? RunningTotal = null, bool? CompareYearEarlier = null)
+    ChartTrend? Trend = null, bool? RunningTotal = null, bool? CompareYearEarlier = null, ChartMetric? SecondMetric = null, ChartKind? SecondKind = null)
 {
-    public ChartConfig ToDomain() => new(Metric, Grouping, Kind, Range, Stacked, From, To, Trend ?? ChartTrend.None, RunningTotal ?? false, CompareYearEarlier ?? false);
+    public ChartConfig ToDomain() => new(Metric, Grouping, Kind, Range, Stacked, From, To, Trend ?? ChartTrend.None, RunningTotal ?? false, CompareYearEarlier ?? false, SecondMetric, SecondKind);
 }
 
 /// <param name="Id">Omit to create a chart, give it to change one.</param>

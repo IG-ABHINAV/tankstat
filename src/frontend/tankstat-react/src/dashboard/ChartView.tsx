@@ -16,7 +16,7 @@ import { ChartsLegend } from '@mui/x-charts/ChartsLegend'
 import { ChartsSurface } from '@mui/x-charts/ChartsSurface'
 import { ChartsTooltip } from '@mui/x-charts/ChartsTooltip'
 import { ChartsWrapper } from '@mui/x-charts/ChartsWrapper'
-import { LineChart, LinePlot } from '@mui/x-charts/LineChart'
+import { AreaPlot, LineChart, LinePlot, MarkPlot } from '@mui/x-charts/LineChart'
 import { PieChart } from '@mui/x-charts/PieChart'
 import { useReducedMotion } from 'motion/react'
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
@@ -81,7 +81,7 @@ export function ChartView({
   height = 240,
 }: {
   data: ChartData
-  recipe: Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> & Partial<Pick<ChartRecipe, 'trend' | 'compareYearEarlier'>>
+  recipe: Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> & Partial<Pick<ChartRecipe, 'trend' | 'compareYearEarlier' | 'secondKind'>>
   units: Units
   title: string
   height?: number
@@ -102,12 +102,16 @@ export function ChartView({
   }
 
   const keyLabel = (key: string) => (key === '' ? t('dashboard.uncategorised') : periodLabel(key, validLocale(i18n.language, i18n.resolvedLanguage)))
-  const baseName = (s: Series) => `${t(`dashboard.series.${s.kind as 'total' | 'fuel' | 'expenses'}`, { defaultValue: t('dashboard.series.value') })}${s.currency ? ` · ${s.currency}` : ''}`
+  // The first measure's series are named by their kind ("Fuel · HUF"); a second measure's by its metric ("Distance driven").
+  const firstMetric = data.series[0]?.metric
+  const baseName = (s: Series) =>
+    `${s.metric !== firstMetric ? t(`charts.metrics.${s.metric}`) : t(`dashboard.series.${s.kind as 'total' | 'fuel' | 'expenses'}`, { defaultValue: t('dashboard.series.value') })}${s.currency ? ` · ${s.currency}` : ''}`
   const name = (s: Series) => (isValue(s) ? baseName(s) : `${baseName(s)} · ${t(`dashboard.series.role.${s.role as 'MOVING_AVERAGE' | 'LINEAR' | 'YEAR_EARLIER'}`)}`)
+  // Every series is written in its own measure's unit: a chart of distance and consumption has both.
   const show = (value: number | null | undefined, s: Series) => {
     // Nothing spent in a currency in a period is no amount: a dash, as a missing value, not "HUF 0" beside the real ones.
-    if (value == null || (perCurrency(data.unit) && value === 0)) return t('common.none')
-    switch (data.unit) {
+    if (value == null || (perCurrency(s.unit) && value === 0)) return t('common.none')
+    switch (s.unit) {
       case 'CURRENCY': return format.money(value, s.currency ?? '')
       case 'COST_PER_DISTANCE': return format.costPerDistance(value, s.currency ?? '', units.distance)
       case 'VOLUME': return format.volume(value, units.volume)
@@ -116,7 +120,7 @@ export function ChartView({
       default: return format.number(value)
     }
   }
-  const axis = (value: number) => (data.unit === 'CURRENCY' || data.unit === 'COUNT' || data.unit === 'DISTANCE' ? format.compact(value) : format.number(value, { maximumFractionDigits: 1 }))
+  const axis = (value: number, unit: Series['unit']) => (unit === 'CURRENCY' || unit === 'COUNT' || unit === 'DISTANCE' ? format.compact(value) : format.number(value, { maximumFractionDigits: 1 }))
 
   const keys = [...new Set(data.series.flatMap((s) => s.points.map((p) => p.key)))]
   const rows: Record<string, string | number | null>[] = keys.map((key) => ({ key, label: keyLabel(key), ...Object.fromEntries(data.series.map((s) => [seriesId(s), s.points.find((p) => p.key === key)?.value ?? null])) }))
@@ -124,18 +128,36 @@ export function ChartView({
   const several = data.series.length > 1
   const values = data.series.filter(isValue)
   const overlays = data.series.filter((s) => !isValue(s))
-  // Every currency of a chart of costs on a scale of its own (#159): one axis per currency, shown (in its currency) only when there is one.
+  // How a series is drawn: the first measure as the chart's kind, a second one as its own; the lines drawn from the values always as lines.
+  const kindOf = (s: Series) => (s.metric === firstMetric ? recipe.kind : (recipe.secondKind ?? 'LINE'))
+  const hasBars = values.some((s) => kindOf(s) === 'BAR')
+  // Every currency of a chart of costs on a scale of its own (#159), and a second measure's units on the right: one axis per unit (and
+  // currency), each side's shown only when it has one.
   const scales = chartAxes(data)
   // A line drawn from a series has that series' colour; one drawn from a stack's total (no series of its own) the next colours.
   const colours = new Map<Series, string>(values.map((s, i) => [s, colour(i)]))
   const totals = new Map<string, string>()
   for (const s of overlays) {
-    const base = values.find((v) => v.kind === s.kind && v.currency === s.currency)
-    const key = `${s.kind}|${s.currency ?? ''}`
+    const base = values.find((v) => v.metric === s.metric && v.kind === s.kind && v.currency === s.currency)
+    const key = `${s.metric}|${s.kind}|${s.currency ?? ''}`
     if (!base && !totals.has(key)) totals.set(key, colour(values.length + totals.size))
     colours.set(s, base ? colours.get(base)! : totals.get(key)!)
   }
   const overlayLook = Object.fromEntries(overlays.map((s) => [`& path[data-series="${seriesId(s)}"]`, s.role === 'YEAR_EARLIER' ? OVERLAY_LOOK.earlier : OVERLAY_LOOK.trend]))
+  const stackedHere = (s: Series) => recipe.stacked && s.metric === firstMetric
+  const valueLine = (s: Series, area: boolean) => ({
+    id: seriesId(s),
+    dataKey: seriesId(s),
+    label: name(s),
+    color: colours.get(s),
+    curve: 'monotoneX' as const,
+    showMark: rows.length < 25,
+    connectNulls: true,
+    area,
+    stack: area && stackedHere(s) ? stackOf(s) : undefined,
+    yAxisId: scales.axisOf(s),
+    valueFormatter: (value: number | null) => show(value, s),
+  })
   const overlayLines = overlays.map((s) => ({
     id: seriesId(s),
     dataKey: seriesId(s),
@@ -150,18 +172,20 @@ export function ChartView({
   const axisWidth = (currency: string | null) => (currency ? 64 : 48)
   const yAxis = scales.axes.map((a) => ({
     id: a.id,
-    position: scales.shown ? ('left' as const) : ('none' as const),
+    position: a.shown ? a.side : ('none' as const),
     // Room for an amount with its currency ("HUF 500", "40 E Ft"): MUI's 'auto' measured too little and cut it.
     width: axisWidth(a.currency),
-    valueFormatter: (value: number) => (a.currency ? format.compactMoney(value, a.currency) : axis(value)),
+    valueFormatter: (value: number) => (a.currency ? format.compactMoney(value, a.currency) : axis(value, a.unit)),
     // The highest value of each currency reaches the top, whatever the size of its numbers; from 0, as a bar is, so a line of prices that
     // barely moves does not look like a swing from nothing to everything with no axis to read it by.
-    ...(scales.shown ? {} : { domainLimit: 'strict' as const, min: 0 }),
+    ...(a.shown ? {} : { domainLimit: 'strict' as const, min: 0 }),
   }))
-  const room = recipe.kind === 'BAR' ? LABEL_ROOM.bars : LABEL_ROOM.points
+  const shownOn = (side: 'left' | 'right') => scales.axes.find((a) => a.side === side && a.shown)
+  const [leftAxis, rightAxis] = [shownOn('left'), shownOn('right')]
+  const room = hasBars ? LABEL_ROOM.bars : LABEL_ROOM.points
   // A period is named short along the bottom, every `step`-th one so the named ones fit (more on a phone), its year on every one that
   // starts a year among them; in full in the tooltip. A category is named as it is ("Uncategorised" for none).
-  const step = labelStep(keys.length, figureWidth - room * 2 - (scales.shown ? axisWidth(scales.axes[0].currency) : 0))
+  const step = labelStep(keys.length, figureWidth - room * 2 - (leftAxis ? axisWidth(leftAxis.currency) : 0) - (rightAxis ? axisWidth(rightAxis.currency) : 0))
   const short = shortPeriodLabels(keys, validLocale(i18n.language, i18n.resolvedLanguage), recipe.grouping, step)
   const byPeriod = recipe.grouping === 'MONTH' || recipe.grouping === 'QUARTER'
   const period = (key: string, context: { location: string }) => (context.location === 'tick' && byPeriod ? (short.get(key) ?? '') : keyLabel(key))
@@ -174,7 +198,7 @@ export function ChartView({
     height,
     // Room for half a period's label beside the edge: MUI cuts a label wider than twice its distance from the edge (the first and the
     // last month), and without a value axis the first one sits at the very edge.
-    margin: { top: 8, right: room, bottom: 0, left: scales.shown ? 0 : room },
+    margin: { top: 8, right: rightAxis ? 0 : room, bottom: 0, left: leftAxis ? 0 : room },
     yAxis,
     grid: { horizontal: scales.shown },
     hideLegend: !several,
@@ -183,26 +207,11 @@ export function ChartView({
     // By axis (the whole period), never by item: a bar is drawn where `PlacedBar` puts it, but MUI finds the one under the pointer at its own place.
     slotProps: { tooltip: { ...tooltipInPage().tooltip, trigger: 'axis' as const } },
   }
-  const lines = (area: boolean) => [
-    ...values.map((s) => ({
-      id: seriesId(s),
-      dataKey: seriesId(s),
-      label: name(s),
-      color: colours.get(s),
-      curve: 'monotoneX' as const,
-      showMark: rows.length < 25,
-      connectNulls: true,
-      area,
-      stack: area && recipe.stacked ? stackOf(s) : undefined,
-      yAxisId: scales.axisOf(s),
-      valueFormatter: (value: number | null) => show(value, s),
-    })),
-    ...overlayLines,
-  ]
-  // The bars of a period: only those of the currencies (or series) it has, centred in it (#159). Worked out for a bar chart only.
+  // The bars of a period: only those of the currencies (or series) it has, centred in it (#159). Worked out for a chart with bars only.
+  const bars = values.filter((s) => kindOf(s) === 'BAR')
   const barLayout = (): BarLayout => {
-    const places = barPlaces({ series: values }, keys, recipe.stacked)
-    const byId = new Map(values.map((s) => [seriesId(s), s]))
+    const places = barPlaces({ series: bars }, keys, recipe.stacked)
+    const byId = new Map(bars.map((s) => [seriesId(s), s]))
     return {
       periodOf: (index) => keys[index],
       at: (id, index) => (byId.has(id) ? places.at(byId.get(id)!, index) : null),
@@ -240,13 +249,11 @@ export function ChartView({
           </Box>
         ))}
       </Stack>
-    ) : recipe.kind === 'LINE' ? (
-      <LineChart {...cartesian} sx={overlayLook} xAxis={[{ scaleType: 'point', ...periods }]} series={lines(false)} />
-    ) : recipe.kind === 'AREA' ? (
-      <LineChart {...cartesian} sx={overlayLook} xAxis={[{ scaleType: 'point', ...periods }]} series={lines(true)} />
+    ) : !hasBars ? (
+      <LineChart {...cartesian} sx={overlayLook} xAxis={[{ scaleType: 'point', ...periods }]} series={[...values.map((s) => valueLine(s, kindOf(s) === 'AREA')), ...overlayLines]} />
     ) : (
-      // Composed as MUI's BarChart is, with the lines drawn from the values over the bars. The bars draw themselves (`PlacedBar`),
-      // rounded corners included: MUI's `borderRadius` would clip them where MUI placed them.
+      // Composed as MUI's BarChart is: the bars, and any line or area (a second measure, a trend, a year earlier) over them on the same
+      // periods. The bars draw themselves (`PlacedBar`), rounded corners included: MUI's `borderRadius` would clip them where MUI placed them.
       <BarLayoutContext.Provider value={barLayout()}>
         <ChartsDataProvider
           dataset={cartesian.dataset}
@@ -257,16 +264,20 @@ export function ChartView({
           xAxis={[{ id: 'periods', scaleType: 'band', ...periods, barGapRatio: BAR_GAP_RATIO }]}
           yAxis={yAxis}
           series={[
-            ...values.map((s) => ({
-              type: 'bar' as const,
-              id: seriesId(s),
-              dataKey: seriesId(s),
-              label: name(s),
-              color: colours.get(s),
-              stack: recipe.stacked ? stackOf(s) : undefined,
-              yAxisId: scales.axisOf(s),
-              valueFormatter: (value: number | null) => show(value, s),
-            })),
+            ...values.map((s) =>
+              kindOf(s) === 'BAR'
+                ? {
+                    type: 'bar' as const,
+                    id: seriesId(s),
+                    dataKey: seriesId(s),
+                    label: name(s),
+                    color: colours.get(s),
+                    stack: stackedHere(s) ? stackOf(s) : undefined,
+                    yAxisId: scales.axisOf(s),
+                    valueFormatter: (value: number | null) => show(value, s),
+                  }
+                : { type: 'line' as const, ...valueLine(s, kindOf(s) === 'AREA') },
+            ),
             ...overlayLines.map((line) => ({ type: 'line' as const, ...line })),
           ]}
         >
@@ -275,8 +286,10 @@ export function ChartView({
             <ChartsSurface>
               <ChartsGrid horizontal={scales.shown} />
               <g clipPath={`url(#${clipId})`}>
+                <AreaPlot />
                 <BarPlot slots={{ bar: PlacedBar }} />
                 <LinePlot />
+                <MarkPlot />
                 <ChartsAxisHighlight x="band" />
               </g>
               <ChartsAxis />
@@ -306,7 +319,7 @@ export function ChartView({
         <div aria-hidden>{picture}</div>
       </div>
       {/* A note, not the figure's caption: the chart's title names it. */}
-      {recipe.kind !== 'DONUT' && !scales.shown && (
+      {recipe.kind !== 'DONUT' && scales.ownScales && (
         <Typography component="p" variant="body2" sx={{ color: 'text.secondary', mt: 0.5, mb: 0 }}>
           {t('dashboard.ownScales')}
         </Typography>

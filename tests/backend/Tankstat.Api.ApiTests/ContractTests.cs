@@ -124,8 +124,8 @@ public class ContractTests
     [InlineData("VehicleSummary", "lastFillUpDate", "latestOdometer", "averageConsumption", "currency", "thisMonthSpend", "lastMonthSpend", "spendTrend", "fillUpCount", "expenseCount", "spending")]
     [InlineData("CurrencySpend", "currency", "thisMonth", "lastMonth")]
     [InlineData("ChartData", "unit", "series")]
-    [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope")]
-    [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "trend", "runningTotal", "compareYearEarlier", "isShared", "createdAt", "canEdit", "createdBy")]
+    [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope", "metric", "unit")]
+    [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind", "isShared", "createdAt", "canEdit", "createdBy")]
     [InlineData("Refueling", "id", "vehicleId", "createdBy", "date", "volume", "totalCost", "discount", "currency", "odometer", "pricePerUnit", "pricePerUnitBeforeDiscount", "consumption", "isFullTank", "missedPreviousFillUp", "note", "deletedAt", "canEdit", "canDelete", "vehicle", "photos", "reviewState", "filledFromPhoto", "version", "updatedAt", "changedAt", "changedBy", "lastChange")]
     [InlineData("Expense", "id", "amount", "discount", "currency", "odometer", "reviewState", "filledFromPhoto")]
     [InlineData("UiSettingsInfo", "navOpen", "language", "colorMode", "surface", "timeFormat", "dateFormat", "defaultTimeFormat", "defaultDateFormat", "grids")]
@@ -154,7 +154,7 @@ public class ContractTests
     [InlineData("ChangePasswordInput", "currentPassword", "newPassword", "newPasswordConfirmation")]
     [InlineData("ResetPasswordInput", "token", "newPassword", "newPasswordConfirmation")]
     [InlineData("SetupFinishInput", "code", "email", "password", "passwordConfirmation", "acknowledgeOpenAccess")]
-    [InlineData("ChartConfigInput", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier")]
+    [InlineData("ChartConfigInput", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind")]
     public async Task Schema_InputTypeTakesContractFields(string type, params string[] fields)
     {
         var body = await Query($"{{ __type(name: \"{type}\") {{ inputFields {{ name }} }} }}");

@@ -302,6 +302,8 @@ type ChartSeries {
   points: [ChartPoint!]!
   role: ChartSeriesRole!
   slope: Decimal
+  metric: ChartMetric!
+  unit: ChartUnit!
 }
 
 type CreatedUser {
@@ -853,6 +855,8 @@ type VehicleChart {
   trend: ChartTrend!
   runningTotal: Boolean!
   compareYearEarlier: Boolean!
+  secondMetric: ChartMetric
+  secondKind: ChartKind
   rangeFrom: LocalDate
   rangeTo: LocalDate
   isShared: Boolean!
@@ -969,6 +973,8 @@ input ChartConfigInput {
   trend: ChartTrend
   runningTotal: Boolean
   compareYearEarlier: Boolean
+  secondMetric: ChartMetric
+  secondKind: ChartKind
 }
 
 input ConfirmImportInput {

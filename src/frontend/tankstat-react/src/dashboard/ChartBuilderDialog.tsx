@@ -36,6 +36,9 @@ const METRICS: ChartMetric[] = [
 const KINDS: ChartKind[] = ['BAR', 'LINE', 'AREA', 'DONUT']
 const RANGES: ChartRange[] = ['LAST1_MONTH', 'LAST3_MONTHS', 'LAST6_MONTHS', 'LAST12_MONTHS', 'THIS_YEAR', 'LAST_YEAR', 'ALL', 'CUSTOM']
 const TRENDS: ChartTrend[] = ['NONE', 'MOVING_AVERAGE', 'LINEAR']
+const SECOND_KINDS: ChartKind[] = ['BAR', 'LINE', 'AREA']
+/** The second measure's select has no empty value of its own: this one stands for "none". */
+const NO_SECOND = 'NONE'
 
 export interface EditableChart {
   id: string
@@ -47,7 +50,8 @@ export interface EditableChart {
 /**
  * Compose a chart from the data the app can provide: what to measure, how to group it, the chart type and the period (a preset or a
  * custom from-to range), and for a chart over time a trend line, a running total or the same periods a year earlier. Only valid
- * combinations are offered, and the preview shows the user's own data as the choices change.
+ * combinations are offered, and the preview shows the user's own data as the choices change. A second measure (another metric, as
+ * bars, a line or an area) can join a chart over time, on a scale of its own.
  */
 export function ChartBuilderDialog({
   trigger,
@@ -162,6 +166,23 @@ function BuilderForm({ vehicle, chart, canShare, onSaved }: { vehicle: { id: str
               checked={recipe.compareYearEarlier}
               onChange={(compareYearEarlier) => change({ compareYearEarlier })}
             />
+            <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap', '& > *': { flex: '1 1 12rem' } }}>
+              <LabeledSelect
+                label={t('charts.fields.secondMetric')}
+                hint={t('charts.hints.secondMetric')}
+                value={recipe.secondMetric ?? NO_SECOND}
+                onChange={(value) => change({ secondMetric: value === NO_SECOND ? null : (value as ChartMetric) })}
+                options={[{ value: NO_SECOND, label: t('charts.secondNone') }, ...METRICS.filter((m) => m !== recipe.metric).map((m) => ({ value: m, label: t(`charts.metrics.${m}`) }))]}
+              />
+              {recipe.secondMetric && (
+                <LabeledSelect
+                  label={t('charts.fields.secondKind')}
+                  value={recipe.secondKind ?? 'LINE'}
+                  onChange={(secondKind) => change({ secondKind })}
+                  options={SECOND_KINDS.map((k) => ({ value: k, label: t(`charts.kinds.${k}`) }))}
+                />
+              )}
+            </Stack>
           </>
         )}
         {canShare && <LabeledSwitch label={t('charts.fields.shared')} hint={t('charts.hints.shared')} checked={shared} onChange={setShared} />}

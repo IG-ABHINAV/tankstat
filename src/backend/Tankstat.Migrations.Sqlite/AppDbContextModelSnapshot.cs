@@ -140,6 +140,14 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<bool>("RunningTotal")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("SecondKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SecondMetric")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("INTEGER");
 

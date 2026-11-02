@@ -165,7 +165,7 @@ it('builds a chart from a metric, grouping, type and a preset period, with a liv
 
   await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
   expect(state.calls.SaveChart![0]).toEqual({
-    input: { id: null, vehicleId: 'v1', title: 'Volume per quarter', shared: false, config: { metric: 'FUEL_VOLUME', grouping: 'QUARTER', kind: 'LINE', range: 'LAST6_MONTHS', stacked: false, from: null, to: null, trend: 'NONE', runningTotal: false, compareYearEarlier: false } },
+    input: { id: null, vehicleId: 'v1', title: 'Volume per quarter', shared: false, config: { metric: 'FUEL_VOLUME', grouping: 'QUARTER', kind: 'LINE', range: 'LAST6_MONTHS', stacked: false, from: null, to: null, trend: 'NONE', runningTotal: false, compareYearEarlier: false, secondMetric: null, secondKind: null } },
   })
   expect(await screen.findByRole('heading', { name: 'Volume per quarter' })).toBeInTheDocument()
 })
@@ -251,6 +251,34 @@ it('offers a trend line, a running total and a year earlier for a chart over tim
 
   await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
   expect((state.calls.SaveChart![0] as { input: { config: unknown } }).input.config).toMatchObject({ metric: 'EXPENSE_COST', grouping: 'MONTH', trend: 'MOVING_AVERAGE', runningTotal: false, compareYearEarlier: true })
+})
+
+it('adds a second measure to a chart over time, never the first one again, and sends it with how it is drawn', async () => {
+  const { ui, state } = setup(fakeVehicle(), [])
+  await screen.findByText(/Compose your own charts/)
+  await ui.click(screen.getByRole('button', { name: 'Add chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add chart' })
+  await ui.type(within(dialog).getByLabelText('Title'), 'Distance and consumption')
+  await choose(ui, 'What to measure', 'Distance driven')
+  expect(screen.queryByRole('combobox', { name: 'Second measure drawn as' })).not.toBeInTheDocument()
+
+  await ui.click(screen.getByRole('combobox', { name: 'Second measure' }))
+  const options = (await screen.findAllByRole('option')).map((o) => o.textContent)
+  expect(options[0]).toBe('None')
+  expect(options).not.toContain('Distance driven') // the first measure
+  await ui.click(screen.getByRole('option', { name: 'Average consumption' }))
+  expect(screen.getByRole('combobox', { name: 'Second measure drawn as' })).toHaveTextContent('Line')
+  await waitFor(() => expect(state.chartRequests.at(-1)!.config).toMatchObject({ metric: 'DISTANCE', secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' }))
+
+  // The preview's table writes each measure in its own unit, the second named by its metric.
+  await ui.click(await within(dialog).findByRole('button', { name: 'Show the data as a table' }))
+  const table = within(dialog).getByRole('table')
+  expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Total', 'Average consumption'])
+  expect(within(table).getByRole('rowheader', { name: 'Aug 2026' }).closest('tr')).toHaveTextContent(/1,000 km.*5 L\/100 km/)
+  await ui.click(within(dialog).getByRole('button', { name: 'Save chart' }))
+
+  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
+  expect((state.calls.SaveChart![0] as { input: { config: unknown } }).input.config).toMatchObject({ metric: 'DISTANCE', secondMetric: 'AVERAGE_CONSUMPTION', secondKind: 'LINE' })
 })
 
 it('offers the cost per distance among what to measure', async () => {

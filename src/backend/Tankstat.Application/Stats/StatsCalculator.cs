@@ -63,28 +63,43 @@ public static class StatsCalculator
     public static ChartData Chart(ChartConfig config, StatsData data, DateOnly today)
     {
         config = config.Validated();
-        var unit = config.Metric switch
-        {
-            ChartMetric.FuelVolume => ChartUnit.Volume,
-            ChartMetric.Distance => ChartUnit.Distance,
-            ChartMetric.AverageConsumption => ChartUnit.Consumption,
-            ChartMetric.FillUps => ChartUnit.Count,
-            ChartMetric.CostPerDistance or ChartMetric.FuelCostPerDistance => ChartUnit.CostPerDistance,
-            _ => ChartUnit.Currency,
-        };
-        if (RangeOf(config, today, data) is not { } range) return new ChartData(unit, []);
+        return new ChartData(UnitOf(config.Metric), Series(config, data, today));
+    }
+
+    private static ChartUnit UnitOf(ChartMetric metric) => metric switch
+    {
+        ChartMetric.FuelVolume => ChartUnit.Volume,
+        ChartMetric.Distance => ChartUnit.Distance,
+        ChartMetric.AverageConsumption => ChartUnit.Consumption,
+        ChartMetric.FillUps => ChartUnit.Count,
+        ChartMetric.CostPerDistance or ChartMetric.FuelCostPerDistance => ChartUnit.CostPerDistance,
+        _ => ChartUnit.Currency,
+    };
+
+    /// <summary>
+    /// The first measure's values, then the lines drawn from them (a year earlier, a trend), then the second measure's values: the options
+    /// are the first measure's only. Every series leaves here stamped with its measure and unit.
+    /// </summary>
+    private static List<ChartSeries> Series(ChartConfig config, StatsData data, DateOnly today)
+    {
+        if (RangeOf(config, today, data) is not { } range) return [];
         var (from, to) = range;
 
         if (config.Grouping == ChartGrouping.Category)
-            return new ChartData(unit, CategorySeries(data.Expenses.Where(e => e.Date >= from && e.Date <= to).ToList()));
+            return Stamp(CategorySeries(data.Expenses.Where(e => e.Date >= from && e.Date <= to).ToList()), config.Metric);
 
         var values = Measure(config.Metric, config.Stacked, config.Grouping, data, from, to);
         if (config.RunningTotal) values = values.Select(Running).ToList();
         var series = new List<ChartSeries>(values);
         if (config.CompareYearEarlier) series.AddRange(YearEarlier(config, data, from, to));
         if (config.Trend != ChartTrend.None) series.AddRange(Trends(config, values, Periods(from, to, config.Grouping), today));
-        return new ChartData(unit, series);
+        var stamped = Stamp(series, config.Metric);
+        if (config.SecondMetric is { } second) stamped.AddRange(Stamp(Measure(second, stacked: false, config.Grouping, data, from, to), second));
+        return stamped;
     }
+
+    private static List<ChartSeries> Stamp(IEnumerable<ChartSeries> series, ChartMetric metric) =>
+        series.Select(s => s with { Metric = metric, Unit = UnitOf(metric) }).ToList();
 
     /// <summary>
     /// The value series of a metric over the periods from <paramref name="from"/> to <paramref name="to"/>. Only what happened inside the

@@ -145,6 +145,14 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<bool>("RunningTotal")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("SecondKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SecondMetric")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("boolean");
 

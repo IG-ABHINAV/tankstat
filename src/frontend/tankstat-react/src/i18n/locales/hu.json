@@ -939,6 +939,9 @@
       "trendNeedsPeriods": "A trendvonalhoz, a göngyölített összeghez és az összevetéshez időbeli grafikon kell, nem fánk vagy kategóriák.",
       "runningTotalNeedsTotals": "A göngyölített összeghez összegezhető adat kell (költség, mennyiség, távolság vagy tankolások száma).",
       "trendWithRunningTotal": "A göngyölített összeghez nem tartozhat trendvonal.",
+      "secondNeedsPeriods": "Második adatsorhoz időbeli grafikon kell, nem fánk vagy kategóriák.",
+      "secondSameMetric": "A második adatsor más legyen, mint az első.",
+      "secondNeedsKind": "Válassz oszlopokat, vonalat vagy területet a második adatsorhoz.",
       "datesRequired": "Add meg az időszak első és utolsó napját.",
       "datesReversed": "Az első nap nem lehet az utolsó után.",
       "rangeTooLong": "Az időszak legfeljebb {{max}} év lehet.",
@@ -1341,6 +1344,8 @@
       "trend": "Trendvonal",
       "runningTotal": "Göngyölített összeg",
       "compareYearEarlier": "Összevetés az egy évvel korábbival",
+      "secondMetric": "Második adatsor",
+      "secondKind": "A második adatsor megjelenítése",
       "shared": "Megosztás mindenkivel, aki látja ezt a járművet"
     },
     "hints": {
@@ -1348,6 +1353,7 @@
       "trend": "Egy vonal az értékek fölött, amely mutatja, merre tartanak.",
       "runningTotal": "Minden időszak az addigi összeget mutatja.",
       "compareYearEarlier": "Halványabb vonalként hozzáadja ugyanezeket az időszakokat egy évvel korábbról.",
+      "secondMetric": "Ugyanabban a grafikonban, saját léptékben látszik; a trend beállításai az elsőre vonatkoznak.",
       "shared": "Mások látják ezt a grafikont, de csak te módosíthatod.",
       "donut": "A fánkdiagramhoz összegezhető adat kell (költség, mennyiség, távolság, tankolások száma).",
       "category": "A kategória szerinti csoportosítás csak a költségekhez érhető el."
@@ -1391,7 +1397,8 @@
       "NONE": "Nincs",
       "MOVING_AVERAGE": "Mozgóátlag (3 időszak)",
       "LINEAR": "Lineáris trend"
-    }
+    },
+    "secondNone": "Nincs"
   },
   "photos": {
     "waitUpload": "A mentés megvárja, amíg a fotók feltöltődnek.",

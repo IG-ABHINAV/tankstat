@@ -142,6 +142,14 @@ namespace Tankstat.Migrations.MySql
                     b.Property<bool>("RunningTotal")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<string>("SecondKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("SecondMetric")
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("tinyint(1)");
 

@@ -167,6 +167,8 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
                 trend: c.trend,
                 runningTotal: c.runningTotal,
                 compareYearEarlier: c.compareYearEarlier,
+                secondMetric: c.secondMetric ?? null,
+                secondKind: c.secondKind ?? null,
               }
               return (
                 <ChartCard

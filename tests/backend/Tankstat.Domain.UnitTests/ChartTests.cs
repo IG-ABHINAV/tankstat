@@ -7,7 +7,8 @@ public class ChartTests
 {
     private static ChartConfig Config(ChartMetric metric = ChartMetric.TotalSpend, ChartGrouping grouping = ChartGrouping.Month, ChartKind kind = ChartKind.Bar,
         ChartRange range = ChartRange.Last12Months, bool stacked = false, DateOnly? from = null, DateOnly? to = null, ChartTrend trend = ChartTrend.None,
-        bool runningTotal = false, bool compare = false) => new(metric, grouping, kind, range, stacked, from, to, trend, runningTotal, compare);
+        bool runningTotal = false, bool compare = false, ChartMetric? second = null, ChartKind? secondKind = null) =>
+        new(metric, grouping, kind, range, stacked, from, to, trend, runningTotal, compare, second, secondKind);
 
     private static string Key(Action action) => Assert.Throws<DomainException>(action).Key;
 
@@ -40,6 +41,24 @@ public class ChartTests
     [InlineData(ChartMetric.CostPerDistance)]
     public void ARunningTotal_NeedsAMetricThatAddsUp(ChartMetric metric) =>
         Assert.Equal("chart.runningTotalNeedsTotals", Key(() => Config(metric, kind: ChartKind.Line, runningTotal: true).Validated()));
+
+    [Fact]
+    public void ASecondMeasure_IsAnotherMetric_OverTime_DrawnAsBarsALineOrAnArea()
+    {
+        Config(ChartMetric.Distance, second: ChartMetric.AverageConsumption, secondKind: ChartKind.Line).Validated();
+        Config(ChartMetric.TotalSpend, stacked: true, trend: ChartTrend.Linear, second: ChartMetric.Distance, secondKind: ChartKind.Bar).Validated();
+
+        Assert.Equal("chart.secondNeedsPeriods", Key(() => Config(ChartMetric.ExpenseCost, ChartGrouping.Category, second: ChartMetric.Distance, secondKind: ChartKind.Line).Validated()));
+        Assert.Equal("chart.secondNeedsPeriods", Key(() => Config(kind: ChartKind.Donut, second: ChartMetric.Distance, secondKind: ChartKind.Line).Validated()));
+        Assert.Equal("chart.secondSameMetric", Key(() => Config(ChartMetric.Distance, second: ChartMetric.Distance, secondKind: ChartKind.Line).Validated()));
+        Assert.Equal("chart.secondNeedsKind", Key(() => Config(second: ChartMetric.Distance).Validated()));
+        Assert.Equal("chart.secondNeedsKind", Key(() => Config(second: ChartMetric.Distance, secondKind: ChartKind.Donut).Validated()));
+        Assert.Equal("chart.invalid", Key(() => Config(second: (ChartMetric)99, secondKind: ChartKind.Line).Validated()));
+    }
+
+    [Fact]
+    public void ASecondKind_WithoutASecondMeasure_IsDropped() =>
+        Assert.Null(Config(secondKind: ChartKind.Line).Validated().SecondKind);
 
     [Fact]
     public void ARunningTotal_HasNoTrendLine_AndAnUnknownTrendIsInvalid()
@@ -93,7 +112,8 @@ public class ChartTests
     [Fact]
     public void ASavedChart_KeepsItsRecipe_AndTrimsTheTitle()
     {
-        var config = Config(range: ChartRange.Custom, from: new DateOnly(2026, 1, 1), to: new DateOnly(2026, 3, 31), stacked: true, trend: ChartTrend.MovingAverage, compare: true);
+        var config = Config(range: ChartRange.Custom, from: new DateOnly(2026, 1, 1), to: new DateOnly(2026, 3, 31), stacked: true, trend: ChartTrend.MovingAverage, compare: true,
+            second: ChartMetric.Distance, secondKind: ChartKind.Line);
 
         var chart = VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), "  Spending  ", config, shared: true, DateTimeOffset.UtcNow);
 

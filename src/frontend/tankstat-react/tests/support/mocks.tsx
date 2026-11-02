@@ -959,6 +959,8 @@ export interface FakeChart {
   trend: string
   runningTotal: boolean
   compareYearEarlier: boolean
+  secondMetric: string | null
+  secondKind: string | null
   isShared: boolean
   canEdit: boolean
   createdBy: Person
@@ -977,6 +979,8 @@ export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   trend: 'NONE',
   runningTotal: false,
   compareYearEarlier: false,
+  secondMetric: null,
+  secondKind: null,
   isShared: false,
   canEdit: true,
   createdBy: person('Alice'),
@@ -998,17 +1002,27 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
   }
   const record = (name: string, vars: unknown) => (state.calls[name] ??= []).push(vars)
   const months = ['2026-08', '2026-09', '2026-10']
+  const unitOf = (metric: string) =>
+    metric === 'FUEL_VOLUME' ? 'VOLUME'
+    : metric === 'DISTANCE' ? 'DISTANCE'
+    : metric === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION'
+    : metric === 'FILL_UPS' ? 'COUNT'
+    : metric === 'COST_PER_DISTANCE' || metric === 'FUEL_COST_PER_DISTANCE' ? 'COST_PER_DISTANCE'
+    : 'CURRENCY'
   const answer = (config: Record<string, unknown>) => {
     const metric = String(config.metric)
-    const perDistance = metric === 'COST_PER_DISTANCE' || metric === 'FUEL_COST_PER_DISTANCE'
-    const unit = metric === 'FUEL_VOLUME' ? 'VOLUME' : metric === 'DISTANCE' ? 'DISTANCE' : metric === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION' : metric === 'FILL_UPS' ? 'COUNT' : perDistance ? 'COST_PER_DISTANCE' : 'CURRENCY'
-    const cost = unit === 'CURRENCY' || perDistance
+    const unit = unitOf(metric)
+    const cost = unit === 'CURRENCY' || unit === 'COST_PER_DISTANCE'
     const keys = config.grouping === 'CATEGORY' ? ['Service', 'Parking', ''] : months
-    const kinds = config.stacked ? ['fuel', 'expenses'] : [config.metric === 'EXPENSE_COST' ? 'expenses' : cost ? 'total' : 'fuel']
-    const line = (kind: string, role: string, value: (i: number) => number | null, slope: number | null = null) =>
-      ({ kind, currency: cost ? 'HUF' : null, role, slope, points: keys.map((key, i) => ({ key, value: value(i) })) })
+    // As the server names them: a cost or a distance is a total, the other fuel figures are fuel.
+    const kinds = config.stacked ? ['fuel', 'expenses'] : [config.metric === 'EXPENSE_COST' ? 'expenses' : cost || metric === 'DISTANCE' ? 'total' : 'fuel']
+    const line = (kind: string, role: string, value: (i: number) => number | null, slope: number | null = null, of = metric) => {
+      const own = unitOf(of)
+      return { kind, currency: own === 'CURRENCY' || own === 'COST_PER_DISTANCE' ? 'HUF' : null, role, slope, metric: of, unit: own, points: keys.map((key, i) => ({ key, value: value(i) })) }
+    }
     const values = kinds.map((kind, k) => line(kind, 'VALUE', (i) => (i + 1) * 1000 * (k + 1)))
     const base = config.stacked ? 'total' : kinds[0]
+    const second = config.secondMetric ? String(config.secondMetric) : null
     return {
       unit,
       series: [
@@ -1016,6 +1030,7 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
         ...(config.compareYearEarlier ? [line(base, 'YEAR_EARLIER', (i) => (i + 1) * 500)] : []),
         ...(config.trend === 'MOVING_AVERAGE' ? [line(base, 'MOVING_AVERAGE', (i) => (i < 2 ? null : 2000))] : []),
         ...(config.trend === 'LINEAR' ? [line(base, 'LINEAR', (i) => 1000 + i * 1000, 1000)] : []),
+        ...(second ? [line(second === 'DISTANCE' ? 'total' : 'fuel', 'VALUE', (i) => 5 + i, null, second)] : []),
       ],
     }
   }
@@ -1046,6 +1061,8 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
         trend: String(config.trend ?? 'NONE'),
         runningTotal: Boolean(config.runningTotal),
         compareYearEarlier: Boolean(config.compareYearEarlier),
+        secondMetric: (config.secondMetric as string) ?? null,
+        secondKind: (config.secondKind as string) ?? null,
       })
       state.charts = id ? state.charts.map((c) => (c.id === id ? entry : c)) : [...state.charts, entry]
       return HttpResponse.json({ data: { saveVehicleChart: { id: entry.id } } })
