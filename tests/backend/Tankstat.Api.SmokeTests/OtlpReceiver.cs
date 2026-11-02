@@ -32,20 +32,23 @@ internal sealed class OtlpReceiver : IDisposable
     {
         while (_listener.IsListening)
         {
-            HttpListenerContext context;
             try
             {
-                context = await _listener.GetContextAsync();
+                var context = await _listener.GetContextAsync();
+                using var body = new MemoryStream();
+                await context.Request.InputStream.CopyToAsync(body);
+                _received.Enqueue((context.Request.Url!.AbsolutePath, body.ToArray()));
+                context.Response.StatusCode = 200;
+                context.Response.Close();
             }
             catch (Exception) when (!_listener.IsListening)
             {
                 return;
             }
-            using var body = new MemoryStream();
-            await context.Request.InputStream.CopyToAsync(body);
-            _received.Enqueue((context.Request.Url!.AbsolutePath, body.ToArray()));
-            context.Response.StatusCode = 200;
-            context.Response.Close();
+            catch (Exception)
+            {
+                // One request that could not be read or answered (a connection dropped): the next export is still received.
+            }
         }
     }
 
