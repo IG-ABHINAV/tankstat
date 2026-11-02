@@ -5,8 +5,8 @@ import { calculateField, clearCalculated, type FillState } from './recognition/r
 export type AmountField = 'volume' | 'unitPrice' | 'totalCost'
 
 /**
- * Among the amounts nobody typed, the one that gives way first: the unit price is never saved, and the volume, which consumption is
- * worked out from, last.
+ * The order in which the amounts give way when another one moved: the unit price first (it is never saved), then the total; the volume,
+ * which the consumption is worked out from, only while it is empty (see `keepAmountsInStep`).
  */
 const GIVES_WAY: readonly AmountField[] = ['unitPrice', 'totalCost', 'volume']
 
@@ -21,9 +21,12 @@ const SOURCES: Record<AmountField, readonly [AmountField, AmountField]> = {
 const DECIMALS: Record<AmountField, number> = { totalCost: 2, volume: 3, unitPrice: 3 }
 
 /**
- * Keeps volume, unit price and total in step once `changed` moved: the least recently typed of the other amounts is worked out from the
- * two it depends on. The one calculated before comes first (it says nothing of its own), then the others nobody typed (empty, loaded,
- * read from a photo) in `GIVES_WAY` order, then the ones typed longest ago. A change that is not the user's (`byUser` false: a photo, the starting values) never moves what the user typed.
+ * Keeps volume, unit price and total in step once `changed` moved: one of the other amounts is worked out from the two it depends on, in a
+ * fixed order. The one calculated before comes first (it says nothing of its own), then the unit price (never saved, so it is the one
+ * that follows: a discount on the receipt makes it the price actually paid per litre), then the total; the volume only while it is empty.
+ * A volume that holds a value (typed, read from a photo, saved) never gives way: the consumption is worked out from it, and litres
+ * worked out from an amount paid and a pump price are wrong by any discount (#204). A change that is not the user's (`byUser` false: a
+ * photo, the starting values) never moves what the user typed.
  * When an amount cannot be worked out (what it depends on is empty or not a number), the next one is tried; a calculated one is emptied
  * on the way, so it never shows a value that no longer follows. What the user typed is never emptied.
  */
@@ -35,11 +38,16 @@ export function keepAmountsInStep<F extends string>(
   const moved = GIVES_WAY.filter((field) => changed.includes(field))
   if (moved.length === 0 || moved.length === GIVES_WAY.length) return state
 
-  // The fields the user typed in (and did not empty since), from the least to the most recently. An amount's age is its place there,
-  // -1 when nobody typed it, and -2 when it was calculated: that one is worked out again before anything else.
-  const typed = [...state.touched].filter((field) => state.values[field].trim() !== '')
-  const age = (field: AmountField) => (state.calculated.has(field) ? -2 : typed.indexOf(field))
-  const candidates = GIVES_WAY.filter((field) => !moved.includes(field) && (byUser || age(field) < 0)).sort((a, b) => age(a) - age(b))
+  // Who may give way: a calculated amount (rank 0), the unit price (1), the total (2), an empty volume (3); a volume with a value never.
+  // A change that is not the user's leaves what the user typed (and did not empty since) alone.
+  const typed = (field: AmountField) => state.touched.has(field) && state.values[field].trim() !== ''
+  const rank = (field: AmountField): number | undefined => {
+    if (state.calculated.has(field)) return 0
+    if (field === 'volume') return state.values.volume.trim() === '' ? 3 : undefined
+    return GIVES_WAY.indexOf(field) + 1
+  }
+  const candidates = GIVES_WAY.filter((field) => !moved.includes(field) && rank(field) !== undefined && (byUser || !typed(field)))
+    .sort((a, b) => rank(a)! - rank(b)!)
 
   let next = state
   for (const field of candidates) {

@@ -40,18 +40,40 @@ describe('volume, unit price and total', () => {
     expect(amounts(type(type(open(), 'totalCost', '24000'), 'unitPrice', '600'))).toEqual({ volume: '40', unitPrice: '600', totalCost: '24000' })
   })
 
-  it('lets the amount typed longest ago give way when all three are filled', () => {
+  it('with all three filled the unit price follows a change of the volume or the total, the total a change of the unit price, and the litres never move', () => {
     let state = type(type(open(), 'volume', '40'), 'unitPrice', '600') // the total is worked out
     expect(state.calculated).toEqual(new Set(['totalCost']))
 
-    state = type(state, 'totalCost', '24600') // the volume was typed longest ago
-    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '600', totalCost: '24600' })
-
-    state = type(state, 'unitPrice', '615') // the calculated volume gives way before anything typed
+    state = type(state, 'totalCost', '24600') // the amount paid: a discount, so the price per litre paid is lower than the pump's
     expect(amounts(state)).toEqual({ volume: '40', unitPrice: '615', totalCost: '24600' })
+    expect(state.calculated).toEqual(new Set(['unitPrice']))
 
-    state = type(state, 'volume', '41') // now the total is the oldest typing
-    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '615', totalCost: '25215' })
+    state = type(state, 'unitPrice', '620') // the pump price typed on purpose: the total follows, never the litres
+    expect(amounts(state)).toEqual({ volume: '40', unitPrice: '620', totalCost: '24800' })
+    expect(state.calculated).toEqual(new Set(['totalCost']))
+
+    state = type(state, 'volume', '41') // the litres corrected while the total is only worked out: the total follows again
+    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '620', totalCost: '25420' })
+
+    state = type(state, 'totalCost', '24700') // the amount paid typed: the unit price follows
+    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '602.439', totalCost: '24700' })
+
+    state = type(state, 'volume', '42') // the litres corrected with the total and the price both typed: the unit price gives way, never the litres or the total
+    expect(amounts(state)).toEqual({ volume: '42', unitPrice: '588.095', totalCost: '24700' })
+  })
+
+  it('the receipt of #204: 43 L, 818 Ft/L and 34 744 Ft paid keep the litres and give the price per litre paid', () => {
+    const state = type(type(type(open(), 'volume', '43'), 'unitPrice', '818'), 'totalCost', '34744')
+
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '808', totalCost: '34744' })
+  })
+
+  it('a volume read from a photo never gives way to a typed total either', () => {
+    let state = type(photo(open(), { VOLUME: '38.52' }), 'unitPrice', '640') // the total is worked out
+    expect(amounts(state)).toEqual({ volume: '38.52', unitPrice: '640', totalCost: '24652.8' })
+
+    state = type(state, 'totalCost', '24500')
+    expect(amounts(state)).toEqual({ volume: '38.52', unitPrice: '636.033', totalCost: '24500' })
   })
 
   it('works out the unit price of a saved log on opening it, and among untyped amounts changes the unit price first, then the total', () => {
@@ -114,12 +136,12 @@ describe('amounts read from photos', () => {
     expect(amounts(photo(typed, { VOLUME: '40' }))).toEqual({ volume: '40', unitPrice: '600', totalCost: '25000' })
   })
 
-  it('offers a different value next to a calculated amount, and "Use it" makes the amount typed longest ago give way', () => {
+  it('offers a different value next to a calculated amount, and "Use it" makes the total follow, never the litres', () => {
     const state = photo(type(type(open(), 'volume', '40'), 'totalCost', '24000'), { UNIT_PRICE: '599.9' })
 
     expect(amounts(state)).toEqual({ volume: '40', unitPrice: '600', totalCost: '24000' })
     expect(state.offered).toEqual({ unitPrice: '599.9' })
-    expect(amounts(use(state, 'unitPrice'))).toEqual({ volume: '40.007', unitPrice: '599.9', totalCost: '24000' })
+    expect(amounts(use(state, 'unitPrice'))).toEqual({ volume: '40', unitPrice: '599.9', totalCost: '23996' })
   })
 
   it('works out again what it calculated before an amount a photo showed, keystroke after keystroke', () => {

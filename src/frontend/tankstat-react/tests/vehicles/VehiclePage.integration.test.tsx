@@ -176,14 +176,14 @@ it('works out the third of volume, unit price and total from the other two, and 
   expect(within(dialog).getByLabelText('Total cost')).toHaveValue('22916,18')
   expect(within(dialog).getByLabelText('Total cost')).toHaveAccessibleDescription(/Calculated from the other two values\./)
   await ui.clear(within(dialog).getByLabelText('Total cost'))
-  await ui.type(within(dialog).getByLabelText('Total cost'), '24000') // all three filled: the volume, typed longest ago, gives way
-  expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('40,007')
-  expect(within(dialog).getByLabelText(/^Volume/)).toHaveAccessibleDescription(/Calculated from the other two values\./)
-  expect(within(dialog).getByLabelText('Price per L')).toHaveValue('599,9')
+  await ui.type(within(dialog).getByLabelText('Total cost'), '24000') // all three filled: the unit price gives way, the litres never (#204)
+  expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('38,2')
+  expect(within(dialog).getByLabelText('Price per L')).toHaveValue('628,272')
+  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Calculated from the other two values\./)
   await ui.type(within(dialog).getByLabelText(/^Odometer/), '12450')
   await ui.click(within(dialog).getByRole('button', { name: 'Add refuelling' }))
 
-  await waitFor(() => expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ volume: 40.007, totalCost: 24000 }) }]))
+  await waitFor(() => expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ volume: 38.2, totalCost: 24000 }) }]))
   expect(state.calls.LogRefueling).toEqual([{ input: expect.not.objectContaining({ unitPrice: expect.anything() }) }]) // a help for typing, never saved
 })
 

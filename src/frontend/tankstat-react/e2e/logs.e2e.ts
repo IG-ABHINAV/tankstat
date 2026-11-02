@@ -23,6 +23,23 @@ test('edits a refuelling', async ({ page }) => {
   await expect(row(page, '38.25 L')).toBeVisible()
 })
 
+test('types the litres, the pump price and the amount paid: the price per litre follows, the litres never change', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await openVehicle(page, vehicle.id, 'refuelings')
+  await page.getByRole('button', { name: 'Add refuelling' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Add refuelling' })
+  await dialog.getByLabel(/^Volume/).fill('43')
+  await dialog.getByLabel(/^Price per/).fill('818')
+  await expect(dialog.getByLabel('Total cost')).toHaveValue('35174') // the pump's total
+  await dialog.getByLabel('Total cost').fill('34744') // what the receipt says was paid, after a discount
+  await expect(dialog.getByLabel(/^Price per/)).toHaveValue('808') // the price paid per litre; the litres stay 43
+  await expect(dialog.getByLabel(/^Volume/)).toHaveValue('43')
+  await dialog.getByLabel(/^Odometer/).fill('12450')
+  await dialog.getByRole('button', { name: 'Add refuelling' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(row(page, '43 L')).toBeVisible()
+})
+
 test('trashes a refuelling and takes it back with Undo', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: '2026-01-15', volume: 41 })
