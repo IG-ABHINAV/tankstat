@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { addDueRecurring, addExpense, addVehicle, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { expectSoundLayout } from './support/layout.ts'
 
 // The logs of a vehicle: refuellings, expenses and recurring expenses, changed and trashed through the vehicle page and the home card.
 // Every test signs in as a user of its own, so its home page and trash hold only its own data.
@@ -51,6 +52,7 @@ test('the litres, the amount paid and the pump price give the discount, which is
   await dialog.getByLabel(/^Price per/).fill('818') // the pump's price: the amount paid stays, the discount appears (#204)
   await expect(dialog.getByLabel('Discount')).toHaveValue('430')
   await expect(dialog.getByLabel('Total cost')).toHaveValue('34744')
+  await expectSoundLayout(page) // the row of discount, total and currency, at both sizes
   await dialog.getByLabel(/^Odometer/).fill('12450')
   await dialog.getByRole('button', { name: 'Add refuelling' }).click()
   await expect(dialog).toBeHidden()

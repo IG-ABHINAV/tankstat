@@ -42,8 +42,8 @@ const NOT_SURE: ReadonlySet<ReadingIssueCode> = new Set(['NO_CONFIDENCE', 'UNSUR
 /** Reasons whose sentence starts with the field's name; the others say what they mean on their own (the odometer, the date). */
 const NAMES_THE_FIELD: ReadonlySet<ReadingIssueCode> = new Set(['NOT_UNDERSTOOD', 'OUT_OF_RANGE', 'AMOUNTS_DO_NOT_ADD', 'NO_CONFIDENCE', 'UNSURE'])
 
-/** Reasons about several values at once (the litres and the price that do not add up to the total): told once, about the first. */
-const SHARED: ReadonlySet<ReadingIssueCode> = new Set(['AMOUNTS_DO_NOT_ADD'])
+/** Reasons about several values at once (the litres and the price that do not add up to the total; the total and its discount): told once, about the first. */
+const SHARED: ReadonlySet<ReadingIssueCode> = new Set(['AMOUNTS_DO_NOT_ADD', 'DISCOUNT_NOT_TAKEN_OFF'])
 
 /** A reason to tell, with the name of its field in the dialog where the sentence starts with it. */
 export interface Problem {

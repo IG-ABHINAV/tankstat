@@ -28,6 +28,7 @@ public class ChartTests
     [Theory]
     [InlineData(ChartMetric.AverageConsumption)]
     [InlineData(ChartMetric.AveragePricePerUnit)]
+    [InlineData(ChartMetric.AveragePricePerUnitBeforeDiscount)]
     public void ADonut_NeedsAMetricThatAddsUp(ChartMetric metric) =>
         Assert.Equal("chart.donutNeedsTotals", Key(() => Config(metric, kind: ChartKind.Donut).Validated()));
 

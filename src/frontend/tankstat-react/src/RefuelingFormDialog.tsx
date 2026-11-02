@@ -180,7 +180,7 @@ export function RefuelingFormDialog({
             editing={editing}
             last={lastReading}
             photosBusy={queue.busy || queue.failed > 0 || adding}
-            read={mergeReadings(drafts.readings.values())}
+            read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
             explanation={drafts.explanation}
             // A new log may leave values to a photo that is being read; a saved one still waiting for its photos may stay so.
@@ -293,6 +293,7 @@ function RefuelingForm({
     { ...explanation, last: last ? distance(last.value, units.distance) : undefined },
     keepAmountsInStep,
     editing,
+    { discount: 'totalCost' }, // a photo's discount was taken off its own total: next to one the user entered, it is only offered
   )
   const merging = useMergeFields(merge)
   const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
@@ -344,7 +345,9 @@ function RefuelingForm({
         date: text('date'),
         volume: text('volume') === '' ? null : parseDecimal(text('volume'))!,
         totalCost: text('totalCost') === '' ? null : parseDecimal(text('totalCost'))!,
-        discount: text('discount') === '' ? null : parseDecimal(text('discount'))!,
+        // Emptied in an edit: 0, which clears it (left out, the server keeps the log's: what a build from before discounts sends). With the
+        // total left to a photo there is nothing to take it off: none here, the photo brings both.
+        discount: text('discount') === '' || text('totalCost') === '' ? (editing ? 0 : null) : parseDecimal(text('discount'))!,
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         isFullTank: full,

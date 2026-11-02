@@ -1416,6 +1416,7 @@
       "DATE_TOO_OLD": "A fotón látható dátum több mint három évvel ezelőtti, ezért nem töltöttük ki.",
       "DATE_IN_FUTURE": "A fotón látható dátum a jövőben van, ezért nem töltöttük ki.",
       "AMOUNTS_DO_NOT_ADD": "{{field}}: a fotón látható liter és literenkénti ár szorzata nem adja ki a végösszeget, ezért nem töltöttük ki.",
+      "DISCOUNT_NOT_TAKEN_OFF": "A fotón látható liter és literenkénti ár szorzata a kedvezmény levonása nélkül adja ki a végösszeget: vagy a végösszeg a kedvezmény előtti, vagy a kedvezményt olvastuk félre, ezért egyiket sem töltöttük ki.",
       "NO_CONFIDENCE": "{{field}}: a fotón le lehetett olvasni, de nem elég megbízhatóan ahhoz, hogy kitöltsük.",
       "UNSURE": "{{field}}: a fotón le lehetett olvasni, de nem elég megbízhatóan ahhoz, hogy kitöltsük."
     },

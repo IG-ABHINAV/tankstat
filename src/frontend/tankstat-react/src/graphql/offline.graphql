@@ -10,6 +10,7 @@ fragment OfflineRefuelingFields on Refueling {
   discount
   currency
   pricePerUnit
+  pricePerUnitBeforeDiscount
   consumption
   odometer
   isFullTank
