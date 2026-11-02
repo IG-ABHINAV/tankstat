@@ -26,6 +26,8 @@ public class DashboardLayoutTests
     [InlineData("")]
     [InlineData("preset:")]
     [InlineData("chart:not-a-guid")]
+    [InlineData("odometer\n")] // a newline at the end is no id either
+    [InlineData("preset:distance\n")]
     public void ATile_NamesAFigure_AReadyMadeChart_OrASavedChart(string id) =>
         Assert.Equal("dashboard.itemInvalid", Key(() => new DashboardLayoutValues([Tile(id)], []).Checked()));
 

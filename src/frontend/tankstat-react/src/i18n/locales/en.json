@@ -1284,10 +1284,8 @@
       "odometer": "Odometer",
       "lastFillUp": "Last fill-up",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
-      "none": "–",
-      "title": "Key figures"
+      "none": "–"
     },
-    "yourCharts": "Charts",
     "addChart": "Add chart",
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",

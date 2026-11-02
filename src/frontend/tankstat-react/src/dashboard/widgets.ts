@@ -66,9 +66,9 @@ export function widgetOf(id: string): Widget | null {
 }
 
 /** A widget's size when it is put on the dashboard: a figure one column wide and low, a chart two columns wide and tall. */
-export const DEFAULT_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figure: { w: 1, h: 3 }, ready: { w: 2, h: 8 }, saved: { w: 2, h: 8 } }
-/** The least a tile can be: a figure needs its label and value, a chart its picture. */
-export const MIN_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figure: { w: 1, h: 3 }, ready: { w: 1, h: 5 }, saved: { w: 1, h: 5 } }
+export const DEFAULT_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figure: { w: 1, h: 4 }, ready: { w: 2, h: 8 }, saved: { w: 2, h: 8 } }
+/** The least a tile can be: a figure needs its label, value, hint and sparkline (four rows: 180 px), a chart its picture. */
+export const MIN_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figure: { w: 1, h: 4 }, ready: { w: 1, h: 5 }, saved: { w: 1, h: 5 } }
 
 const tile = (id: string, x: number, y: number, w: number, h: number): Tile => ({ id, x, y, w, h, pinned: false })
 
@@ -76,12 +76,12 @@ const tile = (id: string, x: number, y: number, w: number, h: number): Tile => (
 export const LAYOUT_PRESETS = {
   standard: {
     tiles: [
-      ...FIGURES.map((f, i) => tile(f, i, 0, 1, 3)),
-      tile(presetKey('monthlyCosts'), 0, 3, 2, 8),
-      tile(presetKey('consumption'), 2, 3, 2, 8),
-      tile(presetKey('fuelPrice'), 0, 11, 2, 8),
-      tile(presetKey('categories'), 2, 11, 2, 8),
-      tile(presetKey('distance'), 0, 19, 2, 8),
+      ...FIGURES.map((f, i) => tile(f, i, 0, 1, 4)),
+      tile(presetKey('monthlyCosts'), 0, 4, 2, 8),
+      tile(presetKey('consumption'), 2, 4, 2, 8),
+      tile(presetKey('fuelPrice'), 0, 12, 2, 8),
+      tile(presetKey('categories'), 2, 12, 2, 8),
+      tile(presetKey('distance'), 0, 20, 2, 8),
     ],
     hidden: [],
   },
@@ -131,14 +131,36 @@ export function pack(tiles: readonly Tile[], cols = COLUMNS): Tile[] {
 }
 
 /**
- * The tiles flowed afresh into `cols` columns, in reading order, each at the first place it fits (the highest row, then the leftmost
- * column): a phone's one column and a tablet's two come from the desktop's four this way, and a dashboard saved from a narrower screen
- * goes back into four with the new order and the old sizes. Pins hold only in the four columns the tiles were placed in.
+ * The tiles flowed afresh into `cols` columns in reading order, each at the first place it fits after the one before it (the highest row
+ * it can take in any column, the leftmost there, never above or left of the previous tile), so the order holds and nothing floats above a
+ * gap: a phone's one column and a tablet's two come from the desktop's four this way, a dashboard saved from a narrower screen goes back
+ * into four with the new order and the old sizes, and a tile moved earlier or later by its menu lands where the order says. Pins hold only
+ * in the four columns the tiles were placed in.
  */
 export function flow(tiles: readonly Tile[], cols: number): Tile[] {
   const placed: Tile[] = []
-  for (const t of inReadingOrder(tiles)) placed.push({ ...firstFit(placed, t, cols), pinned: cols === COLUMNS && t.pinned })
+  let last: Tile | null = null
+  for (const t of inReadingOrder(tiles)) {
+    last = { ...nextFit(placed, t, cols, last), pinned: cols === COLUMNS && t.pinned }
+    placed.push(last)
+  }
   return placed
+}
+
+/**
+ * A tile at the first place it fits after `last` in reading order: of every column, the lowest row it can take there (so nothing is left
+ * above it), the places before `last` left out, the highest of them, and the leftmost of those. The column `last` takes always comes after
+ * it, so there is always one.
+ */
+function nextFit(placed: readonly Tile[], t: Tile, cols: number, last: Tile | null): Tile {
+  const w = Math.min(t.w, cols)
+  let best: { x: number; y: number } | null = null
+  for (let x = 0; x + w <= cols; x++) {
+    const y = lowestFit(placed, x, w, t.h)
+    const after = last === null || y > last.y || (y === last.y && x > last.x)
+    if (after && (best === null || y < best.y)) best = { x, y }
+  }
+  return { ...t, w, x: best!.x, y: best!.y }
 }
 
 /** A tile at the first place it fits among `placed`: the highest row, and the leftmost column there. */

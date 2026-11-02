@@ -41,10 +41,11 @@ test('customizes the vehicle\'s dashboard by the tiles\' menus: a figure moved e
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Odometer moved to position 2 of 9.')
   await menu(page, 'Odometer', 'Pin')
   await menu(page, 'Fuel price', 'Remove')
-  // A phone's grid is one column: nothing can be wider there, and the menu says so.
+  // A phone's grid is one column: a width cannot be seen there, so neither Wider nor Narrower is offered, and the menu says so.
   await page.getByRole('button', { name: 'Options for Monthly costs' }).click()
   if (isMobile) await expect(page.getByRole('menuitem', { name: 'Wider' })).toHaveAttribute('aria-disabled', 'true')
   else await expect(page.getByRole('menuitem', { name: 'Wider' })).not.toHaveAttribute('aria-disabled', 'true')
+  if (isMobile) await expect(page.getByRole('menuitem', { name: 'Narrower' })).toHaveAttribute('aria-disabled', 'true')
   if (isMobile) await page.keyboard.press('Escape')
   else await page.getByRole('menuitem', { name: 'Wider' }).click()
   await expect(page.getByRole('menu')).toBeHidden()

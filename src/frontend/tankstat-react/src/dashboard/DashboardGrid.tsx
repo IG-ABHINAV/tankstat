@@ -14,6 +14,8 @@ const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
 const COLS = { lg: COLUMNS, sm: 2, xs: 1 } as const
 const FALLBACK_WIDTH = 1280
 type Breakpoint = keyof typeof COLS
+/** The breakpoint of a width, as the library picks it: the widest whose least width is reached. */
+const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
 
 /** What the tile menu offers: the keyboard's and a screen reader's way to do what dragging does. */
 export type TileAction = 'earlier' | 'later' | 'wider' | 'narrower' | 'taller' | 'shorter' | 'pin' | 'unpin' | 'remove'
@@ -52,11 +54,11 @@ export function DashboardGrid({
   onDrop?: (tiles: Tile[]) => void
 }) {
   const { t } = useTranslation()
-  const { width: measured, containerRef, mounted } = useContainerWidth()
-  // Not laid out yet (jsdom, a tab out of sight): the desktop's columns, never a one-column grid by mistake.
+  // Measured before the grid is drawn, so a phone never paints a frame of the desktop's grid first; while the container has no width
+  // (jsdom, a tab out of sight) the desktop's columns, never a one-column grid by mistake.
+  const { width: measured, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
   const width = measured > 0 ? measured : FALLBACK_WIDTH
-  const [breakpoint, setBreakpoint] = useState<Breakpoint>('lg')
-  const cols = COLS[breakpoint]
+  const cols = COLS[breakpointOf(width)]
   const ordered = useMemo(() => inReadingOrder(tiles), [tiles])
 
   const item = (tile: Tile, inFour: boolean): LayoutItem => {
@@ -71,8 +73,9 @@ export function DashboardGrid({
   /** The tiles after the grid changed them: in the four-column grid as they are; on fewer columns their new order, flowed back into four. */
   const fromGrid = (layout: GridItems): Tile[] => {
     const byId = new Map(tiles.map((tile) => [tile.id, tile]))
-    // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width); one just dropped in is new.
-    const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: l.w, h: l.h, pinned: false }
+    // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width); one just dropped in is new, at the width it was
+    // brought in with (on fewer columns the grid clamped it).
+    const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: dropping?.id === l.i ? dropping.w : l.w, h: l.h, pinned: false }
     if (cols === COLUMNS) return inReadingOrder(layout.map((l) => ({ ...known(l), x: l.x, y: l.y, w: l.w, h: l.h })))
     const order = [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...known(l), h: l.h, y: i, x: 0 }))
     return flow(order, COLUMNS)
@@ -106,7 +109,6 @@ export function DashboardGrid({
           margin={[GAP, GAP]}
           containerPadding={[0, 0]}
           compactor={verticalCompactor}
-          onBreakpointChange={(next) => setBreakpoint(next as Breakpoint)}
           dragConfig={{ enabled: editing, handle: `.${CLASS.handle}` }}
           resizeConfig={{ enabled: editing, handles: ['se'] }}
           dropConfig={{ enabled: editing && !!dropping, defaultItem: { w: dropping?.w ?? 2, h: dropping?.h ?? 8 } }}
@@ -129,7 +131,7 @@ export function DashboardGrid({
           ))}
         </Responsive>
       )}
-      {!mounted && (
+      {!mounted && ( // the one frame before the container is measured
         <Typography variant="body2" role="status" sx={{ color: 'text.secondary' }}>
           {t('app.loading')}
         </Typography>
@@ -151,8 +153,9 @@ function EditChrome({ tile, name, index, count, cols, onAction }: { tile: Tile; 
   const items: { action: TileAction; label: string; disabled?: boolean }[] = [
     { action: 'earlier', label: t('dashboard.edit.earlier'), disabled: index === 0 },
     { action: 'later', label: t('dashboard.edit.later'), disabled: index === count - 1 },
-    { action: 'wider', label: t('dashboard.edit.wider'), disabled: tile.w >= cols },
-    { action: 'narrower', label: t('dashboard.edit.narrower'), disabled: tile.w <= min.w },
+    // A width is a share of the desktop's four columns: on fewer, where it cannot be seen, neither is offered (a corner resize there keeps it too).
+    { action: 'wider', label: t('dashboard.edit.wider'), disabled: cols < COLUMNS || tile.w >= COLUMNS },
+    { action: 'narrower', label: t('dashboard.edit.narrower'), disabled: cols < COLUMNS || tile.w <= min.w },
     { action: 'taller', label: t('dashboard.edit.taller'), disabled: tile.h >= MAX_ROWS },
     { action: 'shorter', label: t('dashboard.edit.shorter'), disabled: tile.h <= min.h },
     { action: tile.pinned ? 'unpin' : 'pin', label: tile.pinned ? t('dashboard.edit.unpin') : t('dashboard.edit.pin') },

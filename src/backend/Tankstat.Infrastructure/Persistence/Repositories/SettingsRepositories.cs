@@ -13,7 +13,7 @@ internal sealed class UiSettingsRepository(IDbContextFactory<AppDbContext> dbFac
     }
 
     public Task SaveAsync(UiSettings settings, CancellationToken ct) =>
-        UpsertAsync(settings, db => db.UiSettings.AnyAsync(s => s.UserId == settings.UserId, ct), ct);
+        dbFactory.UpsertAsync(settings, db => db.UiSettings.AnyAsync(s => s.UserId == settings.UserId, ct), ct);
 
     public async Task<IReadOnlyList<GridSettings>> ListGridsAsync(Guid userId, CancellationToken ct)
     {
@@ -28,28 +28,8 @@ internal sealed class UiSettingsRepository(IDbContextFactory<AppDbContext> dbFac
     }
 
     public Task SaveGridAsync(GridSettings grid, CancellationToken ct) =>
-        UpsertAsync(grid, db => db.GridSettings.AnyAsync(g => g.UserId == grid.UserId && g.GridId == grid.GridId, ct), ct);
+        dbFactory.UpsertAsync(grid, db => db.GridSettings.AnyAsync(g => g.UserId == grid.UserId && g.GridId == grid.GridId, ct), ct);
 
-    /// <summary>
-    /// Adds the row or replaces it (the key is never generated). Two first saves at the same time both see no row; the one that loses the
-    /// insert becomes an update, so the later value wins instead of an error.
-    /// </summary>
-    private async Task UpsertAsync<T>(T row, Func<AppDbContext, Task<bool>> exists, CancellationToken ct) where T : class
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var isNew = !await exists(db);
-        db.Entry(row).State = isNew ? EntityState.Added : EntityState.Modified;
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException) when (isNew)
-        {
-            db.ChangeTracker.Clear();
-            db.Entry(row).State = EntityState.Modified;
-            await db.SaveChangesAsync(ct);
-        }
-    }
 
     public async Task<bool> RemoveGridAsync(Guid userId, string gridId, CancellationToken ct)
     {

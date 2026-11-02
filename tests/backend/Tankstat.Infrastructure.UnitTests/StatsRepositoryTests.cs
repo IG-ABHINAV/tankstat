@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tankstat.Application.Access;
 using Tankstat.Application.Expenses;
@@ -8,6 +9,8 @@ using Tankstat.Domain.Charts;
 using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Vehicles;
+using Tankstat.Infrastructure.Persistence;
+using Tankstat.Infrastructure.Persistence.Repositories;
 using Tankstat.TestSupport;
 
 namespace Tankstat.Infrastructure.UnitTests;
@@ -131,6 +134,15 @@ public class StatsRepositoryTests
 
         await repo.RemovePersonalAsync(alice, car.Id, default);
         Assert.Null(await repo.FindPersonalAsync(alice, car.Id, default));
+        // A save that found the row and lost it to a reset meanwhile (another tab) inserts it instead of failing: the check says the row
+        // is there, and takes it away.
+        var factory = db.Get<IDbContextFactory<AppDbContext>>();
+        await factory.UpsertAsync(UserDashboardLayout.Create(Owner, car.Id, Values("preset:c"), now), async context =>
+        {
+            await context.UserDashboardLayouts.ExecuteDeleteAsync();
+            return true;
+        }, default);
+        Assert.Equal("preset:c", (await repo.FindPersonalAsync(Owner, car.Id, default))!.Tiles[1].Id);
 
         var vehicles = db.Get<IVehicleRepository>();
         var trashed = (await vehicles.FindAsync(car.Id, default))!;

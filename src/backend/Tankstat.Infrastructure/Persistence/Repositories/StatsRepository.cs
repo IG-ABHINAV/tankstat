@@ -80,10 +80,10 @@ internal sealed class DashboardLayoutRepository(IDbContextFactory<AppDbContext> 
     }
 
     public Task SaveSharedAsync(VehicleDashboardLayout layout, CancellationToken ct) =>
-        UpsertAsync(layout, db => db.VehicleDashboardLayouts.AnyAsync(l => l.VehicleId == layout.VehicleId, ct), ct);
+        dbFactory.UpsertAsync(layout, db => db.VehicleDashboardLayouts.AnyAsync(l => l.VehicleId == layout.VehicleId, ct), ct);
 
     public Task SavePersonalAsync(UserDashboardLayout layout, CancellationToken ct) =>
-        UpsertAsync(layout, db => db.UserDashboardLayouts.AnyAsync(l => l.UserId == layout.UserId && l.VehicleId == layout.VehicleId, ct), ct);
+        dbFactory.UpsertAsync(layout, db => db.UserDashboardLayouts.AnyAsync(l => l.UserId == layout.UserId && l.VehicleId == layout.VehicleId, ct), ct);
 
     public async Task RemoveSharedAsync(Guid vehicleId, CancellationToken ct)
     {
@@ -97,21 +97,4 @@ internal sealed class DashboardLayoutRepository(IDbContextFactory<AppDbContext> 
         await db.UserDashboardLayouts.Where(l => l.UserId == userId && l.VehicleId == vehicleId).ExecuteDeleteAsync(ct);
     }
 
-    /// <summary>Adds the row or replaces it, as the UI settings do: of two first saves at once, the one that loses the insert becomes an update.</summary>
-    private async Task UpsertAsync<T>(T row, Func<AppDbContext, Task<bool>> exists, CancellationToken ct) where T : class
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var isNew = !await exists(db);
-        db.Entry(row).State = isNew ? EntityState.Added : EntityState.Modified;
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException) when (isNew)
-        {
-            db.ChangeTracker.Clear();
-            db.Entry(row).State = EntityState.Modified;
-            await db.SaveChangesAsync(ct);
-        }
-    }
 }

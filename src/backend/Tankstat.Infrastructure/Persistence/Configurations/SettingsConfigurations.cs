@@ -7,20 +7,25 @@ using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Infrastructure.Persistence.Configurations;
 
-/// <summary>A list of short ids stored as JSON text, so the same mapping works on all four databases (grid columns, dashboard entries).</summary>
+/// <summary>A list stored as JSON text, so the same mapping works on all four databases (grid columns, dashboard entries and tiles).</summary>
 internal static class JsonListMapping
 {
-    public static PropertyBuilder<IReadOnlyList<string>> AsJsonList(this PropertyBuilder<IReadOnlyList<string>> property) =>
+    /// <param name="maxLength">The column's length; null for no limit (the domain caps the count).</param>
+    public static PropertyBuilder<IReadOnlyList<T>> AsJsonList<T>(this PropertyBuilder<IReadOnlyList<T>> property, int? maxLength = 4000)
+    {
         property
             .HasConversion(
                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>(),
-                new ValueComparer<IReadOnlyList<string>>(
+                v => JsonSerializer.Deserialize<List<T>>(v, (JsonSerializerOptions?)null) ?? new List<T>(),
+                new ValueComparer<IReadOnlyList<T>>(
                     (a, b) => a != null && b != null && a.SequenceEqual(b),
                     v => v.Aggregate(0, (hash, s) => HashCode.Combine(hash, s)),
                     v => v.ToList()))
-            .HasMaxLength(4000) // 50 grid ids of 40 characters, or 60 `chart:<guid>` entries, quoted and separated
             .IsRequired();
+        // 4000: 50 grid ids of 40 characters, or 60 `chart:<guid>` entries, quoted and separated.
+        if (maxLength is { } max) property.HasMaxLength(max);
+        return property;
+    }
 }
 
 // The settings tables are keyed by the user id without a foreign key to Users: the anonymous user (authentication off) has no row there,

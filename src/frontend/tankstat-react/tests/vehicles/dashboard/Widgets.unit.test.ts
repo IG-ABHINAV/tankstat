@@ -10,18 +10,18 @@ describe('resolveLayout', () => {
     const layout = resolveLayout(null, [chart('a'), chart('b'), chart('c')])
 
     expect(places(layout.tiles)).toEqual([
-      'thisMonth@0,0 1x3',
-      'consumption@1,0 1x3',
-      'odometer@2,0 1x3',
-      'lastFillUp@3,0 1x3',
-      'preset:monthlyCosts@0,3 2x8',
-      'preset:consumption@2,3 2x8',
-      'preset:fuelPrice@0,11 2x8',
-      'preset:categories@2,11 2x8',
-      'preset:distance@0,19 2x8',
-      'chart:a@2,19 2x8', // the saved charts fill in below, side by side
-      'chart:b@0,27 2x8',
-      'chart:c@2,27 2x8',
+      'thisMonth@0,0 1x4',
+      'consumption@1,0 1x4',
+      'odometer@2,0 1x4',
+      'lastFillUp@3,0 1x4',
+      'preset:monthlyCosts@0,4 2x8',
+      'preset:consumption@2,4 2x8',
+      'preset:fuelPrice@0,12 2x8',
+      'preset:categories@2,12 2x8',
+      'preset:distance@0,20 2x8',
+      'chart:a@2,20 2x8', // the saved charts fill in below, side by side
+      'chart:b@0,28 2x8',
+      'chart:c@2,28 2x8',
     ])
     expect(layout.available).toEqual({ figures: [], ready: [], saved: [] })
   })
@@ -70,11 +70,23 @@ describe('pack and flow', () => {
   })
 })
 
+describe('the reading order', () => {
+  it('holds when a tile is moved past a taller one, and when a phone column goes back into four columns', () => {
+    const tiles = [tile('a', 0, 0, 2, 8), tile('c', 2, 0, 1, 3), tile('b', 0, 8, 4, 3)] // a and c side by side, b under both
+
+    expect(places(moveTile(tiles, 'c', 1))).toEqual(['a@0,0 2x8', 'b@0,8 4x3', 'c@0,11 1x3']) // c after b: never lifted back beside a
+    expect(places(moveTile(tiles, 'b', -1))).toEqual(['a@0,0 2x8', 'b@0,8 4x3', 'c@0,11 1x3'])
+    const phone = [tile('a', 0, 0, 2, 8), tile('b', 0, 8, 4, 3), tile('c', 0, 11, 1, 3)]
+    expect(places(flow(phone, 4))).toEqual(['a@0,0 2x8', 'b@0,8 4x3', 'c@0,11 1x3'])
+    expect(places(flow([tile('a', 0, 0, 1, 8), tile('b', 0, 8, 1, 3), tile('c', 0, 11, 1, 3)], 4))).toEqual(['a@0,0 1x8', 'b@1,0 1x3', 'c@2,0 1x3']) // beside, when that is after
+  })
+})
+
 describe('the tile menu', () => {
   const start = [tile('thisMonth', 0, 0, 1, 3), tile('odometer', 1, 0, 1, 3), tile(presetKey('distance'), 0, 3)]
 
   it('adds a widget at the bottom at its default size, and takes one off', () => {
-    expect(places(addTile(start, 'lastFillUp'))).toContain('lastFillUp@0,11 1x3')
+    expect(places(addTile(start, 'lastFillUp'))).toContain('lastFillUp@0,11 1x4')
     expect(places(addTile(start, chartKey('x')))).toContain('chart:x@0,11 2x8')
     expect(places(removeTile(start, 'thisMonth'))).toEqual(['odometer@1,0 1x3', 'preset:distance@0,3 2x8'])
   })
@@ -88,8 +100,8 @@ describe('the tile menu', () => {
   it('resizes a tile by a step within its least size and the grid, and pins it', () => {
     expect(places(resizeTile(start, presetKey('distance'), { w: 1, h: 1 }))).toContain('preset:distance@0,3 3x9')
     expect(places(resizeTile(start, presetKey('distance'), { w: -1 }))).toContain('preset:distance@0,3 1x8')
-    expect(places(resizeTile(start, 'thisMonth', { w: -1, h: -1 }))).toContain('thisMonth@0,0 1x3') // no smaller than a figure needs
-    expect(places(resizeTile([tile('odometer', 3, 0, 1, 3)], 'odometer', { w: 1 }))).toEqual(['odometer@2,0 2x3']) // widened at the right edge: moved left
+    expect(places(resizeTile(start, 'thisMonth', { w: -1, h: -1 }))).toContain('thisMonth@0,0 1x4') // no smaller than a figure needs (four rows: this one was stored lower)
+    expect(places(resizeTile([tile('odometer', 3, 0, 1, 3)], 'odometer', { w: 1 }))).toEqual(['odometer@2,0 2x4']) // widened at the right edge: moved left (and no lower than a figure needs)
     expect(pinTile(start, 'odometer', true).find((t) => t.id === 'odometer')?.pinned).toBe(true)
   })
 })
