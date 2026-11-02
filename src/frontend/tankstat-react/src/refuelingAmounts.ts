@@ -16,9 +16,10 @@ const DECIMALS: Record<AmountField, number> = { totalCost: 2, discount: 2, volum
 
 /**
  * Below this share of the pump's amount (volume × unit price), a difference to the total is the receipt's rounding, not a discount: a
- * total is printed to the currency's smallest unit (cash in forints to five), a price per litre to a tenth. A smaller discount is typed.
+ * total is printed to the currency's smallest unit (cash in forints to five), a price per litre to a tenth, together under 0.08 % even
+ * of a 5 L fill-up, while a card's 2 Ft/L off 640 Ft/L is 0.3 % and stays visible (the user's choice, #204). A smaller discount is typed.
  */
-const ROUNDING_SHARE = 0.005
+const ROUNDING_SHARE = 0.001
 
 /**
  * Keeps volume, unit price, discount and total in step once `changed` moved: one of the other amounts is worked out from the ones it

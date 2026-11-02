@@ -99,8 +99,8 @@ describe('volume, unit price and total', () => {
     expect(state.values.discount).toBe('430')
     expect(state.calculated).toEqual(new Set(['discount']))
 
-    state = type(state, 'unitPrice', '814') // the pump price corrected: the discount follows
-    expect(state.values.discount).toBe('258')
+    state = type(state, 'unitPrice', '810') // the pump price corrected: the discount follows
+    expect(state.values.discount).toBe('86')
 
     state = type(state, 'unitPrice', '800') // below the price paid per litre: no discount, and the amount paid stays the receipt's
     expect(amounts(state)).toEqual({ volume: '43', unitPrice: '800', totalCost: '34744' })
@@ -110,10 +110,11 @@ describe('volume, unit price and total', () => {
     const read = photo(open(), { VOLUME: '43', UNIT_PRICE: '818', TOTAL: '34744' }) // a photo's three amounts give it too
     expect(read.values.discount).toBe('430')
 
-    // The receipt's rounding is no discount: 38.52 L × 640.9 is 24 687.47, printed as 24 687.
+    // The receipt's rounding is no discount: 38.52 L × 640.9 is 24 687.47, printed as 24 687. A card's 2 Ft/L off is one.
     const rounding = type(type(type(open(), 'volume', '38.52'), 'totalCost', '24687'), 'unitPrice', '640.9')
     expect(amounts(rounding)).toEqual({ volume: '38.52', unitPrice: '640.9', totalCost: '24687' })
     expect(rounding.values.discount).toBe('')
+    expect(type(type(type(open(), 'volume', '40'), 'totalCost', '25556'), 'unitPrice', '640.9').values.discount).toBe('80')
   })
 
   it('a discount that is not a number, or more than the fuel, empties a worked-out total rather than show one that no longer follows', () => {
