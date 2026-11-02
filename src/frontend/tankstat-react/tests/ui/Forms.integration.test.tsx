@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { CombinedGraphQLErrors } from '@apollo/client/errors'
@@ -9,7 +9,7 @@ import { FieldInput } from '../../src/forms/FieldInput.tsx'
 import { Form } from '../../src/forms/Form.tsx'
 import { ErrorMessage } from '../../src/messages.tsx'
 import { ThemeRoot } from '../../src/theme/ThemeRoot.tsx'
-import { dateValue, findDateField, typeDate } from '../support/dates.ts'
+import { dateSection, dateValue, findDateField, typeDate } from '../support/dates.ts'
 
 /** A form with a required amount (a number check and a hint), an e-mail and a date; what it sends goes to `sent`. */
 function setup({ dateRequired = false, disableFuture = false } = {}) {
@@ -105,6 +105,31 @@ it('sends a typed date as YYYY-MM-DD from the hidden input', async () => {
   expect(sent).toHaveBeenCalledWith(expect.objectContaining({ day: '2026-03-01' }))
 })
 
+// The day's maximum is the length of the month the field shows: a helper that told the day by 31 alone left the field empty in every
+// shorter month, so the tests that type over today's date failed by the calendar (#205). Pinned here on fixed dates instead.
+it.each([
+  ['2026-02-10', 28],
+  ['2024-02-10', 29],
+  ['2026-11-02', 30],
+  ['2026-10-15', 31],
+])('a typed date replaces one in a month of any length (%s, %i days)', async (shown, days) => {
+  render(
+    <ThemeRoot instant>
+      <Form onSubmit={(e) => e.preventDefault()}>
+        <Field name="day" label="Day">
+          <FieldDate defaultValue={shown} />
+        </Field>
+      </Form>
+    </ThemeRoot>,
+  )
+  const day = await findDateField('Day')
+  expect(within(day).getAllByRole('spinbutton').find((s) => dateSection(s) === 'day')).toHaveAttribute('aria-valuemax', String(days))
+
+  await typeDate(userEvent.setup(), day, '2026-09-20')
+
+  expect(dateValue(day)).toBe('2026-09-20')
+})
+
 it('a required date that is missing is said, and the focus goes to the first part of the day', async () => {
   const { ui, sent } = setup({ dateRequired: true })
   await ui.type(screen.getByLabelText('Amount'), '3')
@@ -161,7 +186,7 @@ it('editing a day that was already there says nothing while a part of it is bein
   const day = await findDateField('Day')
   expect(dateValue(day)).toBe('2026-03-05')
 
-  const year = screen.getAllByRole('spinbutton').find((s) => s.getAttribute('aria-valuemax') !== '12' && s.getAttribute('aria-valuemax') !== '31')!
+  const year = within(day).getAllByRole('spinbutton').find((s) => dateSection(s) === 'year')!
   await userEvent.setup().click(year)
   await userEvent.setup().keyboard('{Backspace}') // the year is empty for a moment
 
