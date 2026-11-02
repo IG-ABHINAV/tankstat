@@ -313,6 +313,20 @@ public class StatsCalculatorTests
     }
 
     [Fact]
+    public void ATrend_LeavesOutAPeriodTheRangeCuts_AndNeverGoesBelowZero()
+    {
+        // Every month 100 from March to September, a custom range from mid-March to mid-September: the two half months would weigh half.
+        var steady = Data(Enumerable.Range(3, 7).Select(m => Fill($"2026-{m:00}-20", 40, 100, 1000 + m * 100)).ToArray());
+        var cut = StatsCalculator.Chart(Config(range: ChartRange.Custom, from: new DateOnly(2026, 3, 15), to: new DateOnly(2026, 9, 15), trend: ChartTrend.Linear), steady, Today);
+        // Costs falling to nothing: the fitted line would run on below zero.
+        var falling = Data([Fill("2026-05-03", 40, 300, 1000), Fill("2026-06-03", 40, 200, 1500), Fill("2026-07-03", 40, 100, 2000)]);
+        var floored = StatsCalculator.Chart(Config(range: ChartRange.Last6Months, trend: ChartTrend.Linear), falling, Today);
+
+        Assert.Equal(0m, Role(cut, ChartSeriesRole.Linear).Slope); // fitted to April..August only: flat, the cut months left out
+        Assert.Equal([280m, 200m, 120m, 40m, 0m, 0m], Values(Role(floored, ChartSeriesRole.Linear))); // fitted over May..September (two empty months), floored where it would go below zero
+    }
+
+    [Fact]
     public void AnAverage_KeepsThePeriodStillRunning_AndFewerThanThreePointsGiveNoLine()
     {
         var fills = Data([Fill("2026-08-03", 40, 100, 1000, consumption: 6m), Fill("2026-09-03", 40, 100, 1500, consumption: 7m), Fill("2026-10-03", 40, 100, 2000, consumption: 8m)]);

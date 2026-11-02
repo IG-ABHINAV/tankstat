@@ -121,9 +121,10 @@ export function ChartView({
   const keys = [...new Set(data.series.flatMap((s) => s.points.map((p) => p.key)))]
   const rows: Record<string, string | number | null>[] = keys.map((key) => ({ key, label: keyLabel(key), ...Object.fromEntries(data.series.map((s) => [seriesId(s), s.points.find((p) => p.key === key)?.value ?? null])) }))
   const colour = (i: number) => PALETTE[i % PALETTE.length]
-  const several = data.series.length > 1
   const values = data.series.filter(isValue)
-  const overlays = data.series.filter((s) => !isValue(s))
+  // A year earlier with nothing logged in it is not drawn (a note says so, below); the table still lists it.
+  const overlays = data.series.filter((s) => !isValue(s) && (s.role !== 'YEAR_EARLIER' || s.points.some((p) => p.value)))
+  const several = values.length + overlays.length > 1
   // Every currency of a chart of costs on a scale of its own (#159): one axis per currency, shown (in its currency) only when there is one.
   const scales = chartAxes(data)
   // A line drawn from a series has that series' colour; one drawn from a stack's total (no series of its own) the next colours.
