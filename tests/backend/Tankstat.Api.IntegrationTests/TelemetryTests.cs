@@ -9,6 +9,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Tankstat.Api.Telemetry;
 using Tankstat.Application.Backups;
+using Tankstat.Application.Health;
 using Tankstat.Application.Setup;
 using Tankstat.Application.Telemetry;
 using Tankstat.Infrastructure.Backups;
@@ -46,7 +47,12 @@ public class TelemetryTests
     private const string Alias = "zzAliaszz";
     private const string ExtensionValue = "zzExtValzz";
     private const string UserAgent = "zzAgentzz";
-    private static readonly string[] Canaries = [VehicleName, Plate, "zz'note", Odometer.ToString(), ScheduleTitle, TokenVariable, TokenInQuery, Alias, ExtensionValue, UserAgent];
+    private const string OperationNameSent = "zzOp Namezz"; // the request's own operationName, no operation of the document (and no GraphQL name: the log writes "(invalid name)" for it)
+    private const string PersistedHash = "zzHashzz"; // a client's persisted-query hash, sent without a document
+    private const string OnError = "zzOnErrzz"; // an unknown onError value: a parse error quoting it
+    private const string Accept = "zzAcceptzz"; // an Accept header nothing can parse: an error quoting it
+    private static readonly string[] Canaries =
+        [VehicleName, Plate, "zz'note", Odometer.ToString(), ScheduleTitle, TokenVariable, TokenInQuery, Alias, ExtensionValue, UserAgent, OperationNameSent, PersistedHash, OnError, Accept];
 
     private sealed record Exported(List<Activity> Spans, List<LogRecord> Logs, List<Metric> Metrics);
 
@@ -107,40 +113,42 @@ public class TelemetryTests
         Assert.True(found.Count == 0, "Exported what someone typed or a client sent:\n" + string.Join("\n", found));
     }
 
-    private static async Task<JsonElement> Post(HttpClient client, string query, object? variables = null, object? extensions = null)
-    {
-        var response = await client.PostAsJsonAsync("/graphql", new { query, variables, extensions });
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-    }
-
-    private static string? ErrorKey(JsonElement answer) =>
-        answer.TryGetProperty("errors", out var errors) ? errors[0].GetProperty("extensions").GetProperty("key").GetString() : null;
-
-    /// <summary>The probe's flow (#214): what a person types, two refusals whose messages quote it, a reset token, an alias, extensions.</summary>
+    /// <summary>
+    /// The probe's flow (#214): what a person types, two refusals whose messages quote it, a reset token, an alias, extensions, and four
+    /// requests whose own JSON or headers HotChocolate would put into a span's tags or events (an operationName no operation has, a
+    /// persisted-query hash without a document, an onError nothing knows, an Accept header nothing can parse).
+    /// </summary>
     private static async Task<int> Flow(HttpClient client)
     {
         client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
-        var vehicleId = (await Post(client, "mutation($i: AddVehicleInput!) { addVehicle(input: $i) { id } }",
-            new { i = new { name = VehicleName, licensePlate = Plate, fuelType = "PETROL" } })).GetProperty("data").GetProperty("addVehicle").GetProperty("id").GetString()!;
-        Assert.Null(ErrorKey(await Post(client, "mutation LogIt($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
-            new { i = new { vehicleId, date = "2026-10-01", volume = 40, totalCost = 20000, currency = "HUF", odometer = Odometer, isFullTank = true, note = Note } })));
-        Assert.Equal("odometer.aboveNext", ErrorKey(await Post(client, "mutation LogEarlier($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
-            new { i = new { vehicleId, date = "2026-09-01", volume = 40, totalCost = 20000, currency = "HUF", odometer = 200000, isFullTank = true } })));
-        var scheduleId = (await Post(client, "mutation AddSchedule($i: AddRecurringExpenseInput!) { addRecurringExpense(input: $i) { id } }",
-            new { i = new { vehicleId, title = ScheduleTitle, kind = "TIME", intervalMonths = 12, lastDoneDate = "2026-06-01" } })).GetProperty("data").GetProperty("addRecurringExpense").GetProperty("id").GetString()!;
-        Assert.Equal("recurring.doneBeforeLast", ErrorKey(await Post(client, "mutation Done($i: MarkRecurringExpensesDoneInput!) { markRecurringExpensesDone(input: $i) { __typename } }",
-            new { i = new { ids = new[] { scheduleId }, date = "2026-01-01" } })));
-        Assert.NotNull(ErrorKey(await Post(client, "mutation Reset($i: ResetPasswordInput!) { resetPassword(input: $i) }",
-            new { i = new { token = TokenVariable, newPassword = "whatever-password-1", newPasswordConfirmation = "whatever-password-1" } })));
-        Assert.Equal(VehicleName, (await Post(client, $"query Aliased($id: UUID!) {{ {Alias}: vehicle(id: $id) {{ name }} }}", new { id = vehicleId }, new { zzExtKey = ExtensionValue }))
-            .GetProperty("data").GetProperty(Alias).GetProperty("name").GetString());
+        var vehicleId = (await client.Gql("mutation($i: AddVehicleInput!) { addVehicle(input: $i) { id } }",
+            new { i = new { name = VehicleName, licensePlate = Plate, fuelType = "PETROL" } })).Data().GetProperty("addVehicle").GetProperty("id").GetString()!;
+        (await client.Gql("mutation LogIt($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
+            new { i = new { vehicleId, date = "2026-10-01", volume = 40, totalCost = 20000, currency = "HUF", odometer = Odometer, isFullTank = true, note = Note } })).Data();
+        Assert.Equal("odometer.aboveNext", (await client.Gql("mutation LogEarlier($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
+            new { i = new { vehicleId, date = "2026-09-01", volume = 40, totalCost = 20000, currency = "HUF", odometer = 200000, isFullTank = true } })).ErrorKey());
+        var scheduleId = (await client.Gql("mutation AddSchedule($i: AddRecurringExpenseInput!) { addRecurringExpense(input: $i) { id } }",
+            new { i = new { vehicleId, title = ScheduleTitle, kind = "TIME", intervalMonths = 12, lastDoneDate = "2026-06-01" } })).Data().GetProperty("addRecurringExpense").GetProperty("id").GetString()!;
+        Assert.Equal("recurring.doneBeforeLast", (await client.Gql("mutation Done($i: MarkRecurringExpensesDoneInput!) { markRecurringExpensesDone(input: $i) { __typename } }",
+            new { i = new { ids = new[] { scheduleId }, date = "2026-01-01" } })).ErrorKey());
+        Assert.NotNull((await client.Gql("mutation Reset($i: ResetPasswordInput!) { resetPassword(input: $i) }",
+            new { i = new { token = TokenVariable, newPassword = "whatever-password-1", newPasswordConfirmation = "whatever-password-1" } })).ErrorKey());
+        Assert.Equal(VehicleName, (await client.Gql($"query Aliased($id: UUID!) {{ {Alias}: vehicle(id: $id) {{ name }} }}", new { id = vehicleId }, new { zzExtKey = ExtensionValue }))
+            .Data().GetProperty(Alias).GetProperty("name").GetString());
         await client.GetAsync($"/?resetToken={TokenInQuery}");
         // A batch a device kept offline (#219: a span of the request's, one per change): what it holds stays out of them.
         var (changeId, logId) = (Guid.NewGuid(), Guid.NewGuid());
-        Assert.Equal(1, (await Post(client, "mutation Sync($i: SyncChangesInput!) { syncChanges(input: $i) { applied } }",
+        Assert.Equal(1, (await client.Gql("mutation Sync($i: SyncChangesInput!) { syncChanges(input: $i) { applied } }",
             new { i = new { changes = new[] { new { id = changeId, logRefueling = new { vehicleId, id = logId, date = "2026-11-01", volume = 30, totalCost = 15000, currency = "HUF", odometer = Odometer + 1000, isFullTank = true, note = Note } } } } }))
             .GetProperty("data").GetProperty("syncChanges").GetProperty("applied").GetInt32());
-        return 9; // the requests sent
+        // The four whose answer is an error of the request's own, read for nothing: only what reaches the exporter matters.
+        await client.PostAsJsonAsync("/graphql", new { query = "{ __typename }", operationName = OperationNameSent });
+        await client.PostAsJsonAsync("/graphql", new { extensions = new { persistedQuery = new { version = 1, md5Hash = PersistedHash } } });
+        await client.PostAsJsonAsync("/graphql", new { query = "{ __typename }", onError = OnError });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/graphql") { Content = JsonContent.Create(new { query = "{ __typename }" }) };
+        request.Headers.TryAddWithoutValidation("Accept", Accept);
+        await client.SendAsync(request);
+        return 13; // the requests sent
     }
 
     [Fact]
@@ -181,7 +189,8 @@ public class TelemetryTests
         var graphQL = exported.Spans.Where(s => s.Source.Name.StartsWith("HotChocolate", StringComparison.Ordinal)).ToList();
         Assert.NotEmpty(graphQL);
         Assert.DoesNotContain(graphQL.SelectMany(s => s.Events), e => e.Name == "graphql.error");
-        Assert.DoesNotContain(graphQL.SelectMany(s => s.TagObjects), t => t.Key is "graphql.http.request.extensions" or "graphql.field.alias" or "graphql.field.path" or "graphql.document.body");
+        Assert.DoesNotContain(graphQL.SelectMany(s => s.TagObjects),
+            t => t.Key is "graphql.http.request.extensions" or "graphql.http.request.operation" or "graphql.http.request.query.hash" or "graphql.field.alias" or "graphql.field.path" or "graphql.document.body");
         Assert.Contains(graphQL, s => s.GetTagItem("graphql.error.count") is not null); // the refusals are still counted
         Assert.Contains(exported.Spans, s => (s.GetTagItem("url.query") as string) == "?resetToken=Redacted");
         Assert.DoesNotContain(exported.Spans.SelectMany(s => s.TagObjects), t => t.Key == ClientValueRedaction.UserAgent);
@@ -221,7 +230,7 @@ public class TelemetryTests
         using var _ = app;
         var client = app.NewClient();
 
-        Assert.Null(ErrorKey(await Post(client, "mutation AddCar { addVehicle(input: { name: \"Car\", fuelType: PETROL }) { id } }")));
+        (await client.Gql("mutation AddCar { addVehicle(input: { name: \"Car\", fuelType: PETROL }) { id } }")).Data();
         await client.GetAsync($"/media/{Guid.NewGuid()}");
         await Settled(app, exported, 2);
 
@@ -268,7 +277,7 @@ public class TelemetryTests
         var admin = app.NewClient();
         await admin.LoginAs(TestApp.AdminEmail, TestApp.AdminPassword);
 
-        Assert.Null(ErrorKey(await Post(admin, "mutation BackUpNow { runBackup }")));
+        Assert.Null((await admin.Gql("mutation BackUpNow { runBackup }")).ErrorKey());
         await app.Factory.Services.GetRequiredService<BackupRunner>().WhenIdleAsync();
         await Settled(app, exported, 2);
         app.Factory.Services.GetRequiredService<MeterProvider>().ForceFlush();
@@ -336,12 +345,15 @@ public class TelemetryTests
     [Fact]
     public void WhileTheSetupWaits_ItsCodeIsNotExportedEither()
     {
-        var (app, exported) = Start(On(("Auth:Mode", "Standalone"), ("Setup:Enabled", "true")));
+        var (app, exported) = Start(On(("Auth:Mode", "Standalone"), ("Setup:Enabled", "true"),
+            ($"Logging:OpenTelemetry:LogLevel:{typeof(OneTimeCode.SetupLine).FullName!.Replace('+', '.')}*", "Information"))); // a rule more specific than the exact name
         using var _ = app;
         app.NewClient();
         app.Factory.Services.GetService<LoggerProvider>()?.ForceFlush();
 
         var code = (string)Assert.Single(app.Log.From<OneTimeCode.SetupLine>(), e => e.Values.ContainsKey("Code")).Values["Code"]!;
+        Assert.NotEmpty(exported.Logs); // the start's other lines are there, so the code's absence means something
+        Assert.DoesNotContain(exported.Logs, l => l.CategoryName!.StartsWith(OneTimeCode.LogCategory, StringComparison.Ordinal));
         Assert.DoesNotContain(Texts(exported), t => t.Text.Contains(code, StringComparison.Ordinal));
     }
 
@@ -381,9 +393,85 @@ public class TelemetryTests
         activity.SetTag("db.query.parameter.@name", VehicleName);
         activity.SetTag("url.path", "/graphql");
         activity.SetTag("db.query.text", "SELECT 1");
+        activity.SetTag(ClientValueRedaction.UrlQuery, $"?resetToken={TokenInQuery}&lang=hu"); // as the instrumentation records it with its own redaction switched off
+        activity.SetTag(ClientValueRedaction.UrlFull, $"https://idp.example/token?code={TokenInQuery}#frag");
+        activity.SetTag(ClientValueRedaction.DocumentHash, PersistedHash);
 
         new ClientValueRedaction().OnEnd(activity);
 
-        Assert.Equal(["url.path", "db.query.text"], activity.TagObjects.Select(t => t.Key));
+        Assert.Equal(["url.path", "db.query.text", ClientValueRedaction.UrlQuery, ClientValueRedaction.UrlFull], activity.TagObjects.Select(t => t.Key));
+        Assert.Equal("?resetToken=Redacted&lang=Redacted", activity.GetTagItem(ClientValueRedaction.UrlQuery));
+        Assert.Equal("https://idp.example/token?code=Redacted#frag", activity.GetTagItem(ClientValueRedaction.UrlFull));
+    }
+
+    [Fact]
+    public void TheRedaction_LeavesAGraphQLSpanWithAnExceptionEventUnexported_SinceTheExceptionQuotesTheRequest()
+    {
+        using var source = new ActivitySource("HotChocolate.Diagnostics");
+        using var listener = new ActivityListener { ShouldListenTo = s => s.Name == source.Name, Sample = (ref _) => ActivitySamplingResult.AllDataAndRecorded };
+        ActivitySource.AddActivityListener(listener);
+        using var failed = source.StartActivity("GraphQL Operation")!;
+        failed.AddException(new InvalidOperationException($"Operation '{OperationNameSent}' not found"));
+        using var fine = source.StartActivity("GraphQL Request")!;
+
+        new ClientValueRedaction().OnEnd(failed);
+        new ClientValueRedaction().OnEnd(fine);
+
+        Assert.False(failed.Recorded);
+        Assert.True(fine.Recorded);
+    }
+
+    [Fact]
+    public async Task TheQueryStringsValues_StayRedacted_WhateverTheInstrumentationsOwnSwitchesSay()
+    {
+        var (app, exported) = Start(On(("OTEL_DOTNET_EXPERIMENTAL_ASPNETCORE_DISABLE_URL_QUERY_REDACTION", "true"), ("OTEL_DOTNET_EXPERIMENTAL_HTTPCLIENT_DISABLE_URL_QUERY_REDACTION", "true")));
+        using var _ = app;
+
+        await app.NewClient().GetAsync($"/?resetToken={TokenInQuery}");
+        await Settled(app, exported, 1);
+
+        Assert.Contains(exported.Spans, s => (s.GetTagItem(ClientValueRedaction.UrlQuery) as string) == "?resetToken=Redacted");
+        Assert.DoesNotContain(Texts(exported), t => t.Text.Contains(TokenInQuery, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheExportersOwnLogRules_CannotLowerTheFloor_NorLetTheOneTimeCodeOut()
+    {
+        // A provider rule outranks every general one, and a longer category a shorter: these two would otherwise export ASP.NET Core's
+        // request lines (with the reset link's token) and the restore code.
+        var (app, exported) = Start(On(
+            ("Logging:OpenTelemetry:LogLevel:Default", "Information"),
+            ("Logging:OpenTelemetry:LogLevel:Microsoft.AspNetCore.Hosting*", "Information"),
+            ($"Logging:OpenTelemetry:LogLevel:{typeof(OneTimeCode.RestoreLine).FullName!.Replace('+', '.')}*", "Information")));
+        using var _ = app;
+
+        await app.NewClient().GetAsync($"/?resetToken={TokenInQuery}");
+        await Settled(app, exported, 1);
+
+        var code = (string)Assert.Single(app.Log.From<OneTimeCode.RestoreLine>(), e => e.Values.ContainsKey("Code")).Values["Code"]!;
+        Assert.NotEmpty(exported.Logs); // the start's other lines are exported at Information, as the rule asks
+        Assert.DoesNotContain(exported.Logs, l => l.CategoryName!.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal) && l.LogLevel < LogLevel.Warning);
+        Assert.DoesNotContain(exported.Logs, l => l.CategoryName!.StartsWith(OneTimeCode.LogCategory, StringComparison.Ordinal));
+        Assert.DoesNotContain(Texts(exported), t => t.Text.Contains(TokenInQuery, StringComparison.Ordinal) || t.Text.Contains(code, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheEnvironmentsResourceAttributes_Win_OverTheAppsDefaults()
+    {
+        Environment.SetEnvironmentVariable("OTEL_RESOURCE_ATTRIBUTES", "service.name=zz-prod,service.instance.id=zz-pod-7");
+        try
+        {
+            var (app, _) = Start(On(("OTEL_RESOURCE_ATTRIBUTES", "service.name=zz-prod,service.instance.id=zz-pod-7")));
+            using var __ = app;
+            app.NewClient();
+
+            var resource = app.Factory.Services.GetRequiredService<TracerProvider>().GetResource().Attributes.ToDictionary(a => a.Key, a => a.Value);
+            Assert.Equal(("zz-prod", "zz-pod-7"), (resource["service.name"], resource["service.instance.id"]));
+            Assert.Equal(HealthReporter.AppVersion, resource["service.version"]); // the app's own stays where the environment says nothing
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OTEL_RESOURCE_ATTRIBUTES", null);
+        }
     }
 }

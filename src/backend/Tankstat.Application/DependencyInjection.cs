@@ -22,6 +22,7 @@ using Tankstat.Application.Telemetry;
 using Tankstat.Application.Sharing;
 using Tankstat.Application.SystemSettings;
 using Tankstat.Application.Stats;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
 
@@ -56,6 +57,8 @@ public static class DependencyInjection
         // Photo reading is optional: its settings are never validated on start (they would stop the app); RecognitionSetup turns
         // reading off instead when they cannot be used.
         services.AddOptions<RecognitionOptions>().Bind(configuration.GetSection(RecognitionOptions.SectionName));
+        // Telemetry is optional too, never validated on start: TelemetryGate reads its key before the host is built and only says what it ignores.
+        services.AddOptions<TelemetryOptions>().Bind(configuration.GetSection(TelemetryOptions.SectionName));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>());
 
         services.AddSingleton(TimeProvider.System);

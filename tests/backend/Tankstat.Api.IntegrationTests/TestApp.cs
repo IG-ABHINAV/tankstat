@@ -133,8 +133,7 @@ internal sealed class TestApp : IDisposable
         });
     }
 
-    private static bool IsTelemetryKey(string key) =>
-        key.StartsWith("OTEL_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("Telemetry:", StringComparison.OrdinalIgnoreCase);
+    private static bool IsTelemetryKey(string key) => TelemetryKeys.Is(key);
 
     /// <summary>The first administrator of a Standalone host (<see cref="StandaloneSettings"/>), made by the setup in its database's template.</summary>
     public const string AdminEmail = "root@example.com";
@@ -376,9 +375,10 @@ internal static class TestAppUsers
 
 internal static class GraphQLClient
 {
-    public static async Task<JsonElement> Gql(this HttpClient client, string query, object? variables = null)
+    /// <param name="extensions">The request's <c>extensions</c>, a client's own JSON; only the telemetry tests send any.</param>
+    public static async Task<JsonElement> Gql(this HttpClient client, string query, object? variables = null, object? extensions = null)
     {
-        var response = await client.PostAsJsonAsync("/graphql", new { query, variables });
+        var response = await client.PostAsJsonAsync("/graphql", new { query, variables, extensions });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }

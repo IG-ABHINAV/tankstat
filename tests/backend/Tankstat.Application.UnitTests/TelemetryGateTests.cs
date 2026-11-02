@@ -52,6 +52,13 @@ public class TelemetryGateTests
     [InlineData("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")]
     [InlineData(OtelSettings.Headers, "zzzz")]
     [InlineData("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "a=1,")]
+    [InlineData(OtelSettings.Headers, "x-api-key=zzzz,x-api-key=zzzz2")] // the exporter adds them to a dictionary: a key twice throws
+    [InlineData(OtelSettings.Headers, "User-Agent=zzzz")] // the exporter adds its own after them: that one throws too
+    [InlineData(OtelSettings.Timeout, "0")] // the exporter's client throws on a timeout of 0
+    [InlineData("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "0")]
+    [InlineData(OtelSettings.MetricExportInterval, "0")] // the metric reader throws on 0
+    [InlineData("OTEL_EXPORTER_OTLP_CERTIFICATE", "/nowhere/zzzz.pem")] // a certificate file that is not there throws
+    [InlineData("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", "/nowhere/zzzz.key")]
     public void ASettingTheSdkCannotUse_LeavesItOff_NamingTheSettingNeverTheValue(string key, string value)
     {
         var plan = key == OtelSettings.Endpoint ? Decide((key, value)) : Decide((OtelSettings.Endpoint, Endpoint), (key, value));
@@ -60,6 +67,36 @@ public class TelemetryGateTests
         var problem = Assert.Single(plan.Problems);
         Assert.StartsWith(key, problem);
         Assert.DoesNotContain(value, problem);
+    }
+
+    [Theory]
+    [InlineData(OtelSettings.Timeout, "zzzz")] // not a number: the SDK ignores it and runs with its default
+    [InlineData(OtelSettings.Timeout, "5000")]
+    [InlineData(OtelSettings.MetricExportInterval, "60000")]
+    [InlineData("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=zzzz")] // nothing the SDK throws on
+    public void ASettingTheSdkTakesOrIgnores_IsNoProblem(string key, string value) =>
+        Assert.Equal(TelemetryState.On, Decide((OtelSettings.Endpoint, Endpoint), (key, value)).State);
+
+    [Fact]
+    public void ACertificateFileThatIsThere_IsNoProblem()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            Assert.Equal(TelemetryState.On, Decide((OtelSettings.Endpoint, Endpoint), ("OTEL_EXPORTER_OTLP_CERTIFICATE", file)).State);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void TheGateAndTheSettingsPage_JudgeAShapeWithOneRule()
+    {
+        var problem = Assert.Single(Decide((OtelSettings.Endpoint, Endpoint), (OtelSettings.Protocol, "GRPC")).Problems);
+
+        Assert.Equal(OtelSettings.ProblemOf(OtelSettings.Protocol, "GRPC"), problem); // what the catalog's Validate says too
     }
 
     [Fact]

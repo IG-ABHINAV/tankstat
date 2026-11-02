@@ -1,3 +1,6 @@
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Tankstat.Application.Telemetry;
 
 namespace Tankstat.Api.Telemetry;
@@ -5,12 +8,19 @@ namespace Tankstat.Api.Telemetry;
 /// <summary>
 /// Says at start what became of telemetry, decided before the host existed (<see cref="TelemetryGate"/>), where there is no logger yet.
 /// Settings that cannot be used are a Warning naming them, never their values (an endpoint or a header can hold a token); telemetry never
-/// stops a start. Nothing set is the usual case: a Debug line only.
+/// stops a start. Nothing set is the usual case: a Debug line only. While it is on, it also ends the export once the app has stopped: the
+/// three providers shut down together, each given <see cref="ShutdownMs"/>, since the host's disposal would otherwise shut them down one
+/// after the other, each waiting its own 5 s on a collector that accepts the connection and never answers (a stop or restart 15 s late,
+/// which Docker's default grace kills).
 /// </summary>
-internal sealed class TelemetryReporter(TelemetryPlan plan, ILogger<TelemetryReporter> logger) : IHostedService
+internal sealed class TelemetryReporter(TelemetryPlan plan, ILogger<TelemetryReporter> logger, IServiceProvider services, IHostApplicationLifetime lifetime) : IHostedService
 {
+    /// <summary>What the last export may take at a stop: enough for a collector that answers, little enough for one that does not.</summary>
+    internal const int ShutdownMs = 2000;
+
     public Task StartAsync(CancellationToken ct)
     {
+        if (plan.On) lifetime.ApplicationStopped.Register(EndTheExport);
         switch (plan.State)
         {
             case TelemetryState.On:
@@ -42,4 +52,16 @@ internal sealed class TelemetryReporter(TelemetryPlan plan, ILogger<TelemetryRep
     }
 
     public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+
+    /// <summary>Shuts the providers down together; each runs its shutdown once, so the host's later disposal returns at once.</summary>
+    private void EndTheExport()
+    {
+        var tracer = services.GetService<TracerProvider>();
+        var meter = services.GetService<MeterProvider>();
+        var exporter = services.GetService<LoggerProvider>();
+        Task.WaitAll(
+            Task.Run(() => tracer?.Shutdown(ShutdownMs)),
+            Task.Run(() => meter?.Shutdown(ShutdownMs)),
+            Task.Run(() => exporter?.Shutdown(ShutdownMs)));
+    }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Tankstat.Application.Auth;
 using Tankstat.Application.SystemSettings;
+using Tankstat.Application.Telemetry;
 using Tankstat.Domain;
 
 namespace Tankstat.Application.Backups;
@@ -134,9 +135,15 @@ public static class SettingsInBackups
     /// <summary>
     /// Whether a recorded setting (by variable name) left without a value here refuses the restore: every one but the <c>Logging</c> section's
     /// (user decision), whose levels only change what the log holds, and which a compose file often sets (<c>Logging__LogLevel__Default</c>):
-    /// it would otherwise refuse every restore elsewhere.
+    /// it would otherwise refuse every restore elsewhere. The telemetry settings (the <c>OTEL_*</c> keys and <c>Telemetry:*</c>) are the same
+    /// kind: a collector's address in a compose file changes where the telemetry goes, never what the data means, and a move to a machine
+    /// without the collector must not be refused for it.
     /// </summary>
-    public static bool Refuses(string variable) => !Under(KeyOf(variable), LoggingSection);
+    public static bool Refuses(string variable)
+    {
+        var key = KeyOf(variable);
+        return !Under(key, LoggingSection) && !Under(key, TelemetryOptions.SectionName) && SettingsCatalog.Find(key)?.Group != SettingsGroup.Telemetry;
+    }
 
     /// <summary>A list item's list (<c>Auth:AdminEmails:0</c> is <c>Auth:AdminEmails</c>); any other key as it is.</summary>
     public static string ListKeyOf(string key) =>

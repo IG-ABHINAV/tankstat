@@ -158,6 +158,9 @@ public sealed class SettingsInBackupsTests
     [InlineData("Auth__Mode", true)]
     [InlineData("Logging__LogLevel__Default", false)] // its levels only change what the log holds: a missing one is a risk, never a refusal
     [InlineData("logging__loglevel__Microsoft.AspNetCore", false)]
-    public void Refuses_EveryMissingSetting_ButTheLoggingSections(string variable, bool refuses) =>
+    [InlineData("OTEL_EXPORTER_OTLP_ENDPOINT", false)] // a collector's address changes where the telemetry goes, never what the data means
+    [InlineData("OTEL_EXPORTER_OTLP_HEADERS", false)]
+    [InlineData("Telemetry__TraceDatabase", false)]
+    public void Refuses_EveryMissingSetting_ButTheLoggingAndTelemetrySettings(string variable, bool refuses) =>
         Assert.Equal(refuses, SettingsInBackups.Refuses(variable));
 }
