@@ -130,7 +130,7 @@ What is sent:
 
 - **GraphQL:** neither a request's variables nor its document is sent, nor its `extensions` or a field's alias. An error is only counted, since the app's messages can quote what was typed (a schedule's title, an odometer reading).
 - **Addresses:** the values of a query string are sent as `Redacted`, which covers the token of a password reset link (`/?resetToken=Redacted`), by the app itself, whatever the SDK's `OTEL_DOTNET_EXPERIMENTAL_*_DISABLE_URL_QUERY_REDACTION` switches say.
-- **Removed before anything is sent:** the browser's `User-Agent`, the values of database parameters, and a GraphQL document's hash (a client's persisted-query id when it sends no document). A GraphQL request that fails on its own request rather than in the schema (an operation name the document lacks, an `Accept` header nothing can parse) has no GraphQL span at all, since the error's text quotes the request; its request span still counts it.
+- **Removed before anything is sent:** the browser's `User-Agent`, the values of database parameters, and a GraphQL document's hash (a client's persisted-query id when it sends no document). A GraphQL operation that threw (an operation name the document lacks, but also a resolver's or the database's own failure) has no operation span at all, since an exception's text can quote the request and an event cannot be taken off a span; its request span is still exported, and the app's own log still has its Error line.
 - **The one-time code** (see [Logging](#logging)) is in the console log only, never exported.
 
 **The edge** is the log's, with two additions:
