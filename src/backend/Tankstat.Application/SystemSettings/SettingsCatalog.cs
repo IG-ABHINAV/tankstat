@@ -298,19 +298,8 @@ public static class SettingsCatalog
                 if (BackupSchedule.ParseDays(value) is null) return $"{setting.Key} must be days of the week such as Monday,Thursday, or {BackupSchedule.NoDay}.";
                 break;
         }
-        return OtelProblem(setting.Key, value);
-    }
-
-    /// <summary>The OpenTelemetry settings' own shapes, as the SDK reads them: it throws on some (headers) and quietly drops others (a protocol in other letters).</summary>
-    private static string? OtelProblem(string key, string value)
-    {
-        if (key.Equals(OtelSettings.Endpoint, StringComparison.OrdinalIgnoreCase) && !OtelSettings.IsEndpoint(value))
-            return $"{key} must be an absolute http or https address.";
-        if (key.Equals(OtelSettings.Protocol, StringComparison.OrdinalIgnoreCase) && !OtelSettings.IsProtocol(value))
-            return $"{key} must be one of {string.Join(", ", OtelSettings.Protocols)}, written so.";
-        if (key.Equals(OtelSettings.Headers, StringComparison.OrdinalIgnoreCase) && !OtelSettings.AreHeaders(value))
-            return $"{key} must be key=value pairs separated by commas.";
-        return null;
+        // The OpenTelemetry settings' own shapes, as the SDK reads them: the same rule the start applies (TelemetryGate).
+        return OtelSettings.ProblemOf(setting.Key, value);
     }
 
     /// <summary>A log level category under <see cref="LogLevelFloorCategory"/> set below <see cref="LogLevelFloor"/>.</summary>

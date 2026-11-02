@@ -106,6 +106,8 @@ public class SettingsCatalogTests
     [InlineData(OtelSettings.Headers, "x-api-key%3Dzzzz", null)] // the SDK URL-decodes the whole value first
     [InlineData(OtelSettings.Headers, "zzzz", "key=value pairs")] // the SDK would throw at start
     [InlineData(OtelSettings.Headers, "a=zzzz,", "key=value pairs")] // an empty pair after the comma, too
+    [InlineData(OtelSettings.Headers, "a=zzzz,a=zzzz2", "no key twice")] // the exporter adds them to a dictionary
+    [InlineData(OtelSettings.Headers, "User-Agent=zzzz", "none User-Agent")] // the exporter's own header
     [InlineData(TelemetryOptions.TraceDatabaseKey, "yes", "true or false")]
     public void Validate_ChecksTheShapeOfAValue_AndNamesTheSettingAndTheRule(string key, string value, string? refusal)
     {

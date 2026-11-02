@@ -43,13 +43,8 @@ public static class TelemetryGate
     {
         string? Value(string key) => valueOf(key) is { } value && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 
-        var problems = new List<string>();
-        foreach (var key in OtelSettings.EndpointKeys)
-            if (Value(key) is { } value && !OtelSettings.IsEndpoint(value)) problems.Add($"{key} must be an absolute http or https address.");
-        foreach (var key in OtelSettings.ProtocolKeys)
-            if (Value(key) is { } value && !OtelSettings.IsProtocol(value)) problems.Add($"{key} must be {string.Join(" or ", OtelSettings.Protocols)}, written so.");
-        foreach (var key in OtelSettings.HeadersKeys)
-            if (Value(key) is { } value && !OtelSettings.AreHeaders(value)) problems.Add($"{key} must be key=value pairs separated by commas.");
+        // The one rule for every shape the SDK would throw on (the Server settings page checks with it too).
+        var problems = OtelSettings.CheckedKeys.Select(key => Value(key) is { } value ? OtelSettings.ProblemOf(key, value) : null).OfType<string>().ToList();
 
         var signalEndpoints = OtelSettings.Signals.Select(OtelSettings.SignalEndpoint).Where(k => Value(k) is not null).ToList();
         var anyEndpoint = Value(OtelSettings.Endpoint) is not null || signalEndpoints.Count > 0;
