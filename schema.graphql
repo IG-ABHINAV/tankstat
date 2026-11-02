@@ -578,6 +578,7 @@ type Refueling {
   date: LocalDate!
   volume: Decimal
   totalCost: Decimal
+  discount: Decimal
   currency: String
   isFullTank: Boolean!
   missedPreviousFillUp: Boolean!
@@ -587,6 +588,7 @@ type Refueling {
   reviewState: ReviewState!
   deletedAt: DateTime
   pricePerUnit: Decimal
+  pricePerUnitBeforeDiscount: Decimal
   version: Int!
   updatedAt: DateTime!
   changedAt: DateTime
@@ -1005,6 +1007,7 @@ input LogRefuelingInput {
   photoIds: [UUID!]
   missedPreviousFillUp: Boolean
   id: UUID
+  discount: Decimal
 }
 
 input MarkRecurringExpensesDoneInput {
@@ -1152,6 +1155,7 @@ input UpdateRefuelingInput {
   isFullTank: Boolean!
   note: String
   missedPreviousFillUp: Boolean
+  discount: Decimal
 }
 
 input UpdateUiSettingsInput {
@@ -1234,6 +1238,7 @@ enum ChartMetric {
   AVERAGE_CONSUMPTION
   AVERAGE_PRICE_PER_UNIT
   FILL_UPS
+  AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT
 }
 
 enum ChartRange {

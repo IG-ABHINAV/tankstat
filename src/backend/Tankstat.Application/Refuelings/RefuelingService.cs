@@ -21,8 +21,10 @@ public sealed record RefuelingDefaults(long? LastOdometer, DateOnly? LastDate, s
 /// <param name="Currency">Required with a total when logging; when updating, omit it to keep the log's currency.</param>
 /// <param name="Volume">Volume, total and odometer may be null only while a photo of the log is still being read: it fills them in later.</param>
 /// <param name="MissedPreviousFillUp">A fill-up before this one was not logged (see <see cref="Refueling.MissedPreviousFillUp"/>); when updating, omit it to keep what the log says.</param>
+/// <param name="Discount">What was taken off <paramref name="TotalCost"/> at the till (see <see cref="Cost.Discount"/>); null means none, also when updating, and is refused without a total.</param>
 public sealed record RefuelingInput(
-    DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, bool? MissedPreviousFillUp = null);
+    DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, bool? MissedPreviousFillUp = null,
+    decimal? Discount = null);
 
 /// <summary>
 /// Refuelling logs of a vehicle. Access is the one defined for a vehicle's logs: the owner-based access (owner,
@@ -75,7 +77,8 @@ public sealed class RefuelingService(
         var readingPhotos = IsIncomplete(input) && await filler.MayWaitForDraftsAsync([.. drafts.Select(d => d.Id)], ct);
 
         var reading = input.Odometer is { } value ? OdometerReading.Create(vehicle.OwnerId, vehicle.Id, input.Date, value) : null;
-        var cost = input.TotalCost is { } amount ? Cost.Create(vehicle.OwnerId, vehicle.Id, input.Date, amount, input.Currency) : null;
+        Cost.RequireAmountForDiscount(input.TotalCost, input.Discount);
+        var cost = input.TotalCost is { } amount ? Cost.Create(vehicle.OwnerId, vehicle.Id, input.Date, amount, input.Currency, input.Discount) : null;
         var refueling = Refueling.Create(
             vehicle.OwnerId, creator.Id, vehicle.Id, input.Date, input.Volume, cost, reading, input.IsFullTank, input.MissedPreviousFillUp ?? false, input.Note, readingPhotos, id);
         if (!await refuelings.AddAsync(refueling, ct)) // the same add, sent twice at once: the other one saved it
@@ -99,7 +102,7 @@ public sealed class RefuelingService(
 
         var changes = refueling.Update(
             input.Date, input.Volume, input.TotalCost, input.Currency ?? refueling.Currency, input.Odometer, input.IsFullTank,
-            input.MissedPreviousFillUp ?? refueling.MissedPreviousFillUp, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id);
+            input.MissedPreviousFillUp ?? refueling.MissedPreviousFillUp, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id, input.Discount);
         await refuelings.UpdateAsync(refueling, changes, ct);
         // Readings that finished before the save are taken now (the worker's round may have passed while the log did not wait yet).
         if (refueling.ReviewState == ReviewState.AwaitingPhotos) await filler.FillAsync(LogType.Refueling, id, ct);

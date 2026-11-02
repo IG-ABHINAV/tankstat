@@ -184,7 +184,7 @@ it('works out the unit price from the volume and total on a receipt, and then ne
   await ui.upload(camera(dialog), photo())
 
   await waitFor(() => expect(within(dialog).getByLabelText('Price per L')).toHaveValue('640.888'), READ_WAIT)
-  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Calculated from the other two values\./)
+  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Worked out from the other amounts\./)
   const status = within(dialog).getByRole('status', { name: 'Photo reading status' })
   expect(status).toHaveTextContent('Filled in from the photo: Date, Volume (L), Total cost, Currency.')
   expect(status).not.toHaveTextContent('Price per L')

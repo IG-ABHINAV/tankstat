@@ -40,6 +40,29 @@ test('types the litres, the pump price and the amount paid: the price per litre 
   await expect(row(page, '43 L')).toBeVisible()
 })
 
+test('the litres, the amount paid and the pump price give the discount, which is saved with the refuelling', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await openVehicle(page, vehicle.id, 'refuelings')
+  await page.getByRole('button', { name: 'Add refuelling' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Add refuelling' })
+  await dialog.getByLabel(/^Volume/).fill('43')
+  await dialog.getByLabel('Total cost').fill('34744') // what the receipt says was paid
+  await expect(dialog.getByLabel(/^Price per/)).toHaveValue('808')
+  await dialog.getByLabel(/^Price per/).fill('818') // the pump's price: the amount paid stays, the discount appears (#204)
+  await expect(dialog.getByLabel('Discount')).toHaveValue('430')
+  await expect(dialog.getByLabel('Total cost')).toHaveValue('34744')
+  await dialog.getByLabel(/^Odometer/).fill('12450')
+  await dialog.getByRole('button', { name: 'Add refuelling' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(row(page, '43 L')).toContainText(/34,744/) // the cost column shows what was paid, at both sizes
+
+  // The discount is saved: it is back in the edit dialog, and the pump's price with it.
+  await page.getByRole('button', { name: /^Edit the refuelling of/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit refuelling' })
+  await expect(edit.getByLabel('Discount')).toHaveValue('430')
+  await expect(edit.getByLabel(/^Price per/)).toHaveValue('818')
+})
+
 test('trashes a refuelling and takes it back with Undo', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: '2026-01-15', volume: 41 })

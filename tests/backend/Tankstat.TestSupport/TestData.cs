@@ -13,10 +13,10 @@ public static class TestData
     /// <summary>A fill-up with its own odometer reading and cost, as the application creates it.</summary>
     public static Refueling Refueling(
         Guid ownerId, Guid createdById, Guid vehicleId, DateOnly date, decimal volume = 40, decimal totalCost = 60, long odometer = 1000,
-        bool isFullTank = true, string currency = "EUR", string? note = null, bool missedPreviousFillUp = false, Guid? id = null) =>
+        bool isFullTank = true, string currency = "EUR", string? note = null, bool missedPreviousFillUp = false, Guid? id = null, decimal? discount = null) =>
         Domain.Vehicles.Refueling.Create(
             ownerId, createdById, vehicleId, date, volume,
-            Cost.Create(ownerId, vehicleId, date, totalCost, currency),
+            Cost.Create(ownerId, vehicleId, date, totalCost, currency, discount),
             OdometerReading.Create(ownerId, vehicleId, date, odometer),
             isFullTank, missedPreviousFillUp, note, id: id);
 }

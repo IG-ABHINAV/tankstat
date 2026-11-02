@@ -15,15 +15,18 @@ namespace Tankstat.Api.GraphQL;
 /// <param name="PhotoIds">Photos uploaded for this log beforehand (<c>PUT /media/vehicles/{id}/photo-drafts</c>); they become its photos.</param>
 /// <param name="MissedPreviousFillUp">A fill-up before this one was not logged: no consumption is worked out across the gap. Omit for false.</param>
 /// <param name="Id">An id the client chose for the new log; the same add sent again (a lost answer, a replay after being offline) answers with what it created. Omit to let the server choose.</param>
+/// <param name="Discount">What was taken off the total at the till (a loyalty or fuel-card discount); <c>totalCost</c> is what was paid after it. Omit for none; refused without a total.</param>
 public sealed record LogRefuelingInput(
     Guid VehicleId, DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, IReadOnlyList<Guid>? PhotoIds = null,
-    bool? MissedPreviousFillUp = null, Guid? Id = null);
+    bool? MissedPreviousFillUp = null, Guid? Id = null, decimal? Discount = null);
 
 /// <param name="Volume">Volume, total cost and odometer may be omitted only while a photo of the log is still being read.</param>
 /// <param name="Currency">Omit to keep the log's currency.</param>
 /// <param name="MissedPreviousFillUp">Omit to keep what the log says.</param>
+/// <param name="Discount">What was taken off the total at the till; omitted or null means none, like <c>totalCost</c> (it is not kept from the log).</param>
 public sealed record UpdateRefuelingInput(
-    Guid Id, DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, bool? MissedPreviousFillUp = null);
+    Guid Id, DateOnly Date, decimal? Volume, decimal? TotalCost, string? Currency, long? Odometer, bool IsFullTank, string? Note, bool? MissedPreviousFillUp = null,
+    decimal? Discount = null);
 public sealed record SetLogAccessInput(Guid VehicleId, Guid UserId, AccessLevel Level);
 
 /// <summary>What the add-log form starts from.</summary>
@@ -136,12 +139,12 @@ public sealed class RefuelingMutations
     public Task<Refueling> LogRefueling(
         LogRefuelingInput input, [Service] RefuelingService refuelings, [Service] IOptionsSnapshot<VehicleDefaultsOptions> defaults, CancellationToken ct) =>
         refuelings.LogAsync(input.VehicleId,
-            new RefuelingInput(input.Date, input.Volume, input.TotalCost, input.Currency ?? defaults.Value.Currency, input.Odometer, input.IsFullTank, input.Note, input.MissedPreviousFillUp), ct,
+            new RefuelingInput(input.Date, input.Volume, input.TotalCost, input.Currency ?? defaults.Value.Currency, input.Odometer, input.IsFullTank, input.Note, input.MissedPreviousFillUp, input.Discount), ct,
             photoDraftIds: input.PhotoIds, id: input.Id);
 
     public Task<Refueling> UpdateRefueling(UpdateRefuelingInput input, [Service] RefuelingService refuelings, CancellationToken ct) =>
         refuelings.UpdateAsync(
-            input.Id, new RefuelingInput(input.Date, input.Volume, input.TotalCost, input.Currency, input.Odometer, input.IsFullTank, input.Note, input.MissedPreviousFillUp), ct);
+            input.Id, new RefuelingInput(input.Date, input.Volume, input.TotalCost, input.Currency, input.Odometer, input.IsFullTank, input.Note, input.MissedPreviousFillUp, input.Discount), ct);
 
     /// <summary>Moves the log to the trash (needs Edit access to the vehicle's logs).</summary>
     public Task<Refueling> DeleteRefueling(Guid id, [Service] RefuelingService refuelings, CancellationToken ct) => refuelings.DeleteAsync(id, ct);

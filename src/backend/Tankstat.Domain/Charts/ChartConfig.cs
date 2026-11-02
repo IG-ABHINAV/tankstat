@@ -12,9 +12,11 @@ public enum ChartMetric
     Distance,
     /// <summary>Mean of the stored consumption of the full fill-ups in the period.</summary>
     AverageConsumption,
-    /// <summary>Fuel cost divided by fuel volume.</summary>
+    /// <summary>Fuel cost divided by fuel volume: the price paid per unit.</summary>
     AveragePricePerUnit,
     FillUps,
+    /// <summary>Fuel cost before the discounts taken off at the till, divided by fuel volume: the pump's price per unit.</summary>
+    AveragePricePerUnitBeforeDiscount,
 }
 
 /// <summary>How values are grouped on the horizontal axis.</summary>

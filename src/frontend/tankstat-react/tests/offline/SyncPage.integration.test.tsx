@@ -168,7 +168,7 @@ function serverNow(state: 'LIVE' | 'TRASHED', version: number, lastChange: strin
 }
 
 const refuelingNow = (over: Record<string, unknown> = {}) => ({
-  refueling: { __typename: 'Refueling', version: 2, date: '2026-09-20', volume: 41, totalCost: 70, currency: 'EUR', odometer: 1500, isFullTank: true, missedPreviousFillUp: false, note: null, ...over },
+  refueling: { __typename: 'Refueling', version: 2, date: '2026-09-20', volume: 41, totalCost: 70, discount: null, currency: 'EUR', odometer: 1500, isFullTank: true, missedPreviousFillUp: false, note: null, ...over },
 })
 
 it('Sync now sends what waits; what the server could not apply is listed from the server with its reason, and the top bar says so', async () => {
@@ -451,10 +451,10 @@ it('a deletion of a schedule that is gone can only be discarded, and says it is 
 it('an edit changed on the server meanwhile is merged: the card compares both sides, Merge… offers the other value under each field changed on both', async () => {
   await downloaded()
   connectivity.reset()
-  const mine = { id: 'b', date: '2026-09-20', volume: 45, totalCost: 70, currency: 'EUR', odometer: 1500, isFullTank: true, missedPreviousFillUp: false, note: 'Motorway' }
+  const mine = { id: 'b', date: '2026-09-20', volume: 45, totalCost: 70, discount: 3, currency: 'EUR', odometer: 1500, isFullTank: true, missedPreviousFillUp: false, note: 'Motorway' }
   const edit = parkedRow('u1', 'UPDATE_REFUELING', { id: 'u1', expectedVersion: 1, updateRefueling: mine }, 'sync.versionMismatch', {
     targetId: 'b',
-    base: JSON.stringify({ date: '2026-09-20', volume: 40, totalCost: 60, currency: 'EUR', odometer: 1500, isFullTank: true, missedPreviousFillUp: false, note: null }),
+    base: JSON.stringify({ date: '2026-09-20', volume: 40, totalCost: 60, discount: null, currency: 'EUR', odometer: 1500, isFullTank: true, missedPreviousFillUp: false, note: null }),
     current: serverNow('LIVE', 3, 'EDITED', refuelingNow({ version: 3, date: '2026-09-21', volume: 41, totalCost: 60, note: 'Fleet card' })),
   })
   let parked = [edit]
@@ -477,6 +477,8 @@ it('an edit changed on the server meanwhile is merged: the card compares both si
   expect(row('Volume').getByText('Changed on both sides')).toBeInTheDocument()
   expect(row('Date').getByText('Changed only on the server')).toBeInTheDocument()
   expect(row('Total cost').getByText('Changed only by this change')).toBeInTheDocument()
+  expect(row('Discount').getByText('Changed only by this change')).toBeInTheDocument() // none before, €3.00 by this change
+  expect(row('Discount').getByText('€3.00')).toBeInTheDocument()
   expect(row('Odometer').getByText('The same')).toBeInTheDocument()
   expect(region.queryByText(/Changed there:/)).not.toBeInTheDocument() // the table says it
   expect(region.queryByRole('button', { name: /^Edit and apply/ })).not.toBeInTheDocument() // merged instead

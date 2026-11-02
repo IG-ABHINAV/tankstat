@@ -497,6 +497,8 @@ export interface FakeRefueling {
   /** Volume, total and odometer are null while the log waits for its photos (`reviewState`). */
   volume: number | null
   totalCost: number | null
+  /** What was taken off at the till; the total is what was paid after it. */
+  discount: number | null
   currency: string | null
   odometer: number | null
   isFullTank: boolean
@@ -521,6 +523,7 @@ export const fakeRefueling = (over: Partial<FakeRefueling> = {}): FakeRefueling 
   date: '2026-09-01',
   volume: 40.5,
   totalCost: 20250,
+  discount: null,
   currency: 'HUF',
   odometer: 12000,
   isFullTank: true,
@@ -537,6 +540,8 @@ export const fakeRefueling = (over: Partial<FakeRefueling> = {}): FakeRefueling 
 })
 
 const pricePerUnit = (r: FakeRefueling) => (r.totalCost == null || !r.volume ? null : r.totalCost / r.volume)
+/** The pump's price: the cost plus the discount, per unit (as the server works it out). */
+const pricePerUnitBeforeDiscount = (r: FakeRefueling) => (r.totalCost == null || !r.volume ? null : (r.totalCost + (r.discount ?? 0)) / r.volume)
 
 const logSorters: Record<string, (r: FakeRefueling) => string | number> = {
   DATE: (r) => r.date,
@@ -715,6 +720,7 @@ export function fakeLogBackend(vehicle: FakeVehicle, logs: FakeRefueling[] = [],
     return sorted.slice(vars.skip, vars.skip + vars.take).map((r) => ({
       ...r,
       pricePerUnit: pricePerUnit(r),
+      pricePerUnitBeforeDiscount: pricePerUnitBeforeDiscount(r),
       vehicle: { id: state.vehicle.id, name: state.vehicle.name, units: state.vehicle.units },
     }))
   }

@@ -49,7 +49,10 @@ export interface RefuelingValues {
   id?: string
   date: string
   volume: number | null
+  /** What was paid, after the discount. */
   totalCost: number | null
+  /** What the till took off the pump's amount; null when none (also what an edit sends to clear one). */
+  discount: number | null
   currency: string
   odometer: number | null
   isFullTank: boolean
@@ -58,9 +61,10 @@ export interface RefuelingValues {
   note: string | null
 }
 
-interface Initial extends Omit<RefuelingValues, 'volume' | 'totalCost' | 'odometer' | 'currency'> {
+interface Initial extends Omit<RefuelingValues, 'volume' | 'totalCost' | 'discount' | 'odometer' | 'currency'> {
   volume?: number | null
   totalCost?: number | null
+  discount?: number | null
   currency: string | null
   odometer?: number | null
   reviewState?: ReviewState
@@ -69,10 +73,11 @@ interface Initial extends Omit<RefuelingValues, 'volume' | 'totalCost' | 'odomet
 
 /**
  * The fields of a new log that photos can fill in, and which read value goes into each. The unit price is only a help for entering the
- * amounts (it is never saved): volume, unit price and total follow each other (`keepAmountsInStep`).
+ * amounts (it is never saved): volume, unit price, discount and total follow each other (`keepAmountsInStep`). No photo reads the
+ * discount yet, so it is typed only.
  */
-type FillableField = 'date' | 'volume' | 'unitPrice' | 'totalCost' | 'currency' | 'odometer'
-const READ_INTO: Record<FillableField, ReadingFieldName> = {
+type FillableField = 'date' | 'volume' | 'unitPrice' | 'discount' | 'totalCost' | 'currency' | 'odometer'
+const READ_INTO: Partial<Record<FillableField, ReadingFieldName>> = {
   date: 'DATE',
   volume: 'VOLUME',
   unitPrice: 'UNIT_PRICE',
@@ -87,8 +92,9 @@ const WAITS_FOR: Record<LogValue, FillableField> = { ODOMETER: 'odometer', VOLUM
  * Add a log (no `refuelingId`) or edit one. A new log starts from sensible values: today, the vehicle's latest odometer
  * reading (as a hint, so the number is never entered by accident) and the currency of the latest log. Volume and odometer are
  * entered in the vehicle's own units; the server checks the reading against the neighbouring ones. Of volume, unit price and total,
- * any two give the third; with all three filled a change moves the amount worked out before, else the unit price, else the total (when
- * the unit price changed, unless the user typed the total or a photo read it), and a volume that holds a value never moves by itself
+ * any two give the third (total = volume × unit price − discount); with all three filled a change moves the amount worked out before,
+ * else the unit price, else the total (when the unit price changed, unless the user typed the total or a photo read it: then the
+ * discount is worked out from the three), and a volume that holds a value never moves by itself
  * (`keepAmountsInStep`). When photo reading is on, the
  * photos of a new log are read on the server and fill in what the user has not typed yet; while one is still being read, volume,
  * total and odometer may be left empty: the server fills them in later and marks the log for review (editing it then checks it).
@@ -263,6 +269,7 @@ function RefuelingForm({
     date: t('refuelings.fields.date'),
     volume: t('refuelings.fields.volume', { unit: t(`units.volumeShort.${units.volume}`) }),
     unitPrice: t('refuelings.fields.unitPrice', { unit: t(`units.volumeShort.${units.volume}`) }),
+    discount: t('refuelings.fields.discount'),
     totalCost: t('refuelings.fields.cost'),
     currency: t('refuelings.fields.currency'),
     odometer: odometerLabel,
@@ -271,7 +278,8 @@ function RefuelingForm({
     {
       date: initial.date,
       volume: initial.volume?.toString() ?? '',
-      unitPrice: '', // worked out from the other two (keepAmountsInStep)
+      unitPrice: '', // worked out from the others (keepAmountsInStep)
+      discount: initial.discount?.toString() ?? '',
       totalCost: initial.totalCost?.toString() ?? '',
       currency: initial.currency ?? '',
       odometer: initial.odometer?.toString() ?? '',
@@ -300,9 +308,9 @@ function RefuelingForm({
       {merging.note(field, labels[field], (value) => fill.change(field, value == null ? '' : String(value)))}
     </>
   )
-  /** Volume, unit price or total: a number that may be worked out from the other two (the unit price, only a help, is never required). */
+  /** Volume, unit price, discount or total: a number that may be worked out from the others (the unit price, only a help, and the discount are never required). */
   const amount = (field: AmountField) => {
-    const required = field !== 'unitPrice' && !optional(field)
+    const required = field !== 'unitPrice' && field !== 'discount' && !optional(field)
     return (
       <Field
         name={field}
@@ -334,6 +342,7 @@ function RefuelingForm({
         date: text('date'),
         volume: text('volume') === '' ? null : parseDecimal(text('volume'))!,
         totalCost: text('totalCost') === '' ? null : parseDecimal(text('totalCost'))!,
+        discount: text('discount') === '' ? null : parseDecimal(text('discount'))!,
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         isFullTank: full,
@@ -359,6 +368,7 @@ function RefuelingForm({
           <Box sx={{ flex: '1 1 8rem', minWidth: 0 }}>{amount('unitPrice')}</Box>
         </Stack>
         <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+          <Box sx={{ flex: '1 1 6rem', minWidth: 0 }}>{amount('discount')}</Box>
           <Box sx={{ flex: '2 1 8rem', minWidth: 0 }}>{amount('totalCost')}</Box>
           <Box sx={{ flex: '1 1 6rem', minWidth: 0 }}>
             <Field

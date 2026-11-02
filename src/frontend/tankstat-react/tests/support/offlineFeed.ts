@@ -31,7 +31,7 @@ export function fakeFeed() {
 
   const touch = (row: FeedRow) => (row.updatedAt = clock += 1000)
   const refueling = (r: FeedRow) => ({
-    __typename: 'Refueling', id: r.id, vehicleId: r.vehicleId, date: r.date, volume: r.volume, totalCost: 100, currency: 'EUR', pricePerUnit: 100 / r.volume,
+    __typename: 'Refueling', id: r.id, vehicleId: r.vehicleId, date: r.date, volume: r.volume, totalCost: 100, discount: null, currency: 'EUR', pricePerUnit: 100 / r.volume,
     consumption: null, odometer: 1000, isFullTank: true, missedPreviousFillUp: false, note: null, reviewState: 'NONE', filledFromPhoto: [], canEdit: true,
     canDelete: true, deletedAt: null, version: 1, updatedAt: new Date(r.updatedAt).toISOString(), createdBy: null, photos: [],
   })

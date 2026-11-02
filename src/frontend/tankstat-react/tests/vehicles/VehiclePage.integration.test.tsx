@@ -174,17 +174,52 @@ it('works out the third of volume, unit price and total from the other two, and 
   await ui.type(within(dialog).getByLabelText('Price per L'), '599,9')
 
   expect(within(dialog).getByLabelText('Total cost')).toHaveValue('22916,18')
-  expect(within(dialog).getByLabelText('Total cost')).toHaveAccessibleDescription(/Calculated from the other two values\./)
+  expect(within(dialog).getByLabelText('Total cost')).toHaveAccessibleDescription(/Worked out from the other amounts\./)
   await ui.clear(within(dialog).getByLabelText('Total cost'))
   await ui.type(within(dialog).getByLabelText('Total cost'), '24000') // all three filled: the unit price gives way, the litres never (#204)
   expect(within(dialog).getByLabelText(/^Volume/)).toHaveValue('38,2')
   expect(within(dialog).getByLabelText('Price per L')).toHaveValue('628,272')
-  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Calculated from the other two values\./)
+  expect(within(dialog).getByLabelText('Price per L')).toHaveAccessibleDescription(/Worked out from the other amounts\./)
   await ui.type(within(dialog).getByLabelText(/^Odometer/), '12450')
   await ui.click(within(dialog).getByRole('button', { name: 'Add refuelling' }))
 
   await waitFor(() => expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ volume: 38.2, totalCost: 24000 }) }]))
   expect(state.calls.LogRefueling).toEqual([{ input: expect.not.objectContaining({ unitPrice: expect.anything() }) }]) // a help for typing, never saved
+})
+
+it('takes a discount off the total and saves it with the refuelling', async () => {
+  const { ui, state } = setup()
+  await screen.findByText(/Sep 1, 2026/)
+
+  await ui.click(screen.getByRole('button', { name: 'Add refuelling' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add refuelling' })
+  await ui.type(within(dialog).getByLabelText(/^Volume/), '43')
+  await ui.type(within(dialog).getByLabelText('Price per L'), '818')
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('35174') // the pump's total
+  await ui.type(within(dialog).getByLabelText('Discount'), '430')
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('34744') // what the receipt says was paid (#204)
+  expect(within(dialog).getByLabelText('Price per L')).toHaveValue('818') // the pump's price stays
+  await ui.type(within(dialog).getByLabelText(/^Odometer/), '12450')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add refuelling' }))
+
+  await waitFor(() => expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ volume: 43, totalCost: 34744, discount: 430 }) }]))
+})
+
+it('shows a saved discount with the pump price in the edit dialog, and clears it when the field is emptied', async () => {
+  const { ui, state } = setup(fakeVehicle(), [fakeRefueling({ id: 'r3', date: '2026-09-15', volume: 43, totalCost: 34744, discount: 430, odometer: 12500 })])
+  await screen.findByText(/Sep 15, 2026/)
+
+  await ui.click(screen.getByRole('button', { name: 'Edit the refuelling of Sep 15, 2026' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit refuelling' })
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('430'))
+  expect(within(dialog).getByLabelText('Price per L')).toHaveValue('818') // (34744 + 430) / 43: the pump's price
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('34744')
+  await ui.clear(within(dialog).getByLabelText('Discount'))
+  expect(within(dialog).getByLabelText('Price per L')).toHaveValue('808') // no discount: the price paid per litre
+  expect(within(dialog).getByLabelText('Total cost')).toHaveValue('34744') // what was paid never moves
+  await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+  await waitFor(() => expect(state.calls.UpdateRefueling).toEqual([{ input: expect.objectContaining({ id: 'r3', totalCost: 34744, discount: null }) }]))
 })
 
 it('shows the unit price of a saved log and keeps the amounts in step when it changes', async () => {

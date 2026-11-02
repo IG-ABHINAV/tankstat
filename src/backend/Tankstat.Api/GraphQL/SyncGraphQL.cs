@@ -336,12 +336,12 @@ public sealed class SyncMutations
         {
             var id = Required(lr.Id, c.Id);
             return Make(SyncChangeKind.LogRefueling, id, lr.VehicleId, async ct => Of(await refuelings.LogAsync(lr.VehicleId,
-                new RefuelingInput(lr.Date, lr.Volume, lr.TotalCost, lr.Currency ?? defaults.Currency, lr.Odometer, lr.IsFullTank, lr.Note, lr.MissedPreviousFillUp), ct,
+                new RefuelingInput(lr.Date, lr.Volume, lr.TotalCost, lr.Currency ?? defaults.Currency, lr.Odometer, lr.IsFullTank, lr.Note, lr.MissedPreviousFillUp, lr.Discount), ct,
                 photoDraftIds: lr.PhotoIds, id: id), r => r.Id, r => r.Version, r => r.VehicleId));
         }
         if (c.UpdateRefueling is { } ur)
             return Make(SyncChangeKind.UpdateRefueling, ur.Id, null, async ct => Of(await refuelings.UpdateAsync(ur.Id,
-                new RefuelingInput(ur.Date, ur.Volume, ur.TotalCost, ur.Currency, ur.Odometer, ur.IsFullTank, ur.Note, ur.MissedPreviousFillUp), ct, version),
+                new RefuelingInput(ur.Date, ur.Volume, ur.TotalCost, ur.Currency, ur.Odometer, ur.IsFullTank, ur.Note, ur.MissedPreviousFillUp, ur.Discount), ct, version),
                 r => r.Id, r => r.Version, r => r.VehicleId), find.Refueling(ur.Id));
         if (c.DeleteRefueling is { } dr)
             return Make(SyncChangeKind.DeleteRefueling, dr, null, ct => TrashOnce(

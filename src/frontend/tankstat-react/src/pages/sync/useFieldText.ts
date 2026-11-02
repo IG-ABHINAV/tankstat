@@ -26,6 +26,7 @@ export function useFieldText(units: Units) {
       case 'volume':
         return units.volume ? format.volume(n, units.volume) : format.number(n)
       case 'totalCost':
+      case 'discount':
       case 'amount':
         return typeof values.currency === 'string' && values.currency ? format.money(n, values.currency) : format.number(n)
       case 'odometer':

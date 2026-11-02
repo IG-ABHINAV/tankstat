@@ -20,7 +20,7 @@ import { useToast } from '../toast/toastContext.ts'
 import { ChartCard } from './ChartCard.tsx'
 import { ADDITIVE, isReady, NEW_RECIPE, normalise, type ChartRecipe } from './chartFormat.ts'
 
-const METRICS: ChartMetric[] = ['TOTAL_SPEND', 'FUEL_COST', 'EXPENSE_COST', 'FUEL_VOLUME', 'DISTANCE', 'AVERAGE_CONSUMPTION', 'AVERAGE_PRICE_PER_UNIT', 'FILL_UPS']
+const METRICS: ChartMetric[] = ['TOTAL_SPEND', 'FUEL_COST', 'EXPENSE_COST', 'FUEL_VOLUME', 'DISTANCE', 'AVERAGE_CONSUMPTION', 'AVERAGE_PRICE_PER_UNIT', 'AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT', 'FILL_UPS']
 const KINDS: ChartKind[] = ['BAR', 'LINE', 'AREA', 'DONUT']
 const RANGES: ChartRange[] = ['LAST1_MONTH', 'LAST3_MONTHS', 'LAST6_MONTHS', 'LAST12_MONTHS', 'THIS_YEAR', 'LAST_YEAR', 'ALL', 'CUSTOM']
 

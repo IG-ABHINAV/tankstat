@@ -7,6 +7,7 @@ fragment RefuelingChangeValues on Refueling {
   date
   volume
   totalCost
+  discount
   currency
   odometer
   isFullTank

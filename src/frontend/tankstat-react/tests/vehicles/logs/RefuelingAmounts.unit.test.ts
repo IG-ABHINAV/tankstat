@@ -9,7 +9,7 @@ const fields = { volume: 'VOLUME', unitPrice: 'UNIT_PRICE', totalCost: 'TOTAL', 
 
 /** The dialog opens with these values (the others empty): an edit dialog has volume and total. */
 function open(values: Partial<Record<F, string>> = {}): FillState<F> {
-  const all = { volume: '', unitPrice: '', totalCost: '', currency: 'HUF', ...values }
+  const all = { volume: '', unitPrice: '', discount: '', totalCost: '', currency: 'HUF', ...values }
   const start: FillState<F> = { values: all, touched: new Set(), filled: {}, offered: {}, calculated: new Set() }
   return keepAmountsInStep(start, (Object.keys(all) as F[]).filter((f) => all[f] !== ''), false)
 }
@@ -40,7 +40,7 @@ describe('volume, unit price and total', () => {
     expect(amounts(type(type(open(), 'totalCost', '24000'), 'unitPrice', '600'))).toEqual({ volume: '40', unitPrice: '600', totalCost: '24000' })
   })
 
-  it('with all three filled the unit price follows a change of the volume or the total; a total typed never gives way to the pump price, nor do the litres', () => {
+  it('with all three filled the unit price follows a change of the volume or the total; a total typed never gives way to the pump price, nor do the litres: the discount does', () => {
     let state = type(type(open(), 'volume', '40'), 'unitPrice', '600') // the total is worked out
     expect(state.calculated).toEqual(new Set(['totalCost']))
 
@@ -48,11 +48,16 @@ describe('volume, unit price and total', () => {
     expect(amounts(state)).toEqual({ volume: '40', unitPrice: '615', totalCost: '24600' })
     expect(state.calculated).toEqual(new Set(['unitPrice']))
 
-    state = type(state, 'unitPrice', '620') // the pump price typed on purpose: the amount paid is the receipt's and stays, as do the litres
+    state = type(state, 'unitPrice', '620') // the pump price typed on purpose: the amount paid is the receipt's and stays, as do the litres; the discount is worked out
     expect(amounts(state)).toEqual({ volume: '40', unitPrice: '620', totalCost: '24600' })
-    expect(state.calculated).toEqual(new Set())
+    expect(state.values.discount).toBe('200')
+    expect(state.calculated).toEqual(new Set(['discount']))
 
-    state = type(state, 'volume', '41') // the litres corrected: the unit price follows, the amount paid stays
+    state = type(state, 'volume', '41') // the litres corrected with the pump price and the amount paid both typed: the worked-out discount follows
+    expect(amounts(state)).toEqual({ volume: '41', unitPrice: '620', totalCost: '24600' })
+    expect(state.values.discount).toBe('820')
+
+    state = type(state, 'discount', '') // the discount taken back: the unit price gives way, the amount paid stays
     expect(amounts(state)).toEqual({ volume: '41', unitPrice: '600', totalCost: '24600' })
     expect(state.calculated).toEqual(new Set(['unitPrice']))
 
@@ -67,6 +72,54 @@ describe('volume, unit price and total', () => {
     const state = type(type(type(open(), 'volume', '43'), 'unitPrice', '818'), 'totalCost', '34744')
 
     expect(amounts(state)).toEqual({ volume: '43', unitPrice: '808', totalCost: '34744' })
+  })
+
+  it('a discount comes off the total: typed after the litres and the pump price, the total follows; typed after the amount paid, the pump price comes back', () => {
+    let state = type(type(type(open(), 'volume', '43'), 'unitPrice', '818'), 'discount', '430')
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
+    expect(state.calculated).toEqual(new Set(['totalCost']))
+
+    state = type(type(type(open(), 'volume', '43'), 'totalCost', '34744'), 'discount', '430') // the price paid, 808, is worked out again with the discount
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
+    expect(state.calculated).toEqual(new Set(['unitPrice']))
+
+    state = type(state, 'discount', '') // taken back: none
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '808', totalCost: '34744' })
+  })
+
+  it('with the pump price and the amount paid both typed, a discount moves the unit price, never the litres or the total', () => {
+    const state = type(type(type(type(open(), 'volume', '43'), 'unitPrice', '800'), 'totalCost', '34744'), 'discount', '430')
+
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
+  })
+
+  it('the litres, the amount paid and the pump price give the discount: worked out once the three are there, gone when it would be below nothing', () => {
+    let state = type(type(type(open(), 'volume', '43'), 'totalCost', '34744'), 'unitPrice', '818') // the receipt's three numbers (#204)
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
+    expect(state.values.discount).toBe('430')
+    expect(state.calculated).toEqual(new Set(['discount']))
+
+    state = type(state, 'unitPrice', '814') // the pump price corrected: the discount follows
+    expect(state.values.discount).toBe('258')
+
+    state = type(state, 'unitPrice', '800') // below the price paid per litre: no discount, and the amount paid stays the receipt's
+    expect(amounts(state)).toEqual({ volume: '43', unitPrice: '800', totalCost: '34744' })
+    expect(state.values.discount).toBe('')
+    expect(state.calculated).toEqual(new Set())
+
+    const read = photo(open(), { VOLUME: '43', UNIT_PRICE: '818', TOTAL: '34744' }) // a photo's three amounts give it too
+    expect(read.values.discount).toBe('430')
+
+    // The receipt's rounding is no discount: 38.52 L × 640.9 is 24 687.47, printed as 24 687.
+    const rounding = type(type(type(open(), 'volume', '38.52'), 'totalCost', '24687'), 'unitPrice', '640.9')
+    expect(amounts(rounding)).toEqual({ volume: '38.52', unitPrice: '640.9', totalCost: '24687' })
+    expect(rounding.values.discount).toBe('')
+  })
+
+  it('a discount that is not a number, or more than the fuel, empties a worked-out total rather than show one that no longer follows', () => {
+    expect(amounts(type(type(type(open(), 'volume', '43'), 'unitPrice', '818'), 'discount', 'x'))).toEqual({ volume: '43', unitPrice: '818', totalCost: '' })
+    expect(amounts(type(type(type(open(), 'volume', '43'), 'unitPrice', '818'), 'discount', '40000'))).toEqual({ volume: '43', unitPrice: '818', totalCost: '' })
+    expect(type(type(type(open(), 'volume', '38,2'), 'unitPrice', '599,9'), 'discount', '416,18').values.totalCost).toBe('22500')
   })
 
   it('a volume read from a photo never gives way to a typed total either', () => {
@@ -149,7 +202,7 @@ describe('amounts read from photos', () => {
     // Typed: 43 L and 34 744 Ft paid (808 per litre), then the pump's 818: the total stays (#204).
     const typed = type(type(type(open(), 'volume', '43'), 'totalCost', '34744'), 'unitPrice', '818')
     expect(amounts(typed)).toEqual({ volume: '43', unitPrice: '818', totalCost: '34744' })
-    expect(typed.calculated).toEqual(new Set())
+    expect(typed.values.discount).toBe('430') // the three say what the till took off (the test below)
 
     // Read from a photo: the fuel's own amount, then the litres typed and the pump's price.
     const read = type(type(photo(open(), { TOTAL: '34744' }), 'volume', '43'), 'unitPrice', '818')

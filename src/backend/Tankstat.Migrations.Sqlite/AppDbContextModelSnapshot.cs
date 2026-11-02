@@ -15,7 +15,7 @@ namespace Tankstat.Migrations.Sqlite
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("Tankstat.Domain.Access.AccessGrant", b =>
                 {
@@ -233,6 +233,10 @@ namespace Tankstat.Migrations.Sqlite
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Discount")
+                        .HasPrecision(14, 2)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("OwnerId")

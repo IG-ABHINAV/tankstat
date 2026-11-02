@@ -8,6 +8,8 @@ query Refuelings(
   $withVolume: Boolean!
   $withCost: Boolean!
   $withPrice: Boolean!
+  $withDiscount: Boolean!
+  $withListPrice: Boolean!
   $withConsumption: Boolean!
   $withOdometer: Boolean!
   $withFullTank: Boolean!
@@ -26,6 +28,8 @@ query Refuelings(
     # Always: the price per unit is in it too, also when the cost column is hidden.
     currency
     pricePerUnit @include(if: $withPrice)
+    discount @include(if: $withDiscount)
+    pricePerUnitBeforeDiscount @include(if: $withListPrice)
     consumption @include(if: $withConsumption)
     odometer @include(if: $withOdometer)
     isFullTank @include(if: $withFullTank)
@@ -87,6 +91,7 @@ query RefuelingDetails($id: UUID!) {
     date
     volume
     totalCost
+    discount
     currency
     odometer
     isFullTank

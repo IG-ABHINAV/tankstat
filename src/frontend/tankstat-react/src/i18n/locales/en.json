@@ -255,6 +255,8 @@
     "volume": "Volume",
     "cost": "Cost",
     "price": "Price per unit",
+    "discount": "Discount",
+    "listPrice": "Price per unit before discount",
     "odometer": "Odometer",
     "fullTank": "Full tank",
     "note": "Note",
@@ -880,7 +882,9 @@
       "invalid": "This password reset link is invalid or has expired."
     },
     "cost": {
-      "negative": "A cost cannot be negative."
+      "negative": "A cost cannot be negative.",
+      "discountNegative": "A discount cannot be negative.",
+      "discountWithoutAmount": "A discount needs the amount it was taken off."
     },
     "money": {
       "currencyInvalid": "Enter a three-letter currency code such as EUR or USD."
@@ -1069,6 +1073,7 @@
       "volume": "Volume ({{unit}})",
       "unitPrice": "Price per {{unit}}",
       "cost": "Total cost",
+      "discount": "Discount",
       "currency": "Currency",
       "odometer": "Odometer ({{unit}})",
       "fullTank": "Full tank",
@@ -1076,7 +1081,7 @@
       "note": "Note (optional)"
     },
     "hints": {
-      "calculated": "Calculated from the other two values.",
+      "calculated": "Worked out from the other amounts.",
       "lastReading": "Last reading: {{value}} on {{date}}",
       "currency": "Three-letter code, e.g. EUR",
       "fullTankHelp": "Switch off for a partial fill-up.",
@@ -1336,6 +1341,7 @@
       "DISTANCE": "Distance driven",
       "AVERAGE_CONSUMPTION": "Average consumption",
       "AVERAGE_PRICE_PER_UNIT": "Average fuel price",
+      "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT": "Average fuel price before discounts",
       "FILL_UPS": "Number of fill-ups"
     },
     "groupings": {
@@ -1648,6 +1654,7 @@
       "date": "Date",
       "volume": "Volume",
       "totalCost": "Total cost",
+      "discount": "Discount",
       "currency": "Currency",
       "odometer": "Odometer",
       "isFullTank": "Full tank",

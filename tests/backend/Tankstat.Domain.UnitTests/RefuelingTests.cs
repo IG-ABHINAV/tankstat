@@ -83,6 +83,33 @@ public class RefuelingTests
     }
 
     [Fact]
+    public void Update_StoresTheDiscount_AndWorksOutThePricePaidAndThePumpsPrice()
+    {
+        var r = TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day);
+
+        r.Update(Day, 43, 34744, "HUF", 1000, true, false, null, discount: 430); // the receipt of #204
+
+        Assert.Equal((34744m, 430m, 35174m), (r.TotalCost, r.Discount, r.Cost!.AmountBeforeDiscount));
+        Assert.Equal((808m, 818m), (r.PricePerUnit, r.PricePerUnitBeforeDiscount));
+
+        r.Update(Day, 43, 34744, "HUF", 1000, true, false, null); // none sent: the discount goes, as a total left out would
+        Assert.Null(r.Discount);
+        Assert.Equal(r.PricePerUnit, r.PricePerUnitBeforeDiscount);
+    }
+
+    [Fact]
+    public void Discount_NeedsAnAmount_IsNeverNegative_AndZeroIsNone()
+    {
+        var r = TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day);
+
+        Assert.Equal("cost.discountWithoutAmount", Assert.Throws<DomainException>(() => r.Update(Day, 40, null, "EUR", 1000, true, false, null, readingPhotos: true, discount: 5)).Key);
+        Assert.Equal("cost.discountNegative", Assert.Throws<DomainException>(() => r.Update(Day, 40, 60, "EUR", 1000, true, false, null, discount: -1)).Key);
+        Assert.Equal("cost.discountNegative", Assert.Throws<DomainException>(() => TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day, discount: -1)).Key);
+        Assert.Null(TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day, discount: 0).Discount);
+        Assert.Equal(4.3m, TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day, discount: 4.3m).Discount); // Create keeps it: it re-normalises the cost with the discount
+    }
+
+    [Fact]
     public void Trash_And_Restore_CarryTheReadingAndCostAlong()
     {
         var r = TestData.Refueling(Owner, Creator, Guid.NewGuid(), Day);

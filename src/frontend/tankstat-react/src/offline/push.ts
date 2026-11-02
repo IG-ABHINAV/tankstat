@@ -38,8 +38,8 @@ export interface PushDeps {
 
 /** What each mutation's input may carry: a form may hold more (a client id twice, values only the screen uses). */
 const FIELDS = {
-  logRefueling: ['id', 'vehicleId', 'date', 'volume', 'totalCost', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note', 'photoIds'],
-  updateRefueling: ['id', 'date', 'volume', 'totalCost', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
+  logRefueling: ['id', 'vehicleId', 'date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note', 'photoIds'],
+  updateRefueling: ['id', 'date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
   addExpense: ['id', 'vehicleId', 'date', 'title', 'category', 'amount', 'currency', 'odometer', 'note', 'photoIds'],
   updateExpense: ['id', 'date', 'title', 'category', 'amount', 'currency', 'odometer', 'note'],
   addVehicle: ['id', 'name', 'licensePlate', 'fuelType', 'units'],

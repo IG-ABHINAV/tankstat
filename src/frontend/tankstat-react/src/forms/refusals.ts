@@ -8,6 +8,8 @@ import { ApiError } from '../pictures/ApiError.ts'
 const FIELD_OF_KEY: Readonly<Record<string, string>> = {
   'vehicle.nameRequired': 'name',
   'expense.titleRequired': 'title',
+  'cost.discountWithoutAmount': 'discount',
+  'cost.discountNegative': 'discount',
   'recurring.titleRequired': 'title',
   'recurring.odometerRequired': 'lastDoneOdometer',
   'recurring.doneOdometerRequired': 'odometer',

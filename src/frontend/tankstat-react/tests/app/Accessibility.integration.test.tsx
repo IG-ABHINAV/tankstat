@@ -95,7 +95,7 @@ it('the changes the server could not apply, what happened to them on each side, 
             current: {
               __typename: 'SyncCurrent', state: 'LIVE', version: 2, lastChange: 'EDITED', changedAt: '2026-10-06T08:00:00Z', changedBy: { __typename: 'UserRef', id: 'u3', displayName: 'Anna' },
               vehicle: null, expense: null, schedule: null,
-              refueling: { __typename: 'Refueling', version: 2, date: '2026-09-01', volume: 41, totalCost: 60, currency: 'EUR', odometer: 1000, isFullTank: true, missedPreviousFillUp: false, note: null },
+              refueling: { __typename: 'Refueling', version: 2, date: '2026-09-01', volume: 41, totalCost: 60, discount: null, currency: 'EUR', odometer: 1000, isFullTank: true, missedPreviousFillUp: false, note: null },
             },
           }],
         },

@@ -62,7 +62,7 @@ describe('the changes waiting, as the Sync page names them', () => {
     await deviceData.signedIn('alice')
     await outbox.reload()
     const rows = (await deviceData.rows())!
-    await rows.putLogs('refuelings', [{ __typename: 'Refueling', id: 'r1', vehicleId: 'v1', date: '2026-09-01', volume: 40, totalCost: 20000, currency: 'HUF', pulledAt: 1 }])
+    await rows.putLogs('refuelings', [{ __typename: 'Refueling', id: 'r1', vehicleId: 'v1', date: '2026-09-01', volume: 40, totalCost: 20000, discount: null, currency: 'HUF', pulledAt: 1 }])
     await rows.putLogs('expenses', [{ __typename: 'Expense', id: 'e1', vehicleId: 'v1', date: '2026-09-02', title: 'Wash', amount: 3000, currency: 'HUF', pulledAt: 1 }])
     const { result } = renderHook(() => useWaitingChanges())
     await waitFor(() => expect(result.current).toEqual([]))

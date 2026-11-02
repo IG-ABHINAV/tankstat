@@ -171,7 +171,7 @@ it('while a change of a log waits, its details are answered by the device even t
   await outbox.reload()
   const rows = (await deviceData.rows())!
   await rows.putLogs('refuelings', [{
-    __typename: 'Refueling', id: 'r1', vehicleId: 'v1', date: '2026-10-01', volume: 40, totalCost: 100, currency: 'EUR', odometer: 1000, isFullTank: true,
+    __typename: 'Refueling', id: 'r1', vehicleId: 'v1', date: '2026-10-01', volume: 40, totalCost: 100, discount: null, currency: 'EUR', odometer: 1000, isFullTank: true,
     missedPreviousFillUp: false, note: null, reviewState: 'NONE', filledFromPhoto: [], version: 2, deletedAt: null, photos: [], pulledAt: 1,
   } as never])
   await outbox.enqueue({ id: 't1', entity: 'refuelings', action: 'trash', vehicleId: 'v1', targetId: 'other' })
