@@ -62,8 +62,7 @@ public static class DependencyInjection
         services.AddSingleton<HealthReporter>();
         services.AddSingleton<NoticeService>();
         services.AddSingleton<InstanceGeneration>();
-        // The app's own metrics (#219): through the host's meter factory when there is one (a test's services have none).
-        services.TryAddSingleton(sp => new AppMetrics(sp.GetService<System.Diagnostics.Metrics.IMeterFactory>()));
+        services.AddAppMetrics();
         services.TryAddSingleton<OneTimeCode>(); // the host's own when it keeps one over a restart in the process
         services.AddSingleton<SetupStatus>();
 
@@ -112,6 +111,16 @@ public static class DependencyInjection
         services.AddScoped<RecognitionService>();
         services.AddScoped<LogPhotoFiller>();
         services.AddScoped<PhotoReadingProcessor>();
+        return services;
+    }
+
+    /// <summary>
+    /// The app's own metrics (#219), once: through the host's meter factory when there is one (a test's services have none). Called by
+    /// <see cref="AddApplication"/> and by <c>AddInfrastructure</c> (the backups record them), so a host of either layer's services alone has them.
+    /// </summary>
+    public static IServiceCollection AddAppMetrics(this IServiceCollection services)
+    {
+        services.TryAddSingleton(sp => new AppMetrics(sp.GetService<System.Diagnostics.Metrics.IMeterFactory>()));
         return services;
     }
 }

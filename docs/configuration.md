@@ -130,7 +130,7 @@ What is sent:
 
 - **Work no request carries,** each a trace of its own:
   - a backup run (`tankstat.backup.run`, whether the schedule or *Back up now* started it), with its write (`tankstat.backup.write`) below it. *Back up now*'s run is linked to the request that asked for it, which answers long before the run ends.
-  - at start, the restore that waits (`tankstat.restore.apply`) and the migrations (`tankstat.database.migrate`), with the backup written before them;
+  - at start, the restore that waits (`tankstat.restore.apply`; it writes no backup) and the migrations (`tankstat.database.migrate`); the safety-net backup written before the migrations is their span's child (`tankstat.backup.write`);
   - every photo the model reads (`tankstat.photo_reading.read`), with the call to the model server below it.
 - **Inside a request:** a batch of changes a device kept while offline (`tankstat.sync.batch`), with a span per change (`tankstat.sync.change`); a parked change is a failed span with the key of its reason.
 - **Attributes:** their attributes are ids, counts and outcomes. A failure carries the error's key or type, never a message.
