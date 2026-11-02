@@ -4,7 +4,7 @@ import { applyRead, calculateField, changeField, clearCalculated, mergeReadings,
 type F = 'date' | 'volume' | 'currency'
 const fields = { date: 'DATE', volume: 'VOLUME', currency: 'CURRENCY' } as const
 const start = (values: Record<F, string>): FillState<F> => ({ values, touched: new Set(), filled: {}, offered: {}, calculated: new Set() })
-const read = (status: string, values: { name: 'DATE' | 'VOLUME' | 'CURRENCY' | 'TOTAL'; value: string; confidence: number }[]) => ({ status, values })
+const read = (status: string, values: { name: 'DATE' | 'VOLUME' | 'CURRENCY' | 'TOTAL' | 'DISCOUNT'; value: string; confidence: number }[]) => ({ status, values })
 
 describe('merging readings', () => {
   it('keeps the surest value of each name, from finished readings only', () => {
@@ -16,6 +16,36 @@ describe('merging readings', () => {
     ])
 
     expect(merged).toEqual({ VOLUME: { value: '38.5', confidence: 0.95 }, TOTAL: { value: '24687', confidence: 0.9 } })
+  })
+
+  it('takes a value that follows another from the photo that gave that one, or not at all', () => {
+    const after = { status: 'READ', values: [{ name: 'TOTAL' as const, value: '34744', confidence: 0.9 }, { name: 'DISCOUNT' as const, value: '430', confidence: 0.9 }] }
+    const before = { status: 'READ', values: [{ name: 'TOTAL' as const, value: '35174', confidence: 0.95 }] } // surer, and read before the discount
+
+    expect(mergeReadings([after, before], { DISCOUNT: 'TOTAL' })).toEqual({ TOTAL: { value: '35174', confidence: 0.95 } }) // never 35 174 with another photo's 430
+    expect(mergeReadings([after], { DISCOUNT: 'TOTAL' })).toEqual({ TOTAL: { value: '34744', confidence: 0.9 }, DISCOUNT: { value: '430', confidence: 0.9 } })
+    expect(mergeReadings([{ status: 'READ', values: [{ name: 'DISCOUNT' as const, value: '430', confidence: 0.9 }] }], { DISCOUNT: 'TOTAL' })).toEqual({}) // no total it was taken off
+  })
+})
+
+describe('a field that follows another', () => {
+  type G = 'total' | 'discount'
+  const amounts = { total: 'TOTAL', discount: 'DISCOUNT' } as const
+  const begin = (values: Record<G, string>, kept: G[] = []): FillState<G> => ({ values, touched: new Set(), filled: {}, offered: {}, calculated: new Set(), kept: new Set(kept) })
+  const shows = { TOTAL: { value: '34744', confidence: 0.9 }, DISCOUNT: { value: '430', confidence: 0.9 } }
+
+  it('is only offered while the other holds what the user entered, even when it is empty', () => {
+    const saved = applyRead(begin({ total: '35174', discount: '' }, ['total']), amounts, shows, { discount: 'total' }).state // an edit dialog's saved total
+
+    expect(saved.values).toEqual({ total: '35174', discount: '' })
+    expect(saved.offered).toEqual({ total: '34744', discount: '430' })
+  })
+
+  it('is filled with the other when the photo gives both', () => {
+    const { state, newly } = applyRead(begin({ total: '', discount: '' }), amounts, shows, { discount: 'total' })
+
+    expect(state.values).toEqual({ total: '34744', discount: '430' })
+    expect(newly).toEqual(['total', 'discount'])
   })
 })
 

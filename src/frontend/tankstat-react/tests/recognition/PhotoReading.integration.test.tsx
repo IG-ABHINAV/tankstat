@@ -126,6 +126,28 @@ it('fills the discount from a receipt with the other amounts, and saves it with 
   expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ volume: 43, totalCost: 34744, discount: 430, currency: 'HUF' }) }])
 })
 
+it('saves no discount while the total is left to the photo: the server fills both later', async () => {
+  const receipt: FakeReadValue[] = [
+    { name: 'TOTAL', value: '34744' },
+    { name: 'DISCOUNT', value: '430' },
+    { name: 'CURRENCY', value: 'HUF' },
+  ]
+  const { ui, state, recognition } = setupRefuelings(fakeRecognition({ results: [receipt] }))
+  const dialog = await openAddRefueling(ui)
+
+  await ui.upload(camera(dialog), photo())
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('430'), READ_WAIT)
+  recognition.state.queuedPolls = 10_000 // a second photo, the dashboard, is still being read: the values may wait for it
+  await ui.upload(camera(dialog), photo('dashboard.png'))
+  expect((await within(dialog).findAllByText('Reading…')).length).toBeGreaterThan(0)
+  await ui.clear(within(dialog).getByLabelText('Total cost')) // left for the server to fill, as the user guide says it may be
+  await ui.type(within(dialog).getByLabelText(/^Volume/), '43')
+  await ui.type(within(dialog).getByLabelText(/^Odometer/), '12500')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add refuelling' }))
+
+  await waitFor(() => expect(state.calls.LogRefueling).toEqual([{ input: expect.objectContaining({ totalCost: null, discount: null }) }])) // never refused for a value not typed
+})
+
 it('keeps the smaller WebP where the server says photo reading is off', async () => {
   const { ui, recognition } = setupRefuelings(fakeRecognition({ available: false }))
   const dialog = await openAddRefueling(ui)

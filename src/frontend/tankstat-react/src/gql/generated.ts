@@ -347,6 +347,7 @@ export type ReadingIssueCode =
   | 'AMOUNTS_DO_NOT_ADD'
   | 'DATE_IN_FUTURE'
   | 'DATE_TOO_OLD'
+  | 'DISCOUNT_NOT_TAKEN_OFF'
   | 'NOTHING_LEGIBLE'
   | 'NOT_UNDERSTOOD'
   | 'NO_CONFIDENCE'

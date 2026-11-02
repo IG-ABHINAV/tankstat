@@ -152,6 +152,24 @@ public class LogPhotoFillerTests
     }
 
     [Fact]
+    public async Task TheDiscount_ComesFromThePhotoThatGaveTheTotal_NeverFromAnother()
+    {
+        var s = await Setup();
+        var after = await Queued(s, marker: 1); // the receipt read after its discount
+        var before = await Queued(s, marker: 2); // another shot of it, read on the fuel line before the discount, and surer
+        s.W.Recognizer.Answer = r => r.ReadingId == after
+            ? new RecognitionResult("fake-1", DocumentKind.FuelReceipt, [Read(ReadingFieldName.Total, "34744"), Read(ReadingFieldName.Discount, "430"), Read(ReadingFieldName.Currency, "HUF")])
+            : new RecognitionResult("fake-1", DocumentKind.FuelReceipt, [Read(ReadingFieldName.Total, "35174", 0.95), Read(ReadingFieldName.Currency, "HUF")]);
+        var log = await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(Day, 43, null, "HUF", 1000, true, null), default, photoDraftIds: [after, before]);
+
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Refuelings.Items.Single(r => r.Id == log.Id);
+        Assert.Equal(35174m, filled.TotalCost); // the surest total
+        Assert.Null(filled.Discount); // its photo shows none: the other photo's 430 was taken off another total
+    }
+
+    [Fact]
     public async Task ADiscountOnAPhoto_NeverChangesACostAPersonEntered()
     {
         var s = await Setup();

@@ -1415,6 +1415,7 @@
       "DATE_TOO_OLD": "The photo shows a date more than three years ago, so it was not filled in.",
       "DATE_IN_FUTURE": "The photo shows a date in the future, so it was not filled in.",
       "AMOUNTS_DO_NOT_ADD": "{{field}}: the litres and the price per litre on the photo do not add up to the total, so it was not filled in.",
+      "DISCOUNT_NOT_TAKEN_OFF": "The litres and the price per litre on the photo add up to the total without the discount: either the total is before the discount or the discount was misread, so neither was filled in.",
       "NO_CONFIDENCE": "{{field}}: the photo could be read here, but not reliably enough to fill it in.",
       "UNSURE": "{{field}}: the photo could be read here, but not reliably enough to fill it in."
     },

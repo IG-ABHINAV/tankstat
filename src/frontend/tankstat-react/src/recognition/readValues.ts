@@ -15,17 +15,30 @@ interface ReadingLike {
 }
 
 /** The values of every finished reading, keeping the surest one when several photos show the same thing. */
-export function mergeReadings(readings: Iterable<ReadingLike | null | undefined>): ReadValues {
+export function mergeReadings(readings: Iterable<ReadingLike | null | undefined>, follows: FollowsRead = {}): ReadValues {
   const merged: ReadValues = {}
-  for (const reading of readings) {
-    if (reading?.status !== 'READ') continue
+  const from = new Map<ReadingFieldName, ReadingLike>()
+  const read = [...readings].filter((r): r is ReadingLike => r?.status === 'READ')
+  for (const reading of read) {
     for (const v of reading.values) {
       const known = merged[v.name]
-      if (!known || known.confidence < v.confidence) merged[v.name] = { value: v.value, confidence: v.confidence }
+      if (!known || known.confidence < v.confidence) {
+        merged[v.name] = { value: v.value, confidence: v.confidence }
+        from.set(v.name, reading)
+      }
     }
+  }
+  // A value that follows another comes from the photo that gave that one, or not at all: a discount was taken off its own total.
+  for (const [name, leader] of Object.entries(follows) as [ReadingFieldName, ReadingFieldName][]) {
+    const own = from.get(leader)?.values.find((v) => v.name === name)
+    if (own) merged[name] = { value: own.value, confidence: own.confidence }
+    else delete merged[name]
   }
   return merged
 }
+
+/** Read values that only ever come with another one, from the same photo: `{ DISCOUNT: 'TOTAL' }`. */
+export type FollowsRead = Partial<Record<ReadingFieldName, ReadingFieldName>>
 
 /** Whether what is typed already says what the photo shows ("38,52" and "38.52" do, so do "huf" and "HUF"). */
 export function sameValue(typed: string, read: string): boolean {
@@ -69,16 +82,21 @@ export function applyRead<F extends string>(
   state: FillState<F>,
   fields: Partial<Record<F, ReadingFieldName>>,
   read: ReadValues,
+  follows: Partial<Record<F, F>> = {},
 ): { state: FillState<F>; newly: F[] } {
   const values = { ...state.values }
   const filled = { ...state.filled }
   const offered = { ...state.offered }
   let touched = state.touched
   const newly: F[] = []
+  const theirs = (field: F) => (state.touched.has(field) || state.kept?.has(field) === true) && state.values[field].trim() !== ''
   for (const field of Object.keys(fields) as F[]) {
     const value = read[fields[field]!]?.value
     if (value === undefined) continue
-    const holdsTheirs = (state.touched.has(field) || state.kept?.has(field) === true) && values[field].trim() !== ''
+    // A field that follows another (the discount, the total) is the user's while the other is: next to an amount they entered, a photo's
+    // discount is only offered, empty or not, since it was taken off the photo's own total.
+    const leader = follows[field]
+    const holdsTheirs = theirs(field) || (leader !== undefined && theirs(leader))
     if (holdsTheirs || state.calculated.has(field)) {
       if (sameValue(values[field], value)) delete offered[field]
       else offered[field] = value

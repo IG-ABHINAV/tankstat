@@ -51,6 +51,8 @@ export function useReadFill<F extends string>(
   explain: ReadExplanation = { issues: [], failed: false },
   keepInStep: KeepInStep<F> = (state) => state,
   savedValuesAreTheUsers = false,
+  /** Fields that follow another (`{ discount: 'totalCost' }`): only offered while that one holds the user's value (see `applyRead`). */
+  follows: Partial<Record<NoInfer<F>, NoInfer<F>>> = {},
 ): ReadFill<F> {
   const { t } = useTranslation()
   const [state, setState] = useState<FillState<F>>(() => {
@@ -65,7 +67,7 @@ export function useReadFill<F extends string>(
   const key = JSON.stringify(read)
   if (key !== applied) {
     setApplied(key)
-    const { state: next, newly } = applyRead(state, fields, read)
+    const { state: next, newly } = applyRead(state, fields, read, follows)
     setState(keepInStep(next, newly, false))
     if (newly.length > 0) setAnnounced(t('reading.announce', { fields: newly.map((f) => labels[f]).join(', ') }))
   }

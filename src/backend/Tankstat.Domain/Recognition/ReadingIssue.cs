@@ -36,6 +36,12 @@ public enum ReadingIssueCode
     /// <summary>Litres times price per litre do not fit the total: the litres and the price are doubted, the total stays.</summary>
     AmountsDoNotAdd,
 
+    /// <summary>
+    /// Litres times price per litre fit the total without the discount read with it: either the total is before the discount or the
+    /// discount was misread, which the numbers cannot tell apart, so the total and the discount are both doubted.
+    /// </summary>
+    DiscountNotTakenOff,
+
     /// <summary>The model gave the value no usable confidence, so it counts as doubtful.</summary>
     NoConfidence,
 
