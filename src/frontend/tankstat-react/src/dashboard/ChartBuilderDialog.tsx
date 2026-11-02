@@ -36,7 +36,7 @@ const METRICS: ChartMetric[] = [
 const KINDS: ChartKind[] = ['BAR', 'LINE', 'AREA', 'DONUT']
 const RANGES: ChartRange[] = ['LAST1_MONTH', 'LAST3_MONTHS', 'LAST6_MONTHS', 'LAST12_MONTHS', 'THIS_YEAR', 'LAST_YEAR', 'ALL', 'CUSTOM']
 const TRENDS: ChartTrend[] = ['NONE', 'MOVING_AVERAGE', 'LINEAR']
-const SECOND_KINDS: ChartKind[] = ['BAR', 'LINE', 'AREA']
+const SECOND_KINDS = KINDS.filter((k) => k !== 'DONUT') // a second measure is never a donut
 /** The second measure's select has no empty value of its own: this one stands for "none". */
 const NO_SECOND = 'NONE'
 
@@ -193,7 +193,7 @@ function BuilderForm({
               {recipe.secondMetric && (
                 <LabeledSelect
                   label={t('charts.fields.secondKind')}
-                  value={recipe.secondKind ?? 'LINE'}
+                  value={recipe.secondKind ?? 'LINE'} // never null with a second metric (normalise), typed for the select
                   onChange={(secondKind) => change({ secondKind })}
                   options={SECOND_KINDS.map((k) => ({ value: k, label: t(`charts.kinds.${k}`) }))}
                 />

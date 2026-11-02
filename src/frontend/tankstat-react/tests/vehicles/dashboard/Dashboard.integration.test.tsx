@@ -225,14 +225,14 @@ it('customizes the vehicle\'s dashboard in place: a figure moved earlier, a read
       vehicleId: 'v1',
       personal: false,
       tiles: [
-        at('thisMonth', 0, 0, 1, 3),
-        at('odometer', 1, 0, 1, 3),
-        at('consumption', 2, 0, 1, 3),
-        at('lastFillUp', 3, 0, 1, 3),
-        at('preset:monthlyCosts', 0, 3, 2, 8),
-        at('preset:categories', 2, 3, 2, 8), // packed up into the removed chart's place
-        at('preset:fuelPrice', 0, 11, 2, 8),
-        at('preset:distance', 0, 19, 2, 8),
+        at('thisMonth', 0, 0, 1, 4),
+        at('odometer', 1, 0, 1, 4),
+        at('consumption', 2, 0, 1, 4),
+        at('lastFillUp', 3, 0, 1, 4),
+        at('preset:monthlyCosts', 0, 4, 2, 8),
+        at('preset:categories', 2, 4, 2, 8), // packed up into the removed chart's place
+        at('preset:fuelPrice', 0, 12, 2, 8),
+        at('preset:distance', 0, 20, 2, 8),
       ],
       hidden: ['chart:c1'],
     },
@@ -282,7 +282,7 @@ it('adds back what was taken off, starts afresh from a preset, and arranges one\
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(state.calls.SaveDashboardLayout![0]).toEqual({
-    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), at('lastFillUp', 0, 19, 1, 3)], hidden: [] },
+    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), at('lastFillUp', 0, 19, 1, 4)], hidden: [] },
   })
 
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save dashboard' })).not.toBeInTheDocument())

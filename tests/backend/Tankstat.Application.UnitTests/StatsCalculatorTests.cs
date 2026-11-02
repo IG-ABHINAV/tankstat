@@ -188,7 +188,7 @@ public class StatsCalculatorTests
 
         Assert.Equal([null, 809.887m, null], Values(paid.Series.Single())); // 42 924 / 53
         Assert.Equal([null, 818m, null], Values(pump.Series.Single())); // 43 354 / 53
-        Assert.Equal(paid.Unit, pump.Unit);
+        Assert.Equal((ChartUnit.PricePerVolume, ChartUnit.PricePerVolume), (paid.Unit, pump.Unit)); // a price, not an amount: its own scale beside a cost
     }
 
     [Fact]
@@ -310,6 +310,20 @@ public class StatsCalculatorTests
         var line = Role(chart, ChartSeriesRole.Linear);
         Assert.Equal(100m, line.Slope); // per month
         Assert.Equal([100m, 200m, 300m, 400m, 500m, 600m], Values(line)); // October's 60 is not over yet: the line goes on past it
+    }
+
+    [Fact]
+    public void ATrend_LeavesOutAPeriodTheRangeCuts_AndNeverGoesBelowZero()
+    {
+        // Every month 100 from March to September, a custom range from mid-March to mid-September: the two half months would weigh half.
+        var steady = Data(Enumerable.Range(3, 7).Select(m => Fill($"2026-{m:00}-20", 40, 100, 1000 + m * 100)).ToArray());
+        var cut = StatsCalculator.Chart(Config(range: ChartRange.Custom, from: new DateOnly(2026, 3, 15), to: new DateOnly(2026, 9, 15), trend: ChartTrend.Linear), steady, Today);
+        // Costs falling to nothing: the fitted line would run on below zero.
+        var falling = Data([Fill("2026-05-03", 40, 300, 1000), Fill("2026-06-03", 40, 200, 1500), Fill("2026-07-03", 40, 100, 2000)]);
+        var floored = StatsCalculator.Chart(Config(range: ChartRange.Last6Months, trend: ChartTrend.Linear), falling, Today);
+
+        Assert.Equal(0m, Role(cut, ChartSeriesRole.Linear).Slope); // fitted to April..August only: flat, the cut months left out
+        Assert.Equal([280m, 200m, 120m, 40m, 0m, 0m], Values(Role(floored, ChartSeriesRole.Linear))); // fitted over May..September (two empty months), floored where it would go below zero
     }
 
     [Fact]

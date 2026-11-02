@@ -1288,10 +1288,8 @@
       "consumptionTrend": "Fogyasztás, utolsó 10 tankolás",
       "distanceTrend": "Idei megtett távolság",
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
-      "none": "–",
-      "title": "Fő adatok"
+      "none": "–"
     },
-    "yourCharts": "Grafikonok",
     "addChart": "Grafikon hozzáadása",
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",

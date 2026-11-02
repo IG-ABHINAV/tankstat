@@ -1353,6 +1353,7 @@ enum ChartUnit {
   CONSUMPTION
   COUNT
   COST_PER_DISTANCE
+  PRICE_PER_VOLUME
 }
 
 enum ColorMode {

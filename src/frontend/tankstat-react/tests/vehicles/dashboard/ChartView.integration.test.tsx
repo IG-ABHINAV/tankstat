@@ -9,7 +9,7 @@ const units = { distance: 'KILOMETERS', volume: 'LITERS' } as const
 
 /** A test chart's data, its series written without their measure: the first measure's, in the chart's unit, as the server stamps them. */
 type Loose = { unit: ChartData['unit']; series: (Omit<Series, 'metric' | 'unit'> & Partial<Pick<Series, 'metric' | 'unit'>>)[] }
-const typed = (data: Loose): ChartData => ({ ...data, series: data.series.map((s) => ({ metric: 'TOTAL_SPEND' as const, unit: data.unit, ...s })) })
+const typed = (data: Loose, metric: ChartRecipe['metric'] = 'TOTAL_SPEND'): ChartData => ({ ...data, series: data.series.map((s) => ({ metric, unit: data.unit, ...s })) })
 
 const money: Loose = {
   unit: 'CURRENCY',
@@ -81,7 +81,7 @@ it('lists a chart by category with the expenses that have none as Uncategorised'
   render(
     <ThemeRoot instant>
       <ChartView
-        data={typed({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'expenses', currency: 'HUF', points: [{ key: 'Service', value: 35000 }, { key: '', value: 1500 }] }] })}
+        data={typed({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'expenses', currency: 'HUF', points: [{ key: 'Service', value: 35000 }, { key: '', value: 1500 }] }] }, 'EXPENSE_COST')}
         recipe={{ kind: 'DONUT', metric: 'EXPENSE_COST', grouping: 'CATEGORY', stacked: false }}
         units={units}
         title="Expenses by category"
@@ -148,7 +148,7 @@ const line = (role: Series['role'], values: (number | null)[], slope: number | n
 const drawn = (data: Loose, over: Partial<ChartRecipe> = {}, viewUnits: typeof units | { distance: 'MILES'; volume: 'US_GALLONS' } = units) =>
   render(
     <ThemeRoot instant>
-      <ChartView data={typed(data)} recipe={{ ...recipe('BAR'), stacked: false, ...over }} units={viewUnits} title="Costs" />
+      <ChartView data={typed(data, over.metric)} recipe={{ ...recipe('BAR'), stacked: false, ...over }} units={viewUnits} title="Costs" />
     </ThemeRoot>,
   )
 
@@ -191,4 +191,18 @@ it('writes a cost per distance with its distance unit, a scale per currency, and
   expect(within(table).getByRole('rowheader', { name: 'Jul 2026' }).closest('tr')).toHaveTextContent(/^Jul 2026HUF\s4,000 \/ 100 km€10\.00 \/ 100 km$/)
   expect(within(table).getByRole('rowheader', { name: 'Sep 2026' }).closest('tr')).toHaveTextContent(/^Sep 2026–€9\.00 \/ 100 km$/)
   expect(screen.getByText(/scale of its own/)).toBeInTheDocument()
+})
+
+it('writes a fuel price per litre and a trend line at zero as a zero, not a dash', async () => {
+  const ui = userEvent.setup()
+  drawn(
+    { unit: 'PRICE_PER_VOLUME', series: [{ ...line('VALUE', [620, 0, 640]), kind: 'fuel', metric: 'AVERAGE_PRICE_PER_UNIT', unit: 'PRICE_PER_VOLUME' }, { ...line('LINEAR', [0, 0, 0], 0), kind: 'fuel', metric: 'AVERAGE_PRICE_PER_UNIT', unit: 'PRICE_PER_VOLUME' }] },
+    { kind: 'LINE', metric: 'AVERAGE_PRICE_PER_UNIT', trend: 'LINEAR' },
+  )
+
+  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
+
+  const table = screen.getByRole('table', { name: 'Costs' })
+  expect(within(table).getByRole('rowheader', { name: 'Aug 2026' }).closest('tr')).toHaveTextContent(/^Aug 2026–HUF\s0 \/ L$/) // no price that month, a trend of 0
+  expect(screen.getByText('Fuel · HUF: the trend line goes from HUF 0 / L to HUF 0 / L.')).toBeInTheDocument()
 })

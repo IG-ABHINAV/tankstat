@@ -1,6 +1,4 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Tankstat.Domain.Charts;
 using Tankstat.Domain.Vehicles;
@@ -25,11 +23,7 @@ internal sealed class VehicleDashboardLayoutConfiguration : IEntityTypeConfigura
     internal static void Lists<T>(EntityTypeBuilder<T> b) where T : DashboardLayout
     {
         // The tiles as JSON text (60 tiles with their places need more than a list of ids: no length limit, the domain caps the count).
-        b.Property(l => l.Tiles).HasConversion(
-            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-            v => JsonSerializer.Deserialize<List<DashboardTile>>(v, (JsonSerializerOptions?)null) ?? new List<DashboardTile>(),
-            new ValueComparer<IReadOnlyList<DashboardTile>>((a, b2) => a != null && b2 != null && a.SequenceEqual(b2), v => v.Aggregate(0, (hash, t) => HashCode.Combine(hash, t)), v => v.ToList()))
-            .IsRequired();
+        b.Property(l => l.Tiles).AsJsonList(maxLength: null);
         b.Property(l => l.Hidden).AsJsonList();
         b.Ignore(l => l.Values);
         // Stored as a UTC date-time so comparisons translate on every provider (same as the other timestamps).

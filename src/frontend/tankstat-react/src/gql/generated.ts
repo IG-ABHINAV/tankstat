@@ -172,6 +172,7 @@ export type ChartUnit =
   | 'COUNT'
   | 'CURRENCY'
   | 'DISTANCE'
+  | 'PRICE_PER_VOLUME'
   | 'VOLUME';
 
 export type ColorMode =

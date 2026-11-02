@@ -115,9 +115,8 @@ export interface ChartAxes {
  * scale of its own, and the highest value of each reaches the same height (#159). Any other unit shares one axis. A second measure gets
  * the axes its own units need on the right, unless the first measure's already read them (the same unit and currency share one scale).
  */
-export function chartAxes(data: Pick<ChartData, 'series'>): ChartAxes {
+export function chartAxes(data: Pick<ChartData, 'series'>, first: ChartMetric): ChartAxes {
   const keyOf = (s: Series) => (perCurrency(s.unit) ? `${s.unit}:${s.currency ?? ''}` : s.unit)
-  const first = data.series[0]?.metric
   const distinct = (list: Series[]) => [...new Map(list.map((s) => [keyOf(s), s])).values()]
   const left = distinct(data.series.filter((s) => s.metric === first))
   const leftKeys = new Set(left.map(keyOf))
@@ -132,7 +131,7 @@ export function chartAxes(data: Pick<ChartData, 'series'>): ChartAxes {
 }
 
 /** Units of money, kept per currency and never converted: every currency gets a scale of its own, and nothing spent shows as a dash. */
-export const perCurrency = (unit: ChartData['unit']) => unit === 'CURRENCY' || unit === 'COST_PER_DISTANCE'
+export const perCurrency = (unit: ChartData['unit']) => unit === 'CURRENCY' || unit === 'COST_PER_DISTANCE' || unit === 'PRICE_PER_VOLUME'
 
 /** Where a bar goes among a period's bars: its place, how many there are, and whether it ends its stack (its top corners are rounded). */
 export interface BarPlace {
@@ -150,9 +149,8 @@ export const stackOf = (s: Series) => `currency:${s.currency ?? ''}`
  * in a period (`index` into `periods`, the chart's rows), null where it has nothing; all of them worked out once, so a chart of many
  * periods and series costs one pass, not one per bar.
  */
-export function barPlaces(data: Pick<ChartData, 'series'>, periods: readonly string[], stacked: boolean): { at: (s: Series, index: number) => BarPlace | null } {
+export function barPlaces(data: Pick<ChartData, 'series'>, periods: readonly string[], stacked: boolean, first: ChartMetric): { at: (s: Series, index: number) => BarPlace | null } {
   // Only the first measure is stacked: a second measure's bars stand beside the stacks, never in one.
-  const first = data.series[0]?.metric
   const groupKey = (s: Series) => (stacked && s.metric === first ? stackOf(s) : seriesId(s))
   const keys = [...new Set(data.series.map(groupKey))]
   const value = data.series.map((s) => new Map(s.points.map((p) => [p.key, p.value ?? 0])))

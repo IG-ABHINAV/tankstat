@@ -1288,10 +1288,8 @@
       "consumptionTrend": "Consumption, last 10 fill-ups",
       "distanceTrend": "Distance this year",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
-      "none": "–",
-      "title": "Key figures"
+      "none": "–"
     },
-    "yourCharts": "Charts",
     "addChart": "Add chart",
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",

@@ -23,9 +23,7 @@ public sealed class DashboardService(IVehicleRepository vehicles, IDashboardLayo
     /// <summary>Null when the vehicle is not visible.</summary>
     public async Task<DashboardView?> GetAsync(Guid vehicleId, CancellationToken ct)
     {
-        var user = await access.RequirePrincipalAsync(ct);
-        var vehicle = await vehicles.FindAsync(vehicleId, ct);
-        var level = vehicle is null ? AccessLevel.None : await access.LogLevelAsync(vehicle, ct);
+        var (user, level) = await LevelAsync(vehicleId, ct);
         if (level < AccessLevel.View) return null;
         return new DashboardView(await layouts.FindSharedAsync(vehicleId, ct), await layouts.FindPersonalAsync(user.Id, vehicleId, ct), level >= AccessLevel.Edit);
     }
@@ -38,11 +36,11 @@ public sealed class DashboardService(IVehicleRepository vehicles, IDashboardLayo
     public async Task SaveAsync(Guid vehicleId, bool personal, DashboardLayoutValues values, CancellationToken ct)
     {
         var user = await RequireMayChangeAsync(vehicleId, personal, ct);
-        var checkedValues = values.Checked();
         var visible = await charts.ListVisibleAsync(vehicleId, user.Id, ct); // shared, plus the user's own
         var allowed = visible.Where(c => personal || c.IsShared).Select(c => c.Id).ToHashSet();
         bool Keep(string entry) => DashboardLayoutValues.ChartIdOf(entry) is not { } id || allowed.Contains(id);
-        var kept = checkedValues with { Tiles = checkedValues.Tiles.Where(t => Keep(t.Id)).ToList(), Hidden = checkedValues.Hidden.Where(Keep).ToList() };
+        // The shape is checked once, by Create: anything out of shape is refused there, before anything is saved.
+        var kept = values with { Tiles = (values.Tiles ?? []).Where(t => t is null || Keep(t.Id)).ToList(), Hidden = (values.Hidden ?? []).Where(e => e is null || Keep(e)).ToList() };
 
         var now = clock.GetUtcNow();
         if (personal) await layouts.SavePersonalAsync(UserDashboardLayout.Create(user.Id, vehicleId, kept, now), ct);
@@ -59,11 +57,16 @@ public sealed class DashboardService(IVehicleRepository vehicles, IDashboardLayo
         logger.LogDebug("User {UserId} reset the {Scope} dashboard of vehicle {VehicleId}", user.Id, personal ? "personal" : "shared", vehicleId);
     }
 
-    private async Task<Principal> RequireMayChangeAsync(Guid vehicleId, bool personal, CancellationToken ct)
+    private async Task<(Principal User, AccessLevel Level)> LevelAsync(Guid vehicleId, CancellationToken ct)
     {
         var user = await access.RequirePrincipalAsync(ct);
         var vehicle = await vehicles.FindAsync(vehicleId, ct);
-        var level = vehicle is null ? AccessLevel.None : await access.LogLevelAsync(vehicle, ct);
+        return (user, vehicle is null ? AccessLevel.None : await access.LogLevelAsync(vehicle, ct));
+    }
+
+    private async Task<Principal> RequireMayChangeAsync(Guid vehicleId, bool personal, CancellationToken ct)
+    {
+        var (user, level) = await LevelAsync(vehicleId, ct);
         if (level < AccessLevel.View) throw new NotFoundException("vehicle.notFound", $"Vehicle {vehicleId} does not exist.", new { Id = vehicleId });
         if (!personal && level < AccessLevel.Edit)
             throw new ForbiddenException("dashboard.needEditToChange", "You need edit access to the vehicle's logs to change its dashboard.");

@@ -49,7 +49,7 @@ public sealed partial record DashboardLayoutValues(IReadOnlyList<DashboardTile> 
         return list;
     }
 
-    [GeneratedRegex("^[a-z][a-zA-Z0-9]*$")]
+    [GeneratedRegex(@"^[a-z][a-zA-Z0-9]*\z")] // \z, not $: $ also matches before a last newline
     private static partial Regex IdPattern();
 }
 

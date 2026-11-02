@@ -23,6 +23,8 @@ public enum ChartUnit
     Count,
     /// <summary>Money per 100 distance units, in the series' currency.</summary>
     CostPerDistance,
+    /// <summary>Money per volume unit (a fuel price), in the series' currency.</summary>
+    PricePerVolume,
 }
 
 /// <summary>What a series shows: the values themselves, or a line drawn from them.</summary>
