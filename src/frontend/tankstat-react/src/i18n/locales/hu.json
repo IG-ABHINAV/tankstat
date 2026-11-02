@@ -1146,6 +1146,7 @@
       "title": "Megnevezés",
       "category": "Kategória (nem kötelező)",
       "amount": "Összeg",
+      "discount": "Kedvezmény",
       "currency": "Pénznem",
       "odometer": "Kilométeróra ({{unit}}, nem kötelező)",
       "note": "Megjegyzés (nem kötelező)"
@@ -1529,6 +1530,7 @@
     "expenseCategory": "A költség kategóriája (nem kötelező)",
     "doneDate": "Elvégezve ekkor",
     "amount": "Összeg",
+    "discount": "Kedvezmény",
     "currency": "Pénznem",
     "doneSave": "Késznek jelölés",
     "deleteTitle": "Törlöd ezt az ismétlődő költséget?",

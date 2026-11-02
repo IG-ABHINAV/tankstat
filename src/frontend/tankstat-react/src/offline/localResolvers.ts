@@ -103,7 +103,7 @@ function asAnswer(row: LogRow, vehicle: VehicleRow | undefined): Record<string, 
 /** The values an add or an update carries onto the row; the prices per unit follow them, a person's save leaves nothing to review. */
 const VALUES: Record<LogKind, readonly string[]> = {
   refuelings: ['date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
-  expenses: ['date', 'title', 'category', 'amount', 'currency', 'odometer', 'note'],
+  expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
 }
 
 /** A price per unit as the server works it out (3 decimals), or null without a volume or a cost. */
@@ -130,7 +130,7 @@ function added(kind: LogKind, change: Change): LogRow {
   const row: LogRow =
     kind === 'refuelings'
       ? { __typename: 'Refueling', ...common, volume: null, totalCost: null, discount: null, consumption: null, isFullTank: true, missedPreviousFillUp: false }
-      : { __typename: 'Expense', ...common, title: '', category: null, amount: null, schedules: [] }
+      : { __typename: 'Expense', ...common, title: '', category: null, amount: null, discount: null, schedules: [] }
   return withValues(kind, row, change.input)
 }
 

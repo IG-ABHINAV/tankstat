@@ -7,6 +7,7 @@ query Expenses(
   $take: Int!
   $withCategory: Boolean!
   $withAmount: Boolean!
+  $withDiscount: Boolean!
   $withOdometer: Boolean!
   $withNote: Boolean!
   $withCreatedBy: Boolean!
@@ -23,6 +24,8 @@ query Expenses(
     category @include(if: $withCategory)
     amount @include(if: $withAmount)
     currency @include(if: $withAmount)
+    discount @include(if: $withDiscount)
+    currency @include(if: $withDiscount) # a discount is shown in its currency, also with the amount hidden
     odometer @include(if: $withOdometer)
     note @include(if: $withNote)
     createdBy @include(if: $withCreatedBy) {
@@ -81,6 +84,7 @@ query ExpenseDetails($id: UUID!) {
     title
     category
     amount
+    discount
     currency
     odometer
     note

@@ -815,6 +815,8 @@ export interface FakeExpense {
   category: string | null
   /** Null while the expense waits for its photos (`reviewState`). */
   amount: number | null
+  /** What was taken off the amount, which is what was paid. */
+  discount: number | null
   currency: string | null
   odometer: number | null
   note: string | null
@@ -823,7 +825,7 @@ export interface FakeExpense {
   createdBy: Person
   deletedAt?: string
   reviewState: 'NONE' | 'AWAITING_PHOTOS' | 'NEEDS_REVIEW' | 'INCOMPLETE'
-  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL')[]
+  filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL' | 'DISCOUNT')[]
   /** The recurring expenses it covered when they were marked done. */
   schedules?: { id: string; title: string }[]
   version: number
@@ -836,6 +838,7 @@ export const fakeExpense = (over: Partial<FakeExpense> = {}): FakeExpense => ({
   title: 'Oil change',
   category: 'Service',
   amount: 35000,
+  discount: null,
   currency: 'HUF',
   odometer: 12000,
   note: null,

@@ -28,6 +28,21 @@ public class ExpenseTests
     }
 
     [Fact]
+    public void Create_KeepsTheCostsDiscount_AndAnUpdateWithoutOneClearsIt()
+    {
+        var expense = Expense.Create(Owner, Owner, Car, Day, "Tyres", null, Cost.Create(Owner, Car, Day, 18800, "HUF", 1200), null);
+        Assert.Equal((18800m, 1200m), (expense.Amount, expense.Discount)); // Create re-normalises the cost with its discount
+
+        expense.Update(Day, "Tyres", null, 18800, "HUF", null, null, discount: 1500);
+        Assert.Equal(1500m, expense.Discount);
+
+        expense.Update(Day, "Tyres", null, 18800, "HUF", null, null);
+        Assert.Null(expense.Discount);
+
+        Assert.Equal("cost.discountWithoutAmount", Assert.Throws<DomainException>(() => expense.Update(Day, "Tyres", null, null, "HUF", null, null, readingPhotos: true, discount: 5)).Key);
+    }
+
+    [Fact]
     public void TheOdometerIsOptional()
     {
         var expense = Make(odometer: null);

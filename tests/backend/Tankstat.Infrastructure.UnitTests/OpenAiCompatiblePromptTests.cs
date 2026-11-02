@@ -22,7 +22,7 @@ public class OpenAiCompatiblePromptTests
         Assert.DoesNotContain("expense-receipt", refuelling);
         Assert.Contains("Hungarian", refuelling);
         Assert.Contains("an expense entry", expense);
-        Assert.Contains("expense-receipt: total, currency, date, title.", expense);
+        Assert.Contains("expense-receipt: total, discount, currency, date, title.", expense);
         Assert.Contains("German", expense);
         Assert.DoesNotContain("probably", unknownLanguage); // nothing known about how that language writes
         Assert.Contains("JSON", unknownLanguage); // what OpenAI's json_object mode wants to see in the prompt
@@ -62,7 +62,7 @@ public class OpenAiCompatiblePromptTests
             Assert.Equal(o["properties"]!.AsObject().Select(p => p.Key).Order(), o["required"]!.AsArray().Select(r => r!.GetValue<string>()).Order());
         }
         Assert.Equal(["odometer", "expense-receipt", "unknown"], schema["properties"]!["kind"]!["enum"]!.AsArray().Select(k => k!.GetValue<string>()));
-        Assert.Equal(["odometer", "total", "currency", "date", "title"], schema["properties"]!["fields"]!["items"]!["properties"]!["name"]!["enum"]!.AsArray().Select(k => k!.GetValue<string>()));
+        Assert.Equal(["odometer", "total", "discount", "currency", "date", "title"], schema["properties"]!["fields"]!["items"]!["properties"]!["name"]!["enum"]!.AsArray().Select(k => k!.GetValue<string>()));
         Assert.DoesNotContain("minimum", schema.ToJsonString()); // bounds and patterns are not portable across servers
     }
 

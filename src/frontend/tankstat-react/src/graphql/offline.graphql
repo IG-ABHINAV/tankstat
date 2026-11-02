@@ -40,6 +40,7 @@ fragment OfflineExpenseFields on Expense {
   title
   category
   amount
+  discount
   currency
   odometer
   note

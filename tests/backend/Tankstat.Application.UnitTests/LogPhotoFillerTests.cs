@@ -323,6 +323,20 @@ public class LogPhotoFillerTests
     }
 
     [Fact]
+    public async Task AnExpenseReceiptsDiscount_IsStoredWithTheAmountThePhotoGives()
+    {
+        var s = await Setup();
+        var photo = await Queued(s, ReadingPurpose.Expense);
+        var expense = await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(Day, "Tyres", null, null, "EUR", null, null), default, [photo]);
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Total, "245.00"), Read(ReadingFieldName.Discount, "-30"), Read(ReadingFieldName.Currency, "EUR"));
+
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Expenses.Items.Single(e => e.Id == expense.Id);
+        Assert.Equal((245m, 30m, LogValues.Total | LogValues.Discount), (filled.Amount, filled.Discount, filled.FilledFromPhoto));
+    }
+
+    [Fact]
     public async Task AnExpenseWithItsAmount_IsDoneWithoutNotice_WhenThePhotoShowsNoOdometer()
     {
         var s = await Setup();

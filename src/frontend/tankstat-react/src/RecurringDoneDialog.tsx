@@ -48,6 +48,8 @@ export interface DoneValues {
   odometer: number | null
   /** Null: no expense is logged (unless a photo still being read may give it), only the schedules move on. */
   amount: number | null
+  /** What was taken off the amount (what was paid), kept with the logged expense; null when none. */
+  discount: number | null
   currency: string | null
   title: string
   /** Empty for none. */
@@ -57,8 +59,8 @@ export interface DoneValues {
 }
 
 /** The fields photos can fill in (a dashboard: the odometer; an invoice: the cost and the day), and which read value goes into each. */
-type FillableField = 'date' | 'odometer' | 'amount' | 'currency'
-const READ_INTO: Record<FillableField, ReadingFieldName> = { date: 'DATE', odometer: 'ODOMETER', amount: 'TOTAL', currency: 'CURRENCY' }
+type FillableField = 'date' | 'odometer' | 'amount' | 'discount' | 'currency'
+const READ_INTO: Record<FillableField, ReadingFieldName> = { date: 'DATE', odometer: 'ODOMETER', amount: 'TOTAL', discount: 'DISCOUNT', currency: 'CURRENCY' }
 
 /**
  * "Mark as done" for a service visit: the vehicle's schedules are listed, the ones done at this visit ticked (opened from one schedule, that
@@ -219,9 +221,10 @@ function DoneFields({
     date: t('recurring.doneDate'),
     odometer: odometerLabel,
     amount: t('recurring.amountOptional'),
+    discount: t('recurring.discount'),
     currency: t('recurring.currency'),
   }
-  const fill = useReadFill({ date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', currency: d.currency ?? '' }, READ_INTO, read, labels, readingDone, {
+  const fill = useReadFill({ date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', discount: '', currency: d.currency ?? '' }, READ_INTO, read, labels, readingDone, {
     ...explanation,
     last: last ? formatDistance(last.value, vehicle.units.distance) : undefined,
   })
@@ -266,6 +269,7 @@ function DoneFields({
           date: text('date'),
           odometer: text('odometer') === '' ? null : Number(text('odometer')),
           amount: hasAmount ? (parseDecimal(text('amount')) ?? null) : null,
+          discount: text('discount') === '' ? null : (parseDecimal(text('discount')) ?? null), // without an amount the server refuses it, said at the field
           currency: hasAmount ? text('currency').toUpperCase() : null,
           title: titleValue.trim(),
           category: categoryValue.trim(), // empty: no category (null would mean "the schedules' one" to the server)
@@ -328,6 +332,16 @@ function DoneFields({
               extra={note('amount')}
             >
               <FieldInput inputMode="decimal" autoComplete="off" value={fill.values.amount} onChange={(e) => fill.change('amount', e.target.value)} />
+            </Field>
+          </Box>
+          <Box sx={{ flex: '1 1 6rem', minWidth: 0 }}>
+            <Field
+              name="discount"
+              label={labels.discount}
+              invalid={{ message: t('forms.numberInvalid'), test: (v) => v !== '' && parseDecimal(v) === undefined }}
+              extra={note('discount')}
+            >
+              <FieldInput inputMode="decimal" autoComplete="off" value={fill.values.discount} onChange={(e) => fill.change('discount', e.target.value)} />
             </Field>
           </Box>
           <Box sx={{ flex: '1 1 6rem', minWidth: 0 }}>

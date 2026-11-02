@@ -21,6 +21,7 @@ fragment ExpenseChangeValues on Expense {
   title
   category
   amount
+  discount
   currency
   odometer
   note

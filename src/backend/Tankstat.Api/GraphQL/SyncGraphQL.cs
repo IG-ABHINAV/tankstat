@@ -354,12 +354,12 @@ public sealed class SyncMutations
         {
             var id = Required(ae.Id, c.Id);
             return Make(SyncChangeKind.AddExpense, id, ae.VehicleId, async ct => Of(await expenses.AddAsync(ae.VehicleId,
-                new ExpenseInput(ae.Date, ae.Title, ae.Category, ae.Amount, ae.Currency ?? defaults.Currency, ae.Odometer, ae.Note), ct, ae.PhotoIds, id),
+                new ExpenseInput(ae.Date, ae.Title, ae.Category, ae.Amount, ae.Currency ?? defaults.Currency, ae.Odometer, ae.Note, ae.Discount), ct, ae.PhotoIds, id),
                 e => e.Id, e => e.Version, e => e.VehicleId));
         }
         if (c.UpdateExpense is { } ue)
             return Make(SyncChangeKind.UpdateExpense, ue.Id, null, async ct => Of(await expenses.UpdateAsync(ue.Id,
-                new ExpenseInput(ue.Date, ue.Title, ue.Category, ue.Amount, ue.Currency, ue.Odometer, ue.Note), ct, version), e => e.Id, e => e.Version, e => e.VehicleId), find.Expense(ue.Id));
+                new ExpenseInput(ue.Date, ue.Title, ue.Category, ue.Amount, ue.Currency, ue.Odometer, ue.Note, ue.Discount), ct, version), e => e.Id, e => e.Version, e => e.VehicleId), find.Expense(ue.Id));
         if (c.DeleteExpense is { } de)
             return Make(SyncChangeKind.DeleteExpense, de, null, ct => TrashOnce(
                 async ct => Of(await expenses.DeleteAsync(de, ct, version), e => e.Id, e => e.Version, e => e.VehicleId),
@@ -388,7 +388,7 @@ public sealed class SyncMutations
             return Make(SyncChangeKind.MarkRecurringExpensesDone, md.ExpenseId, null, async ct =>
             {
                 var done = await recurring.MarkDoneAsync(md.Ids,
-                    new MarkDoneInput(md.Date, md.Odometer, md.Amount, md.Currency ?? defaults.Currency, md.Title, md.Category, md.PhotoIds, md.ExpenseId), ct);
+                    new MarkDoneInput(md.Date, md.Odometer, md.Amount, md.Currency ?? defaults.Currency, md.Title, md.Category, md.PhotoIds, md.ExpenseId, md.Discount), ct);
                 return new AppliedChange(done.Expense?.Id, done.Expense?.Version, done.Schedules.FirstOrDefault()?.Item.VehicleId);
             }, md.Ids.Count > 0 ? find.Schedule(md.Ids[0]) : null);
 

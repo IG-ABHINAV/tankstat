@@ -8,6 +8,7 @@ using Tankstat.Application.Sync;
 using Tankstat.Application.Vehicles;
 using Tankstat.Domain;
 using Tankstat.Domain.Access;
+using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Recurring;
 using Tankstat.Domain.Vehicles;
 
@@ -32,9 +33,10 @@ public sealed record RecurringExpenseInput(
 /// The id the client chose for the logged expense. Marking done with it again (an answer that never arrived, a replay after being offline)
 /// finds the visit already recorded and changes nothing.
 /// </param>
+/// <param name="Discount">What was taken off <c>Amount</c> (what was paid), kept with the logged expense; needs the amount.</param>
 public sealed record MarkDoneInput(
     DateOnly Date, long? Odometer, decimal? Amount, string? Currency, string? Title = null, string? Category = null, IReadOnlyCollection<Guid>? PhotoIds = null,
-    Guid? ExpenseId = null);
+    Guid? ExpenseId = null, decimal? Discount = null);
 
 /// <summary>The schedules as they stand after being marked done (in the order asked for), and the expense logged for them, if any.</summary>
 public sealed record MarkedDone(IReadOnlyList<RecurringItem> Schedules, Expense? Expense);
@@ -163,12 +165,13 @@ public sealed class RecurringExpenseService(
         }
 
         CheckDate(input.Date);
+        Cost.RequireAmountForDiscount(input.Amount, input.Discount); // before anything moves: a discount without the amount it was taken off
         foreach (var item in found) item.CheckDone(input.Date, input.Odometer); // every schedule's own rules first: nothing is logged for a day one would refuse
 
         var logged = input.Amount is not null || input.PhotoIds is { Count: > 0 }
             ? await expenses.AddAsync(vehicleId, new ExpenseInput(
                 input.Date, input.Title ?? RecurringDoneDefaults.Title(found), input.Category ?? RecurringDoneDefaults.Category(found),
-                input.Amount, input.Currency, input.Odometer, RecurringDoneDefaults.Note(found)), ct, photoDraftIds: input.PhotoIds, id: input.ExpenseId)
+                input.Amount, input.Currency, input.Odometer, RecurringDoneDefaults.Note(found), input.Discount), ct, photoDraftIds: input.PhotoIds, id: input.ExpenseId)
             : null;
         // A first try that failed moved its expense to the trash (below); this try takes it back. Only that case gets here: once a visit
         // completed, its expense is linked and the request returned above, so an expense a person trashed after the visit is never restored.

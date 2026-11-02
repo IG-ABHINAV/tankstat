@@ -1146,6 +1146,7 @@
       "title": "Title",
       "category": "Category (optional)",
       "amount": "Amount",
+      "discount": "Discount",
       "currency": "Currency",
       "odometer": "Odometer ({{unit}}, optional)",
       "note": "Note (optional)"
@@ -1529,6 +1530,7 @@
     "expenseCategory": "Expense category (optional)",
     "doneDate": "Done on",
     "amount": "Amount",
+    "discount": "Discount",
     "currency": "Currency",
     "doneSave": "Mark as done",
     "deleteTitle": "Delete this recurring expense?",

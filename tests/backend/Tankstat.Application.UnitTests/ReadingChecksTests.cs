@@ -167,11 +167,12 @@ public class ReadingChecksTests
     }
 
     [Fact]
-    public void AnExpenseReceipt_ShowsNoDiscountYet()
+    public void AnExpenseReceiptsDiscount_IsKept_WithNothingToCheckItAgainst()
     {
-        var checks = ReadingChecks.Check(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.Discount, "430"), Read(ReadingFieldName.Total, "34744")], Hints());
+        var checks = ReadingChecks.Check(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.Discount, "-1200"), Read(ReadingFieldName.Total, "18800")], Hints());
 
-        Assert.Equal("Total=34744@0.9", Shown(checks.Kept));
+        Assert.Equal("Discount=1200@0.9 Total=18800@0.9", Shown(checks.Kept)); // no litres or price to multiply: kept as read
+        Assert.Empty(checks.Issues);
     }
 
     [Theory]

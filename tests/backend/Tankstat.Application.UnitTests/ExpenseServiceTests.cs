@@ -24,8 +24,24 @@ public class ExpenseServiceTests
         return new Scene(w, alice, bob, await w.VehicleService.AddAsync("Car", null, FuelType.Petrol, MeasurementUnits.Metric, default));
     }
 
-    private static ExpenseInput Input(DateOnly? date = null, string title = "Oil change", string? category = "Service", decimal amount = 100, long? odometer = 1000) =>
-        new(date ?? Day, title, category, amount, "EUR", odometer, null);
+    private static ExpenseInput Input(DateOnly? date = null, string title = "Oil change", string? category = "Service", decimal amount = 100, long? odometer = 1000, decimal? discount = null) =>
+        new(date ?? Day, title, category, amount, "EUR", odometer, null, discount);
+
+    [Fact]
+    public async Task ADiscount_IsStoredWithTheAmount_AnUpdateWithoutOneClearsIt_AndNoAmountRefusesIt()
+    {
+        var s = await Setup();
+
+        var added = await s.W.ExpenseService.AddAsync(s.Car.Id, Input(amount: 18800, discount: 1200), default);
+        Assert.Equal((18800m, 1200m), (added.Amount, added.Discount));
+
+        var updated = await s.W.ExpenseService.UpdateAsync(added.Id, Input(amount: 18800), default);
+        Assert.Null(updated.Discount);
+
+        var refused = await Assert.ThrowsAsync<DomainException>(() =>
+            s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(Day.AddDays(1), "Tyres", null, null, "EUR", null, null, 5), default));
+        Assert.Equal("cost.discountWithoutAmount", refused.Key);
+    }
 
     [Fact]
     public async Task Add_RecordsWhoAddedIt_AndListsNewestFirst()

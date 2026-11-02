@@ -307,6 +307,34 @@ it('asks again after an upload when photo reading was off as the dialog opened, 
   expect(recognition.state.asked.at(-1)).toEqual(['draft1'])
 }, 10_000)
 
+it('fills an expense receipt\'s discount next to the amount paid, and saves both', async () => {
+  stubViewport('desktop')
+  const photos = fakePhotoStore()
+  const backend = fakeExpenseBackend(fakeVehicle(), [fakeExpense({ id: 'e1', title: 'Oil change' })], photos)
+  const receipt: FakeReadValue[] = [
+    { name: 'TOTAL', value: '18800' },
+    { name: 'DISCOUNT', value: '1200' },
+    { name: 'CURRENCY', value: 'HUF' },
+    { name: 'TITLE', value: 'Gumiszerviz' },
+  ]
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeRecognition({ results: [receipt] }).handlers)
+  renderWithApollo(<App />, '/vehicles/v1?tab=expenses')
+  const ui = userEvent.setup()
+  await screen.findByText('Oil change')
+  await ui.click(screen.getByRole('button', { name: 'Add expense' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
+  await waitFor(() => expect(within(dialog).getByLabelText('Currency')).toHaveValue('HUF'))
+
+  await ui.upload(camera(dialog), photo())
+
+  await waitFor(() => expect(within(dialog).getByLabelText('Discount')).toHaveValue('1200'), READ_WAIT)
+  expect(within(dialog).getByLabelText('Discount')).toHaveAccessibleDescription(/Read from the photo; check it\./)
+  expect(within(dialog).getByLabelText('Amount')).toHaveValue('18800')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
+
+  await waitFor(() => expect(backend.state.calls.AddExpense).toEqual([{ input: expect.objectContaining({ title: 'Gumiszerviz', amount: 18800, discount: 1200 }) }]))
+})
+
 it('fills a new expense from its receipt: the shop becomes the title', async () => {
   stubViewport('desktop')
   const photos = fakePhotoStore()

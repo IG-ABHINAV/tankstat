@@ -101,12 +101,14 @@ test('adds, edits and trashes an expense', async ({ page }) => {
   const add = page.getByRole('dialog', { name: 'Add expense' })
   await add.getByLabel('Title').fill('Parking')
   await add.getByLabel('Amount').fill('1500')
+  await add.getByLabel('Discount').fill('300') // a coupon: the amount is what was paid
   await add.getByRole('button', { name: 'Add expense' }).click()
   await expect(add).toBeHidden()
   await expect(row(page, 'Parking')).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit the expense Parking' }).click()
   const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await expect(edit.getByLabel('Discount')).toHaveValue('300') // saved with the expense
   await edit.getByLabel('Title').fill('Parking garage')
   await edit.getByRole('button', { name: 'Save changes' }).click()
   await expect(edit).toBeHidden()

@@ -29,7 +29,7 @@ public static class ReadingChecks
     {
         DocumentKind.Odometer => [ReadingFieldName.Odometer],
         DocumentKind.FuelReceipt => [ReadingFieldName.Total, ReadingFieldName.Volume, ReadingFieldName.UnitPrice, ReadingFieldName.Discount, ReadingFieldName.Currency, ReadingFieldName.Date],
-        DocumentKind.ExpenseReceipt => [ReadingFieldName.Total, ReadingFieldName.Currency, ReadingFieldName.Date, ReadingFieldName.Title],
+        DocumentKind.ExpenseReceipt => [ReadingFieldName.Total, ReadingFieldName.Discount, ReadingFieldName.Currency, ReadingFieldName.Date, ReadingFieldName.Title],
         _ => [],
     };
 
