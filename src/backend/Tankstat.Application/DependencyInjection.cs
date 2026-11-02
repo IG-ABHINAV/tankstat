@@ -18,6 +18,7 @@ using Tankstat.Application.Refuelings;
 using Tankstat.Application.Settings;
 using Tankstat.Application.Setup;
 using Tankstat.Application.Sync;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Sharing;
 using Tankstat.Application.SystemSettings;
 using Tankstat.Application.Stats;
@@ -61,6 +62,8 @@ public static class DependencyInjection
         services.AddSingleton<HealthReporter>();
         services.AddSingleton<NoticeService>();
         services.AddSingleton<InstanceGeneration>();
+        // The app's own metrics (#219): through the host's meter factory when there is one (a test's services have none).
+        services.TryAddSingleton(sp => new AppMetrics(sp.GetService<System.Diagnostics.Metrics.IMeterFactory>()));
         services.TryAddSingleton<OneTimeCode>(); // the host's own when it keeps one over a restart in the process
         services.AddSingleton<SetupStatus>();
 

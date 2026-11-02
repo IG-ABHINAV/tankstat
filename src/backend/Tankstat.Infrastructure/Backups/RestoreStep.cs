@@ -12,6 +12,7 @@ using Tankstat.Application.Auth;
 using Tankstat.Application.Backups;
 using Tankstat.Application.Images;
 using Tankstat.Application.Setup;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.SystemSettings;
 using Tankstat.Domain;
 using Tankstat.Domain.Backups;
@@ -100,7 +101,19 @@ internal sealed class RestoreStep(
     public async Task<RestoreOutcome> ApplyWaitingAsync(CancellationToken ct)
     {
         var marker = RestoreMarker.PathIn(options.CurrentValue.Root);
-        Outcome = File.Exists(marker) ? await RestoreAsync(marker, ct) : RestoreOutcome.None;
+        if (!File.Exists(marker)) return Outcome = RestoreOutcome.None;
+        // A trace of its own (#219), only when a restore waits; why one was refused is the log's (its reason quotes the backup's name).
+        using var activity = AppTraces.StartJob("tankstat.restore.apply");
+        try
+        {
+            Outcome = await RestoreAsync(marker, ct);
+        }
+        catch (Exception e) when (activity.FailedBy(e))
+        {
+            throw; // never reached: the filter only marks the span
+        }
+        activity?.SetTag("tankstat.restore.outcome", Outcome.ToString().ToLowerInvariant());
+        if (Outcome is RestoreOutcome.Refused or RestoreOutcome.Failed) activity.Failed($"restore.{Outcome.ToString().ToLowerInvariant()}");
         return Outcome;
     }
 

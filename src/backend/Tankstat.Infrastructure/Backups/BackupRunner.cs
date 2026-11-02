@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tankstat.Application.Backups;
+using Tankstat.Application.Telemetry;
 using Tankstat.Domain;
 
 namespace Tankstat.Infrastructure.Backups;
@@ -18,7 +19,7 @@ namespace Tankstat.Infrastructure.Backups;
 /// <param name="lifetime">The app's, whose stop cuts a run short; null where there is no host (the services built on their own, as tests do).</param>
 internal sealed class BackupRunner(
     IBackupWriter writer, IBackupStore store, IOptionsMonitor<BackupOptions> options, IServiceScopeFactory scopes, TimeProvider clock, ILogger<BackupRunner> logger,
-    IHostApplicationLifetime? lifetime = null) : IBackupRunner, IHostedService
+    AppMetrics metrics, IHostApplicationLifetime? lifetime = null) : IBackupRunner, IHostedService
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     // One value, replaced whole, so a reader never pairs "running" with another run's details.
@@ -47,11 +48,18 @@ internal sealed class BackupRunner(
 
     private async Task RunAsync(DateTimeOffset started, Guid? actorId, CancellationToken ct)
     {
+        // A trace of its own (#219), linked to the request of Back up now, which answers long before the run ends.
+        var trigger = actorId is null ? "schedule" : "manual";
+        using var activity = AppTraces.StartJob("tankstat.backup.run");
+        activity?.SetTag("tankstat.backup.trigger", trigger);
+        var timestamp = clock.GetTimestamp();
         BackupRun? run = null;
         try
         {
             var result = await writer.WriteAsync(new BackupRequest(), ct);
             run = new BackupRun(started, clock.GetUtcNow(), Path.GetFileName(result.Path), new FileInfo(result.Path).Length, null);
+            metrics.BackupSize.Record(run.Bytes!.Value,
+                new("tankstat.backup.encrypted", result.Manifest.Encryption is not null), new("tankstat.backup.photos", result.Manifest.Contents.Photos.ToString()));
             Prune(run.File!);
         }
         catch (Exception) when (ct.IsCancellationRequested)
@@ -72,6 +80,10 @@ internal sealed class BackupRunner(
         {
             // Before the gate opens: the next run's status, set as it starts, is never overwritten by this one's.
             _status = new BackupRunStatus(false, run ?? new BackupRun(started, clock.GetUtcNow(), null, null, "backup.failed"));
+            var outcome = _status.Last!.Error ?? "ok";
+            activity?.SetTag("tankstat.backup.outcome", outcome);
+            if (outcome is not ("ok" or "backup.stopped")) activity.Failed(outcome); // stopped with the app: no failure
+            metrics.BackupDuration.Record(clock.GetElapsedTime(timestamp).TotalSeconds, new("tankstat.backup.outcome", outcome), new("tankstat.backup.trigger", trigger));
             _gate.Release();
         }
     }

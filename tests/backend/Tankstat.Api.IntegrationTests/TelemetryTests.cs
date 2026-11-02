@@ -8,8 +8,10 @@ using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Tankstat.Api.Telemetry;
+using Tankstat.Application.Backups;
 using Tankstat.Application.Setup;
 using Tankstat.Application.Telemetry;
+using Tankstat.Infrastructure.Backups;
 using Tankstat.TestSupport;
 
 namespace Tankstat.Api.IntegrationTests;
@@ -48,7 +50,7 @@ public class TelemetryTests
 
     private sealed record Exported(List<Activity> Spans, List<LogRecord> Logs, List<Metric> Metrics);
 
-    private static (TestApp App, Exported Exported) Start(Dictionary<string, string?> settings)
+    private static (TestApp App, Exported Exported) Start(Dictionary<string, string?> settings, bool migrated = true)
     {
         var exported = new Exported([], [], []);
         var app = new TestApp(new Dictionary<string, string?>(settings) { ["Auth:Mode"] = settings.GetValueOrDefault("Auth:Mode") ?? "None" }, services: s =>
@@ -57,7 +59,7 @@ public class TelemetryTests
             s.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(exported.Spans));
             s.ConfigureOpenTelemetryLoggerProvider(l => l.AddInMemoryExporter(exported.Logs));
             s.ConfigureOpenTelemetryMeterProvider(m => m.AddInMemoryExporter(exported.Metrics));
-        });
+        }, migrated: migrated);
         return (app, exported);
     }
 
@@ -133,7 +135,12 @@ public class TelemetryTests
         Assert.Equal(VehicleName, (await Post(client, $"query Aliased($id: UUID!) {{ {Alias}: vehicle(id: $id) {{ name }} }}", new { id = vehicleId }, new { zzExtKey = ExtensionValue }))
             .GetProperty("data").GetProperty(Alias).GetProperty("name").GetString());
         await client.GetAsync($"/?resetToken={TokenInQuery}");
-        return 8; // the requests sent
+        // A batch a device kept offline (#219: a span of the request's, one per change): what it holds stays out of them.
+        var (changeId, logId) = (Guid.NewGuid(), Guid.NewGuid());
+        Assert.Equal(1, (await Post(client, "mutation Sync($i: SyncChangesInput!) { syncChanges(input: $i) { applied } }",
+            new { i = new { changes = new[] { new { id = changeId, logRefueling = new { vehicleId, id = logId, date = "2026-11-01", volume = 30, totalCost = 15000, currency = "HUF", odometer = Odometer + 1000, isFullTank = true, note = Note } } } } }))
+            .GetProperty("data").GetProperty("syncChanges").GetProperty("applied").GetInt32());
+        return 9; // the requests sent
     }
 
     [Fact]
@@ -232,6 +239,82 @@ public class TelemetryTests
         Assert.Contains(exported.Metrics, m => m.MeterName == "Microsoft.AspNetCore.Hosting");
         Assert.Contains(exported.Metrics, m => m.MeterName == "Microsoft.EntityFrameworkCore");
         Assert.Contains(app.Log.From<TelemetryReporter>(), e => e.Level == LogLevel.Information && (string?)e.Values["Protocol"] == "grpc" && (string?)e.Values["ServiceName"] == "tankstat");
+    }
+
+    private static List<Activity> Own(Exported exported, string name) =>
+        [.. exported.Spans.ToList().Where(s => s.Source.Name == AppTraces.SourceName && s.OperationName == name)];
+
+    [Fact]
+    public async Task ASyncBatch_IsPartOfItsRequestsTrace_WithASpanPerChange()
+    {
+        var (app, exported) = Start(On());
+        using var _ = app;
+
+        var requests = await Flow(app.NewClient());
+        await Settled(app, exported, requests);
+
+        var change = Assert.Single(Own(exported, "tankstat.sync.change"));
+        var batch = Assert.Single(Own(exported, "tankstat.sync.batch"));
+        Assert.Equal(batch.SpanId, change.ParentSpanId);
+        Assert.Contains(exported.Spans, s => s.SpanId == batch.ParentSpanId && s.Source.Name.StartsWith("HotChocolate", StringComparison.Ordinal)); // inside the GraphQL request
+        Assert.Equal(("applied", "LogRefueling"), ((string?)change.GetTagItem("tankstat.sync.change.result"), (string?)change.GetTagItem("tankstat.sync.change.kind")));
+    }
+
+    [Fact]
+    public async Task ABackUpNowRun_IsATraceOfItsOwn_LinkedToTheRequestThatAskedForIt_AndMeasured()
+    {
+        var (app, exported) = Start(On(("Auth:Mode", "Standalone")));
+        using var _ = app;
+        var admin = app.NewClient();
+        await admin.LoginAs(TestApp.AdminEmail, TestApp.AdminPassword);
+
+        Assert.Null(ErrorKey(await Post(admin, "mutation BackUpNow { runBackup }")));
+        await app.Factory.Services.GetRequiredService<BackupRunner>().WhenIdleAsync();
+        await Settled(app, exported, 2);
+        app.Factory.Services.GetRequiredService<MeterProvider>().ForceFlush();
+
+        var run = Assert.Single(Own(exported, "tankstat.backup.run"));
+        Assert.Equal(default, run.ParentSpanId); // it outlives the request: a trace of its own...
+        var asked = exported.Spans.First(s => (s.GetTagItem("graphql.operation.name") as string) == "BackUpNow");
+        Assert.Equal(asked.TraceId, Assert.Single(run.Links).Context.TraceId); // ...linked to the request that asked for it
+        Assert.Equal(("manual", "ok", ActivityStatusCode.Unset), ((string?)run.GetTagItem("tankstat.backup.trigger"), (string?)run.GetTagItem("tankstat.backup.outcome"), run.Status));
+        var write = Assert.Single(Own(exported, "tankstat.backup.write"));
+        Assert.Equal(run.SpanId, write.ParentSpanId);
+        Assert.Equal((false, false), ((bool?)write.GetTagItem("tankstat.backup.encrypted"), (bool?)write.GetTagItem("tankstat.backup.safety_net")));
+        Assert.True((long)write.GetTagItem("tankstat.backup.bytes")! > 0);
+        Assert.Contains(exported.Metrics, m => m.MeterName == AppMetrics.MeterName && m.Name == "tankstat.backup.duration");
+        Assert.Contains(exported.Metrics, m => m.MeterName == AppMetrics.MeterName && m.Name == "tankstat.backup.size");
+        NoCanary(exported);
+    }
+
+    [Fact]
+    public void ARestoreThatWaitsAtStart_IsATraceOfItsOwn_WithItsOutcome()
+    {
+        var (app, exported) = Start(On());
+        using var _ = app;
+        Directory.CreateDirectory(app.BackupsPath);
+        new RestoreMarker("tankstat-backup-20260101T000000Z.zip", Guid.Empty, DateTimeOffset.UtcNow, null).Write(app.BackupsPath); // a backup that is not there
+        app.NewClient(); // the start: refused, and it goes on
+        app.Factory.Services.GetRequiredService<TracerProvider>().ForceFlush();
+
+        var restore = Assert.Single(Own(exported, "tankstat.restore.apply"));
+        Assert.Equal(default, restore.ParentSpanId);
+        Assert.Equal(("refused", ActivityStatusCode.Error, "restore.refused"),
+            ((string?)restore.GetTagItem("tankstat.restore.outcome"), restore.Status, (string?)restore.GetTagItem("error.type")));
+    }
+
+    [Fact]
+    public void AStartThatMigratesTheDatabase_IsATraceOfItsOwn()
+    {
+        var (app, exported) = Start(On(), migrated: false); // a new database: every migration is pending
+        using var _ = app;
+        app.NewClient();
+        app.Factory.Services.GetRequiredService<TracerProvider>().ForceFlush();
+
+        var migrate = Assert.Single(Own(exported, "tankstat.database.migrate"));
+        Assert.Equal(default, migrate.ParentSpanId); // no request carries the start
+        Assert.True((int)migrate.GetTagItem("tankstat.database.migrations")! > 1);
+        Assert.Equal(ActivityStatusCode.Unset, migrate.Status);
     }
 
     [Fact]

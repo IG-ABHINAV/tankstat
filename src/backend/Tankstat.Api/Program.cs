@@ -160,6 +160,7 @@ do
         // The options the host validates before any start step, validated first here too: a wrong folder stops the start before the restore
         // replaces anything, as it did when the host's start applied it.
         app.Services.GetService<Microsoft.Extensions.Options.IStartupValidator>()?.Validate();
+        app.Services.StartBeforeHost(); // telemetry's providers, so the restore's own span is exported (#219)
         await StartupSteps.ApplyBeforeHostAsync(app.Services, CancellationToken.None);
         if (restarts.Requested)
         {

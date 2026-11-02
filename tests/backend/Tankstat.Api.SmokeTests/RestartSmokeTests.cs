@@ -101,6 +101,36 @@ public class RestartSmokeTests
         Assert.Contains("Restored the backup", app.Log);
     }
 
+    [Fact]
+    public async Task ARestoreAppliedBeforeTheHostStarts_IsTraced_AndReachesTheCollector()
+    {
+        // The next host applies the restore before it starts at all (Program.cs), where no hosted service has brought telemetry to life: it
+        // does that itself first (#219), and the span leaves with the host that is disposed for the restart.
+        using var collector = new OtlpReceiver();
+        var work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"tankstat-smoke-{Guid.NewGuid():N}")).FullName;
+        var settings = new Dictionary<string, string?>
+        {
+            ["Auth__Mode"] = "None",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.Endpoint,
+            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
+        };
+        await using var app = await AppProcess.StartAsync(settings, workDirectory: work);
+        await app.Gql("mutation { addVehicle(input: { name: \"Before\", fuelType: PETROL }) { id } }");
+        var (made, log) = await AppProcess.RunCommandAsync(settings, work, "", "backup"); // the command never exports
+        Assert.True(made == 0, log);
+        await app.Gql("mutation { addVehicle(input: { name: \"After\", fuelType: PETROL }) { id } }");
+        var file = Path.GetFileName(Assert.Single(Directory.GetFiles(Path.Combine(work, "backups"), "tankstat-backup-*.zip")));
+        var code = System.Text.RegularExpressions.Regex.Match(app.Log, "one-time restore code ([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})").Groups[1].Value;
+
+        await app.Gql("mutation($i: RestoreBackupInput!) { restoreBackup(input: $i) { file } }", new { i = new { file, code } });
+        await WhenBackAsync(app, d => d.GetProperty("myVehicles").EnumerateArray().Select(v => v.GetProperty("name").GetString()).SequenceEqual(["Before"]), query: "{ myVehicles { name } }");
+
+        Assert.True(await collector.ReceivesAsync("/v1/traces", "tankstat.restore.apply", TimeSpan.FromSeconds(30)), app.Log);
+        Assert.False(await collector.ReceivesAsync("/v1/traces", "tankstat.backup", TimeSpan.Zero), "the backup command exported a span");
+        Assert.True(await collector.ReceivesAsync("/v1/metrics", "http.server.request.duration", TimeSpan.FromSeconds(30)), app.Log);
+        Assert.False(app.HasExited);
+    }
+
     /// <summary>
     /// Sign-in off, with the database and the backups folder outside the working directory (a stopped process removes it), whose settings
     /// file is the server's (the default place).

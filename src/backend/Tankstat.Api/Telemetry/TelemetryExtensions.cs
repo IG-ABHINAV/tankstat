@@ -18,8 +18,19 @@ namespace Tankstat.Api.Telemetry;
 /// </summary>
 internal static class TelemetryExtensions
 {
-    /// <summary>The meters exported besides the instrumentations' own: the runtime's and EF Core's (neither carries a value anyone typed).</summary>
-    internal static readonly string[] Meters = ["System.Runtime", "Microsoft.EntityFrameworkCore"];
+    /// <summary>The meters exported besides the instrumentations' own: the runtime's, EF Core's and the app's own (none carries a value anyone typed).</summary>
+    internal static readonly string[] Meters = ["System.Runtime", "Microsoft.EntityFrameworkCore", AppMetrics.MeterName];
+
+    /// <summary>
+    /// The providers come alive as the host starts (OpenTelemetry's own hosted service, before the app's); a restore that waits is applied
+    /// before the host starts at all (<c>Program.cs</c>, <c>StartupSteps.ApplyBeforeHostAsync</c>), so this brings them to life first, and the
+    /// restore's span is exported too. Nothing without telemetry.
+    /// </summary>
+    public static void StartBeforeHost(this IServiceProvider services)
+    {
+        services.GetService<TracerProvider>();
+        services.GetService<MeterProvider>();
+    }
 
     public static TelemetryPlan AddTelemetry(this WebApplicationBuilder builder)
     {
@@ -35,6 +46,7 @@ internal static class TelemetryExtensions
                 // The query string's values are redacted by both instrumentations by default (the reset link's token is one): their
                 // OTEL_DOTNET_EXPERIMENTAL_*_DISABLE_URL_QUERY_REDACTION switches must never be set.
                 tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddHotChocolateInstrumentation();
+                tracing.AddSource(AppTraces.SourceName); // the app's own spans (#219): backups, the start, photo reading, sync
                 if (plan.TraceDatabase) tracing.AddEntityFrameworkCoreInstrumentation();
                 // Before the exporter (registered after this by UseOtlpExporter), so what it removes is never exported.
                 tracing.AddProcessor(new ClientValueRedaction());

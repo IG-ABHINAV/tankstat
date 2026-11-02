@@ -38,6 +38,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        // The app's own metrics (#219), which the backups record: AddApplication registers them too, a host of these services alone needs them.
+        services.TryAddSingleton(sp => new Tankstat.Application.Telemetry.AppMetrics(sp.GetService<System.Diagnostics.Metrics.IMeterFactory>()));
         services.AddOptions<DatabaseOptions>()
             .Bind(configuration.GetSection(DatabaseOptions.SectionName))
             .PostConfigure(o =>

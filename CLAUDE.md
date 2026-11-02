@@ -45,7 +45,7 @@ The rules of each area are in `.claude/rules/`, one file per area. Each loads by
 - `ui-settings-and-home-cards.md`: what the UI remembers per user (incl. the time and date formats), the home cards.
 - `frontend.md`: UI structure and shared components, grids, bundle size, charts, libraries and motion.
 - `logging.md`: what is logged at which level, what never is, and the canary tests.
-- `telemetry.md`: OpenTelemetry over OTLP: the gate, the settings, what is exported and what never is, its tests.
+- `telemetry.md`: OpenTelemetry over OTLP: the gate, the settings, what is exported and what never is, the app's own spans and metrics, its tests.
 - `pwa.md`: the installable app, updates, chunk recovery.
 - `ci-and-tests.md`: CI and tests kept apart from `appsettings.json` and the developer's environment.
 - `e2e.md`: the real-browser tests (Playwright): the app they start, Docker or native, data, waits, the layout check.

@@ -126,6 +126,17 @@ What is sent:
 - **Metrics:** ASP.NET Core's (request durations, active requests, connections, routing, sign-ins), the HTTP client's, the .NET runtime's (`System.Runtime`) and EF Core's (`Microsoft.EntityFrameworkCore`: queries, saves, active contexts).
 - **Logs:** the same lines the console gets, through the same `Logging` levels, each with the trace and span id of the request it belongs to, and the request's scopes (`UserId`, and the path asked for without its query).
 
+**The app's own spans and metrics** come from the source and the meter named `Tankstat`:
+
+- **Work no request carries,** each a trace of its own:
+  - a backup run (`tankstat.backup.run`, whether the schedule or *Back up now* started it), with its write (`tankstat.backup.write`) below it. *Back up now*'s run is linked to the request that asked for it, which answers long before the run ends.
+  - at start, the restore that waits (`tankstat.restore.apply`) and the migrations (`tankstat.database.migrate`), with the backup written before them;
+  - every photo the model reads (`tankstat.photo_reading.read`), with the call to the model server below it.
+- **Inside a request:** a batch of changes a device kept while offline (`tankstat.sync.batch`), with a span per change (`tankstat.sync.change`); a parked change is a failed span with the key of its reason.
+- **Attributes:** their attributes are ids, counts and outcomes. A failure carries the error's key or type, never a message.
+- **Metrics:** `tankstat.backup.duration` (seconds), `tankstat.backup.size` (bytes), `tankstat.photo_reading.duration` (seconds) and `tankstat.sync.changes`. They are split by outcome and kind, never by an id.
+- **The commands never export:** `backup`, `decrypt` and `restore` run without telemetry.
+
 **It keeps the log's promise**: ids, counts and reasons, never what someone typed or a client sent.
 
 - **GraphQL:** neither a request's variables nor its document is sent, nor its `extensions` or a field's alias. An error is only counted, since the app's messages can quote what was typed (a schedule's title, an odometer reading).

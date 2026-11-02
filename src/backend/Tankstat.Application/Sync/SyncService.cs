@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tankstat.Application.Access;
 using Tankstat.Application.Auth;
+using Tankstat.Application.Telemetry;
 using Tankstat.Application.Vehicles;
 using Tankstat.Domain;
 using Tankstat.Domain.Access;
@@ -75,7 +76,8 @@ public interface ISyncChangeRepository
 /// sent again (an answer that never arrived) is answered with what was recorded and applied once. One batch of a user at a time.
 /// </summary>
 public sealed class SyncService(
-    ISyncChangeRepository ledger, IVehicleRepository vehicles, AccessService access, IOptionsSnapshot<SyncOptions> options, TimeProvider clock, ILogger<SyncService> logger)
+    ISyncChangeRepository ledger, IVehicleRepository vehicles, AccessService access, IOptionsSnapshot<SyncOptions> options, TimeProvider clock, AppMetrics metrics,
+    ILogger<SyncService> logger)
 {
     private static readonly StripedLocks Locks = new();
 
@@ -89,6 +91,9 @@ public sealed class SyncService(
         if (changes.FirstOrDefault(c => c.Payload.Length > SyncChange.MaxPayloadLength || c.Base?.Length > SyncChange.MaxPayloadLength) is { } large)
             throw new DomainException("sync.payloadTooLarge", $"A change may hold at most {SyncChange.MaxPayloadLength} characters.", new { large.Id, Max = SyncChange.MaxPayloadLength });
 
+        // A span of the request's (#219), and one per change applied below it: ids, kinds and results, never what a change holds.
+        using var batch = AppTraces.Source.StartActivity("tankstat.sync.batch");
+        batch?.SetTag("tankstat.sync.changes", changes.Count);
         var gate = Locks.For(me.Id);
         await gate.WaitAsync(ct);
         try
@@ -105,13 +110,30 @@ public sealed class SyncService(
                 {
                     results.Add(SyncChangeResult.From(recorded)); // sent again: what happened the first time
                     replayed++;
+                    metrics.SyncChanges.Add(1, new("tankstat.sync.change.kind", recorded.Kind.ToString()), new("tankstat.sync.change.result", "repeated"));
                     continue;
                 }
-                var row = await ApplyAsync(change, me.Id, ct);
+                using var step = AppTraces.Source.StartActivity("tankstat.sync.change");
+                step?.SetTag("tankstat.sync.change.id", change.Id);
+                SyncChange row;
+                try
+                {
+                    row = await ApplyAsync(change, me.Id, ct);
+                }
+                catch (Exception e) when (step.FailedBy(e) || batch.FailedBy(e))
+                {
+                    throw; // never reached: the filters only mark the spans (an exception stops the batch, a refusal parks the change)
+                }
                 // Recorded whatever the request does now: what was applied must be in the ledger, or the same change sent again (the device
                 // never heard back) would be applied a second time, or parked as a version mismatch with itself.
                 if (!await ledger.AddAsync(row, CancellationToken.None))
                     row = (await ledger.FindManyAsync([row.Id], CancellationToken.None)).Single(); // another server took the same batch first
+                var result = row.Status.ToString().ToLowerInvariant();
+                step?.SetTag("tankstat.sync.change.kind", row.Kind.ToString());
+                step?.SetTag("tankstat.vehicle.id", row.VehicleId);
+                step?.SetTag("tankstat.sync.change.result", result);
+                if (row.Status == SyncChangeStatus.Parked) step.Failed(row.ReasonKey ?? "sync.parked"); // the reason's key, never its arguments
+                metrics.SyncChanges.Add(1, new("tankstat.sync.change.kind", row.Kind.ToString()), new("tankstat.sync.change.result", result));
                 results.Add(SyncChangeResult.From(row));
                 logger.LogDebug("Change {ChangeId} ({Kind}) of vehicle {VehicleId}: {Status} {Key}", row.Id, row.Kind, row.VehicleId, row.Status, row.ReasonKey);
             }
@@ -119,6 +141,9 @@ public sealed class SyncService(
             var purged = await ledger.PurgeResolvedAsync(clock.GetUtcNow() - TimeSpan.FromDays(options.Value.RetentionDays), ct);
             var applied = results.Count(r => r.Status == SyncChangeStatus.Applied);
             var parked = results.Count(r => r.Status == SyncChangeStatus.Parked);
+            batch?.SetTag("tankstat.sync.applied", applied);
+            batch?.SetTag("tankstat.sync.parked", parked);
+            batch?.SetTag("tankstat.sync.repeated", replayed);
             logger.LogInformation("User {UserId} synced {Count} changes: {Applied} applied, {Parked} parked, {Replayed} sent again, {Purged} old records removed",
                 me.Id, changes.Count, applied, parked, replayed, purged);
             return new SyncOutcome(results, applied, parked);
