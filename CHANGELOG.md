@@ -2,6 +2,33 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.18.0 (2026-11-03)
+
+### Added
+
+- **Discounts** (#204: #206, #208, #212, #213). A refuelling keeps the discount the till took off, next to what you paid: a *Discount* field in the dialog, typed or worked out from the litres, the amount paid and the pump's price; *Price per unit before discount* beside the price paid, both as grid columns; and the chart metric *Average fuel price before discounts*. Expenses and *Mark as done* take a discount too. Every sum of spending stays what was paid, and the litres of a refuelling never move by themselves any more: the dialog's rule is in the user guide. Photo reading reads the discount printed for the fuel (and on other receipts), checks the receipt's amounts with it and fills it in; a photo added later keeps the saved values, as before.
+- **Telemetry, opt-in** (#214, #219: #216, #221). Traces, metrics and logs over OTLP to a collector of your choice, off until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The Server settings page gets a *Telemetry* tab (endpoint, protocol, headers as a secret, service name, and `Telemetry__TraceDatabase` for database spans, off by default) and the setup wizard a skippable Telemetry step. What the log never says is never exported either: no GraphQL variables or documents, no query-string values, no user agent, no database parameters, no one-time code, whatever the SDK's own switches are set to. The app's own spans and metrics (`tankstat.*`) cover backups, the restore and the migrations at start, photo reading and sync. Backups record the telemetry settings too, the headers only with `Backups__Secrets`, and a restore on a machine whose environment sets other telemetry settings, or none, is not refused for them, as for the log levels. `docs/configuration.md` has the section.
+- **Charts that show where things are heading** (#211: #215, #217). A chart over time can carry a **trend line** (a moving average of three periods, or a linear trend the chart words from its first period to its last), a **running total** and **a year earlier** beside it, all worked out by the server and listed in the chart's table; two new metrics, **cost per distance** and **fuel cost per distance**; and a **second measure** in one chart (distance bars with a consumption line) on a scale of its own. Every currency keeps a scale of its own, a fuel price too.
+- **A customizable dashboard** (#211: #218, #223). A vehicle's dashboard is a grid of tiles arranged in place with *Customize*: dragged, resized, pinned, taken off and added back (*Add widget*, by click or drag), with a menu per tile for a keyboard or a screen reader. It can be arranged **for everyone who sees the vehicle** (Edit access to its logs) or **for yourself alone**. Until someone arranges it, the **Standard** preset is the dashboard as it was; **Spending** and **Usage** are two more. Four **trend figures** (spending and cost per distance over the last 12 full months against the 12 before, consumption of the latest fill-ups against the ones before, distance this year against last year to the same day), five more ready-made charts, and **Copy as my chart** on every ready-made one, which opens the chart builder with its recipe.
+
+### Upgrading
+
+- **Four database migrations**, applied at start after the automatic backup that comes before migrations: `AddCostDiscount` (a nullable `Discount` column on `Costs`), `AddChartTrends` and `AddChartSecondMeasure` (five columns on `VehicleCharts`: `Trend`, `RunningTotal`, `CompareYearEarlier`, `SecondKind`, `SecondMetric`), `AddDashboardLayouts` (two tables, `VehicleDashboardLayouts` and `UserDashboardLayouts`).
+- **Nothing to set**: telemetry stays off without `OTEL_EXPORTER_OTLP_ENDPOINT`. A setting the SDK could not use (a wrong endpoint, headers naming a key twice, a certificate file that is not there) leaves telemetry off with a Warning naming the setting, never stops the start.
+- **A system prompt of your own** (`Recognition__OpenAiCompatible__SystemPrompt` or `SystemPromptFile`): the contract and the JSON schema that go with every photo now ask for the discount whatever the prompt says, and the built-in prompt explains which amount it is; compare yours with the one `docs/photo-reading.md` prints.
+- An older web app still open in a browser keeps working: the new chart options and the discount are optional on every input, and an update that leaves the discount out keeps it.
+- The Docker Compose example now runs 0.18 (`TANKSTAT_VERSION` in `.env.example`).
+
+### For developers
+
+- **No test host exports telemetry** (#216): `TestApp`, `ApiFixture`, `AppProcess`, the Seeder's tests and the `test-api`, `test-e2e` and `screenshots` scripts drop a developer's `OTEL_*` and `Telemetry__*` before the app starts. `TestSupport/TelemetryKeys` names the keys, `CapturedSpans` and `CapturedMeasurements` find a test's spans and measurements (#221).
+- **The app's own spans** (#221): `AppTraces` (an `ActivitySource` named `Tankstat`, `StartJob` for work no request carries, `FailedBy` in an exception filter) and `AppMetrics` (a `Meter` from the host's `IMeterFactory`); the conventions are in `.claude/rules/telemetry.md`.
+- **The Seeder** gives a fifth of the fill-ups a discount of one to three per cent, from a random source of its own, so a seed's logs stay as they were (#208).
+- **Bar charts are composed from MUI X's parts** (#215), the way `BarChart` itself is, so a line can be drawn over the bars.
+- **The date-field tests tell a field's sections by one rule** (#205, #207): the day is the section with a maximum of 28 to 31, since the picker caps it at the month shown; the tests no longer fail in a month of 30 days.
+- The README's screenshots are taken again with the dashboard grid and the discount fields.
+- Dependency updates: HotChocolate 16.7.3 (#225); MUI X 9.17, motion 14.9, react-router 8.5.1, i18next, lucide-react, the code generator and oxlint (#224).
+
 ## 0.17.1 (2026-10-28)
 
 A security and dependency release: nothing in the app changes.
