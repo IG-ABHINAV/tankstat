@@ -16,7 +16,7 @@ fi
 # Away from scripts/test-e2e.sh's servers (5097 and the six after it), so the two can run side by side.
 port="${E2E_PORT:-5110}"
 export E2E_URL="http://127.0.0.1:${port}"
-if curl -s -o /dev/null "$E2E_URL"; then
+if curl -s -o /dev/null --max-time 2 "$E2E_URL"; then
   echo "Something already answers on $E2E_URL: stop it, or choose another port with E2E_PORT." >&2
   exit 1
 fi

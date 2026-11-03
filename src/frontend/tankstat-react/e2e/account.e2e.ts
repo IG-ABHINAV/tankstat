@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+import { expect, test, newContext } from './support/test.ts'
 import { createUser, pageLoaded, picture, signIn, signInAsNewUser, type User } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { RAISED_MINIMUM } from './support/global-setup.ts'
@@ -88,7 +89,7 @@ test('a password shorter than the minimum now signs in, and only its change is s
 
 test('signs another device out from the account page', async ({ page, browser }) => {
   const user = await signInAsNewUser(page)
-  const other = await browser.newContext()
+  const other = await newContext(browser)
   const otherPage = await other.newPage()
   try {
     await signIn(otherPage, user)
@@ -121,7 +122,7 @@ test('switches the language to Hungarian and keeps it with the account', async (
   await expect(page.getByRole('heading', { level: 1, name: 'Your vehicles' })).toHaveCount(0)
 
   // Another device of the same account (a browser that never chose) opens in Hungarian too.
-  const other = await browser.newContext()
+  const other = await newContext(browser)
   const otherPage = await other.newPage()
   try {
     await signIn(otherPage, user)

@@ -1,10 +1,15 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
-import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { type Locator, type Page } from '@playwright/test'
+import { expect, test } from './support/test.ts'
+import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
 // Arranging a vehicle's dashboard (#211): a grid of tiles dragged, resized, pinned and taken off in place; the vehicle's, which everyone
 // who sees it gets, and one's own, which wins for oneself alone.
+
+// Reduced motion (#236): the grid's own media rule turns its transitions off, so a tile is where it is drawn the moment it is drawn and a
+// drag by the pointer never starts beside a tile still moving into place.
+test.use({ reducedMotion: 'reduce' })
 
 const region = (page: Page) => page.getByRole('region', { name: 'Dashboard' })
 /** The charts' titles in the order the tiles come (the grid draws them in reading order). */
@@ -81,6 +86,7 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   }
 
   // Resize: the first figure's corner one column to the right makes it two columns wide.
+  await settled(tile(page, 'thisMonth'))
   const grid = (await region(page).locator('.react-grid-layout').boundingBox())!
   const column = grid.width / 4
   const corner = (await tile(page, 'thisMonth').locator('.react-resizable-handle').boundingBox())!
@@ -88,6 +94,8 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   await expect.poll(async () => (await tile(page, 'thisMonth').boundingBox())!.width).toBeGreaterThan(column * 1.5)
 
   // Drag: the Consumption chart's handle to the first figure's place; the others go round it.
+  await settled(tile(page, 'preset:consumption'))
+  await settled(tile(page, 'thisMonth'))
   const handle = (await tile(page, 'preset:consumption').locator('.tk-tile-handle').boundingBox())!
   const target = (await tile(page, 'thisMonth').boundingBox())!
   await drag(handle.x + handle.width / 2, handle.y + handle.height / 2, target.x + 24, target.y + 24)
@@ -96,6 +104,7 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   // Drag in: a chart taken off, dragged back from the Add widget panel onto the grid's top left.
   await menu(page, 'Fuel price', 'Remove')
   await page.getByRole('button', { name: 'Add widget' }).click()
+  await settled(region(page).locator('.react-grid-layout'))
   await page.getByRole('region', { name: 'Add widget' }).getByRole('button', { name: /Fuel price/ }).dragTo(region(page).locator('.react-grid-layout'), { targetPosition: { x: 40, y: 40 }, force: true }) // no "stable" wait: the grid above it settles late
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Fuel price placed.')
   await expect.poll(() => chartTitles(page)).toContain('Fuel price')
@@ -159,25 +168,12 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
 
 // ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------
 
-// The middle of a box, once it holds still: the tiles grow into the taller rows of edit mode, and move to their places after a drop (a 200 ms
-// transition each), so it is measured once two looks 100 ms apart agree.
-const settled = async (part: Locator) => {
-  let last = ''
-  await expect
-    .poll(async () => {
-      const box = await part.boundingBox()
-      const now = JSON.stringify(box)
-      const still = box !== null && now === last
-      last = now
-      return still
-    }, { intervals: [100] })
-    .toBe(true)
-  const box = (await part.boundingBox())!
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-}
 /** Pressed at the middle of `part` and moved in `steps`: after each step `part` is back under the pointer, a frame or two later, polled briefly. */
 const followsThePointer = async (page: Page, part: Locator, steps: number, by: { x: number; y: number }) => {
-  const start = await settled(part)
+  // Measured once it holds still (`settled`): the tiles move to their places after a drop, and grow into the edit rows.
+  await settled(part)
+  const box = (await part.boundingBox())!
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   await page.mouse.move(start.x, start.y)
   await page.mouse.down()
   for (let step = 1; step <= steps; step++) {
