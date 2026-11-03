@@ -1,11 +1,13 @@
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import ListSubheader from '@mui/material/ListSubheader'
+import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
@@ -13,6 +15,7 @@ import { ArrowLeft, ChartArea, ChartColumn, ChartLine, ChartNoAxesCombined, Char
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DialogButtons, DialogCancel, DialogFrame } from '../dialogs/DialogFrame.tsx'
+import { Form } from '../forms/Form.tsx'
 import type { DistanceUnit, VehicleDashboardQuery, VolumeUnit } from '../gql/generated.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { MEDIA } from '../theme/media.ts'
@@ -20,7 +23,11 @@ import { ChartCard } from './ChartCard.tsx'
 import { ChartForm } from './ChartForm.tsx'
 import { NEW_RECIPE, recipeOf, type ChartRecipe } from './chartFormat.ts'
 import { Figure } from './Figures.tsx'
-import { isTrendFigure } from './trendPeriod.ts'
+import { usePeriodText } from './usePeriodText.ts'
+import { DEFAULT_PERIOD, isTrendFigure, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
+import { TrendFigure } from './TrendFigure.tsx'
+import { TrendPeriodForm } from './TrendPeriodForm.tsx'
+import { useTrendPreview } from './useTrendPreview.ts'
 import { chartKey, defaultSize, GAP, presetKey, ROW_HEIGHT, type FigureId, type ReadyChart } from './widgets.ts'
 
 type Summary = NonNullable<NonNullable<VehicleDashboardQuery['vehicle']>['summary']>
@@ -30,6 +37,42 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
 /** What the dialog can start from: a key figure, a ready-made chart, one of the user's saved charts, or a blank chart. */
 type Choice = { kind: 'figure'; id: FigureId } | { kind: 'ready'; chart: ReadyChart } | { kind: 'saved'; chart: SavedChart } | { kind: 'blank' }
 
+/**
+ * A trend figure's pane (#230): the tile as it will be added, over the period chosen below it (the same form as the tile's chip, which
+ * changes it later), the figure's default to start; Add puts it on the dashboard with that period.
+ */
+function TrendFigurePane({ figure, vehicle, rows, onAdd }: { figure: TrendFigureId; vehicle: { id: string; units: Units }; rows: number; onAdd: (period: TrendPeriod) => void }) {
+  const { t } = useTranslation()
+  const [period, setPeriod] = useState(DEFAULT_PERIOD[figure])
+  const preview = useTrendPreview(figure, vehicle.id, period)
+  const periodText = usePeriodText()
+  return (
+    <Form
+      onSubmit={(e) => {
+        e.preventDefault()
+        onAdd(period)
+      }}
+    >
+      <Stack sx={{ gap: 2 }}>
+        <Box role="status" aria-live="polite" aria-label={t('dashboard.period.preview')} sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
+          {preview.data ? (
+            <TrendFigure figure={figure} period={period} data={preview.data} rows={rows} units={vehicle.units} label={t(`dashboard.kpi.${figure}`)} chip={<Chip size="small" variant="outlined" label={periodText(figure, period)} sx={{ flex: 'none', maxWidth: '60%' }} />} />
+          ) : (
+            <Skeleton variant="rounded" aria-hidden height="100%" />
+          )}
+        </Box>
+        <TrendPeriodForm figure={figure} value={period} onChange={setPeriod} preview={preview} />
+        <DialogButtons>
+          <DialogCancel />
+          <Button type="submit" disabled={preview.problem !== null}>
+            <Plus size={16} aria-hidden />
+            {t('dashboard.widget.add')}
+          </Button>
+        </DialogButtons>
+      </Stack>
+    </Form>
+  )
+}
 
 /** The glyph of a chart's kind (bars, a line, an area, a donut; bars and a line for a chart with a second measure). */
 function chartGlyph(recipe: Pick<ChartRecipe, 'kind' | 'secondMetric'>): ReactNode {
@@ -71,8 +114,8 @@ export function AddWidgetDialog({
   figures: readonly FigureId[]
   ready: readonly ReadyChart[]
   saved: readonly SavedChart[]
-  /** A widget added as it is, by its tile id. */
-  onAdd: (id: string) => void
+  /** A widget added, by its tile id; a trend figure with the period chosen for it (#230). */
+  onAdd: (id: string, period?: TrendPeriod | null) => void
   /** A chart saved here (the user's own, new): the dashboard adds its tile. */
   onChartSaved: (id: string, title: string) => void | Promise<unknown>
 }) {
@@ -92,8 +135,8 @@ export function AddWidgetDialog({
     setPicked(null)
     setStep('list')
   }
-  const added = (id: string) => {
-    onAdd(id)
+  const added = (id: string, period?: TrendPeriod | null) => {
+    onAdd(id, period)
     close()
   }
   const keyOf = (p: Choice) => `${p.kind}:${p.kind === 'blank' ? '' : p.kind === 'figure' ? p.id : p.chart.id}`
@@ -133,6 +176,13 @@ export function AddWidgetDialog({
       case 'figure': {
         // As it will be added: at its default rows (#229), in a box as tall as that tile.
         const rows = defaultSize(current.id).h
+        if (isTrendFigure(current.id))
+          return (
+            <>
+              {heading(t(`dashboard.kpi.${current.id}`), t(`dashboard.widget.describe.figures.${current.id}`))}
+              <TrendFigurePane key={current.id} figure={current.id} vehicle={vehicle} rows={rows} onAdd={(period) => added(current.id, period)} />
+            </>
+          )
         return (
           <>
             {heading(t(`dashboard.kpi.${current.id}`), t(`dashboard.widget.describe.figures.${current.id}`))}
