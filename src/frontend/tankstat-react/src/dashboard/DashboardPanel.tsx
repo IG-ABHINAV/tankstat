@@ -36,7 +36,7 @@ import { Figure } from './Figures.tsx'
 import {
   addTile,
   chartKey,
-  DEFAULT_SIZE,
+  defaultSize,
   FIGURE_GRID,
   FIGURES,
   inReadingOrder,
@@ -198,7 +198,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const add = (id: string) =>
     update((e) => ({ tiles: addTile(e.tiles, id), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: titleOf({ id } as Tile) }) }))
   const dragStart = (id: string) => (event: DragEvent) => {
-    const { w, h } = DEFAULT_SIZE[widgetOf(id)?.kind ?? 'saved']
+    const { w, h } = defaultSize(id)
     event.dataTransfer.setData('text/plain', id) // Firefox starts no drag without data
     event.dataTransfer.effectAllowed = 'move'
     update(() => ({ dropping: { id, w, h } }))
@@ -268,7 +268,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   }
   const render = (tile: Tile) => {
     const widget = widgetOf(tile.id)
-    if (widget?.kind === 'figure') return <Figure id={widget.id} summary={s} units={vehicle.units} />
+    if (widget?.kind === 'figure') return <Figure id={widget.id} rows={tile.h} summary={s} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
     if (widget?.kind === 'ready') {
       const title = t(`dashboard.presets.${widget.chart.id}`)

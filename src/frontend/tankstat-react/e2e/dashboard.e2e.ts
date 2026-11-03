@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
@@ -155,4 +155,68 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('heading', { name: 'My distance' })).toBeVisible() // at the first free spot, the original still there
   await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
+})
+
+// ---- a figure's rows (#229) -------------------------------------------------------------------------------
+
+/** Today as `yyyy-MM-dd` in the browser's own time: "this month" is the run day's. */
+const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+/** The figure cards whose content is cut: a card is `overflow: hidden`, so only its scroll height tells. */
+const clippedFigures = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-tile]')]
+      .filter((t) => !t.dataset.tile!.includes(':'))
+      .map((t) => ({ id: t.dataset.tile!, card: t.querySelector<HTMLElement>('.MuiCard-root')! }))
+      .filter(({ card }) => card.scrollHeight > card.clientHeight + 1)
+      .map(({ id, card }) => `${id}: ${card.scrollHeight} > ${card.clientHeight}`),
+  )
+const figureHeights = async (page: Page, vehicleId: string) => Object.fromEntries((await stored(page, vehicleId)).shared!.tiles.filter((t) => !t.id.includes(':')).map((t) => [t.id, t.h]))
+
+test('makes figures shorter: each shows what its rows hold, down to what it needs, and nothing is cut', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // Spent this month in two currencies: its value wraps in a desktop column, which is why it stops at three rows.
+  await logRefueling(page, vehicle.id, { date: today() })
+  await addExpense(page, vehicle.id, { date: today(), amount: 40, currency: 'EUR' })
+  await openVehicle(page, vehicle.id)
+  await expect(tile(page, 'thisMonth').getByText(/€40\.00/)).toBeVisible()
+  await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+  await menu(page, 'Odometer', 'Shorter')
+  await menu(page, 'Odometer', 'Shorter')
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Odometer is now 1 wide and 2 tall.')
+  await page.getByRole('button', { name: 'Options for Odometer' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toBeHidden()
+  await menu(page, 'Average consumption', 'Shorter')
+  await menu(page, 'Average consumption', 'Shorter')
+  await menu(page, 'Spent this month', 'Shorter')
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Spent this month is now 1 wide and 3 tall.')
+  await page.getByRole('button', { name: 'Options for Spent this month' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toBeHidden()
+  // While arranging, the rows are taller by the handle's room: a two-row figure keeps its content whole.
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await page.reload()
+  await pageLoaded(page)
+  await expect(tile(page, 'odometer').getByText(/km$/)).toBeVisible()
+  expect(await figureHeights(page, vehicle.id)).toEqual({ thisMonth: 3, consumption: 2, odometer: 2, lastFillUp: 4 })
+  // Two rows: the label and the value, no note. Three: the note, no sparkline. Four: everything.
+  await expect(tile(page, 'consumption').getByText('last 10 full fill-ups')).toBeHidden()
+  await expect(tile(page, 'thisMonth').getByText(/^Last month:/)).toBeVisible()
+  await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toHaveCount(0)
+  await expect(tile(page, 'lastFillUp').getByText('1 fill-ups, 1 expenses')).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await expectSoundLayout(page)
 })
