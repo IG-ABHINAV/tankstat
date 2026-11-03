@@ -82,18 +82,10 @@ test('lets a tap on a toast through to the page under it, only its Undo takes on
   await openVehicle(page, vehicle.id, 'refuelings')
   await page.getByRole('button', { name: 'Delete the refuelling of Jan 15, 2026' }).click()
   await page.getByRole('alertdialog', { name: 'Move this refuelling to the trash?' }).getByRole('button', { name: 'Move to trash' }).click()
+  await expect(row(page, '42 L')).toHaveCount(0)
   const undo = page.getByRole('button', { name: 'Undo' })
-  await expect(undo).toBeVisible()
-  // The toast grows in: it is hit-tested once its box holds still.
-  let last = ''
-  await expect
-    .poll(async () => {
-      const now = JSON.stringify(await page.locator('.MuiSnackbar-root').boundingBox())
-      const still = now === last
-      last = now
-      return still
-    }, { intervals: [100] })
-    .toBe(true)
+  // The toast grows in (a transform on the message, not on the root): it is hit-tested once Undo holds still and takes the pointer.
+  await undo.click({ trial: true })
   // What a tap would reach (#239): the page at the message and beside it (on a phone the toast's root spans the screen's width), the
   // button at Undo. A click on whatever lies under the toast would not do: it differs by size, and Playwright waits rather than fails.
   const hits = await page.evaluate(() => {
