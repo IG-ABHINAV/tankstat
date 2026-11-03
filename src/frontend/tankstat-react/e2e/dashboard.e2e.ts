@@ -156,3 +156,53 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
   await expect(page.getByRole('heading', { name: 'My distance' })).toBeVisible() // at the first free spot, the original still there
   await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
 })
+
+// ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------
+
+test('keeps a dragged tile under the pointer at every step, above the spot it will drop on', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a pointer\'s way; a phone has the menus')
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id)
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+
+  // Monthly costs by its handle, 20 steps to the right and a little down (`page.mouse` never scrolls: the handle is in the first screen).
+  // After each step the tile is drawn where the pointer is, a frame or two later (React draws a document event's update in a task of its
+  // own): polled, briefly. A tile frozen until it crosses into another cell (#227) never gets there.
+  const moved = tile(page, 'preset:monthlyCosts')
+  // The tiles grow into the taller rows of edit mode (a 200 ms transition): the handle is measured once it holds still.
+  let last = ''
+  await expect
+    .poll(async () => {
+      const now = JSON.stringify(await moved.locator('.tk-tile-handle').boundingBox())
+      const still = now === last
+      last = now
+      return still
+    }, { intervals: [100] })
+    .toBe(true)
+  const handle = (await moved.locator('.tk-tile-handle').boundingBox())!
+  const start = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  for (let step = 1; step <= 20; step++) {
+    const pointer = { x: start.x + step * 14, y: start.y + step * 2 }
+    await page.mouse.move(pointer.x, pointer.y)
+    const apart = async () => {
+      const now = (await moved.locator('.tk-tile-handle').boundingBox())!
+      return Math.round(Math.hypot(now.x + now.width / 2 - pointer.x, now.y + now.height / 2 - pointer.y))
+    }
+    await expect.poll(apart, { message: `step ${step}: the handle's distance from the pointer`, timeout: 1000, intervals: [16, 16, 32, 64, 128] }).toBeLessThanOrEqual(4)
+  }
+  // The grid's own drop spot shows where it will land, under the tile.
+  const layers = await page.evaluate(() => ({
+    tile: getComputedStyle(document.querySelector('[data-tile="preset:monthlyCosts"]')!).zIndex,
+    spot: getComputedStyle(document.querySelector('.react-grid-placeholder')!).zIndex,
+  }))
+  await page.mouse.up()
+  expect(Number(layers.tile)).toBeGreaterThan(Number(layers.spot))
+  await expect(page.locator('.react-grid-placeholder')).toHaveCount(0)
+  await expect(moved).not.toHaveClass(/react-draggable-dragging/)
+})

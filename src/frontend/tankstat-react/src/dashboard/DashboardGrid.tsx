@@ -3,7 +3,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { EllipsisVertical, GripHorizontal, Pin } from 'lucide-react'
-import { useId, useMemo, useState, type ReactNode } from 'react'
+import { cloneElement, useCallback, useId, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
@@ -13,6 +13,9 @@ import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_SIZE, ROW_HEIGHT, wid
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
 const COLS = { lg: COLUMNS, sm: 2, xs: 1 } as const
 const FALLBACK_WIDTH = 1280
+/** The gaps between the tiles and around the grid: constants, since the library's tiles re-render when theirs change identity. */
+const MARGIN: [number, number] = [GAP, GAP]
+const PADDING: [number, number] = [0, 0]
 /** The chrome of a tile being edited (its 44 px handle row and the gap under it), paid for by a taller row: a four-row figure gains just that. */
 const EDIT_CHROME = 48
 const EDIT_ROW_EXTRA = EDIT_CHROME / MIN_SIZE.figure.h
@@ -63,6 +66,15 @@ export function DashboardGrid({
   const width = measured > 0 ? measured : FALLBACK_WIDTH
   const cols = COLS[breakpointOf(width)]
   const ordered = useMemo(() => inReadingOrder(tiles), [tiles])
+  // The tile being dragged or resized, and a count of its moves (#227). react-grid-layout 2.3 memoizes its grid items, comparing their
+  // place in the grid and their child element, and draws a dragged tile at the pointer only when it renders: with the same child, a tile
+  // moved within its cell is not drawn again, so it froze under the pointer until it crossed into another cell. Each move gives that one
+  // tile a new element (the same props, so its content does not render again), and the library draws it where the pointer is. The
+  // handlers keep their identity across the moves (`useCallback`), since the library compares them too: new ones would draw every tile.
+  const [moving, setMoving] = useState<{ id: string; moves: number } | null>(null)
+  const follow = useCallback((_layout: GridItems, _old: LayoutItem | null, item: LayoutItem | null) => {
+    if (item) setMoving((m) => ({ id: item.i, moves: (m?.moves ?? 0) + 1 }))
+  }, [])
 
   const item = (tile: Tile, inFour: boolean): LayoutItem => {
     const min = MIN_SIZE[widgetOf(tile.id)?.kind ?? 'saved']
@@ -74,15 +86,43 @@ export function DashboardGrid({
   )
 
   /** The tiles after the grid changed them: in the four-column grid as they are; on fewer columns their new order, flowed back into four. */
-  const fromGrid = (layout: GridItems): Tile[] => {
-    const byId = new Map(tiles.map((tile) => [tile.id, tile]))
+  const fromGrid = useCallback(
+    (layout: GridItems): Tile[] => {
+      const byId = new Map(tiles.map((tile) => [tile.id, tile]))
     // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width); one just dropped in is new, at the width it was
     // brought in with (on fewer columns the grid clamped it).
-    const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: dropping?.id === l.i ? dropping.w : l.w, h: l.h, pinned: false }
-    if (cols === COLUMNS) return inReadingOrder(layout.map((l) => ({ ...known(l), x: l.x, y: l.y, w: l.w, h: l.h })))
-    const order = [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...known(l), h: l.h, y: i, x: 0 }))
-    return flow(order, COLUMNS)
-  }
+      const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: dropping?.id === l.i ? dropping.w : l.w, h: l.h, pinned: false }
+      if (cols === COLUMNS) return inReadingOrder(layout.map((l) => ({ ...known(l), x: l.x, y: l.y, w: l.w, h: l.h })))
+      const order = [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...known(l), h: l.h, y: i, x: 0 }))
+      return flow(order, COLUMNS)
+    },
+    [tiles, cols, dropping],
+  )
+  /** A drag or a resize ended: the tile is drawn from its place in the grid again, and the tiles as they are now go to the page. */
+  const settle = useCallback(
+    (layout: GridItems) => {
+      setMoving(null)
+      onTilesChange?.(fromGrid(layout))
+    },
+    [fromGrid, onTilesChange],
+  )
+
+  // The tiles' elements, made once per arrangement: while a tile is dragged only its own element is new (`moving`).
+  const cells = useMemo(
+    () =>
+      new Map(
+        ordered.map((tile, i) => [
+          tile.id,
+          <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {editing ? ( // EDIT_CHROME tall: 44 px of handle and a 4 px gap
+              <EditChrome tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />
+            ) : null}
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
+          </Box>,
+        ]),
+      ),
+    [ordered, editing, cols, name, render, onAction],
+  )
 
   const styles = {
     '& .react-grid-layout': { position: 'relative', transition: 'height 200ms ease' },
@@ -109,29 +149,24 @@ export function DashboardGrid({
           breakpoints={BREAKPOINTS}
           cols={COLS}
           rowHeight={editing ? ROW_HEIGHT + EDIT_ROW_EXTRA : ROW_HEIGHT}
-          margin={[GAP, GAP]}
-          containerPadding={[0, 0]}
+          margin={MARGIN}
+          containerPadding={PADDING}
           compactor={verticalCompactor}
           dragConfig={{ enabled: editing, handle: `.${CLASS.handle}` }}
           resizeConfig={{ enabled: editing, handles: ['se'] }}
           dropConfig={{ enabled: editing && !!dropping, defaultItem: { w: dropping?.w ?? 2, h: dropping?.h ?? 8 } }}
           droppingItem={dropping ? { i: dropping.id, x: 0, y: 0, w: Math.min(dropping.w, cols), h: dropping.h } : undefined}
-          onDragStop={(layout) => onTilesChange?.(fromGrid(layout))}
-          onResizeStop={(layout) => onTilesChange?.(fromGrid(layout))}
+          onDrag={follow}
+          onResize={follow}
+          onDragStop={settle}
+          onResizeStop={settle}
           onDrop={(layout, dropped) => {
             if (!dropping || !dropped) return
             const placed = { id: dropping.id, x: dropped.x, y: dropped.y, w: dropped.w, h: dropped.h, pinned: false }
             onDrop?.(fromGrid([...layout.filter((l) => l.i !== dropped.i && l.i !== dropping.id), { ...dropped, i: dropping.id }]).map((tile) => (tile.id === dropping.id && cols === COLUMNS ? { ...tile, ...placed } : tile)))
           }}
         >
-          {ordered.map((tile, i) => (
-            <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {editing ? ( // EDIT_CHROME tall: 44 px of handle and a 4 px gap
-                <EditChrome tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />
-              ) : null}
-              <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
-            </Box>
-          ))}
+          {ordered.map((tile) => (moving?.id === tile.id ? cloneElement(cells.get(tile.id)!) : cells.get(tile.id)!))}
         </Responsive>
       )}
       {!mounted && ( // the one frame before the container is measured
