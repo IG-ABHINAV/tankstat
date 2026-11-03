@@ -77,7 +77,10 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
-  // `page.mouse` never scrolls: everything dragged here is in the first screen (the figures and the first two charts).
+  // `page.mouse` never scrolls, and a press past the viewport lands on nothing: the grid is brought up under the top bar first, so the
+  // figures and the first two charts' handles are on screen. Below them, the edit rows' height and the fonts decide: on CI's runner the
+  // Consumption chart's handle was at 914 px of a 900 px viewport, and the drag never started.
+  await region(page).locator('.react-grid-layout').evaluate((grid) => window.scrollBy(0, grid.getBoundingClientRect().top - 120))
   const drag = async (fromX: number, fromY: number, toX: number, toY: number) => {
     await page.mouse.move(fromX, fromY)
     await page.mouse.down()
