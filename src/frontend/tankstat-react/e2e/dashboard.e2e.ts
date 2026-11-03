@@ -211,7 +211,7 @@ test('arranges a dashboard of one\'s own, then goes back to the vehicle\'s', asy
   await expect.poll(() => chartTitles(page)).toEqual(['Monthly costs', 'Consumption', 'Fuel price', 'Expenses by category', 'Distance per month'])
 })
 
-test('starts from the Usage preset, then adds a figure as it is and a ready-made chart customized into one\'s own through Add widget', async ({ page }) => {
+test('starts from the Usage preset, then adds a figure as it is and a ready-made chart customized into one\'s own through Add widget', async ({ page, isMobile }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id)
@@ -232,6 +232,11 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   await page.getByRole('button', { name: 'Customize' }).click()
   await page.getByRole('button', { name: 'Add widget' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add widget' })
+  // A trend figure's pane holds its period under its preview (#230): inside the dialog at either size.
+  await dialog.getByRole('button', { name: 'Spending' }).click()
+  await expect(dialog.getByTestId('trend-timeline')).toBeVisible()
+  await expectSoundLayout(page)
+  if (isMobile) await dialog.getByRole('button', { name: 'Back to the list' }).click() // a phone shows the list and the pane one after the other
   await dialog.getByRole('button', { name: 'Last fill-up' }).click()
   await expectSoundLayout(page)
   await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()

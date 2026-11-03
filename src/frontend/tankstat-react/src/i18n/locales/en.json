@@ -1517,10 +1517,10 @@
           "consumption": "The average consumption of the last ten full fill-ups.",
           "odometer": "The vehicle’s latest odometer reading, from any log.",
           "lastFillUp": "The date of the last fill-up, and how many fill-ups and expenses there are.",
-          "spendingTrend": "What was spent in the last 12 whole months, against the 12 months before.",
-          "costPerDistance": "Money per 100 km or 100 miles driven in the last 12 whole months, against the 12 months before.",
-          "consumptionTrend": "The mean of the latest fill-ups’ consumption, against the ten before.",
-          "distanceTrend": "The distance driven this year, against last year up to the same day."
+          "spendingTrend": "What was spent over the period you choose, against the period before or a year earlier; to start, the last 12 whole months against the 12 before.",
+          "costPerDistance": "Money per 100 km or 100 miles driven over the period you choose, against the period before or a year earlier; to start, the last 12 whole months.",
+          "consumptionTrend": "The mean consumption over the period you choose, against the period before or a year earlier; to start, the latest 10 fill-ups against the 10 before.",
+          "distanceTrend": "The distance driven over the period you choose, against the period before or a year earlier; to start, this year against last year up to the same day."
         },
         "ready": {
           "monthlyCosts": "Total spend by month, last 12 months, fuel and expenses stacked.",

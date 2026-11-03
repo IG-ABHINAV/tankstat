@@ -1517,10 +1517,10 @@
           "consumption": "Az utolsó tíz teli tankolás átlagfogyasztása.",
           "odometer": "A jármű legutóbbi kilométeróra-állása, bármelyik bejegyzésből.",
           "lastFillUp": "Az utolsó tankolás napja, és hány tankolás és költség van.",
-          "spendingTrend": "Az utolsó 12 teljes hónap költése az előző 12 hónaphoz képest.",
-          "costPerDistance": "Pénz 100 km-enként vagy 100 mérföldenként az utolsó 12 teljes hónapban, az előző 12 hónaphoz képest.",
-          "consumptionTrend": "A legutóbbi tankolások fogyasztásának átlaga az előző tízhez képest.",
-          "distanceTrend": "Az idén megtett út a tavalyi, ugyanaddig a napig megtett úthoz képest."
+          "spendingTrend": "A választott időszak költése az előzőhöz vagy egy évvel korábbihoz képest; kezdetben az utolsó 12 teljes hónap az előző 12-höz képest.",
+          "costPerDistance": "Pénz 100 km-enként vagy 100 mérföldenként a választott időszakban, az előzőhöz vagy egy évvel korábbihoz képest; kezdetben az utolsó 12 teljes hónap.",
+          "consumptionTrend": "Az átlagfogyasztás a választott időszakban, az előzőhöz vagy egy évvel korábbihoz képest; kezdetben a legutóbbi 10 tankolás az előző 10-hez képest.",
+          "distanceTrend": "A megtett út a választott időszakban, az előzőhöz vagy egy évvel korábbihoz képest; kezdetben az idei a tavalyi, ugyanaddig a napig megtett úthoz képest."
         },
         "ready": {
           "monthlyCosts": "Összes költés havonta az utolsó 12 hónapban, üzemanyag és költségek egymásra rakva.",
