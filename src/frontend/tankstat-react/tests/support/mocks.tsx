@@ -975,6 +975,7 @@ export interface FakeChart {
   secondKind: string | null
   isShared: boolean
   canEdit: boolean
+  canDelete: boolean
   createdBy: Person
 }
 
@@ -1012,6 +1013,7 @@ export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
   secondKind: null,
   isShared: false,
   canEdit: true,
+  canDelete: true,
   createdBy: person('Alice'),
   ...over,
 })

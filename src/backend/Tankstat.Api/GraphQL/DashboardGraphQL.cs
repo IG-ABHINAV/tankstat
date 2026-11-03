@@ -1,3 +1,4 @@
+using Tankstat.Application.Access;
 using Tankstat.Application.Stats;
 using Tankstat.Application.Users;
 using Tankstat.Domain.Charts;
@@ -35,10 +36,15 @@ public sealed class VehicleChartType : ObjectType<VehicleChart>
 [ExtendObjectType<VehicleChart>]
 public sealed class VehicleChartExtensions
 {
-    public Task<bool> GetCanEdit([Parent] VehicleChart chart, [Service] ChartService charts, CancellationToken ct) => charts.CanEditAsync(chart, ct);
+    /// <summary>Whether the user may change the chart: its creator only.</summary>
+    public async Task<bool> GetCanEdit([Parent] VehicleChart chart, [Service] AccessService access, CancellationToken ct) =>
+        ChartService.MayChange(chart, await access.RequirePrincipalAsync(ct));
 
-    public async Task<UserRef?> GetCreatedBy([Parent] VehicleChart chart, [Service] IUserRepository users, CancellationToken ct) =>
-        await users.FindByIdAsync(chart.CreatedById, ct) is { } user ? UserRef.From(user) : null;
+    /// <summary>Whether the user may delete the chart: its creator, or anyone with Delete access to the vehicle's logs.</summary>
+    public async Task<bool> GetCanDelete([Parent] VehicleChart chart, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct) =>
+        ChartService.MayDelete(chart, await access.RequirePrincipalAsync(ct), await levels.LoadAsync(chart.VehicleId, ct));
+
+    public Task<UserRef?> GetCreatedBy([Parent] VehicleChart chart, UserRefLoader users, CancellationToken ct) => users.LoadAsync(chart.CreatedById, ct);
 }
 
 [ExtendObjectType<Vehicle>]

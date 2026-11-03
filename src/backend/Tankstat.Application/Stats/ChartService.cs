@@ -57,14 +57,14 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
         logger.LogDebug("Chart {ChartId} deleted", chart.Id);
     }
 
-    /// <summary>Whether the current user may change this chart (the UI shows the buttons accordingly).</summary>
-    public async Task<bool> CanEditAsync(VehicleChart chart, CancellationToken ct)
-    {
-        var user = await access.RequirePrincipalAsync(ct);
-        if (chart.CreatedById == user.Id) return true;
-        var vehicle = await vehicles.FindAsync(chart.VehicleId, ct);
-        return vehicle is not null && await access.LogLevelAsync(vehicle, ct) >= AccessLevel.Delete;
-    }
+    // The two rights on a chart, decided here alone (#210): the mutations refuse by them and GraphQL's `canEdit`/`canDelete` say them, so
+    // the UI never offers what the server refuses.
+
+    /// <summary>Whether the user may change the chart: its creator only.</summary>
+    public static bool MayChange(VehicleChart chart, Principal user) => chart.CreatedById == user.Id;
+
+    /// <summary>Whether the user may delete the chart: its creator, or anyone with Delete access to the vehicle's logs (<paramref name="level"/>).</summary>
+    public static bool MayDelete(VehicleChart chart, Principal user, AccessLevel level) => MayChange(chart, user) || level >= AccessLevel.Delete;
 
     private static void RequireShareRight(bool shared, AccessLevel level)
     {
@@ -86,9 +86,9 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
         var chart = await charts.FindAsync(id, ct);
         var vehicle = chart is null ? null : await vehicles.FindAsync(chart.VehicleId, ct);
         var level = vehicle is null ? AccessLevel.None : await access.LogLevelAsync(vehicle, ct);
-        var visible = chart is not null && level >= AccessLevel.View && (chart.IsShared || chart.CreatedById == user.Id);
-        if (!visible) throw new NotFoundException("chart.notFound", $"Chart {id} does not exist.", new { Id = id });
-        if (chart!.CreatedById != user.Id && !(allowDeleteLevel && level >= AccessLevel.Delete))
+        if (chart is null || level < AccessLevel.View || !(chart.IsShared || chart.CreatedById == user.Id))
+            throw new NotFoundException("chart.notFound", $"Chart {id} does not exist.", new { Id = id });
+        if (!(allowDeleteLevel ? MayDelete(chart, user, level) : MayChange(chart, user)))
             throw new ForbiddenException("chart.notYours", "Only the creator can change this chart.");
         return (chart, level, user);
     }
