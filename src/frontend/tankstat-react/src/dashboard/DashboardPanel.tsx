@@ -31,7 +31,7 @@ import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
 import { ChartCard } from './ChartCard.tsx'
-import { type ChartRecipe } from './chartFormat.ts'
+import { recipeOf } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
 import { Figure } from './Figures.tsx'
 import {
@@ -85,21 +85,6 @@ function DashboardSkeleton() {
     </>
   )
 }
-
-const recipeOf = (c: SavedChart): ChartRecipe => ({
-  metric: c.metric,
-  grouping: c.grouping,
-  kind: c.kind,
-  range: c.range,
-  stacked: c.stacked,
-  from: c.rangeFrom ?? null,
-  to: c.rangeTo ?? null,
-  trend: c.trend,
-  runningTotal: c.runningTotal,
-  compareYearEarlier: c.compareYearEarlier,
-  secondMetric: c.secondMetric ?? null,
-  secondKind: c.secondKind ?? null,
-})
 
 /**
  * The first screen of a vehicle: its key figures and its charts, ready-made and saved, as tiles of a grid arranged the way its dashboard is

@@ -26,6 +26,7 @@ it('names an icon segment by its words, hidden beside the icon, and says why one
   expect(within(group).getByRole('radio', { name: 'Circle' })).toBeChecked()
   const square = within(group).getByRole('radio', { name: 'Square' })
   expect(square).toBeDisabled()
+  expect(square).toHaveAccessibleDescription('Squares are for later.') // a disabled radio takes no focus: the reason reaches a screen reader without the tooltip
   expect(within(group).queryByText('Circle', { ignore: 'span[style]' })).toBeNull() // drawn as its icon, named for assistive technology
 
   await ui.hover(square.closest('label')!)

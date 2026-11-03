@@ -1,4 +1,5 @@
 import Box from '@mui/material/Box'
+import type { Theme } from '@mui/material/styles'
 import Tooltip from '@mui/material/Tooltip'
 import { useId, type ReactNode } from 'react'
 import { COARSE } from '../theme/components.ts'
@@ -15,7 +16,7 @@ export interface SegmentedOption<V extends string> {
   reason?: string
 }
 
-const pill = (theme: Parameters<Parameters<typeof Box>[0]['sx'] extends infer S ? (S extends (t: infer T) => unknown ? (t: T) => unknown : never) : never>[0]) => ({
+const pill = (theme: Theme) => ({
   display: 'inline-flex',
   flexWrap: 'wrap' as const,
   p: '3px',
@@ -24,8 +25,13 @@ const pill = (theme: Parameters<Parameters<typeof Box>[0]['sx'] extends infer S 
   backgroundColor: theme.vars.palette.neutral.soft,
 })
 
-/** The look of one segment: a pill inside the pill, raised when chosen, dimmed when it cannot be chosen. */
-function Segment({ option, name, chosen, control }: { option: SegmentedOption<string>; name: string; chosen: boolean; control: ReactNode }) {
+/**
+ * One segment: its input (a radio or a checkbox) in a pill inside the pill, raised when chosen, dimmed when it cannot be chosen. A
+ * `reason` describes the input too (a disabled one takes no focus and its tooltip is on the label, so neither reaches a keyboard or a
+ * screen reader), from outside the label so it is not part of the name.
+ */
+function Segment({ option, type, name, chosen, onChange }: { option: SegmentedOption<string>; type: 'radio' | 'checkbox'; name: string; chosen: boolean; onChange: (checked: boolean) => void }) {
+  const reasonId = useId()
   const body = (
     <Box
       component="label"
@@ -47,7 +53,16 @@ function Segment({ option, name, chosen, control }: { option: SegmentedOption<st
         '&:has(input:focus-visible)': theme.focusVisible,
       })}
     >
-      {control}
+      <input
+        type={type}
+        name={name}
+        value={option.value}
+        checked={chosen}
+        disabled={option.disabled}
+        aria-describedby={option.reason ? reasonId : undefined}
+        onChange={(e) => onChange(e.target.checked)}
+        style={visuallyHidden}
+      />
       {option.icon ? (
         <>
           <span aria-hidden style={{ display: 'inline-flex' }}>{option.icon}</span>
@@ -61,12 +76,21 @@ function Segment({ option, name, chosen, control }: { option: SegmentedOption<st
   // The tooltip names an icon segment (and says why one cannot be chosen); it sits on the label, which still takes the pointer when the
   // input inside is disabled.
   const title = option.reason ?? (option.icon ? option.label : undefined)
-  return title ? (
-    <Tooltip key={name} title={title} describeChild={!option.icon || option.reason !== undefined}>
-      {body}
-    </Tooltip>
-  ) : (
-    body
+  return (
+    <>
+      {title ? (
+        <Tooltip title={title} describeChild={!option.icon || option.reason !== undefined}>
+          {body}
+        </Tooltip>
+      ) : (
+        body
+      )}
+      {option.reason && (
+        <span id={reasonId} style={visuallyHidden}>
+          {option.reason}
+        </span>
+      )}
+    </>
   )
 }
 
@@ -91,13 +115,7 @@ export function Segmented<V extends string>({
   return (
     <Box role="radiogroup" aria-label={label} sx={pill}>
       {options.map((option) => (
-        <Segment
-          key={option.value}
-          option={option}
-          name={`${name}-${option.value}`}
-          chosen={option.value === value}
-          control={<input type="radio" name={name} value={option.value} checked={option.value === value} disabled={option.disabled} onChange={() => onChange(option.value)} style={visuallyHidden} />}
-        />
+        <Segment key={option.value} option={option} type="radio" name={name} chosen={option.value === value} onChange={() => onChange(option.value)} />
       ))}
     </Box>
   )
@@ -123,13 +141,7 @@ export function SegmentedChecks<V extends string>({
   return (
     <Box role="group" aria-label={label} sx={pill}>
       {options.map((option) => (
-        <Segment
-          key={option.value}
-          option={option}
-          name={`${name}-${option.value}`}
-          chosen={values.includes(option.value)}
-          control={<input type="checkbox" name={`${name}-${option.value}`} checked={values.includes(option.value)} disabled={option.disabled} onChange={(e) => onChange(option.value, e.target.checked)} style={visuallyHidden} />}
-        />
+        <Segment key={option.value} option={option} type="checkbox" name={`${name}-${option.value}`} chosen={values.includes(option.value)} onChange={(checked) => onChange(option.value, checked)} />
       ))}
     </Box>
   )

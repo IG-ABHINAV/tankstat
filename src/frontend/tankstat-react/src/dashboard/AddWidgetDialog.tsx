@@ -18,7 +18,7 @@ import { useToast } from '../toast/toastContext.ts'
 import { MEDIA } from '../theme/media.ts'
 import { ChartCard } from './ChartCard.tsx'
 import { ChartForm } from './ChartForm.tsx'
-import { NEW_RECIPE, type ChartRecipe } from './chartFormat.ts'
+import { NEW_RECIPE, recipeOf, type ChartRecipe } from './chartFormat.ts'
 import { Figure } from './Figures.tsx'
 import { chartKey, presetKey, type FigureId, type ReadyChart } from './widgets.ts'
 
@@ -41,21 +41,6 @@ function chartGlyph(recipe: Pick<ChartRecipe, 'kind' | 'secondMetric'>): ReactNo
     default: return <ChartColumn size={18} aria-hidden />
   }
 }
-
-const recipeOf = (c: SavedChart): ChartRecipe => ({
-  metric: c.metric,
-  grouping: c.grouping,
-  kind: c.kind,
-  range: c.range,
-  stacked: c.stacked,
-  from: c.rangeFrom ?? null,
-  to: c.rangeTo ?? null,
-  trend: c.trend,
-  runningTotal: c.runningTotal,
-  compareYearEarlier: c.compareYearEarlier,
-  secondMetric: c.secondMetric ?? null,
-  secondKind: c.secondKind ?? null,
-})
 
 /**
  * The one way to put something on the dashboard being arranged (#228): the starting points on the left (the key figures and ready-made
@@ -111,11 +96,11 @@ export function AddWidgetDialog({
     onAdd(id)
     close()
   }
-  const is = (p: Choice) => p.kind === current.kind && (p.kind === 'blank' || (p.kind === 'figure' ? p.id === (current as { id: FigureId }).id : p.chart.id === (current as { chart: { id: string } }).chart.id))
+  const keyOf = (p: Choice) => `${p.kind}:${p.kind === 'blank' ? '' : p.kind === 'figure' ? p.id : p.chart.id}`
 
   const item = (p: Choice, label: string, glyph: ReactNode, last = false) => (
-    <ListItem key={`${p.kind}:${p.kind === 'blank' ? '' : p.kind === 'figure' ? p.id : p.chart.id}`} disablePadding sx={last ? { borderTop: 1, borderColor: 'divider', mt: 1, pt: 1 } : undefined}>
-      <ListItemButton selected={is(p)} aria-current={is(p) ? 'true' : undefined} onClick={() => pick(p)} sx={{ borderRadius: '10px', mx: 1 }}>
+    <ListItem key={keyOf(p)} disablePadding sx={last ? { borderTop: 1, borderColor: 'divider', mt: 1, pt: 1 } : undefined}>
+      <ListItemButton selected={keyOf(p) === keyOf(current)} aria-current={keyOf(p) === keyOf(current) ? 'true' : undefined} onClick={() => pick(p)} sx={{ borderRadius: '10px', mx: 1 }}>
         <ListItemIcon sx={{ minWidth: 36, color: 'primary.light' }}>{glyph}</ListItemIcon>
         <ListItemText primary={label} />
       </ListItemButton>

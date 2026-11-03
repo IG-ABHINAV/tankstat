@@ -66,6 +66,10 @@ export function ChartForm({
   const [recipe, setRecipe] = useState<ChartRecipe>(initialRecipe)
   const [shared, setShared] = useState(initialShared)
   const [unfolded, setUnfolded] = useState(!ready)
+  /** The chart this form saves: the one edited, or the one it made, so a retry after `onSaved` failed changes it instead of making another. */
+  const [savedId, setSavedId] = useState<string | null>(chart?.id ?? null)
+  /** What went wrong after the chart was saved (`onSaved`, e.g. the dashboard reloading its charts). */
+  const [failure, setFailure] = useState<unknown>()
   const [save, { loading, error }] = useMutation(SaveChartDocument)
   const previewId = useId()
   const fieldsId = useId()
@@ -80,11 +84,19 @@ export function ChartForm({
       onAddReady?.()
       return
     }
+    setFailure(undefined)
+    let id: string
     try {
-      const result = await save({ variables: { input: { id: chart?.id ?? null, vehicleId: vehicle.id, title, shared: canShare && shared, config: toConfig(recipe) } } })
-      await onSaved(result.data?.saveVehicleChart.id ?? chart?.id ?? '', title.trim())
+      const result = await save({ variables: { input: { id: savedId, vehicleId: vehicle.id, title, shared: canShare && shared, config: toConfig(recipe) } } })
+      id = result.data?.saveVehicleChart.id ?? savedId ?? ''
     } catch {
-      // shown through `error`
+      return // shown through `error`
+    }
+    setSavedId(id)
+    try {
+      await onSaved(id, title.trim())
+    } catch (e) {
+      setFailure(e)
     }
   }
 
@@ -134,6 +146,7 @@ export function ChartForm({
         {!previewFirst && preview}
 
         {error && <ErrorMessage error={error} />}
+        {failure !== undefined && <ErrorMessage error={failure} />}
         <DialogButtons>
           <DialogCancel />
           <Button type="submit" disabled={loading || !valid}>

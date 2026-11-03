@@ -63,10 +63,12 @@ export function ChartCard({
   const { data, error } = useQuery(ChartDataDocument, { variables: { vehicleId, config: toConfig(recipe) }, fetchPolicy: 'cache-and-network' })
   const [body, bodyHeight] = useHeight()
   const height = fill && bodyHeight > 0 ? Math.max(MIN_PICTURE, bodyHeight - BELOW_PICTURE) : 240
-  const pt = useTilePadding(2) // under the edit strip while the dashboard is arranged
+  // Under the edit strip while the dashboard is arranged, only for the card that fills its tile: the context also reaches a preview in a
+  // dialog opened from a tile (the Edit chart dialog), which is portalled out of the tile but not out of the React tree.
+  const pt = useTilePadding(2)
 
   return (
-    <Card sx={fill ? { p: 2, pt, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2, pt }}>
+    <Card sx={fill ? { p: 2, pt, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2 }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
         <Stack sx={{ gap: 0.5, minWidth: 0 }}>
           <Typography component={`h${headingLevel}`} variant="h6">
