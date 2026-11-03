@@ -243,6 +243,10 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
 
 /** Pressed at the middle of `part` and moved in `steps`: after each step `part` is back under the pointer, a frame or two later, polled briefly. */
 const followsThePointer = async (page: Page, part: Locator, steps: number, by: { x: number; y: number }) => {
+  // In the middle of the screen first: the grid scrolls the page while a dragged pointer is within 50 px of its scroll container's edge
+  // (react-grid-layout's edge scroll, `EDGE_THRESHOLD`), which moves the tile away from a pointer that stays put. Where the part starts
+  // depends on the layout above it (CI's fonts put Monthly costs' handle at 866 of 900 px, and the pointer reached the edge at step 17).
+  await part.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'center' }))
   // Measured once it holds still (`settled`): the tiles move to their places after a drop, and grow into the edit rows.
   await settled(part)
   const box = (await part.boundingBox())!
