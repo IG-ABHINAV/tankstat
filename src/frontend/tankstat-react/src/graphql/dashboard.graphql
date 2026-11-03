@@ -99,29 +99,6 @@ query VehicleDashboard($id: UUID!) {
         month
         amount
       }
-      # The trend figures (the home cards never ask: worked out per vehicle from the same data).
-      trends {
-        spending {
-          currency
-          recent
-          earlier
-        }
-        costPerDistance {
-          currency
-          recent
-          earlier
-        }
-        consumption {
-          recent
-          earlier
-          recentFillUps
-          earlierFillUps
-        }
-        distance {
-          recent
-          earlier
-        }
-      }
     }
   }
   vehicleCharts(vehicleId: $id) {
@@ -158,8 +135,52 @@ fragment DashboardLayoutFields on DashboardLayoutInfo {
     w
     h
     pinned
+    # A trend figure's own period (#230); null for its default.
+    period {
+      ...TrendPeriodFields
+    }
   }
   hidden
+}
+
+fragment TrendPeriodFields on TrendPeriod {
+  kind
+  unit
+  count
+  since
+  whole
+  against
+}
+
+# A trend figure over its period (#230): each trend tile asks its own, as a chart tile asks its data.
+query VehicleTrend($vehicleId: UUID!, $figure: TrendFigure!, $period: TrendPeriodInput!) {
+  vehicleTrend(vehicleId: $vehicleId, figure: $figure, period: $period) {
+    recent {
+      start
+      end
+      fillUps
+    }
+    earlier {
+      start
+      end
+      fillUps
+    }
+    currencies {
+      currency
+      recent
+      earlier
+    }
+    consumption {
+      recent
+      earlier
+      recentFillUps
+      earlierFillUps
+    }
+    distance {
+      recent
+      earlier
+    }
+  }
 }
 
 mutation SaveDashboardLayout($input: SaveDashboardLayoutInput!) {

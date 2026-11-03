@@ -20,6 +20,7 @@ const POLICIES: Record<string, SnapshotPolicy> = {
   VehicleDetails: 'keep',
   VehicleDashboard: 'keep',
   ChartData: 'keep',
+  VehicleTrend: 'keep',
   RecurringExpenses: 'keep',
   Refuelings: 'keep',
   RefuelingDetails: 'keep',

@@ -1289,13 +1289,15 @@
       "consumptionHint": "az utolsó 10 teli tankolás",
       "odometer": "Kilométeróra",
       "lastFillUp": "Utolsó tankolás",
-      "spendingTrend": "Költés, utolsó 12 teljes hónap",
-      "costPerDistance": "Költség távolságra, utolsó 12 teljes hónap",
-      "consumptionTrend": "Fogyasztás, legutóbbi tankolások",
+      "spendingTrend": "Költés",
+      "costPerDistance": "Költség távolságra, változás",
+      "consumptionTrend": "Fogyasztás változása",
       "lastFillUps": "utolsó {{count}} tankolás",
-      "distanceTrend": "Idei megtett távolság",
+      "distanceTrend": "Megtett távolság",
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
-      "none": "–"
+      "none": "–",
+      "fillUpsIn_one": "{{count}} tankolás az időszakban",
+      "fillUpsIn_other": "{{count}} tankolás az időszakban"
     },
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",
@@ -1343,18 +1345,71 @@
       "distanceAndConsumption": "Távolság és fogyasztás"
     },
     "trend": {
-      "moreThanBefore": "{{change}}-kal/-kel több, mint az azt megelőző 12 hónapban",
-      "lessThanBefore": "{{change}}-kal/-kel kevesebb, mint az azt megelőző 12 hónapban",
-      "sameAsBefore": "ugyanannyi, mint az azt megelőző 12 hónapban",
-      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint az előző {{count}} tankolásnál",
-      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint az előző {{count}} tankolásnál",
-      "sameFuel": "ugyanannyi üzemanyagot használ, mint az előző {{count}} tankolásnál",
-      "moreThanLastYear": "{{change}}-kal/-kel több, mint tavaly ugyaneddig",
-      "lessThanLastYear": "{{change}}-kal/-kel kevesebb, mint tavaly ugyaneddig",
-      "sameAsLastYear": "ugyanannyi, mint tavaly ugyaneddig",
+      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint {{than}}",
+      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint {{than}}",
+      "sameFuel": "ugyanannyi üzemanyagot használ, mint {{than}}",
       "nothingBefore": "még nincs mivel összevetni",
       "tooFew": "3 korábbi tankolás kell az összevetéshez",
-      "nothingDriven": "az utolsó 12 teljes hónapban nem volt megtett út"
+      "nothingDriven": "ebben az időszakban nem volt megtett út",
+      "more": "{{change}}-kal/-kel több, mint {{than}}",
+      "less": "{{change}}-kal/-kel kevesebb, mint {{than}}",
+      "same": "ugyanannyi, mint {{than}}",
+      "fillUpCounts": "{{sentence}} ({{recent}} tankolás, szemben {{earlier}} korábbival)",
+      "than": {
+        "before": {
+          "days_one": "az azt megelőző napon",
+          "days_other": "az azt megelőző {{count}} napban",
+          "weeks_one": "az azt megelőző héten",
+          "weeks_other": "az azt megelőző {{count}} hétben",
+          "months_one": "az azt megelőző hónapban",
+          "months_other": "az azt megelőző {{count}} hónapban",
+          "years_one": "az azt megelőző évben",
+          "years_other": "az azt megelőző {{count}} évben",
+          "fillUps_one": "az előző tankolásnál",
+          "fillUps_other": "az előző {{count}} tankolásnál"
+        },
+        "yearEarlier": {
+          "days_one": "ugyanazon a napon egy évvel korábban",
+          "days_other": "ugyanabban a(z) {{count}} napban egy évvel korábban",
+          "weeks_one": "ugyanazon a héten egy évvel korábban",
+          "weeks_other": "ugyanabban a(z) {{count}} hétben egy évvel korábban",
+          "months_one": "ugyanabban a hónapban egy évvel korábban",
+          "months_other": "ugyanabban a(z) {{count}} hónapban egy évvel korábban",
+          "years_one": "ugyanabban az évben egy évvel korábban",
+          "years_other": "ugyanabban a(z) {{count}} évben egy évvel korábban"
+        },
+        "sameDaysYearEarlier": "ugyanezeken a napokon egy évvel korábban",
+        "lastYearToDate": "tavaly ugyaneddig"
+      }
+    },
+    "period": {
+      "thisYear": "Idén",
+      "since": "{{date}} óta",
+      "last": {
+        "days_one": "Utolsó nap",
+        "days_other": "Utolsó {{count}} nap",
+        "weeks_one": "Utolsó hét",
+        "weeks_other": "Utolsó {{count}} hét",
+        "months_one": "Utolsó hónap",
+        "months_other": "Utolsó {{count}} hónap",
+        "years_one": "Utolsó év",
+        "years_other": "Utolsó {{count}} év",
+        "fillUps_one": "Utolsó tankolás",
+        "fillUps_other": "Utolsó {{count}} tankolás"
+      },
+      "whole": {
+        "weeks_one": "{{count}} teljes hét",
+        "weeks_other": "{{count}} teljes hét",
+        "months_one": "{{count}} teljes hónap",
+        "months_other": "{{count}} teljes hónap",
+        "years_one": "{{count}} teljes év",
+        "years_other": "{{count}} teljes év"
+      },
+      "vs": {
+        "before": "az előzőhöz képest",
+        "yearEarlier": "egy évvel korábbihoz képest"
+      },
+      "withAgainst": "{{period}} · {{against}}"
     },
     "customize": {
       "button": "Testreszabás",

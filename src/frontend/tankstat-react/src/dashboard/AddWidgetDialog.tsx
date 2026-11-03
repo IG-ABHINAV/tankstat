@@ -20,6 +20,7 @@ import { ChartCard } from './ChartCard.tsx'
 import { ChartForm } from './ChartForm.tsx'
 import { NEW_RECIPE, recipeOf, type ChartRecipe } from './chartFormat.ts'
 import { Figure } from './Figures.tsx'
+import { isTrendFigure } from './trendPeriod.ts'
 import { chartKey, defaultSize, GAP, presetKey, ROW_HEIGHT, type FigureId, type ReadyChart } from './widgets.ts'
 
 type Summary = NonNullable<NonNullable<VehicleDashboardQuery['vehicle']>['summary']>
@@ -29,7 +30,6 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
 /** What the dialog can start from: a key figure, a ready-made chart, one of the user's saved charts, or a blank chart. */
 type Choice = { kind: 'figure'; id: FigureId } | { kind: 'ready'; chart: ReadyChart } | { kind: 'saved'; chart: SavedChart } | { kind: 'blank' }
 
-const TREND_FIGURES: readonly FigureId[] = ['spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend']
 
 /** The glyph of a chart's kind (bars, a line, an area, a donut; bars and a line for a chart with a second measure). */
 function chartGlyph(recipe: Pick<ChartRecipe, 'kind' | 'secondMetric'>): ReactNode {
@@ -109,7 +109,7 @@ export function AddWidgetDialog({
   const list = (
     <List dense disablePadding aria-label={t('dashboard.widget.listLabel')} sx={{ minWidth: 0 }}>
       {figures.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.figures')}</ListSubheader>}
-      {figures.map((f) => item({ kind: 'figure', id: f }, t(`dashboard.kpi.${f}`), TREND_FIGURES.includes(f) ? <TrendingUp size={18} aria-hidden /> : <Hash size={18} aria-hidden />))}
+      {figures.map((f) => item({ kind: 'figure', id: f }, t(`dashboard.kpi.${f}`), isTrendFigure(f) ? <TrendingUp size={18} aria-hidden /> : <Hash size={18} aria-hidden />))}
       {ready.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.ready')}</ListSubheader>}
       {ready.map((c) => item({ kind: 'ready', chart: c }, t(`dashboard.presets.${c.id}`), chartGlyph(c.recipe)))}
       {saved.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.yours')}</ListSubheader>}
@@ -137,7 +137,7 @@ export function AddWidgetDialog({
           <>
             {heading(t(`dashboard.kpi.${current.id}`), t(`dashboard.widget.describe.figures.${current.id}`))}
             <Box sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
-              <Figure id={current.id} rows={rows} summary={summary} units={vehicle.units} />
+              <Figure id={current.id} vehicleId={vehicle.id} rows={rows} summary={summary} units={vehicle.units} />
             </Box>
             <DialogButtons>
               <DialogCancel />

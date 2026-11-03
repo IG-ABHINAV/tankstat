@@ -248,7 +248,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   }
   const render = (tile: Tile) => {
     const widget = widgetOf(tile.id)
-    if (widget?.kind === 'figure') return <Figure id={widget.id} rows={tile.h} summary={s} units={vehicle.units} />
+    if (widget?.kind === 'figure') return <Figure id={widget.id} vehicleId={vehicle.id} period={tile.period} rows={tile.h} summary={s} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
     if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
     const saved = charts.find((c) => c.id === widget?.id)

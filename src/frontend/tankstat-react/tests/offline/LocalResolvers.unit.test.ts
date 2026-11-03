@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { todayIso } from '../../src/forms/dates.ts'
 import { connectivity } from '../../src/offline/connectivity.ts'
 import { deviceData } from '../../src/offline/deviceData.ts'
 import { memoryStorage, type LogRow, type RowStore, type VehicleRow } from '../../src/offline/deviceStorage.ts'
@@ -450,8 +451,13 @@ describe('answering offline, the device\'s own data', () => {
     expect(await answerLocally(rows, 'RecurringExpenses', { vehicleId: 'golf' })).toMatchObject({ vehicle: { __typename: 'Vehicle', id: 'golf', recurring: [{ id: 's1', title: 'Oil' }] } })
     expect(await answerLocally(rows, 'VehicleDashboard', { id: 'golf' })).toEqual({ vehicle: { __typename: 'Vehicle', id: 'golf', summary: null, dashboard: null }, vehicleCharts: [] })
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'golf' })).toEqual({ vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } })
+    const empty = { __typename: 'TrendWindow', start: todayIso(), end: todayIso(), fillUps: 0 }
+    expect(await answerLocally(rows, 'VehicleTrend', { vehicleId: 'golf', figure: 'SPENDING', period: { kind: 'THIS_YEAR' } })).toEqual({
+      vehicleTrend: { __typename: 'TrendFigureData', recent: empty, earlier: empty, currencies: [], consumption: null, distance: null }, // the windows are non-null: the tile says it has nothing yet
+    })
     expect(await answerLocally(rows, 'VehicleDashboard', { id: 'v1' })).toBeUndefined()
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'v1' })).toBeUndefined()
+    expect(await answerLocally(rows, 'VehicleTrend', { vehicleId: 'v1' })).toBeUndefined()
   })
 
   it('a search on the home list finds the vehicles added here by name or licence plate', async () => {

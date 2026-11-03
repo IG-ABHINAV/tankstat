@@ -27,7 +27,7 @@ function setup(vehicle = fakeVehicle(), charts = [fakeChart()], route = '/vehicl
 
 /** The charts' titles in the order the dashboard's tiles come (reading order: the grid draws them in that order). */
 const chartTitles = async () => within(await screen.findByRole('region', { name: 'Dashboard' })).getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
-const figureLabels = () => [...within(screen.getByRole('region', { name: 'Dashboard' })).getAllByText(/./, { selector: '.MuiCard-root > p:first-child' })].map((p) => p.textContent)
+const figureLabels = () => [...within(screen.getByRole('region', { name: 'Dashboard' })).getAllByText(/./, { selector: '.MuiCard-root > div:first-child > p:first-child' })].map((p) => p.textContent)
 const layout = (over: Partial<FakeLayout>): FakeLayout => ({ tiles: [], hidden: [], ...over })
 /** Opens a tile's menu and picks an entry. */
 const tileMenu = async (ui: ReturnType<typeof userEvent.setup>, name: string, entry: string) => {
@@ -342,11 +342,11 @@ it('shows what a figure\'s rows hold: label and value at two, the comparison or 
   expect(within(region).queryByText('last 10 full fill-ups')).not.toBeInTheDocument() // but not the note
   expect(within(region).getByText('5 fill-ups, 2 expenses')).toBeInTheDocument() // three rows: the note
   expect(within(region).getByText(/Last month: .*40,000/)).toBeInTheDocument()
-  expect(within(region).getByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument() // three rows: the comparison
-  expect(within(region).getByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument() // four rows: the comparison and the note
+  expect(await within(region).findByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument() // three rows: the comparison (each trend tile loads its own)
+  expect(await within(region).findByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument() // four rows: the comparison and the note
   expect(within(region).getByText('€200.00')).toBeInTheDocument()
   expect(within(region).queryByRole('img', { name: /^Spending in the last six months/ })).not.toBeInTheDocument() // the sparkline needs four rows
-  expect(figureLabels()).toEqual(['Odometer', 'Average consumption', 'Spent this month', 'Last fill-up', 'Distance this year', 'Spending, last 12 full months'])
+  expect(figureLabels()).toEqual(['Odometer', 'Average consumption', 'Spent this month', 'Last fill-up', 'Distance driven', 'Spending'])
 })
 
 it('makes a figure shorter down to what its content needs, and saves the rows (#229)', async () => {
@@ -452,6 +452,37 @@ it('words the trend figures with an arrow and a change, never by colour alone', 
   expect(toneOf('1,500 km (14%) more than last year to this day')).toBe('neutral')
 })
 
+it('shows a trend figure over its tile\'s own period: the chip names it, the words follow it, the server is asked for it (#230)', async () => {
+  const weeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' }
+  const since = { kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' }
+  const { state } = setup(fakeVehicle(), [], undefined, {
+    signedIn: true,
+    arranged: (s) => {
+      s.dashboard.shared = layout({ tiles: [{ ...fakeTile('spendingTrend', 0, 0, 1, 4), period: weeks }, { ...fakeTile('consumptionTrend', 1, 0, 1, 4), period: since }, fakeTile('distanceTrend', 2, 0, 1, 4)] })
+      s.trendFor = (figure, period) =>
+        figure === 'SPENDING' ? { recent: { start: '2026-09-08', end: '2026-11-03', fillUps: 5 }, earlier: { start: '2025-09-08', end: '2025-11-03', fillUps: 4 }, currencies: [{ currency: 'HUF', recent: 120000, earlier: 100000 }], consumption: null, distance: null }
+        : figure === 'CONSUMPTION' && period.kind === 'SINCE' ? { recent: { start: '2026-03-15', end: '2026-11-03', fillUps: 6 }, earlier: { start: '2025-08-27', end: '2026-03-14', fillUps: 9 }, currencies: [], consumption: { recent: 6, earlier: 6.4, recentFillUps: 6, earlierFillUps: 9 }, distance: null }
+        : undefined
+    },
+  })
+
+  const region = await screen.findByRole('region', { name: 'Dashboard' })
+  expect(await within(region).findByText('HUF 20,000 (20%) more than the same 8 weeks a year earlier')).toBeInTheDocument()
+  expect(within(region).getByText('Last 8 weeks · vs a year earlier')).toBeInTheDocument() // the chip; a year earlier is not spending's own comparison
+  expect(await within(region).findByText('uses 6% less fuel than the 200 days before (6 fill-ups against 9)')).toBeInTheDocument() // a window by dates names the fill-ups
+  expect(within(region).getByText('6 fill-ups in the period')).toBeInTheDocument()
+  expect(within(region).getByText(/^Since /)).toBeInTheDocument()
+  expect(await within(region).findByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument() // no period of its own: its default
+  expect(within(region).getByText('This year')).toBeInTheDocument()
+  expect(state.trendRequests).toEqual(
+    expect.arrayContaining([
+      { vehicleId: 'v1', figure: 'SPENDING', period: weeks },
+      { vehicleId: 'v1', figure: 'CONSUMPTION', period: since },
+      { vehicleId: 'v1', figure: 'DISTANCE', period: { kind: 'THIS_YEAR', unit: null, count: null, since: null, whole: false, against: 'YEAR_EARLIER' } },
+    ]),
+  )
+})
+
 it('says when a trend figure has nothing to compare with', async () => {
   setup(fakeVehicle({ summary: fakeSummary({ trends: { spending: [], costPerDistance: [], consumption: null, distance: { recent: 0, earlier: 0 } } }) }), [], undefined, {
     signedIn: true,
@@ -459,10 +490,9 @@ it('says when a trend figure has nothing to compare with', async () => {
   })
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
-  await within(region).findByText('Spending, last 12 full months')
-  expect(within(region).getAllByText('–')).toHaveLength(2) // spending and consumption have no figure
-  expect(within(region).getByText('needs 3 earlier fill-ups to compare with')).toBeInTheDocument()
-  expect(within(region).getByText('nothing to compare with yet')).toBeInTheDocument()
+  expect(await within(region).findByText('needs 3 earlier fill-ups to compare with')).toBeInTheDocument()
+  await waitFor(() => expect(within(region).getAllByText('–')).toHaveLength(2)) // spending and consumption have no figure
+  expect(await within(region).findByText('nothing to compare with yet')).toBeInTheDocument()
 })
 
 it('words a consumption trend with few fill-ups before, and a cost per distance with nothing driven lately', async () => {
@@ -475,8 +505,8 @@ it('words a consumption trend with few fill-ups before, and a cost per distance 
   expect(await within(region).findByText('7.5 L/100 km')).toBeInTheDocument() // the latest mean shows as soon as there is one
   expect(within(region).getByText('last 4 fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('needs 3 earlier fill-ups to compare with')).toBeInTheDocument()
-  expect(within(region).getByText('nothing driven in the last 12 full months')).toBeInTheDocument() // the recent window is the empty one
-  expect(within(region).getAllByText('–')).toHaveLength(2) // cost per distance and distance (no reading at all)
+  expect(await within(region).findByText('nothing driven in this period')).toBeInTheDocument() // the recent window is the empty one
+  await waitFor(() => expect(within(region).getAllByText('–')).toHaveLength(2)) // cost per distance and distance (no reading at all)
 })
 
 it('starts from the Usage preset: its figures and charts, saved as tiles', async () => {
@@ -494,7 +524,7 @@ it('starts from the Usage preset: its figures and charts, saved as tiles', async
     'preset:distanceYearEarlier', 'preset:consumptionTrend', 'preset:distanceAndConsumption', 'preset:distance',
   ])
   await waitFor(async () => expect(await chartTitles()).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month']))
-  expect(figureLabels()).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, latest fill-ups'])
+  expect(figureLabels()).toEqual(['Odometer', 'Distance driven', 'Average consumption', 'Consumption change'])
 })
 
 it('adds a ready-made chart as it is from Add widget, or customizes it into a chart of one\'s own: saved and added, the original still offered', async () => {
@@ -822,7 +852,7 @@ it('has no accessibility violations: the Add widget dialog, its list and the bla
   await customize(ui)
   await ui.click(screen.getByRole('button', { name: 'Add widget' }))
   const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
-  await within(dialog).findByRole('heading', { name: 'Spending, last 12 full months' }) // the first starting point, picked
+  await within(dialog).findByRole('heading', { name: 'Spending' }) // the first starting point, picked
   await check(document.body)
   await ui.click(within(dialog).getByRole('button', { name: 'Blank chart' }))
   await within(dialog).findByLabelText('Title')

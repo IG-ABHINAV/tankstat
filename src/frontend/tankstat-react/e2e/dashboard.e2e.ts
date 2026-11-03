@@ -14,7 +14,7 @@ test.use({ reducedMotion: 'reduce' })
 const region = (page: Page) => page.getByRole('region', { name: 'Dashboard' })
 /** The charts' titles in the order the tiles come (the grid draws them in reading order). */
 const chartTitles = (page: Page) => region(page).getByRole('heading', { level: 2 }).allTextContents()
-const figureLabels = (page: Page) => region(page).locator('.MuiCard-root > p:first-child').allTextContents()
+const figureLabels = (page: Page) => region(page).locator('.MuiCard-root > div:first-child > p:first-child').allTextContents()
 const tile = (page: Page, id: string) => page.locator(`[data-tile="${id}"]`)
 const menu = async (page: Page, name: string, entry: string) => {
   await page.getByRole('button', { name: `Options for ${name}` }).click()
@@ -225,7 +225,7 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
   await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month'])
-  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, latest fill-ups'])
+  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance driven', 'Average consumption', 'Consumption change'])
   await expectSoundLayout(page)
 
   // Add widget (#228): a figure as it is, then a ready-made chart customized into a chart of one's own; both land at the bottom.
@@ -250,7 +250,7 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
   await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month', 'My costs'])
-  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, latest fill-ups', 'Last fill-up'])
+  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance driven', 'Average consumption', 'Consumption change', 'Last fill-up'])
   // Outside Customize a tile shows only its content: no Copy, no Edit, the table a button away (on a chart with something to list).
   await expect(page.getByRole('button', { name: /^Copy |^Edit the chart|^Delete the chart/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'My costs as a table' })).toBeVisible()
