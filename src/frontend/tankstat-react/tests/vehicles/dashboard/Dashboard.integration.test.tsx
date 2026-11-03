@@ -170,18 +170,25 @@ it('deletes a chart after a confirmation', async () => {
   expect(state.calls.DeleteChart).toEqual([{ id: 'c1' }])
 })
 
+/** A chart card's loading outline, once it is there (`waitFor` retries only on a throw, not on a null). */
+const outline = (root: HTMLElement) =>
+  waitFor(() => {
+    const skeleton = root.querySelector<HTMLElement>('.MuiSkeleton-root')
+    expect(skeleton).not.toBeNull()
+    return skeleton!
+  })
+
 it('gives a tile\'s chart the room its tile has, never a height of its own, and the builder\'s preview its 240 px (#227)', async () => {
   const { ui } = setup()
   // The charts' data never comes, so their loading outlines stay: jsdom lays nothing out, and this is the size the picture is given.
   server.use(graphql.query('ChartData', () => delay('infinite')))
 
   const tile = (await screen.findByRole('heading', { name: 'Monthly costs' })).closest('[data-tile]') as HTMLElement
-  const outline = await waitFor(() => tile.querySelector<HTMLElement>('.MuiSkeleton-root')!)
-  expect(outline.style.height).toBe('') // sized by the browser: what the card has under its title
+  expect((await outline(tile)).style.height).toBe('') // sized by the browser: what the card has under its title
 
   await ui.click(screen.getByRole('button', { name: 'Add chart' }))
   const dialog = await screen.findByRole('dialog', { name: 'Add chart' })
-  expect((await waitFor(() => dialog.querySelector<HTMLElement>('.MuiSkeleton-root')!)).style.height).toBe('240px')
+  expect((await outline(dialog)).style.height).toBe('240px')
 })
 
 // ---- the arrangement ----------------------------------------------------------------------------------------
