@@ -2,8 +2,13 @@
 # Starts the API on a throwaway port, runs the contract tests against it, always cleans up.
 set -euo pipefail
 
-port="${TANKSTAT_API_PORT:-5099}"
+# Away from scripts/test-e2e.sh's servers (5097 and the six after it) and screenshots.sh's (5110), so they can run side by side (#236).
+port="${TANKSTAT_API_PORT:-5120}"
 export TANKSTAT_API_URL="http://localhost:${port}"
+if curl -s -o /dev/null "$TANKSTAT_API_URL"; then
+  echo "Something already answers on $TANKSTAT_API_URL: stop it, or choose another port with TANKSTAT_API_PORT." >&2
+  exit 1
+fi
 
 dotnet build src/backend/Tankstat.Api -c Release --nologo -v q
 # Schema introspection (used by the contract tests) is Development-only in HotChocolate.
