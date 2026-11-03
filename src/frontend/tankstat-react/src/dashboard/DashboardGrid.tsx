@@ -100,6 +100,9 @@ export function DashboardGrid({
     // The corner that resizes a tile: 44 px for a finger, its mark drawn in the corner.
     '& .react-grid-item > .react-resizable-handle': { position: 'absolute', right: 0, bottom: 0, width: 44, height: 44, cursor: 'se-resize', touchAction: 'none', zIndex: 1 },
     '& .react-grid-item > .react-resizable-handle::after': { content: '""', position: 'absolute', right: 8, bottom: 8, width: 10, height: 10, borderRight: '2px solid', borderBottom: '2px solid', borderColor: 'text.secondary', borderBottomRightRadius: 3 },
+    // Outside edit mode the library still renders the corner, marking its tile `react-resizable-hide`; the rule that hides it is in its
+    // stylesheet, which the app does not load (#227).
+    '& .react-resizable-hide > .react-resizable-handle': { display: 'none' },
     '@media (prefers-reduced-motion: reduce)': { '& .react-grid-layout, & .react-grid-item, & .react-grid-item.react-grid-placeholder': { transition: 'none' } },
   } as const
 
