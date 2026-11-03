@@ -86,3 +86,16 @@ public sealed record DashboardTrends(IReadOnlyList<CurrencyChange> Spending, IRe
 
 /// <summary>The mean consumption of the latest fill-ups against the ones before, and how many each half holds (null where too few).</summary>
 public sealed record ConsumptionChange(decimal? Recent, decimal? Earlier, int RecentFillUps, int EarlierFillUps);
+
+/// <summary>The trend figures that take a period of their own (#230).</summary>
+public enum TrendFigure { Spending, CostPerDistance, Consumption, Distance }
+
+/// <summary>One window of a trend figure: its first and last day, and how many fill-ups fall in it (with a stored consumption, for Consumption).</summary>
+public sealed record TrendWindow(DateOnly Start, DateOnly End, int FillUps);
+
+/// <summary>
+/// A trend figure over its period (#230): the two windows compared, and the figure's values in them. Only the figure's own part is filled
+/// in: <see cref="Currencies"/> for Spending (what was spent) and Cost per distance (per 100 distance units), <see cref="Consumption"/>
+/// for Consumption, <see cref="Distance"/> for Distance (null for a vehicle without a reading).
+/// </summary>
+public sealed record TrendFigureData(TrendWindow Recent, TrendWindow Earlier, IReadOnlyList<CurrencyChange> Currencies, ConsumptionChange? Consumption, ValueChange? Distance);
