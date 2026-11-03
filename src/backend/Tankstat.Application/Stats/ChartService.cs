@@ -42,7 +42,7 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
 
     public async Task<VehicleChart> UpdateAsync(Guid id, ChartInput input, CancellationToken ct)
     {
-        var (chart, level, user) = await EditableAsync(id, ct);
+        var (chart, level) = await EditableAsync(id, ct);
         RequireShareRight(input.Shared, level);
         chart.Update(input.Title, input.Config, input.Shared);
         await charts.UpdateAsync(chart, ct);
@@ -52,7 +52,7 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
 
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
-        var (chart, _, _) = await EditableAsync(id, ct, allowDeleteLevel: true);
+        var (chart, _) = await EditableAsync(id, ct, allowDeleteLevel: true);
         await charts.RemoveAsync(chart, ct);
         logger.LogDebug("Chart {ChartId} deleted", chart.Id);
     }
@@ -80,7 +80,7 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
     }
 
     /// <summary>The chart, if the user may see it; changing it is for its creator (or, for deleting, anyone with Delete access).</summary>
-    private async Task<(VehicleChart Chart, AccessLevel Level, Principal User)> EditableAsync(Guid id, CancellationToken ct, bool allowDeleteLevel = false)
+    private async Task<(VehicleChart Chart, AccessLevel Level)> EditableAsync(Guid id, CancellationToken ct, bool allowDeleteLevel = false)
     {
         var user = await access.RequirePrincipalAsync(ct);
         var chart = await charts.FindAsync(id, ct);
@@ -90,6 +90,6 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
             throw new NotFoundException("chart.notFound", $"Chart {id} does not exist.", new { Id = id });
         if (!(allowDeleteLevel ? MayDelete(chart, user, level) : MayChange(chart, user)))
             throw new ForbiddenException("chart.notYours", "Only the creator can change this chart.");
-        return (chart, level, user);
+        return (chart, level);
     }
 }

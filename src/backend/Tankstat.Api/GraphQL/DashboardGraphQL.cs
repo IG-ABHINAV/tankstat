@@ -41,8 +41,12 @@ public sealed class VehicleChartExtensions
         ChartService.MayChange(chart, await access.RequirePrincipalAsync(ct));
 
     /// <summary>Whether the user may delete the chart: its creator, or anyone with Delete access to the vehicle's logs.</summary>
-    public async Task<bool> GetCanDelete([Parent] VehicleChart chart, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct) =>
-        ChartService.MayDelete(chart, await access.RequirePrincipalAsync(ct), await levels.LoadAsync(chart.VehicleId, ct));
+    public async Task<bool> GetCanDelete([Parent] VehicleChart chart, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct)
+    {
+        var user = await access.RequirePrincipalAsync(ct);
+        // The creator needs no level loaded (MayDelete holds for them anyway): the batch runs only for someone else's shared chart.
+        return ChartService.MayChange(chart, user) || ChartService.MayDelete(chart, user, await levels.LoadAsync(chart.VehicleId, ct));
+    }
 
     public Task<UserRef?> GetCreatedBy([Parent] VehicleChart chart, UserRefLoader users, CancellationToken ct) => users.LoadAsync(chart.CreatedById, ct);
 }
