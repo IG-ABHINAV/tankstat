@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
+import { ChartTable } from '../../../src/dashboard/ChartTable.tsx'
 import { ChartView } from '../../../src/dashboard/ChartView.tsx'
 import type { ChartData, ChartRecipe, Series } from '../../../src/dashboard/chartFormat.ts'
 import { ThemeRoot } from '../../../src/theme/ThemeRoot.tsx'
@@ -20,6 +20,18 @@ const money: Loose = {
 }
 const recipe = (kind: ChartRecipe['kind']): Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> => ({ kind, metric: 'TOTAL_SPEND', grouping: 'MONTH', stacked: kind === 'BAR' })
 
+type ViewRecipe = Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> & Partial<Pick<ChartRecipe, 'trend' | 'compareYearEarlier' | 'secondKind'>>
+type ViewUnits = typeof units | { distance: 'MILES'; volume: 'US_GALLONS' }
+
+/** The picture (`ChartView`) and its table (`ChartTable`, which the card opens in a dialog) of one chart, side by side. */
+const both = (data: ChartData, r: ViewRecipe, title: string, viewUnits: ViewUnits = units) =>
+  render(
+    <ThemeRoot instant>
+      <ChartView data={data} recipe={r} units={viewUnits} title={title} />
+      <ChartTable data={data} recipe={r} units={viewUnits} title={title} />
+    </ThemeRoot>,
+  )
+
 const view = (data: Loose, kind: ChartRecipe['kind']) =>
   render(
     <ThemeRoot instant>
@@ -34,20 +46,15 @@ it.each(['BAR', 'LINE', 'AREA', 'DONUT'] as const)('draws a %s chart as a pictur
   expect(image.querySelector('svg')).not.toBeNull()
   expect(image.querySelector('[aria-hidden="true"]')).not.toBeNull() // the drawing says nothing itself
   expect(within(image).queryAllByRole('img', { hidden: false })).toHaveLength(0)
-  expect(screen.queryByRole('table')).not.toBeInTheDocument() // the numbers are behind the toggle
+  expect(screen.queryByRole('table')).not.toBeInTheDocument() // the numbers are in the card's table dialog, not under the picture
 })
 
-it('lists the same numbers as a table behind a toggle, with a dash for a missing value', async () => {
-  const ui = userEvent.setup()
-  view(money, 'BAR')
-
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
+it('lists the same numbers as a table, with a dash for a missing value', () => {
+  both(typed(money), recipe('BAR'), 'Monthly costs')
 
   const table = screen.getByRole('table', { name: 'Monthly costs' })
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Fuel · HUF', 'Expenses · HUF'])
   expect(within(table).getByRole('rowheader', { name: 'Sep 2026' }).closest('tr')).toHaveTextContent(/15,500.*–/)
-  await ui.click(screen.getByRole('button', { name: 'Hide the table' }))
-  expect(screen.queryByRole('table')).not.toBeInTheDocument()
 })
 
 it('says so instead of drawing an empty chart', () => {
@@ -57,10 +64,8 @@ it('says so instead of drawing an empty chart', () => {
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
 })
 
-const tableOf = async (data: Loose) => {
-  const ui = userEvent.setup()
-  view(data, 'LINE')
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
+const tableOf = (data: Loose) => {
+  both(typed(data), recipe('LINE'), 'Monthly costs')
   return screen.getByRole('table', { name: 'Monthly costs' })
 }
 
@@ -69,27 +74,19 @@ it.each([
   ['DISTANCE', 1234, '1,234 km'],
   ['CONSUMPTION', 6.75, '6.75 L/100 km'],
   ['COUNT', 3, '3'],
-] as const)('writes %s values in the vehicle\'s units in the table', async (unit, value, text) => {
-  const table = await tableOf({ unit, series: [{ role: 'VALUE', slope: null, kind: 'total', currency: null, points: [{ key: '2026-09', value }] }] })
+] as const)('writes %s values in the vehicle\'s units in the table', (unit, value, text) => {
+  const table = tableOf({ unit, series: [{ role: 'VALUE', slope: null, kind: 'total', currency: null, points: [{ key: '2026-09', value }] }] })
 
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Total'])
   expect(within(table).getByRole('rowheader', { name: 'Sep 2026' }).closest('tr')).toHaveTextContent(`Sep 2026${text}`)
 })
 
-it('lists a chart by category with the expenses that have none as Uncategorised', async () => {
-  const ui = userEvent.setup()
-  render(
-    <ThemeRoot instant>
-      <ChartView
-        data={typed({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'expenses', currency: 'HUF', points: [{ key: 'Service', value: 35000 }, { key: '', value: 1500 }] }] }, 'EXPENSE_COST')}
-        recipe={{ kind: 'DONUT', metric: 'EXPENSE_COST', grouping: 'CATEGORY', stacked: false }}
-        units={units}
-        title="Expenses by category"
-      />
-    </ThemeRoot>,
+it('lists a chart by category with the expenses that have none as Uncategorised', () => {
+  both(
+    typed({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'expenses', currency: 'HUF', points: [{ key: 'Service', value: 35000 }, { key: '', value: 1500 }] }] }, 'EXPENSE_COST'),
+    { kind: 'DONUT', metric: 'EXPENSE_COST', grouping: 'CATEGORY', stacked: false },
+    'Expenses by category',
   )
-
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
 
   const table = screen.getByRole('table', { name: 'Expenses by category' })
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Category', 'Expenses · HUF'])
@@ -104,15 +101,13 @@ const twoCurrencies: Loose = {
   ],
 }
 
-it('with several currencies says each has a scale of its own, and lists a period without spending in one with a dash, not as 0', async () => {
-  const ui = userEvent.setup()
-  view(twoCurrencies, 'BAR')
+it('with several currencies says each has a scale of its own, and lists a period without spending in one with a dash, not as 0', () => {
+  both(typed(twoCurrencies), recipe('BAR'), 'Monthly costs')
 
   const note = screen.getByText('Each currency is drawn on a scale of its own; the amounts are in the tooltip and the table.')
   // A note under the chart, not the figure's caption: the chart's title names the figure (a caption in its middle would, and is invalid).
   expect(note.tagName).toBe('P')
   expect(note.closest('figure')?.querySelector('figcaption')).toBeNull()
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
   const table = screen.getByRole('table', { name: 'Monthly costs' })
   expect(within(table).getByRole('rowheader', { name: 'Sep 2026' }).closest('tr')).toHaveTextContent(/^Sep 2026–€155\.19$/)
   expect(within(table).getByRole('rowheader', { name: 'Aug 2026' }).closest('tr')).toHaveTextContent(/^Aug 2026HUF\s38,000€54\.00$/)
@@ -128,8 +123,8 @@ it('with one currency there is one scale, read by its axis, and nothing to say a
   expect(screen.queryByText(/scale of its own/)).not.toBeInTheDocument()
 })
 
-it('names a series of a kind it does not know plainly, and writes an amount without a currency as a bare number', async () => {
-  const table = await tableOf({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'price', currency: null, points: [{ key: '2026-09', value: 12000 }] }] })
+it('names a series of a kind it does not know plainly, and writes an amount without a currency as a bare number', () => {
+  const table = tableOf({ unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'price', currency: null, points: [{ key: '2026-09', value: 12000 }] }] })
 
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Value'])
   expect(within(table).getByRole('rowheader', { name: 'Sep 2026' }).closest('tr')).toHaveTextContent('Sep 202612,000.00')
@@ -145,18 +140,10 @@ const line = (role: Series['role'], values: (number | null)[], slope: number | n
   points: values.map((value, i) => ({ key: `2026-0${i + 7}`, value })),
 })
 
-const drawn = (data: Loose, over: Partial<ChartRecipe> = {}, viewUnits: typeof units | { distance: 'MILES'; volume: 'US_GALLONS' } = units) =>
-  render(
-    <ThemeRoot instant>
-      <ChartView data={typed(data, over.metric)} recipe={{ ...recipe('BAR'), stacked: false, ...over }} units={viewUnits} title="Costs" />
-    </ThemeRoot>,
-  )
+const drawn = (data: Loose, over: Partial<ChartRecipe> = {}, viewUnits: ViewUnits = units) => both(typed(data, over.metric), { ...recipe('BAR'), stacked: false, ...over }, 'Costs', viewUnits)
 
-it('lists a trend and a year earlier as columns of their own, named after their series', async () => {
-  const ui = userEvent.setup()
+it('lists a trend and a year earlier as columns of their own, named after their series', () => {
   drawn({ unit: 'CURRENCY', series: [line('VALUE', [1000, 2000, 3000]), line('YEAR_EARLIER', [500, 0, 700]), line('MOVING_AVERAGE', [null, null, 2000])] }, { trend: 'MOVING_AVERAGE', compareYearEarlier: true })
-
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
 
   const table = screen.getByRole('table', { name: 'Costs' })
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Total · HUF', 'Total · HUF · a year earlier', 'Total · HUF · moving average'])
@@ -181,11 +168,8 @@ it('says why a trend line or a year earlier that was asked for is not there', ()
   expect(screen.getByText('Nothing was logged in these periods a year earlier.')).toBeInTheDocument()
 })
 
-it('writes a cost per distance with its distance unit, a scale per currency, and a dash where nothing was spent', async () => {
-  const ui = userEvent.setup()
+it('writes a cost per distance with its distance unit, a scale per currency, and a dash where nothing was spent', () => {
   drawn({ unit: 'COST_PER_DISTANCE', series: [line('VALUE', [4000, null, 0]), { ...line('VALUE', [10, 12, 9]), currency: 'EUR' }] }, { kind: 'LINE', metric: 'COST_PER_DISTANCE' })
-
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
 
   const table = screen.getByRole('table', { name: 'Costs' })
   expect(within(table).getByRole('rowheader', { name: 'Jul 2026' }).closest('tr')).toHaveTextContent(/^Jul 2026HUF\s4,000 \/ 100 km€10\.00 \/ 100 km$/)
@@ -193,14 +177,11 @@ it('writes a cost per distance with its distance unit, a scale per currency, and
   expect(screen.getByText(/scale of its own/)).toBeInTheDocument()
 })
 
-it('writes a fuel price per litre and a trend line at zero as a zero, not a dash', async () => {
-  const ui = userEvent.setup()
+it('writes a fuel price per litre and a trend line at zero as a zero, not a dash', () => {
   drawn(
     { unit: 'PRICE_PER_VOLUME', series: [{ ...line('VALUE', [620, 0, 640]), kind: 'fuel', metric: 'AVERAGE_PRICE_PER_UNIT', unit: 'PRICE_PER_VOLUME' }, { ...line('LINEAR', [0, 0, 0], 0), kind: 'fuel', metric: 'AVERAGE_PRICE_PER_UNIT', unit: 'PRICE_PER_VOLUME' }] },
     { kind: 'LINE', metric: 'AVERAGE_PRICE_PER_UNIT', trend: 'LINEAR' },
   )
-
-  await ui.click(screen.getByRole('button', { name: 'Show the data as a table' }))
 
   const table = screen.getByRole('table', { name: 'Costs' })
   expect(within(table).getByRole('rowheader', { name: 'Aug 2026' }).closest('tr')).toHaveTextContent(/^Aug 2026–HUF\s0 \/ L$/) // no price that month, a trend of 0

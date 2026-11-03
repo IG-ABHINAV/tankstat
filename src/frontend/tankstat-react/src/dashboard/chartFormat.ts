@@ -1,4 +1,4 @@
-import type { ChartDataQuery, ChartGrouping, ChartKind, ChartMetric, ChartRange, ChartTrend } from '../gql/generated.ts'
+import type { ChartDataQuery, ChartGrouping, ChartKind, ChartMetric, ChartRange, ChartTrend, VehicleDashboardQuery } from '../gql/generated.ts'
 import { PLACEHOLDER_PAIRS, SERIES_COLORS } from '../theme/scales.ts'
 
 export type ChartData = ChartDataQuery['vehicleChartData']
@@ -229,6 +229,22 @@ export const NEW_RECIPE: ChartRecipe = {
   secondMetric: null,
   secondKind: null,
 }
+
+/** The recipe of a saved chart as the dashboard's query returns it (its custom range as `rangeFrom`/`rangeTo`). */
+export const recipeOf = (c: VehicleDashboardQuery['vehicleCharts'][number]): ChartRecipe => ({
+  metric: c.metric,
+  grouping: c.grouping,
+  kind: c.kind,
+  range: c.range,
+  stacked: c.stacked,
+  from: c.rangeFrom ?? null,
+  to: c.rangeTo ?? null,
+  trend: c.trend,
+  runningTotal: c.runningTotal,
+  compareYearEarlier: c.compareYearEarlier,
+  secondMetric: c.secondMetric ?? null,
+  secondKind: c.secondKind ?? null,
+})
 
 /** The inputs of the chart query for a recipe (dates only count for a custom range). */
 export const toConfig = (r: ChartRecipe) => ({
