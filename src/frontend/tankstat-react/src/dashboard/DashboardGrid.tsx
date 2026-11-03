@@ -3,7 +3,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { EllipsisVertical, GripHorizontal, Pin } from 'lucide-react'
-import { useId, useMemo, useState, type ReactNode } from 'react'
+import { cloneElement, useCallback, useId, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
@@ -14,6 +14,9 @@ import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize,
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
 const COLS = { lg: COLUMNS, sm: 2, xs: 1 } as const
 const FALLBACK_WIDTH = 1280
+/** The gaps between the tiles and around the grid: constants, since the library's tiles re-render when theirs change identity. */
+const MARGIN: [number, number] = [GAP, GAP]
+const PADDING: [number, number] = [0, 0]
 /**
  * The room the edit strip takes, paid for by a taller row while editing (#233, #228): the strip lies over a tile and the card under it
  * starts `TILE_INSET` px down, so the lowest figure there is (`MIN_FIGURE_ROWS`, two rows) gains just that and keeps its label and value;
@@ -62,6 +65,15 @@ export function DashboardGrid({
   const width = measured > 0 ? measured : FALLBACK_WIDTH
   const cols = COLS[breakpointOf(width)]
   const ordered = useMemo(() => inReadingOrder(tiles), [tiles])
+  // The tile being dragged or resized, and a count of its moves (#227). react-grid-layout 2.3 memoizes its grid items, comparing their
+  // place in the grid and their child element, and draws a dragged tile at the pointer only when it renders: with the same child, a tile
+  // moved within its cell is not drawn again, so it froze under the pointer until it crossed into another cell. Each move gives that one
+  // tile a new element (the same props, so its content does not render again), and the library draws it where the pointer is. The
+  // handlers keep their identity across the moves (`useCallback`), since the library compares them too: new ones would draw every tile.
+  const [moving, setMoving] = useState<{ id: string; moves: number } | null>(null)
+  const follow = useCallback((_layout: GridItems, _old: LayoutItem | null, item: LayoutItem | null) => {
+    if (item) setMoving((m) => ({ id: item.i, moves: (m?.moves ?? 0) + 1 }))
+  }, [])
 
   const item = (tile: Tile, inFour: boolean): LayoutItem => {
     const min = minSize(tile.id)
@@ -73,14 +85,40 @@ export function DashboardGrid({
   )
 
   /** The tiles after the grid changed them: in the four-column grid as they are; on fewer columns their new order, flowed back into four. */
-  const fromGrid = (layout: GridItems): Tile[] => {
-    const byId = new Map(tiles.map((tile) => [tile.id, tile]))
-    // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width).
-    const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: l.w, h: l.h, pinned: false }
-    if (cols === COLUMNS) return inReadingOrder(layout.map((l) => ({ ...known(l), x: l.x, y: l.y, w: l.w, h: l.h })))
-    const order = [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...known(l), h: l.h, y: i, x: 0 }))
-    return flow(order, COLUMNS)
-  }
+  const fromGrid = useCallback(
+    (layout: GridItems): Tile[] => {
+      const byId = new Map(tiles.map((tile) => [tile.id, tile]))
+      // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width).
+      const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: l.w, h: l.h, pinned: false }
+      if (cols === COLUMNS) return inReadingOrder(layout.map((l) => ({ ...known(l), x: l.x, y: l.y, w: l.w, h: l.h })))
+      const order = [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...known(l), h: l.h, y: i, x: 0 }))
+      return flow(order, COLUMNS)
+    },
+    [tiles, cols],
+  )
+  /** A drag or a resize ended: the tile is drawn from its place in the grid again, and the tiles as they are now go to the page. */
+  const settle = useCallback(
+    (layout: GridItems) => {
+      setMoving(null)
+      onTilesChange?.(fromGrid(layout))
+    },
+    [fromGrid, onTilesChange],
+  )
+
+  // The tiles' elements, in `ordered`'s order, kept across the grid's own renders (a drag's moves): while a tile is dragged only its own
+  // element is new (`moving`). They are made again whenever the page renders, since its `render`, `name` and `onAction` are new then.
+  const cells = useMemo(
+    () =>
+      ordered.map((tile, i) => (
+        <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {editing && <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />}
+          <TileInsetContext.Provider value={editing}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
+          </TileInsetContext.Provider>
+        </Box>
+      )),
+    [ordered, editing, cols, name, render, onAction],
+  )
 
   const styles = {
     '& .react-grid-layout': { position: 'relative', transition: 'height 200ms ease' },
@@ -109,22 +147,17 @@ export function DashboardGrid({
           breakpoints={BREAKPOINTS}
           cols={COLS}
           rowHeight={editing ? ROW_HEIGHT + EDIT_ROW_EXTRA : ROW_HEIGHT}
-          margin={[GAP, GAP]}
-          containerPadding={[0, 0]}
+          margin={MARGIN}
+          containerPadding={PADDING}
           compactor={verticalCompactor}
           dragConfig={{ enabled: editing, handle: `.${CLASS.handle}` }}
           resizeConfig={{ enabled: editing, handles: ['se'] }}
-          onDragStop={(layout) => onTilesChange?.(fromGrid(layout))}
-          onResizeStop={(layout) => onTilesChange?.(fromGrid(layout))}
+          onDrag={follow}
+          onResize={follow}
+          onDragStop={settle}
+          onResizeStop={settle}
         >
-          {ordered.map((tile, i) => (
-            <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {editing && <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />}
-              <TileInsetContext.Provider value={editing}>
-                <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
-              </TileInsetContext.Provider>
-            </Box>
-          ))}
+          {cells.map((cell, i) => (moving?.id === ordered[i].id ? cloneElement(cell) : cell))}
         </Responsive>
       )}
       {!mounted && ( // the one frame before the container is measured

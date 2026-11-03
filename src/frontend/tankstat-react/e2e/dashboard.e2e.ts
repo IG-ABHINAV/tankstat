@@ -261,6 +261,65 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   await expect(dialog.getByRole('button', { name: 'My costs' })).toHaveCount(0)
 })
 
+// ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------
+
+/** Pressed at the middle of `part` and moved in `steps`: after each step `part` is back under the pointer, a frame or two later, polled briefly. */
+const followsThePointer = async (page: Page, part: Locator, steps: number, by: { x: number; y: number }) => {
+  // In the middle of the screen first: the grid scrolls the page while a dragged pointer is within 50 px of its scroll container's edge
+  // (react-grid-layout's edge scroll, `EDGE_THRESHOLD`), which moves the tile away from a pointer that stays put. Where the part starts
+  // depends on the layout above it (CI's fonts put Monthly costs' handle at 866 of 900 px, and the pointer reached the edge at step 17).
+  await part.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'center' }))
+  // Measured once it holds still (`settled`): the tiles move to their places after a drop, and grow into the edit rows.
+  await settled(part)
+  const box = (await part.boundingBox())!
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  for (let step = 1; step <= steps; step++) {
+    const pointer = { x: start.x + step * by.x, y: start.y + step * by.y }
+    await page.mouse.move(pointer.x, pointer.y)
+    const apart = async () => {
+      const now = (await part.boundingBox())!
+      return Math.round(Math.hypot(now.x + now.width / 2 - pointer.x, now.y + now.height / 2 - pointer.y))
+    }
+    await expect.poll(apart, { message: `step ${step}: the distance from the pointer`, timeout: 1000, intervals: [16, 16, 32, 64, 128] }).toBeLessThanOrEqual(4)
+  }
+}
+
+test('keeps a dragged tile under the pointer at every step, above the spot it will drop on, and a resized one\'s corner too', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a pointer\'s way; a phone has the menus')
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id)
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+
+  // Monthly costs by its handle, 20 steps to the right and a little down (`page.mouse` never scrolls: the handle is in the first screen).
+  // After each step the tile is drawn where the pointer is (React draws a document event's update in a task of its own). A tile frozen
+  // until it crosses into another cell (#227) never gets there.
+  const moved = tile(page, 'preset:monthlyCosts')
+  await followsThePointer(page, moved.locator('.tk-tile-handle'), 20, { x: 14, y: 2 })
+  // The grid's own drop spot shows where it will land, under the tile.
+  const layers = await page.evaluate(() => ({
+    tile: getComputedStyle(document.querySelector('[data-tile="preset:monthlyCosts"]')!).zIndex,
+    spot: getComputedStyle(document.querySelector('.react-grid-placeholder')!).zIndex,
+  }))
+  await page.mouse.up()
+  expect(Number(layers.tile)).toBeGreaterThan(Number(layers.spot))
+  await expect(page.locator('.react-grid-placeholder')).toHaveCount(0)
+  await expect(moved).not.toHaveClass(/react-draggable-dragging/)
+
+  // The first figure by its corner, 10 steps to the right and a little down, within its column's room: the corner stays under the pointer
+  // between the grid's steps too (the library draws a resized tile's size only when it renders, as a dragged one's place).
+  const resized = tile(page, 'thisMonth')
+  await followsThePointer(page, resized.locator('.react-resizable-handle'), 10, { x: 8, y: 2 })
+  await page.mouse.up()
+  await expect(page.locator('.react-grid-placeholder')).toHaveCount(0)
+  await expect(resized).not.toHaveClass(/resizing/)
+})
+
 // ---- a figure's rows (#229) -------------------------------------------------------------------------------
 
 /** Today as `yyyy-MM-dd` in UTC: the server's "this month" is UTC's (`StatsService.Today`), so a local date could fall in another month. */
