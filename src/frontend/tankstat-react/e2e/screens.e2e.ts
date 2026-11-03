@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
 
 // What a person sets up on the screens themselves: a saved chart on the dashboard, the columns of a grid, a server setting.

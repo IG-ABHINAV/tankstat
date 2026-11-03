@@ -45,6 +45,18 @@ it('Undo runs the undo and the message goes', async () => {
   await waitFor(() => expect(screen.queryByText('Moved to the trash.')).not.toBeInTheDocument())
 })
 
+it('lets a tap on the message through to the page, only Undo takes one (#239)', async () => {
+  const ui = userEvent.setup()
+  show(async () => undefined)
+
+  await ui.click(screen.getByRole('button', { name: 'Trash' }))
+  const message = await screen.findByText('Moved to the trash.')
+
+  // jsdom does not hit-test: user-event refuses a click on an element the pointer cannot reach.
+  await expect(ui.click(message)).rejects.toThrow(/pointer-events/)
+  expect(getComputedStyle(screen.getByRole('button', { name: 'Undo' })).pointerEvents).toBe('auto')
+})
+
 it('messages come one after the other', async () => {
   const ui = userEvent.setup()
   show(async () => undefined)

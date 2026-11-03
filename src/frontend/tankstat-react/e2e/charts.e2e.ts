@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { addVehicle, graphql, openVehicle, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 

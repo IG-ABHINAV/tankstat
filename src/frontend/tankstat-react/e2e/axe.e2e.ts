@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { addVehicle, pageLoaded, signIn } from './support/app.ts'
 import { violations } from './support/axe.ts'
 

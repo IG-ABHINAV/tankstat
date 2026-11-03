@@ -48,6 +48,8 @@ test('keeps a refuelling made offline and sends it when the server is back', asy
 })
 
 test('signs out while offline: warns of the change not sent, deletes it, and the server ends the session once it is back', async ({ page, context, isMobile }) => {
+  // The download alone may take 30 s on a busy runner (below): more than the default for the whole test.
+  test.setTimeout(90_000)
   const user = await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   // A log on the server first: offline, the dialog takes its currency from the vehicle's last log.
@@ -75,10 +77,11 @@ test('signs out while offline: warns of the change not sent, deletes it, and the
   await warning.getByRole('button', { name: 'Sign out and delete' }).click()
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible() // offline too: nothing waits for the server
 
-  // Back online: the device tells the server, whose session for these cookies then names nobody.
+  // Back online: the device tells the server as soon as it answers again (#236), whose session for these cookies then names nobody. Up to
+  // 40 s: a tell made on the return that fails is told again only after `RETRY_MS` (30 s), never in a loop with the probes.
   await context.setOffline(false)
   await expect
-    .poll(async () => (await graphql<{ session: { user: { id: string } | null } }>(page, '{ session { user { id } } }')).session.user, { timeout: 60_000 })
+    .poll(async () => (await graphql<{ session: { user: { id: string } | null } }>(page, '{ session { user { id } } }')).session.user, { timeout: 40_000 })
     .toBeNull()
 
   // Signed in again, the deleted change is not sent: the server never had it, and the device no longer has it.

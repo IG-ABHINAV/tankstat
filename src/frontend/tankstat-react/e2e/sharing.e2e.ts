@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, newContext } from './support/test.ts'
 import { addDueRecurring, addVehicle, createUser, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
 
 // Sharing a vehicle's logs with someone else, what they then see and may do, and the notifications that tell people about it.
@@ -14,7 +14,7 @@ test("shares a vehicle's logs, and the other person logs a refuelling", async ({
   await page.getByRole('button', { name: 'Give access' }).click()
   await expect(page.getByRole('combobox', { name: `Access of ${friend.name}` })).toBeVisible()
 
-  const theirs = await browser.newContext()
+  const theirs = await newContext(browser)
   const them = await theirs.newPage()
   try {
     await signIn(them, friend)
