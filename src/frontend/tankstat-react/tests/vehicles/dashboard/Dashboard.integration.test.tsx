@@ -293,6 +293,57 @@ it('resizes and pins a tile by its menu, within what it needs', async () => {
   expect(tiles.find((t) => t.id === 'odometer')).toMatchObject({ pinned: true })
 })
 
+it('shows what a figure\'s rows hold: label and value at two, the comparison or the note at three, the sparkline at four (#229)', async () => {
+  setup(fakeVehicle({ summary: fakeSummary({ trends: { spending: [{ currency: 'HUF', recent: 560000, earlier: 500000 }, { currency: 'EUR', recent: 200, earlier: 150 }], costPerDistance: [], consumption: null, distance: { recent: 12500, earlier: 11000 } } }) }), [], undefined, {
+    signedIn: true,
+    arranged: (s) => {
+      s.dashboard.shared = layout({
+        tiles: [fakeTile('odometer', 0, 0, 1, 2), fakeTile('consumption', 1, 0, 1, 2), fakeTile('thisMonth', 2, 0, 1, 3), fakeTile('lastFillUp', 3, 0, 1, 3), fakeTile('distanceTrend', 0, 3, 1, 3), fakeTile('spendingTrend', 1, 3, 1, 4)],
+      })
+    },
+  })
+
+  const region = await screen.findByRole('region', { name: 'Dashboard' })
+  expect(await within(region).findByText('12,000 km')).toBeInTheDocument() // two rows: the value
+  expect(within(region).getByText('6.5 L/100 km')).toBeInTheDocument()
+  expect(within(region).queryByText('last 10 full fill-ups')).not.toBeInTheDocument() // but not the note
+  expect(within(region).getByText('5 fill-ups, 2 expenses')).toBeInTheDocument() // three rows: the note
+  expect(within(region).getByText(/Last month: .*40,000/)).toBeInTheDocument()
+  expect(within(region).getByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument() // three rows: the comparison
+  expect(within(region).getByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument() // four rows: the comparison and the note
+  expect(within(region).getByText('€200.00')).toBeInTheDocument()
+  expect(within(region).queryByRole('img', { name: /^Spending in the last six months/ })).not.toBeInTheDocument() // the sparkline needs four rows
+  expect(figureLabels()).toEqual(['Odometer', 'Average consumption', 'Spent this month', 'Last fill-up', 'Distance this year', 'Spending, last 12 full months'])
+})
+
+it('makes a figure shorter down to what its content needs, and saves the rows (#229)', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await screen.findByRole('heading', { name: 'Monthly costs' })
+  await ui.click(screen.getByRole('button', { name: 'Customize' }))
+
+  await tileMenu(ui, 'Odometer', 'Shorter')
+  expect(said()).toHaveTextContent('Odometer is now 1 wide and 3 tall.')
+  await tileMenu(ui, 'Odometer', 'Shorter')
+  expect(said()).toHaveTextContent('Odometer is now 1 wide and 2 tall.')
+  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  await ui.click(screen.getByRole('button', { name: 'Options for Odometer' }))
+  expect(screen.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true') // two rows hold its label and value, no fewer
+  await ui.keyboard('{Escape}')
+  await tileMenu(ui, 'Spent this month', 'Shorter')
+  expect(said()).toHaveTextContent('Spent this month is now 1 wide and 3 tall.')
+  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  await ui.click(screen.getByRole('button', { name: 'Options for Spent this month' }))
+  expect(screen.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true') // its value lists every currency: three rows
+  await ui.keyboard('{Escape}')
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; h: number }[] } }).input.tiles
+  expect(tiles.find((t) => t.id === 'odometer')).toMatchObject({ h: 2 })
+  expect(tiles.find((t) => t.id === 'thisMonth')).toMatchObject({ h: 3 })
+  expect(tiles.find((t) => t.id === 'consumption')).toMatchObject({ h: 4 })
+})
+
 it('adds back what was taken off, starts afresh from a preset, and arranges one\'s own from what one sees', async () => {
   const { ui, state } = setup(fakeVehicle(), [fakeChart()], undefined, {
     signedIn: true,
@@ -310,7 +361,7 @@ it('adds back what was taken off, starts afresh from a preset, and arranges one\
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(state.calls.SaveDashboardLayout![0]).toEqual({
-    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 4), at('preset:distance', 0, 4, 2, 8), at('chart:c1', 0, 12, 2, 8), at('lastFillUp', 0, 20, 1, 4)], hidden: [] }, // the figure stored three rows high takes four
+    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), at('lastFillUp', 0, 19, 1, 3)], hidden: [] }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
   })
 
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save dashboard' })).not.toBeInTheDocument())
