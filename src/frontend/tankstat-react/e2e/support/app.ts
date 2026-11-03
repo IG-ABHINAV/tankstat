@@ -1,4 +1,4 @@
-import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, request, test, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 
 /** The first administrator, made by the setup scripts/test-e2e.sh finishes on the shared server. */
 export const ADMIN = { email: 'root@example.com', password: 'initial-password-1' }
@@ -105,6 +105,25 @@ export async function addDueRecurring(page: Page, vehicleId: string, title = 'In
     { i: { vehicleId, title, category, kind: 'TIME', intervalMonths: 12, lastDoneDate: lastDone } },
   )
   return data.addRecurringExpense
+}
+
+/**
+ * Waits until an element stands still: its box the same in two frames running (#236). A drag by `page.mouse` reads a box and presses
+ * there, so it must not read one an animation is still moving (the dashboard's tiles move while they settle).
+ */
+export async function settled(target: Locator) {
+  await expect
+    .poll(() =>
+      target.evaluate(
+        (element) =>
+          new Promise<boolean>((resolve) => {
+            const box = () => JSON.stringify(element.getBoundingClientRect())
+            const before = box()
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve(box() === before)))
+          }),
+      ),
+    )
+    .toBe(true)
 }
 
 /** Waits until a page has loaded: its heading is there and no loading message is left. */
