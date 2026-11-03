@@ -141,6 +141,7 @@ query VehicleDashboard($id: UUID!) {
     secondKind
     isShared
     canEdit
+    canDelete
     createdBy {
       id
       displayName

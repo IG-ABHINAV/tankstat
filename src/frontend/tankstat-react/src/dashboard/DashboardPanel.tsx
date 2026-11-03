@@ -225,31 +225,36 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
         headingLevel={2}
         meta={c.createdBy && c.isShared ? <UserChip user={c.createdBy} /> : undefined}
         actions={
-          // Changing or deleting a chart is part of arranging the dashboard: offered while it is customized, to its creator.
-          c.canEdit && edit ? (
+          // Changing or deleting a chart is part of arranging the dashboard (#228), offered while it is customized, each button by its own
+          // right (#210): the creator changes a chart, Delete access to the logs removes a shared one too.
+          (c.canEdit || c.canDelete) && edit ? (
             <Stack direction="row" sx={{ gap: 1 }}>
-              <ChartBuilderDialog
-                vehicle={vehicle}
-                canShare={canShare}
-                chart={{ id: c.id, title: c.title, isShared: c.isShared, recipe: r }}
-                onSaved={() => refetch()}
-                trigger={
-                  <IconAction size="large" tone="primary" label={t('dashboard.editChart', { title: c.title })}>
-                    <Pencil size={16} aria-hidden />
-                  </IconAction>
-                }
-              />
-              <ConfirmDialog
-                trigger={
-                  <IconAction size="large" tone="error" label={t('dashboard.deleteChart', { title: c.title })}>
-                    <Trash2 size={16} aria-hidden />
-                  </IconAction>
-                }
-                title={t('dashboard.deleteTitle')}
-                description={t('dashboard.deleteDescription', { title: c.title })}
-                confirmLabel={t('dashboard.deleteConfirm')}
-                onConfirm={() => void act(() => remove({ variables: { id: c.id } }), () => update((e) => ({ tiles: removeTile(e.tiles, chartKey(c.id)), hidden: e.hidden.filter((h) => h.id !== c.id) })))}
-              />
+              {c.canEdit && (
+                <ChartBuilderDialog
+                  vehicle={vehicle}
+                  canShare={canShare}
+                  chart={{ id: c.id, title: c.title, isShared: c.isShared, recipe: r }}
+                  onSaved={() => refetch()}
+                  trigger={
+                    <IconAction size="large" tone="primary" label={t('dashboard.editChart', { title: c.title })}>
+                      <Pencil size={16} aria-hidden />
+                    </IconAction>
+                  }
+                />
+              )}
+              {c.canDelete && (
+                <ConfirmDialog
+                  trigger={
+                    <IconAction size="large" tone="error" label={t('dashboard.deleteChart', { title: c.title })}>
+                      <Trash2 size={16} aria-hidden />
+                    </IconAction>
+                  }
+                  title={t('dashboard.deleteTitle')}
+                  description={t('dashboard.deleteDescription', { title: c.title })}
+                  confirmLabel={t('dashboard.deleteConfirm')}
+                  onConfirm={() => void act(() => remove({ variables: { id: c.id } }), () => update((e) => ({ tiles: removeTile(e.tiles, chartKey(c.id)), hidden: e.hidden.filter((h) => h.id !== c.id) })))}
+                />
+              )}
             </Stack>
           ) : undefined
         }
