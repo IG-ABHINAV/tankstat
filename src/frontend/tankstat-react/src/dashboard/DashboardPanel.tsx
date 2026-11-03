@@ -48,12 +48,16 @@ import {
   removeTile,
   resizeTile,
   resolveLayout,
+  setTilePeriod,
   toLayout,
   widgetOf,
   type Layout,
   type LayoutPresetId,
   type Tile,
 } from './widgets.ts'
+import { isTrendFigure, type TrendPeriod } from './trendPeriod.ts'
+import type { PeriodControl } from './TrendPeriodPopover.tsx'
+import { usePeriodText } from './usePeriodText.ts'
 
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
 type SavedChart = VehicleDashboardQuery['vehicleCharts'][number]
@@ -106,6 +110,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const [save, saving] = useMutation(SaveDashboardLayoutDocument)
   const [actionError, setActionError] = useState<unknown>()
   const [edit, setEdit] = useState<Editing | null>(null)
+  const periodText = usePeriodText()
   const canShare = vehicle.logAccess === 'EDIT' || vehicle.logAccess === 'DELETE'
 
   if (error) return <ErrorMessage error={error} />
@@ -143,10 +148,9 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
 
   // ---- editing -------------------------------------------------------------------------------------------
 
-  const startEditing = () => {
-    const scope: Scope = personal && !signInOff ? 'personal' : dashboard?.canChangeShared ? 'shared' : 'personal'
-    setEdit(editingOf(scope))
-  }
+  // Whose dashboard a change is made to: one's own if there is one, else the vehicle's when one may change it, else a new one of one's own.
+  const ownScope: Scope = personal && !signInOff ? 'personal' : dashboard?.canChangeShared ? 'shared' : 'personal'
+  const startEditing = () => setEdit(editingOf(ownScope))
   const editingOf = (scope: Scope): Editing => {
     const start = scope === 'shared' ? shared : (personal ?? shared)
     const resolved = resolveLayout(start, chartsFor(scope))
@@ -183,9 +187,37 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       }
     })
   }
-  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. */
-  const add = (id: string, name?: string) =>
-    update((e) => ({ tiles: addTile(e.tiles, id), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
+  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet; a trend figure with its period. */
+  const add = (id: string, name?: string, period: TrendPeriod | null = null) =>
+    update((e) => ({ tiles: addTile(e.tiles, id, undefined, period), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
+
+  /**
+   * What a trend tile's chip does with a period (#230). While the dashboard is arranged, it changes the tile being edited (saved with the
+   * rest). Otherwise Apply saves it at once into the dashboard shown, by the rule Customize starts from (`ownScope`): one's own, else the
+   * vehicle's when one may change it, else a new one of one's own made from what is shown; it needs the server for that. A vehicle the
+   * server does not have yet (added on this device) has no dashboard to save into: its chips only name their period.
+   */
+  const periodControl = (tile: Tile): PeriodControl | undefined => {
+    if (!isTrendFigure(tile.id) || !dashboard) return undefined
+    const id = tile.id
+    if (edit)
+      return {
+        hint: t('dashboard.period.saveTo.editing'),
+        canApply: true,
+        apply: async (period) => update((e) => ({ tiles: setTilePeriod(e.tiles, id, period), status: t('dashboard.period.changedSaid', { name: titleOf(tile), period: periodText(id, period) }) })),
+      }
+    const where = ownScope === 'shared' ? 'shared' : personal && !signInOff ? 'own' : 'newOwn'
+    return {
+      hint: reachable ? t(`dashboard.period.saveTo.${where}`) : t('dashboard.period.needsServer'),
+      canApply: reachable && !busy,
+      apply: async (period) => {
+        const base = editingOf(ownScope)
+        await save({ variables: { input: { vehicleId: vehicle.id, personal: ownScope === 'personal', ...toLayout(setTilePeriod(base.tiles, id, period), base.hidden) } } })
+        await refetch()
+        toast(t('dashboard.period.saved'))
+      },
+    }
+  }
   const applyPreset = (id: LayoutPresetId) =>
     update((e) => {
       const resolved = resolveLayout(LAYOUT_PRESETS[id], chartsFor(e.scope))
@@ -248,7 +280,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   }
   const render = (tile: Tile) => {
     const widget = widgetOf(tile.id)
-    if (widget?.kind === 'figure') return <Figure id={widget.id} vehicleId={vehicle.id} period={tile.period} rows={tile.h} summary={s} units={vehicle.units} />
+    if (widget?.kind === 'figure') return <Figure id={widget.id} vehicleId={vehicle.id} period={tile.period} control={periodControl(tile)} rows={tile.h} summary={s} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
     if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
     const saved = charts.find((c) => c.id === widget?.id)
@@ -353,7 +385,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             figures={FIGURES.filter((f) => !onDashboard.has(f))}
             ready={READY_CHARTS.filter((c) => !onDashboard.has(presetKey(c.id)))}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
-            onAdd={(id) => add(id)}
+            onAdd={(id, period) => add(id, undefined, period)}
             onChartSaved={async (id, title) => {
               await refetch()
               add(chartKey(id), title)

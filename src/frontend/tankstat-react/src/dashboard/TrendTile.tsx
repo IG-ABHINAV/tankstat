@@ -1,126 +1,79 @@
 import { useQuery } from '@apollo/client/react'
 import Box from '@mui/material/Box'
+import ButtonBase from '@mui/material/ButtonBase'
 import Chip from '@mui/material/Chip'
-import Skeleton from '@mui/material/Skeleton'
-import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { visuallyHidden } from '../components/visuallyHidden.ts'
-import { VehicleTrendDocument, type DistanceUnit, type VehicleTrendQuery, type VolumeUnit } from '../gql/generated.ts'
-import { useErrorText } from '../i18n/errors.ts'
-import { useFormat } from '../i18n/format.ts'
-import { Change, Kpi } from './Kpi.tsx'
-import { comparedWith, namesFillUps, periodOf, toInput, TREND_FIGURE, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
+import { VehicleTrendDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
+import { COARSE } from '../theme/components.ts'
+import { periodOf, toInput, TREND_FIGURE, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
+import { TrendFigure } from './TrendFigure.tsx'
+import { TrendPeriodPopover, type PeriodControl } from './TrendPeriodPopover.tsx'
 import { usePeriodText } from './usePeriodText.ts'
 
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
-export type TrendData = VehicleTrendQuery['vehicleTrend']
 
 /**
  * A trend figure over its tile's period (#230): its own `vehicleTrend` answer, its value, the chip naming the period, and the comparison
- * worded from the period and the answer. Without a period of its own, its figure's default, which reads as the figure always did.
+ * worded from the period and the answer. Without a period of its own, its figure's default, which reads as the figure always did. With a
+ * `control` the chip is a button that opens the period's popover; without one (the Add widget dialog's preview) it only names it.
  */
-export function TrendTile({ figure, vehicleId, period, rows, units }: { figure: TrendFigureId; vehicleId: string; period: TrendPeriod | null | undefined; rows: number; units: Units }) {
+export function TrendTile({ figure, vehicleId, period, rows, units, control }: { figure: TrendFigureId; vehicleId: string; period: TrendPeriod | null | undefined; rows: number; units: Units; control?: PeriodControl }) {
   const { t } = useTranslation()
   const p = periodOf(figure, period)
   const { data, error } = useQuery(VehicleTrendDocument, { variables: { vehicleId, figure: TREND_FIGURE[figure], period: toInput(p) }, fetchPolicy: 'cache-and-network' })
-  const errorText = useErrorText()
   const periodText = usePeriodText()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const label = t(`dashboard.kpi.${figure}`)
-  const chip = <Chip size="small" variant="outlined" label={periodText(figure, p)} sx={{ flex: 'none', maxWidth: '60%' }} />
-  if (!data)
-    return (
-      <Kpi
-        rows={rows}
-        label={label}
-        chip={chip}
-        value={
-          error ? t('dashboard.kpi.none') : (
-            <>
-              <Box component="span" role="status" sx={visuallyHidden}>
-                {t('app.loading')}
-              </Box>
-              <Skeleton aria-hidden variant="text" width="60%" sx={{ display: 'inline-block' }} />
-            </>
-          )
-        }
-        hint={error ? errorText(error) : undefined}
-      />
-    )
-  return <TrendFigure figure={figure} period={p} data={data.vehicleTrend} rows={rows} units={units} label={label} chip={chip} />
+  const words = periodText(figure, p)
+  const chip = control ? (
+    <PeriodChip words={words} name={t('dashboard.period.chipName', { figure: label, period: words })} open={anchor !== null} onClick={(e) => setAnchor(e.currentTarget)} />
+  ) : (
+    <Chip size="small" variant="outlined" label={words} sx={{ flex: 'none', maxWidth: '60%' }} />
+  )
+  const popover = control && anchor && <TrendPeriodPopover anchor={anchor} figure={figure} vehicleId={vehicleId} units={units} period={p} control={control} onClose={() => setAnchor(null)} />
+  return (
+    <>
+      <TrendFigure figure={figure} period={p} data={data?.vehicleTrend} error={error} rows={rows} units={units} label={label} chip={chip} />
+      {popover}
+    </>
+  )
 }
 
-/** The figure drawn from an answer: also the popover's and the Add widget dialog's preview of a period being chosen. */
-export function TrendFigure({ figure, period: p, data, rows, units, label, chip }: { figure: TrendFigureId; period: TrendPeriod; data: TrendData; rows: number; units: Units; label: string; chip?: ReactNode }) {
-  const { t } = useTranslation()
-  const format = useFormat()
-  const none = t('dashboard.kpi.none')
-  const than = (() => {
-    const w = comparedWith(p, data.earlier)
-    return String(t(w.key as never, w.values))
-  })()
-  switch (figure) {
-    case 'spendingTrend': {
-      const main = data.currencies[0]
-      const others = data.currencies.slice(1).filter((c) => c.recent)
-      return (
-        <Kpi
-          rows={rows}
-          label={label}
-          chip={chip}
-          value={main ? format.money(main.recent ?? 0, main.currency) : none}
-          hint={others.length > 0 ? others.map((c) => format.money(c.recent ?? 0, c.currency)).join(' · ') : undefined}
-          change={main && <Change recent={main.recent} earlier={main.earlier} than={than} meaning="worseUp" size={(v) => format.money(v, main.currency)} none={t('dashboard.trend.nothingBefore')} />}
-        />
-      )
-    }
-    case 'costPerDistance': {
-      const main = data.currencies[0]
-      return (
-        <Kpi
-          rows={rows}
-          label={label}
-          chip={chip}
-          value={main?.recent != null ? format.costPerDistance(main.recent, main.currency, units.distance) : none}
-          change={main && <Change recent={main.recent} earlier={main.earlier} than={than} meaning="worseUp" size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} noneRecent={t('dashboard.trend.nothingDriven')} />}
-        />
-      )
-    }
-    case 'consumptionTrend': {
-      const c = data.consumption
-      const fillUps = namesFillUps(p)
-      // Fuel per distance in both windows (the stored figure), whatever unit the words show it in: more is more fuel, in mpg too.
-      return (
-        <Kpi
-          rows={rows}
-          label={label}
-          chip={chip}
-          value={c?.recent != null ? format.consumption(c.recent, units) : none}
-          hint={c ? (fillUps ? t('dashboard.kpi.fillUpsIn', { count: c.recentFillUps }) : t('dashboard.kpi.lastFillUps', { count: c.recentFillUps })) : undefined}
-          change={
-            <Change
-              recent={c?.recent}
-              earlier={c?.earlier}
-              fuel
-              than={than}
-              meaning="worseUp"
-              wrap={fillUps && c ? (sentence) => t('dashboard.trend.fillUpCounts', { sentence, recent: c.recentFillUps, earlier: c.earlierFillUps }) : undefined}
-              none={t('dashboard.trend.tooFew')}
-            />
-          }
-        />
-      )
-    }
-    case 'distanceTrend': {
-      const d = data.distance
-      return (
-        <Kpi
-          rows={rows}
-          label={label}
-          chip={chip}
-          value={d?.recent != null ? format.distance(d.recent, units.distance) : none}
-          change={d && <Change recent={d.recent} earlier={d.earlier} than={than} meaning="neutral" size={(v) => format.distance(v, units.distance)} none={t('dashboard.trend.nothingBefore')} />}
-        />
-      )
-    }
-  }
+/**
+ * The chip as a button: the period's words in a pill, named "Spending period: 12 full months. Change it". On a touch screen the button is
+ * 44 px tall while the pill and the label row keep their height (its margins give the room back), so a two-row figure still holds its
+ * label and value.
+ */
+function PeriodChip({ words, name, open, onClick }: { words: string; name: string; open: boolean; onClick: (event: React.MouseEvent<HTMLButtonElement>) => void }) {
+  return (
+    <ButtonBase
+      aria-label={name}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={onClick}
+      sx={{ flex: 'none', maxWidth: '60%', minWidth: 0, borderRadius: 999, [COARSE]: { minHeight: 44, minWidth: 44, my: '-10px' }, '&:focus-visible > span': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 } }}
+    >
+      <Box
+        component="span"
+        sx={(theme) => ({
+          display: 'block',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          px: 1,
+          py: 0.25,
+          borderRadius: 999,
+          border: 1,
+          borderColor: open ? 'primary.main' : 'divider',
+          bgcolor: open ? theme.vars.palette.primary.soft : 'transparent',
+          color: open ? theme.vars.palette.primary.softText : 'text.primary',
+          typography: 'caption',
+          '&:hover': { borderColor: 'primary.main' },
+        })}
+      >
+        {words}
+      </Box>
+    </ButtonBase>
+  )
 }

@@ -4,6 +4,7 @@ import { useFormat } from '../i18n/format.ts'
 import { spentText } from '../spending.ts'
 import { LazySparkline } from './LazySparkline.tsx'
 import { Kpi } from './Kpi.tsx'
+import type { PeriodControl } from './TrendPeriodPopover.tsx'
 import { TrendTile } from './TrendTile.tsx'
 import { isTrendFigure, type TrendPeriod } from './trendPeriod.ts'
 import type { FigureId } from './widgets.ts'
@@ -15,11 +16,11 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
  * One key figure of a vehicle's dashboard, by its id (`widgets.ts` `FIGURES`): the plain ones from the summary, a trend figure over its
  * tile's period from its own answer (`TrendTile`, #230).
  */
-export function Figure({ id, vehicleId, period, rows, summary: s, units }: { id: FigureId; vehicleId: string; period?: TrendPeriod | null; rows: number; summary: Summary | null | undefined; units: Units }) {
+export function Figure({ id, vehicleId, period, control, rows, summary: s, units }: { id: FigureId; vehicleId: string; period?: TrendPeriod | null; control?: PeriodControl; rows: number; summary: Summary | null | undefined; units: Units }) {
   const { t } = useTranslation()
   const format = useFormat()
   const none = t('dashboard.kpi.none')
-  if (isTrendFigure(id)) return <TrendTile figure={id} vehicleId={vehicleId} period={period} rows={rows} units={units} />
+  if (isTrendFigure(id)) return <TrendTile figure={id} vehicleId={vehicleId} period={period} control={control} rows={rows} units={units} />
   switch (id) {
     case 'thisMonth':
       return (

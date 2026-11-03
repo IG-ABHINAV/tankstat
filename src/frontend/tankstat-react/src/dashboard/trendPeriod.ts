@@ -63,6 +63,9 @@ export const toInput = (p: TrendPeriod): TrendPeriodInput => ({ kind: p.kind, un
 export const samePeriod = (a: TrendPeriod, b: TrendPeriod) =>
   a.kind === b.kind && a.unit === b.unit && a.count === b.count && a.since === b.since && a.whole === b.whole && a.against === b.against
 
+/** The same window, whatever each is compared with: a quick pick sets the window only, the comparison is a choice of its own. */
+export const sameWindow = (a: TrendPeriod, b: TrendPeriod) => samePeriod({ ...a, against: b.against }, b)
+
 export const isDefault = (figure: TrendFigureId, p: TrendPeriod) => samePeriod(p, DEFAULT_PERIOD[figure])
 
 /** What a tile stores: nothing for its figure's default, so a layout keeps reading the same when a default is ever changed. */
@@ -72,6 +75,45 @@ export const stored = (figure: TrendFigureId, p: TrendPeriod | null | undefined)
 export interface Words {
   key: string
   values: Record<string, string | number>
+}
+
+/** The longest period, and the first day one may start from: the server's `TrendPeriod.MaxCount` and `Earliest`. */
+export const MAX_COUNT = 1000
+export const EARLIEST = '2000-01-01'
+
+/**
+ * What is wrong with a period being chosen, worded by the server's own keys (`TrendPeriod.Validated`), or null: a count that is not a whole
+ * number from 1 to `MAX_COUNT`, a first day missing, before `EARLIEST` or after `today`. Whole weeks, months or years need no check: the
+ * switch is only offered with them.
+ */
+export function periodProblem(p: TrendPeriod, today: string): Words | null {
+  if (p.kind === 'LAST' && !(Number.isInteger(p.count) && p.count! >= 1 && p.count! <= MAX_COUNT)) return { key: 'errors.trend.countRange', values: { max: MAX_COUNT } }
+  if (p.kind === 'SINCE' && !(p.since && p.since >= EARLIEST && p.since <= today)) return { key: 'errors.trend.sinceRange', values: { earliest: EARLIEST, latest: today } }
+  return null
+}
+
+/** Whether a unit can be whole: weeks (Monday to Sunday), calendar months and years. */
+export const canBeWhole = (unit: TrendUnit | null) => unit === 'WEEKS' || unit === 'MONTHS' || unit === 'YEARS'
+
+/** The tab a period is set on: a quick pick's, `SINCE`'s, else `LAST`'s (this year so far is only a quick pick). */
+export type PeriodTab = 'quick' | 'last' | 'since'
+export function tabOf(figure: TrendFigureId, p: TrendPeriod): PeriodTab {
+  if (p.kind === 'THIS_YEAR' || QUICK_PICKS[figure].some((q) => sameWindow(q, p))) return 'quick'
+  return p.kind === 'SINCE' ? 'since' : 'last'
+}
+
+/**
+ * The period a tab starts from when it is chosen: the period itself when it is already of that tab, else the tab's first values (the last
+ * 8 weeks, or 10 fill-ups for consumption; since the first of the month 3 months ago; the figure's default for the quick picks), keeping
+ * what it is compared with.
+ */
+export function startOf(tab: PeriodTab, figure: TrendFigureId, p: TrendPeriod, today: string): TrendPeriod {
+  if (tabOf(figure, p) === tab) return p
+  if (tab === 'quick') return { ...DEFAULT_PERIOD[figure], against: p.against }
+  if (tab === 'last') return figure === 'consumptionTrend' ? { ...last('FILL_UPS', 10), against: p.against } : { ...last('WEEKS', 8), against: p.against }
+  const [y, m] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))]
+  const back = new Date(Date.UTC(y, m - 1 - 3, 1)).toISOString().slice(0, 10)
+  return { kind: 'SINCE', unit: null, count: null, since: back, whole: false, against: p.against }
 }
 
 const UNIT_KEY: Record<TrendUnit, string> = { DAYS: 'days', WEEKS: 'weeks', MONTHS: 'months', YEARS: 'years', FILL_UPS: 'fillUps' }

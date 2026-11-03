@@ -1409,7 +1409,48 @@
         "before": "az előzőhöz képest",
         "yearEarlier": "egy évvel korábbihoz képest"
       },
-      "withAgainst": "{{period}} · {{against}}"
+      "withAgainst": "{{period}} · {{against}}",
+      "title": "{{figure}} időszaka",
+      "chipName": "{{figure}} időszaka: {{period}}. Módosítás",
+      "tabsLabel": "Az időszak megadása",
+      "tabs": {
+        "quick": "Gyors",
+        "last": "Utolsó",
+        "since": "Ettől"
+      },
+      "quickLabel": "Gyakori időszakok",
+      "count": "Szám",
+      "unit": "Egység",
+      "units": {
+        "days": "Nap",
+        "weeks": "Hét",
+        "months": "Hónap",
+        "years": "Év",
+        "fillUps": "Tankolás"
+      },
+      "wholeSwitch": {
+        "weeks": "Teljes hetek, hétfőtől vasárnapig",
+        "months": "Teljes hónapok",
+        "years": "Teljes évek"
+      },
+      "wholeHint": "A folyamatban lévő kimarad.",
+      "endsToday": "Az időszak ma ér véget.",
+      "fillUpsHint": "A legrégebbitől máig.",
+      "sinceDate": "Első nap",
+      "against": "Összevetve",
+      "againstBefore": "Az előző időszakkal",
+      "againstYearEarlier": "Ugyanezekkel a napokkal egy évvel korábban",
+      "preview": "A csempe ezt mutatja majd",
+      "apply": "Alkalmaz",
+      "saveTo": {
+        "own": "Az Alkalmaz a saját elrendezésedbe menti.",
+        "shared": "Az Alkalmaz a jármű irányítópultjába menti, mindenkinek, aki látja.",
+        "newOwn": "Az Alkalmaz egy saját elrendezésbe menti, abból, amit most látsz.",
+        "editing": "A szerkesztett elrendezéssel marad, amíg el nem mented."
+      },
+      "needsServer": "Az időszak módosításához a szerver kell, ami most nem érhető el.",
+      "saved": "Időszak mentve.",
+      "changedSaid": "{{name}} mostantól: {{period}}."
     },
     "customize": {
       "button": "Testreszabás",

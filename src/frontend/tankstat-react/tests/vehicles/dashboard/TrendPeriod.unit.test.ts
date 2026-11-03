@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canonical, comparedWith, daysIn, DEFAULT_PERIOD, isDefault, namesFillUps, periodOf, periodWords, QUICK_PICKS, stored, toInput, TREND_FIGURES, type TrendPeriod } from '../../../src/dashboard/trendPeriod.ts'
+import { canBeWhole, canonical, comparedWith, daysIn, DEFAULT_PERIOD, isDefault, namesFillUps, periodOf, periodProblem, periodWords, QUICK_PICKS, sameWindow, startOf, stored, tabOf, toInput, TREND_FIGURES, type TrendPeriod } from '../../../src/dashboard/trendPeriod.ts'
 
 const last = (unit: TrendPeriod['unit'], count: number, over: Partial<TrendPeriod> = {}): TrendPeriod => ({ kind: 'LAST', unit, count, since: null, whole: false, against: 'BEFORE', ...over })
 const window = (start: string, end: string, fillUps = 0) => ({ start, end, fillUps })
@@ -29,6 +29,40 @@ describe('the defaults', () => {
     const p = { __typename: 'TrendPeriod', ...last('WEEKS', 8, { against: 'YEAR_EARLIER' }) }
     expect(toInput(p)).toEqual({ kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' })
     expect(toInput(p)).not.toHaveProperty('__typename')
+  })
+})
+
+describe('choosing a period', () => {
+  const today = '2026-11-03'
+
+  it('checks it as the server does: a whole count from 1 to 1000, a first day from 2000 to today', () => {
+    expect(periodProblem(last('WEEKS', 8), today)).toBeNull()
+    expect(periodProblem(last('WEEKS', 0), today)).toEqual({ key: 'errors.trend.countRange', values: { max: 1000 } })
+    expect(periodProblem(last('WEEKS', 1001), today)?.key).toBe('errors.trend.countRange')
+    expect(periodProblem(last('WEEKS', null as never), today)?.key).toBe('errors.trend.countRange') // an empty field
+    const since = (day: string | null): TrendPeriod => ({ kind: 'SINCE', unit: null, count: null, since: day, whole: false, against: 'BEFORE' })
+    expect(periodProblem(since('2026-11-03'), today)).toBeNull()
+    expect(periodProblem(since('2026-11-04'), today)).toEqual({ key: 'errors.trend.sinceRange', values: { earliest: '2000-01-01', latest: today } })
+    expect(periodProblem(since('1999-12-31'), today)?.key).toBe('errors.trend.sinceRange')
+    expect(periodProblem(since(null), today)?.key).toBe('errors.trend.sinceRange')
+    expect(periodProblem(DEFAULT_PERIOD.distanceTrend, today)).toBeNull()
+  })
+
+  it('opens on the tab a period is set on, a quick pick whatever it is compared with, and starts each tab from its first values', () => {
+    expect(tabOf('spendingTrend', DEFAULT_PERIOD.spendingTrend)).toBe('quick')
+    expect(tabOf('spendingTrend', last('MONTHS', 6, { whole: true, against: 'YEAR_EARLIER' }))).toBe('quick') // the window is a pick's
+    expect(tabOf('spendingTrend', last('MONTHS', 6))).toBe('last') // not whole: no pick
+    expect(tabOf('distanceTrend', { ...DEFAULT_PERIOD.distanceTrend, against: 'BEFORE' })).toBe('quick')
+    expect(tabOf('spendingTrend', { kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })).toBe('since')
+    expect(sameWindow(last('MONTHS', 6, { whole: true }), last('MONTHS', 6, { whole: true, against: 'YEAR_EARLIER' }))).toBe(true)
+
+    const yearEarlier = last('MONTHS', 6, { whole: true, against: 'YEAR_EARLIER' })
+    expect(startOf('last', 'spendingTrend', yearEarlier, today)).toEqual(last('WEEKS', 8, { against: 'YEAR_EARLIER' })) // the comparison kept
+    expect(startOf('last', 'consumptionTrend', DEFAULT_PERIOD.consumptionTrend, today)).toEqual(DEFAULT_PERIOD.consumptionTrend) // already a Last period
+    expect(startOf('since', 'spendingTrend', yearEarlier, today)).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-08-01', whole: false, against: 'YEAR_EARLIER' })
+    expect(startOf('since', 'spendingTrend', yearEarlier, '2026-02-10').since).toBe('2025-11-01') // across the year
+    expect(startOf('quick', 'spendingTrend', last('DAYS', 30, { against: 'YEAR_EARLIER' }), today)).toEqual(last('MONTHS', 12, { whole: true, against: 'YEAR_EARLIER' }))
+    expect([canBeWhole('WEEKS'), canBeWhole('MONTHS'), canBeWhole('YEARS'), canBeWhole('DAYS'), canBeWhole('FILL_UPS')]).toEqual([true, true, true, false, false])
   })
 })
 

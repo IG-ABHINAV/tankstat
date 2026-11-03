@@ -333,6 +333,72 @@ const clippedFigures = (page: Page) =>
       .filter(({ card }) => card.scrollHeight > card.clientHeight + 1)
       .map(({ id, card }) => `${id}: ${card.scrollHeight} > ${card.clientHeight}`),
   )
+/** The vehicle's dashboard set through GraphQL: these tiles, nothing taken off. */
+const arrange = (page: Page, vehicleId: string, tiles: Stored) =>
+  graphql(page, 'mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }', { i: { vehicleId, personal: false, tiles, hidden: [] } })
+const daysAgo = (days: number, years = 0) => {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - days)
+  d.setUTCFullYear(d.getUTCFullYear() - years)
+  return d.toISOString().slice(0, 10)
+}
+
+test('sets a trend figure\'s period from its chip, and one while arranging, each kept after a reload (#230)', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // A fill-up in the last 8 weeks and one a year before it: the figure compares HUF 24,000 with 20,000.
+  await logRefueling(page, vehicle.id, { date: daysAgo(10, 1), totalCost: 20000, odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: daysAgo(10), totalCost: 24000, odometer: 2000 })
+  await arrange(page, vehicle.id, [
+    { id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false },
+    { id: 'distanceTrend', x: 1, y: 0, w: 1, h: 4, pinned: false },
+    { id: 'odometer', x: 2, y: 0, w: 1, h: 3, pinned: false },
+  ])
+  await openVehicle(page, vehicle.id)
+
+  await page.getByRole('button', { name: 'Spending period: 12 full months. Change it' }).click()
+  const spending = page.getByRole('dialog', { name: 'Period of Spending' })
+  await spending.getByRole('tab', { name: 'Last' }).click()
+  await spending.getByRole('combobox', { name: 'Compared with' }).click()
+  await page.getByRole('option', { name: 'The same dates a year earlier' }).click()
+  await expect(spending.getByText('HUF 4,000 (20%) more than the same 8 weeks a year earlier')).toBeVisible() // the server's answer for the draft
+  await expect(spending.getByTestId('trend-timeline')).toBeVisible()
+  await expectSoundLayout(page) // the popover inside the screen, its controls 44 px on a phone, the chip too
+  await spending.getByRole('button', { name: 'Apply' }).click()
+  await expect(page.getByText('Period saved.')).toBeVisible()
+  await expect(region(page).getByText('HUF 4,000 (20%) more than the same 8 weeks a year earlier')).toBeVisible()
+
+  await page.reload()
+  await pageLoaded(page)
+  await expect(page.getByRole('button', { name: 'Spending period: Last 8 weeks · vs a year earlier. Change it' })).toBeVisible()
+  const periods = async () => {
+    const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown }[] } } } }>(
+      page,
+      'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind unit count since whole against } } } } } }',
+      { id: vehicle.id },
+    )
+    return Object.fromEntries(data.vehicle.dashboard.shared.tiles.map((t) => [t.id, t.period]))
+  }
+  expect((await periods()).spendingTrend).toEqual({ kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' })
+
+  // While arranging, a period goes with the tiles being edited and is saved with them.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Distance driven period: This year. Change it' }).click()
+  const distance = page.getByRole('dialog', { name: 'Period of Distance driven' })
+  await expect(distance.getByText('Kept with the arrangement you are editing until you save it.')).toBeVisible()
+  await distance.getByRole('tab', { name: 'Since' }).click() // starts from the first day of the month three months back
+  await expect(distance.getByTestId('trend-timeline')).toBeVisible()
+  await expectSoundLayout(page)
+  await distance.getByRole('button', { name: 'Apply' }).click()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText(/^Distance driven now shows Since /)
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  await page.reload()
+  await pageLoaded(page)
+  await expect(page.getByRole('button', { name: /^Distance driven period: Since .+\. Change it$/ })).toBeVisible()
+  expect((await periods()).distanceTrend).toMatchObject({ kind: 'SINCE', against: 'YEAR_EARLIER' }) // its own comparison kept
+})
+
 const figureHeights = async (page: Page, vehicleId: string) => Object.fromEntries((await stored(page, vehicleId)).shared!.tiles.filter((t) => !t.id.includes(':')).map((t) => [t.id, t.h]))
 
 test('makes figures shorter: each shows what its rows hold, down to what it needs, and nothing is cut', async ({ page }) => {

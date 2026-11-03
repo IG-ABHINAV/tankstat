@@ -1409,7 +1409,48 @@
         "before": "vs the period before",
         "yearEarlier": "vs a year earlier"
       },
-      "withAgainst": "{{period}} · {{against}}"
+      "withAgainst": "{{period}} · {{against}}",
+      "title": "Period of {{figure}}",
+      "chipName": "{{figure}} period: {{period}}. Change it",
+      "tabsLabel": "How the period is set",
+      "tabs": {
+        "quick": "Quick",
+        "last": "Last",
+        "since": "Since"
+      },
+      "quickLabel": "Quick picks",
+      "count": "Number",
+      "unit": "Unit",
+      "units": {
+        "days": "Days",
+        "weeks": "Weeks",
+        "months": "Months",
+        "years": "Years",
+        "fillUps": "Fill-ups"
+      },
+      "wholeSwitch": {
+        "weeks": "Whole weeks, Monday to Sunday",
+        "months": "Whole months",
+        "years": "Whole years"
+      },
+      "wholeHint": "The running one is left out.",
+      "endsToday": "The period ends today.",
+      "fillUpsHint": "From the oldest of them to today.",
+      "sinceDate": "First day",
+      "against": "Compared with",
+      "againstBefore": "The period before",
+      "againstYearEarlier": "The same dates a year earlier",
+      "preview": "The tile will show",
+      "apply": "Apply",
+      "saveTo": {
+        "own": "Apply saves it into your own arrangement of this dashboard.",
+        "shared": "Apply saves it into the vehicle’s dashboard, for everyone who sees it.",
+        "newOwn": "Apply saves it into an arrangement of your own, made from what you see.",
+        "editing": "Kept with the arrangement you are editing until you save it."
+      },
+      "needsServer": "Changing the period needs the server, which is out of reach right now.",
+      "saved": "Period saved.",
+      "changedSaid": "{{name}} now shows {{period}}."
     },
     "customize": {
       "button": "Customize",
