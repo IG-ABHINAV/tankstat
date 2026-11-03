@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/react'
 import { ApolloClient, ApolloLink, HttpLink, InMemoryCache } from '@apollo/client'
 import { parse } from 'graphql'
 import { http, HttpResponse } from 'msw'
@@ -256,9 +257,12 @@ it('a sign-out the server could not be told of keeps the device signed out, and 
   expect(calls.session).toBe(0)
   expect(await deviceData.signedOutHere()).not.toBeNull() // still to be told
   connectivity.succeeded()
+  // Back: told again at once (#236), not left to a query; this server still cannot be told, so the device stays signed out.
+  await waitFor(() => expect(calls.logout).toBe(2))
   const { refreshSession } = await import('../../../src/auth/refresh.ts')
   await expect(refreshSession()).resolves.toBe(false)
   expect(calls.refresh).toBe(0)
+  expect(await deviceData.signedOutHere()).not.toBeNull()
 })
 
 it('signing in forgets a sign-out left over, after telling the server once more', async () => {
