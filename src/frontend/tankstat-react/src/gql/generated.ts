@@ -197,6 +197,7 @@ export type CreateUserInput = {
 export type DashboardTileInput = {
   h: number;
   id: string;
+  period?: TrendPeriodInput | null | undefined;
   pinned?: boolean | null | undefined;
   w: number;
   x: number;
@@ -585,6 +586,31 @@ export type SystemSettingChangeInput = {
 export type TimeFormat =
   | 'TWELVE_HOUR'
   | 'TWENTY_FOUR_HOUR';
+
+export type TrendComparison =
+  | 'BEFORE'
+  | 'YEAR_EARLIER';
+
+export type TrendPeriodInput = {
+  against?: TrendComparison | null | undefined;
+  count?: number | null | undefined;
+  kind: TrendWindowKind;
+  since?: string | null | undefined;
+  unit?: TrendUnit | null | undefined;
+  whole?: boolean | null | undefined;
+};
+
+export type TrendUnit =
+  | 'DAYS'
+  | 'FILL_UPS'
+  | 'MONTHS'
+  | 'WEEKS'
+  | 'YEARS';
+
+export type TrendWindowKind =
+  | 'LAST'
+  | 'SINCE'
+  | 'THIS_YEAR';
 
 export type UpdateExpenseInput = {
   amount?: number | null | undefined;
