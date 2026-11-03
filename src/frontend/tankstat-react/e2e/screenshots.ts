@@ -1,7 +1,9 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { graphql, openVehicle, pageLoaded } from './support/app.ts'
+// No service worker (support/test.ts), so no "can now be used offline" toast on its own time: main.tsx registers one only where the browser has it.
+import { expect, test } from './support/test.ts'
 
 // The README's screenshots, one file per page and project (`home-desktop-dark.png`), see playwright.screenshots.config.ts: the tag
 // `@light` puts a page in the light scheme too, `@phone-only` keeps a dialog off the desktop. The server runs the seeder's data with
@@ -36,13 +38,6 @@ async function firstVehicle(page: Page) {
   expect(data.myVehicles, 'the seeded vehicles').not.toHaveLength(0)
   return data.myVehicles[0]
 }
-
-test.beforeEach(async ({ context }) => {
-  // No service worker, so no "can now be used offline" toast on its own time: main.tsx registers one only where the browser has it.
-  await context.addInitScript(() => {
-    delete (Navigator.prototype as { serviceWorker?: unknown }).serviceWorker
-  })
-})
 
 test('home', { tag: '@light' }, async ({ page }) => {
   const vehicle = await firstVehicle(page)

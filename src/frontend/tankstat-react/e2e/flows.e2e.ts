@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { ADMIN, addVehicle, pageLoaded, signIn } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'

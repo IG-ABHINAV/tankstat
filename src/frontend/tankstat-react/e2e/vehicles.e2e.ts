@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { addVehicle, openVehicle, pageLoaded, picture, signInAsNewUser, tag } from './support/app.ts'
 
 // A vehicle's own life: its details, its picture, the trash and back, the search on the home page. A user of the test's own each.
