@@ -1,4 +1,4 @@
-import { test } from '@playwright/test'
+import { test } from './support/test.ts'
 import { addVehicle, pageLoaded, signIn } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 

@@ -129,18 +129,23 @@ it('says when there is no data to chart', async () => {
 
 // ---- saved charts ------------------------------------------------------------------------------------------
 
-it('lists the saved charts, marks shared ones, and lets the creator edit or delete only their own', async () => {
+it('lists the saved charts, marks shared ones, and offers Edit and Delete each by its own right', async () => {
   setup(fakeVehicle(), [
     fakeChart({ id: 'c1', title: 'Fuel by month' }),
-    fakeChart({ id: 'c2', title: 'Team chart', isShared: true, canEdit: false, createdBy: person('Bob') }),
+    fakeChart({ id: 'c2', title: 'Team chart', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') }),
+    // Someone else's shared chart seen with Delete access to the logs (#210): it can be removed, never changed.
+    fakeChart({ id: 'c3', title: 'Removable chart', isShared: true, canEdit: false, canDelete: true, createdBy: person('Bob') }),
   ])
 
   await screen.findByRole('heading', { name: 'Fuel by month' })
   const shared = within(await cardOf('Team chart'))
+  const removable = within(await cardOf('Removable chart'))
 
   expect(shared.getByText('Shared')).toBeInTheDocument()
   expect(shared.getByText('Bob')).toBeInTheDocument()
-  expect(shared.queryByRole('button', { name: /^Edit the chart/ })).not.toBeInTheDocument()
+  expect(shared.queryByRole('button', { name: /^Edit the chart|^Delete the chart/ })).not.toBeInTheDocument()
+  expect(removable.queryByRole('button', { name: /^Edit the chart/ })).not.toBeInTheDocument()
+  expect(removable.getByRole('button', { name: 'Delete the chart Removable chart' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Edit the chart Fuel by month' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Delete the chart Fuel by month' })).toBeInTheDocument()
 })
@@ -713,7 +718,7 @@ it('blocks a chart without a title', async () => {
 // ---- accessibility ----------------------------------------------------------------------------------------------
 
 it('has no accessibility violations: the dashboard, an opened table and the builder', async () => {
-  const { ui } = setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, createdBy: person('Bob') })])
+  const { ui } = setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })])
   const check = async (node: HTMLElement) => {
     const results = await axe(node, { rules: { 'color-contrast': { enabled: false } } })
     expect(results.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`)).toEqual([])

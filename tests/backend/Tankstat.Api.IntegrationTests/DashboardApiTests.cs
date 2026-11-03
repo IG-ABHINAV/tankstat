@@ -16,9 +16,18 @@ public class DashboardApiTests : IDisposable
         return (people.Alice, people.Bob, people.BobId);
     }
 
+    private static async Task<string> AddVehicle(HttpClient c) =>
+        (await c.Gql("mutation { addVehicle(input: { name: \"Car\", fuelType: PETROL }) { id } }")).Data().GetProperty("addVehicle").GetProperty("id").GetString()!;
+
+    private static Task<JsonElement> Share(HttpClient c, string vehicleId, string userId, string level) =>
+        c.Gql("mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }", new { i = new { vehicleId, userId, level } });
+
+    private static async Task<bool> DeleteChart(HttpClient c, string? chartId) =>
+        (await c.Gql("mutation($id: UUID!) { deleteVehicleChart(id: $id) }", new { id = chartId })).Data().GetProperty("deleteVehicleChart").GetBoolean();
+
     private static async Task<string> CarWithLogs(HttpClient c)
     {
-        var id = (await c.Gql("mutation { addVehicle(input: { name: \"Car\", fuelType: PETROL }) { id } }")).Data().GetProperty("addVehicle").GetProperty("id").GetString()!;
+        var id = await AddVehicle(c);
         var today = DateTime.UtcNow;
         string D(int monthsAgo) => new DateTime(today.Year, today.Month, 1).AddMonths(-monthsAgo).ToString("yyyy-MM-dd");
         foreach (var (months, odo, vol, cost) in new[] { (2, 1000, 40, 20000), (1, 1500, 30, 18000), (0, 2000, 25, 17500) })
@@ -69,7 +78,7 @@ public class DashboardApiTests : IDisposable
     {
         var (alice, bob, bobId) = await Users();
         var id = await CarWithLogs(alice);
-        await alice.Gql("mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }", new { i = new { vehicleId = id, userId = bobId, level = "EDIT" } });
+        await Share(alice, id, bobId, "EDIT");
         const string save = "mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id title isShared metric kind range rangeFrom rangeTo canEdit createdBy { displayName } } }";
         object Input(string title, bool shared, string range = "LAST6_MONTHS", string? from = null, string? to = null, string? chartId = null) =>
             new { i = new { id = chartId, vehicleId = id, title, shared, config = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "LINE", range, stacked = false, from, to } } };
@@ -78,18 +87,57 @@ public class DashboardApiTests : IDisposable
         var shared = (await alice.Gql(save, Input("For everyone", true))).Data().GetProperty("saveVehicleChart");
         Assert.Equal(("CUSTOM", "2026-01-01", "2026-03-31", true, "alice"), (mine.GetProperty("range").GetString(), mine.GetProperty("rangeFrom").GetString(), mine.GetProperty("rangeTo").GetString(), mine.GetProperty("canEdit").GetBoolean(), mine.GetProperty("createdBy").GetProperty("displayName").GetString()));
 
-        const string list = "query($id: UUID!) { vehicleCharts(vehicleId: $id) { id title canEdit } }";
+        const string list = "query($id: UUID!) { vehicleCharts(vehicleId: $id) { id title canEdit canDelete } }";
         var bobsView = (await bob.Gql(list, new { id })).Data().GetProperty("vehicleCharts").EnumerateArray().ToList();
         Assert.Equal(["For everyone"], bobsView.Select(c => c.GetProperty("title").GetString()));
-        Assert.False(bobsView[0].GetProperty("canEdit").GetBoolean());
+        Assert.Equal((false, false), (bobsView[0].GetProperty("canEdit").GetBoolean(), bobsView[0].GetProperty("canDelete").GetBoolean()));
 
         var denied = await bob.Gql(save, Input("Hijack", true, chartId: shared.GetProperty("id").GetString()));
         Assert.Equal("chart.notYours", denied.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
         var invalid = await alice.Gql(save, Input("Bad", false, "CUSTOM"));
         Assert.Equal("chart.datesRequired", invalid.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
 
-        Assert.True((await alice.Gql("mutation($id: UUID!) { deleteVehicleChart(id: $id) }", new { id = mine.GetProperty("id").GetString() })).Data().GetProperty("deleteVehicleChart").GetBoolean());
+        Assert.True(await DeleteChart(alice, mine.GetProperty("id").GetString()));
         Assert.Single((await alice.Gql(list, new { id })).Data().GetProperty("vehicleCharts").EnumerateArray());
+    }
+
+    // #210: whoever holds Delete access to the logs without having made the chart (the owner, an administrator, a Delete grant) is told
+    // `canEdit false, canDelete true`, has a save refused, and may remove it.
+    [Fact]
+    public async Task DeleteAccessWithoutHavingMadeAChart_MayRemoveIt_NeverChangeIt_AndTheFlagsSaySo()
+    {
+        var people = await _app.Users();
+        var (admin, alice, bob, bobId) = (people.Admin, people.Alice, people.Bob, people.BobId);
+        var vehicleId = await AddVehicle(alice);
+        Task Grant(string level) => Share(alice, vehicleId, bobId, level);
+        const string save = "mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }";
+        object Input(string title, string? id = null) =>
+            new { i = new { id, vehicleId, title, shared = true, config = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "LINE", range = "LAST6_MONTHS", stacked = false } } };
+        async Task<(bool CanEdit, bool CanDelete)> Flags(HttpClient c, string chartId)
+        {
+            var chart = (await c.Gql("query($id: UUID!) { vehicleCharts(vehicleId: $id) { id canEdit canDelete } }", new { id = vehicleId })).Data().GetProperty("vehicleCharts")
+                .EnumerateArray().Single(x => x.GetProperty("id").GetString() == chartId);
+            return (chart.GetProperty("canEdit").GetBoolean(), chart.GetProperty("canDelete").GetBoolean());
+        }
+        async Task<string?> SaveKey(HttpClient c, string chartId) => (await c.Gql(save, Input("Changed", chartId))).ErrorKey();
+
+        // Bob (Edit) shares a chart: the owner and an administrator are Delete-level non-creators; the creator keeps both rights.
+        await Grant("EDIT");
+        var bobs = (await bob.Gql(save, Input("Bob's"))).Data().GetProperty("saveVehicleChart").GetProperty("id").GetString()!;
+        Assert.Equal((false, true), await Flags(alice, bobs));
+        Assert.Equal((false, true), await Flags(admin, bobs));
+        Assert.Equal((true, true), await Flags(bob, bobs));
+        Assert.Equal("chart.notYours", await SaveKey(alice, bobs));
+        Assert.Equal("chart.notYours", await SaveKey(admin, bobs));
+        Assert.Null(await SaveKey(bob, bobs));
+        Assert.True(await DeleteChart(admin, bobs));
+
+        // Bob holds a Delete grant on a chart Alice shared.
+        await Grant("DELETE");
+        var alices = (await alice.Gql(save, Input("Alice's"))).Data().GetProperty("saveVehicleChart").GetProperty("id").GetString()!;
+        Assert.Equal((false, true), await Flags(bob, alices));
+        Assert.Equal("chart.notYours", await SaveKey(bob, alices));
+        Assert.True(await DeleteChart(bob, alices));
     }
 
     [Fact]

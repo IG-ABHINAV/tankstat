@@ -114,8 +114,9 @@ public class ChartServiceTests
         s.W.Current.SignInAs(s.Bob);
         var shared = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Bob's shared", Config(), true), default);
 
-        s.W.Current.SignInAs(s.Alice); // the owner has Delete access
-        Assert.True(await s.W.ChartService.CanEditAsync(shared, default));
+        s.W.Current.SignInAs(s.Alice); // the owner has Delete access, and did not make it (#210: she may remove it, never change it)
+        Assert.False(ChartService.MayChange(shared, s.W.Current.Principal!));
+        Assert.True(ChartService.MayDelete(shared, s.W.Current.Principal!, await s.W.Access.LogLevelAsync(s.Car, default)));
         var notHers = await Assert.ThrowsAsync<ForbiddenException>(() => s.W.ChartService.UpdateAsync(shared.Id, new ChartInput("Hijacked", Config(), true), default));
         await s.W.ChartService.DeleteAsync(shared.Id, default);
 
@@ -131,8 +132,51 @@ public class ChartServiceTests
         var shared = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Alice's", Config(), true), default);
         s.W.Current.SignInAs(s.Bob);
 
-        Assert.False(await s.W.ChartService.CanEditAsync(shared, default));
+        Assert.False(ChartService.MayChange(shared, s.W.Current.Principal!));
+        Assert.False(ChartService.MayDelete(shared, s.W.Current.Principal!, await s.W.Access.LogLevelAsync(s.Car, default)));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.W.ChartService.DeleteAsync(shared.Id, default));
+    }
+
+    public enum Role { Creator, Owner, Administrator, DeleteGrant, EditGrant, Viewer }
+
+    // #210: the flags the UI shows the buttons by say exactly what the mutations allow, role by role, on someone else's shared chart.
+    [Theory]
+    [InlineData(Role.Creator, true, true)]
+    [InlineData(Role.Owner, false, true)]
+    [InlineData(Role.Administrator, false, true)]
+    [InlineData(Role.DeleteGrant, false, true)]
+    [InlineData(Role.EditGrant, false, false)]
+    [InlineData(Role.Viewer, false, false)]
+    public async Task TheRights_SayExactlyWhatTheMutationsAllow(Role role, bool canEdit, bool canDelete)
+    {
+        var s = await Setup();
+        await s.W.Sharing.SetLogAccessAsync(s.Car.Id, s.Bob.Id, AccessLevel.Edit, default);
+        s.W.Current.SignInAs(s.Bob);
+        var shared = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Bob's shared", Config(), true), default);
+        var carol = s.W.AddUser("carol@x.co", admin: role == Role.Administrator);
+        var (who, grant) = role switch
+        {
+            Role.Creator => (s.Bob, (AccessLevel?)null),
+            Role.Owner => (s.Alice, null),
+            Role.Administrator => (carol, null),
+            Role.DeleteGrant => (carol, AccessLevel.Delete),
+            Role.EditGrant => (carol, AccessLevel.Edit),
+            _ => (carol, null), // a viewer: a log grant is Edit or Delete, so View comes from Alice's data as a whole
+        };
+        s.W.Current.SignInAs(s.Alice);
+        if (grant is { } level) await s.W.Sharing.SetLogAccessAsync(s.Car.Id, carol.Id, level, default);
+        if (role == Role.Viewer) s.W.Grants.Items.Add(AccessGrant.Create(s.Alice.Id, carol.Id, AccessLevel.View));
+        s.W.Current.SignInAs(who);
+
+        Assert.Equal(canEdit, ChartService.MayChange(shared, s.W.Current.Principal!));
+        Assert.Equal(canDelete, ChartService.MayDelete(shared, s.W.Current.Principal!, await s.W.Access.LogLevelAsync(s.Car, default)));
+        Task Update() => s.W.ChartService.UpdateAsync(shared.Id, new ChartInput("Changed", Config(), true), default);
+        if (canEdit) await Update();
+        else Assert.Equal("chart.notYours", (await Assert.ThrowsAsync<ForbiddenException>(Update)).Key);
+        Task Delete() => s.W.ChartService.DeleteAsync(shared.Id, default);
+        if (canDelete) await Delete();
+        else Assert.Equal("chart.notYours", (await Assert.ThrowsAsync<ForbiddenException>(Delete)).Key);
+        Assert.Equal(canDelete ? 0 : 1, s.W.Charts.Items.Count);
     }
 
     [Fact]
