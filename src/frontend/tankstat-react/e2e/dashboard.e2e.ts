@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
@@ -159,7 +159,39 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
 
 // ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------
 
-test('keeps a dragged tile under the pointer at every step, above the spot it will drop on', async ({ page, isMobile }) => {
+// The middle of a box, once it holds still: the tiles grow into the taller rows of edit mode, and move to their places after a drop (a 200 ms
+// transition each), so it is measured once two looks 100 ms apart agree.
+const settled = async (part: Locator) => {
+  let last = ''
+  await expect
+    .poll(async () => {
+      const box = await part.boundingBox()
+      const now = JSON.stringify(box)
+      const still = box !== null && now === last
+      last = now
+      return still
+    }, { intervals: [100] })
+    .toBe(true)
+  const box = (await part.boundingBox())!
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+/** Pressed at the middle of `part` and moved in `steps`: after each step `part` is back under the pointer, a frame or two later, polled briefly. */
+const followsThePointer = async (page: Page, part: Locator, steps: number, by: { x: number; y: number }) => {
+  const start = await settled(part)
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  for (let step = 1; step <= steps; step++) {
+    const pointer = { x: start.x + step * by.x, y: start.y + step * by.y }
+    await page.mouse.move(pointer.x, pointer.y)
+    const apart = async () => {
+      const now = (await part.boundingBox())!
+      return Math.round(Math.hypot(now.x + now.width / 2 - pointer.x, now.y + now.height / 2 - pointer.y))
+    }
+    await expect.poll(apart, { message: `step ${step}: the distance from the pointer`, timeout: 1000, intervals: [16, 16, 32, 64, 128] }).toBeLessThanOrEqual(4)
+  }
+}
+
+test('keeps a dragged tile under the pointer at every step, above the spot it will drop on, and a resized one\'s corner too', async ({ page, isMobile }) => {
   test.skip(isMobile, 'a pointer\'s way; a phone has the menus')
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
@@ -170,32 +202,10 @@ test('keeps a dragged tile under the pointer at every step, above the spot it wi
   await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
 
   // Monthly costs by its handle, 20 steps to the right and a little down (`page.mouse` never scrolls: the handle is in the first screen).
-  // After each step the tile is drawn where the pointer is, a frame or two later (React draws a document event's update in a task of its
-  // own): polled, briefly. A tile frozen until it crosses into another cell (#227) never gets there.
+  // After each step the tile is drawn where the pointer is (React draws a document event's update in a task of its own). A tile frozen
+  // until it crosses into another cell (#227) never gets there.
   const moved = tile(page, 'preset:monthlyCosts')
-  // The tiles grow into the taller rows of edit mode (a 200 ms transition): the handle is measured once it holds still.
-  let last = ''
-  await expect
-    .poll(async () => {
-      const now = JSON.stringify(await moved.locator('.tk-tile-handle').boundingBox())
-      const still = now === last
-      last = now
-      return still
-    }, { intervals: [100] })
-    .toBe(true)
-  const handle = (await moved.locator('.tk-tile-handle').boundingBox())!
-  const start = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }
-  await page.mouse.move(start.x, start.y)
-  await page.mouse.down()
-  for (let step = 1; step <= 20; step++) {
-    const pointer = { x: start.x + step * 14, y: start.y + step * 2 }
-    await page.mouse.move(pointer.x, pointer.y)
-    const apart = async () => {
-      const now = (await moved.locator('.tk-tile-handle').boundingBox())!
-      return Math.round(Math.hypot(now.x + now.width / 2 - pointer.x, now.y + now.height / 2 - pointer.y))
-    }
-    await expect.poll(apart, { message: `step ${step}: the handle's distance from the pointer`, timeout: 1000, intervals: [16, 16, 32, 64, 128] }).toBeLessThanOrEqual(4)
-  }
+  await followsThePointer(page, moved.locator('.tk-tile-handle'), 20, { x: 14, y: 2 })
   // The grid's own drop spot shows where it will land, under the tile.
   const layers = await page.evaluate(() => ({
     tile: getComputedStyle(document.querySelector('[data-tile="preset:monthlyCosts"]')!).zIndex,
@@ -205,4 +215,12 @@ test('keeps a dragged tile under the pointer at every step, above the spot it wi
   expect(Number(layers.tile)).toBeGreaterThan(Number(layers.spot))
   await expect(page.locator('.react-grid-placeholder')).toHaveCount(0)
   await expect(moved).not.toHaveClass(/react-draggable-dragging/)
+
+  // The first figure by its corner, 10 steps to the right and a little down, within its column's room: the corner stays under the pointer
+  // between the grid's steps too (the library draws a resized tile's size only when it renders, as a dragged one's place).
+  const resized = tile(page, 'thisMonth')
+  await followsThePointer(page, resized.locator('.react-resizable-handle'), 10, { x: 8, y: 2 })
+  await page.mouse.up()
+  await expect(page.locator('.react-grid-placeholder')).toHaveCount(0)
+  await expect(resized).not.toHaveClass(/resizing/)
 })

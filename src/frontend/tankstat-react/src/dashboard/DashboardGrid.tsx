@@ -71,10 +71,16 @@ export function DashboardGrid({
   // moved within its cell is not drawn again, so it froze under the pointer until it crossed into another cell. Each move gives that one
   // tile a new element (the same props, so its content does not render again), and the library draws it where the pointer is. The
   // handlers keep their identity across the moves (`useCallback`), since the library compares them too: new ones would draw every tile.
+  // A widget dragged in from outside is moved by the library through the same callback but never stopped through it (the drop ends it):
+  // it is left out, since its drop spot is drawn again by itself, and it would leave `moving` set on the tile it becomes.
   const [moving, setMoving] = useState<{ id: string; moves: number } | null>(null)
-  const follow = useCallback((_layout: GridItems, _old: LayoutItem | null, item: LayoutItem | null) => {
-    if (item) setMoving((m) => ({ id: item.i, moves: (m?.moves ?? 0) + 1 }))
-  }, [])
+  const droppingId = dropping?.id
+  const follow = useCallback(
+    (_layout: GridItems, _old: LayoutItem | null, item: LayoutItem | null) => {
+      if (item && item.i !== droppingId) setMoving((m) => ({ id: item.i, moves: (m?.moves ?? 0) + 1 }))
+    },
+    [droppingId],
+  )
 
   const item = (tile: Tile, inFour: boolean): LayoutItem => {
     const min = MIN_SIZE[widgetOf(tile.id)?.kind ?? 'saved']
@@ -89,8 +95,8 @@ export function DashboardGrid({
   const fromGrid = useCallback(
     (layout: GridItems): Tile[] => {
       const byId = new Map(tiles.map((tile) => [tile.id, tile]))
-    // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width); one just dropped in is new, at the width it was
-    // brought in with (on fewer columns the grid clamped it).
+      // A tile the grid knows keeps its pin (and, on fewer columns, its desktop width); one just dropped in is new, at the width it was
+      // brought in with (on fewer columns the grid clamped it).
       const known = (l: LayoutItem): Tile => byId.get(l.i) ?? { id: l.i, x: l.x, y: l.y, w: dropping?.id === l.i ? dropping.w : l.w, h: l.h, pinned: false }
       if (cols === COLUMNS) return inReadingOrder(layout.map((l) => ({ ...known(l), x: l.x, y: l.y, w: l.w, h: l.h })))
       const order = [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...known(l), h: l.h, y: i, x: 0 }))
@@ -107,20 +113,18 @@ export function DashboardGrid({
     [fromGrid, onTilesChange],
   )
 
-  // The tiles' elements, made once per arrangement: while a tile is dragged only its own element is new (`moving`).
+  // The tiles' elements, in `ordered`'s order, kept across the grid's own renders (a drag's moves): while a tile is dragged only its own
+  // element is new (`moving`). They are made again whenever the page renders, since its `render`, `name` and `onAction` are new then.
   const cells = useMemo(
     () =>
-      new Map(
-        ordered.map((tile, i) => [
-          tile.id,
-          <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            {editing ? ( // EDIT_CHROME tall: 44 px of handle and a 4 px gap
-              <EditChrome tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />
-            ) : null}
-            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
-          </Box>,
-        ]),
-      ),
+      ordered.map((tile, i) => (
+        <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {editing ? ( // EDIT_CHROME tall: 44 px of handle and a 4 px gap
+            <EditChrome tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />
+          ) : null}
+          <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
+        </Box>
+      )),
     [ordered, editing, cols, name, render, onAction],
   )
 
@@ -166,7 +170,7 @@ export function DashboardGrid({
             onDrop?.(fromGrid([...layout.filter((l) => l.i !== dropped.i && l.i !== dropping.id), { ...dropped, i: dropping.id }]).map((tile) => (tile.id === dropping.id && cols === COLUMNS ? { ...tile, ...placed } : tile)))
           }}
         >
-          {ordered.map((tile) => (moving?.id === tile.id ? cloneElement(cells.get(tile.id)!) : cells.get(tile.id)!))}
+          {cells.map((cell, i) => (moving?.id === ordered[i].id ? cloneElement(cell) : cell))}
         </Responsive>
       )}
       {!mounted && ( // the one frame before the container is measured
