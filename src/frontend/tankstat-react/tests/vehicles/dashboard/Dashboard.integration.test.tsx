@@ -791,23 +791,35 @@ it('blocks a chart without a title', async () => {
 
 // ---- accessibility ----------------------------------------------------------------------------------------------
 
-it('has no accessibility violations: the dashboard, an opened table and the builder', async () => {
-  const { ui } = setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })])
-  const check = async (node: HTMLElement) => {
-    const results = await axe(node, { rules: { 'color-contrast': { enabled: false } } })
-    expect(results.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`)).toEqual([])
-  }
+// The dashboard's axe scans, a few per test (CLAUDE.md): a scan of the whole page takes seconds with coverage on, so each test gets the
+// 30 s the accessibility files give theirs, and a slow runner names the element rather than a timeout.
+const a11ySetup = () => setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })])
+const check = async (node: HTMLElement) => {
+  const results = await axe(node, { rules: { 'color-contrast': { enabled: false } } })
+  expect(results.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`)).toEqual([])
+}
+
+it("has no accessibility violations: the dashboard, and a chart's table in its dialog", { timeout: 30_000 }, async () => {
+  const { ui } = a11ySetup()
   await screen.findByRole('heading', { name: 'Shared one' })
   await check(document.body)
 
   await ui.click(within(await cardOf('Monthly costs')).getByRole('button', { name: 'Monthly costs as a table' }))
   await screen.findByRole('dialog', { name: 'Monthly costs' })
   await check(document.body)
-  await ui.keyboard('{Escape}')
-  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
 
+it('has no accessibility violations: the dashboard being arranged, its strips over the tiles', { timeout: 30_000 }, async () => {
+  const { ui } = a11ySetup()
+  await screen.findByRole('heading', { name: 'Shared one' })
   await customize(ui)
   await check(document.body)
+})
+
+it('has no accessibility violations: the Add widget dialog, its list and the blank chart', { timeout: 30_000 }, async () => {
+  const { ui } = a11ySetup()
+  await screen.findByRole('heading', { name: 'Shared one' })
+  await customize(ui)
   await ui.click(screen.getByRole('button', { name: 'Add widget' }))
   const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
   await within(dialog).findByRole('heading', { name: 'Spending, last 12 full months' }) // the first starting point, picked
