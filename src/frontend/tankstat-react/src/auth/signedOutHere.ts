@@ -34,16 +34,20 @@ let generation = 0
  * A sign-out the server has not heard of (`SignedOutHere`): told once it can be reached, and forgotten when it answered. True when none
  * is left, false while one still waits; rejects when the device cannot read whether one is left. Callers at the same moment share one
  * request. Out of reach, it is told as soon as the server answers again (#236: not left to the runtime's refetch, which a late answer
- * can hold back, nor to a `Session` query nothing asks on the sign-in screen). When the server answered without ending the session, it
- * is told again after `RETRY_MS`. Whichever way, the note is read again first: a sign-in meanwhile has forgotten it, and is never ended.
+ * can hold back, nor to a `Session` query nothing asks on the sign-in screen). When the server answered without ending the session, or
+ * a tell made on its return failed again (it answers the probes but not this: a timeout or a gateway error marks it out of reach once
+ * more), it is told again after `RETRY_MS`, never in a loop with the probes. Whichever way, the note is read again first: a sign-in
+ * meanwhile has forgotten it, and is never ended.
  */
-export function tellLeftOverSignOut(device: typeof deviceData = deviceData): Promise<boolean> {
-  telling ??= (async () => {
-    const started = generation
+export function tellLeftOverSignOut(device: typeof deviceData = deviceData, afterReturn = false): Promise<boolean> {
+  // A caller joining a tell under way shares it, and with it how that one ends (`afterReturn` is the first caller's).
+  if (telling) return telling
+  const started = generation
+  const tell: Promise<boolean> = (async () => {
     if (!(await device.signedOutHere())) return true
     if (!(await endSessionOnServer())) {
       if (started !== generation) return false
-      if (connectivity.reachable)
+      if (connectivity.reachable || afterReturn)
         retry ??= setTimeout(() => {
           retry = null
           void tellLeftOverSignOut(device).catch(() => undefined)
@@ -54,16 +58,19 @@ export function tellLeftOverSignOut(device: typeof deviceData = deviceData): Pro
           if (connectivity.state !== 'reachable') return
           onReturn?.()
           onReturn = null
-          void tellLeftOverSignOut(device).catch(() => undefined)
+          void tellLeftOverSignOut(device, true).catch(() => undefined)
         })
       return false
     }
-    await device.setSignedOutHere(null)
+    // Reset meanwhile (tests): the device is a fresh one, whose note this tell never read.
+    if (started === generation) await device.setSignedOutHere(null)
     return true
   })().finally(() => {
-    telling = null
+    // Only its own: a tell from before a reset never drops the one that came after.
+    if (telling === tell) telling = null
   })
-  return telling
+  telling = tell
+  return tell
 }
 
 /** Tests: no sign-out being told, and none waiting to be told again. */

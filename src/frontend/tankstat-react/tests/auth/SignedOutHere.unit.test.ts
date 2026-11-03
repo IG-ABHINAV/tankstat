@@ -38,6 +38,20 @@ it('tells the server as soon as it answers again, once, without waiting for any 
   expect(calls).toEqual({ logout: 1, session: 0 })
 })
 
+it('tells once on the return when the server answers everything but this, then waits RETRY_MS, never in a loop with the probes', async () => {
+  const calls = await signedOutWhileUnreachable()
+  server.use(http.post('/auth/token/logout', () => (calls.logout++, HttpResponse.error()))) // no answer: out of reach again
+
+  connectivity.succeeded() // a probe answered
+  await waitFor(() => expect(calls.logout).toBe(1))
+  await waitFor(() => expect(connectivity.state).toBe('unreachable')) // the tell itself took the server for gone
+  connectivity.succeeded() // the next probe answers too
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  expect(calls.logout).toBe(1) // not told again on every return: after RETRY_MS
+  expect(await deviceData.signedOutHere()).not.toBeNull()
+})
+
 it('never ends a session signed in meanwhile: the note is read again first', async () => {
   const calls = await signedOutWhileUnreachable()
 

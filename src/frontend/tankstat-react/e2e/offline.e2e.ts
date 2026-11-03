@@ -77,10 +77,11 @@ test('signs out while offline: warns of the change not sent, deletes it, and the
   await warning.getByRole('button', { name: 'Sign out and delete' }).click()
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible() // offline too: nothing waits for the server
 
-  // Back online: the device tells the server as soon as it answers again (#236), whose session for these cookies then names nobody.
+  // Back online: the device tells the server as soon as it answers again (#236), whose session for these cookies then names nobody. Up to
+  // 40 s: a tell made on the return that fails is told again only after `RETRY_MS` (30 s), never in a loop with the probes.
   await context.setOffline(false)
   await expect
-    .poll(async () => (await graphql<{ session: { user: { id: string } | null } }>(page, '{ session { user { id } } }')).session.user, { timeout: 20_000 })
+    .poll(async () => (await graphql<{ session: { user: { id: string } | null } }>(page, '{ session { user { id } } }')).session.user, { timeout: 40_000 })
     .toBeNull()
 
   // Signed in again, the deleted change is not sent: the server never had it, and the device no longer has it.
