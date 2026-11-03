@@ -56,6 +56,10 @@ function useWidth(): [RefObject<HTMLElement | null>, number] {
   return [ref, width]
 }
 
+/** How tall a chart's picture is on its own (the builder's preview); in a card that fills its tile (`fill`) it gets at least `MIN_PICTURE`, below which the card scrolls. */
+export const PICTURE_HEIGHT = 240
+export const MIN_PICTURE = 120
+
 /** How a line drawn from the values looks: a trend dashed, a year earlier dotted and fainter (never told apart by colour alone). */
 const OVERLAY_LOOK = { trend: { strokeDasharray: '7 5' }, earlier: { strokeDasharray: '2 4', strokeOpacity: 0.75 } } as const
 
@@ -63,20 +67,23 @@ const OVERLAY_LOOK = { trend: { strokeDasharray: '7 5' }, earlier: { strokeDasha
  * A chart of server-calculated data. The picture is for sighted users (hidden from assistive technology); the same numbers are always
  * available as a table (`ChartTable`, which the card opens in a dialog), which is what a screen reader reads. A trend or a year earlier
  * is always a line over the values, in its series' colour and on its scale, dashed or dotted; a bar chart is composed from MUI X's parts
- * so its bars and those lines share the axes.
+ * so its bars and those lines share the axes. The picture is `PICTURE_HEIGHT` px tall, or with `fill` (a dashboard tile) as tall as the
+ * room the figure has (#227): the figure, the picture and MUI X's wrapper are flex columns down to the surface, which MUI X sizes from its
+ * box, so the legend above it and the notes under it are counted by the browser and nothing overflows; never under `MIN_PICTURE`.
  */
 export function ChartView({
   data,
   recipe,
   units,
   title,
-  height = 240,
+  fill = false,
 }: {
   data: ChartData
   recipe: Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> & Partial<Pick<ChartRecipe, 'trend' | 'compareYearEarlier' | 'secondKind'>>
   units: Units
   title: string
-  height?: number
+  /** As tall as the figure's room, not `PICTURE_HEIGHT` (a dashboard tile: the card is a flex column). */
+  fill?: boolean
 }) {
   const { t, i18n } = useTranslation()
   const format = useFormat()
@@ -84,6 +91,8 @@ export function ChartView({
   const [figure, figureWidth] = useWidth()
   const clipId = useId()
   const { keyLabel, baseName, name, show, keys, rows } = useSeriesText(data, recipe, units)
+  // No height for MUI X in a tile: its wrapper then takes `height: 100%` and its surface the box it is given.
+  const size = fill ? undefined : PICTURE_HEIGHT
 
   if (noData(data)) {
     return (
@@ -151,7 +160,7 @@ export function ChartView({
   // an axis to read them by).
   const cartesian = {
     dataset: rows,
-    height,
+    height: size,
     // Room for half a period's label beside the edge: MUI cuts a label wider than twice its distance from the edge (the first and the
     // last month), and without a value axis the first one sits at the very edge.
     margin: { top: 8, right: rightAxis ? 0 : room, bottom: 0, left: leftAxis ? 0 : room },
@@ -178,16 +187,17 @@ export function ChartView({
 
   const picture =
     recipe.kind === 'DONUT' ? (
-      <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+      // In a tile the donuts (one per currency) share the row and take its height, smaller side by side than wrapped into rows that would not fit.
+      <Stack direction="row" sx={fill ? { gap: 2, flex: 1, minHeight: 0, justifyContent: 'center' } : { gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
         {data.series.map((s, i) => (
-          <Box key={seriesId(s)} sx={{ width: 'min(100%, 18rem)' }}>
+          <Box key={seriesId(s)} sx={fill ? { flex: '1 1 0', minWidth: 0, maxWidth: '18rem', display: 'flex', flexDirection: 'column' } : { width: 'min(100%, 18rem)' }}>
             {several && (
               <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
                 {name(s)}
               </Typography>
             )}
             <PieChart
-              height={height}
+              height={size}
               skipAnimation={reduce}
               disableKeyboardNavigation
               slotProps={tooltipInPage()}
@@ -213,7 +223,7 @@ export function ChartView({
       <BarLayoutContext.Provider value={barLayout()}>
         <ChartsDataProvider
           dataset={cartesian.dataset}
-          height={height}
+          height={size}
           margin={cartesian.margin}
           skipAnimation={reduce}
           disableKeyboardNavigation
@@ -257,10 +267,14 @@ export function ChartView({
     ...(recipe.compareYearEarlier && !hasEarlier ? [t('dashboard.nothingYearEarlier')] : []),
   ]
   return (
-    <Box component="figure" ref={figure} sx={{ m: 0 }}>
-      <div role="img" aria-label={t('dashboard.chartLabel', { title })}>
-        <div aria-hidden>{picture}</div>
-      </div>
+    // In a tile: the figure grows into the card (its table is a dialog away, #228), the picture takes what its notes leave (from a basis
+    // of 0, so its own size never feeds back into the room it gets), and so on down to MUI X's wrapper.
+    <Box component="figure" ref={figure} sx={fill ? { m: 0, flex: '1 0 auto', display: 'flex', flexDirection: 'column' } : { m: 0 }}>
+      <Box role="img" aria-label={t('dashboard.chartLabel', { title })} sx={fill ? { flex: '1 1 0', minHeight: MIN_PICTURE, display: 'flex', flexDirection: 'column' } : undefined}>
+        <Box aria-hidden sx={fill ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : undefined}>
+          {picture}
+        </Box>
+      </Box>
       {/* A note, not the figure's caption: the chart's title names it. */}
       {recipe.kind !== 'DONUT' && scales.ownScales && (
         <Typography component="p" variant="body2" sx={{ color: 'text.secondary', mt: 0.5, mb: 0 }}>

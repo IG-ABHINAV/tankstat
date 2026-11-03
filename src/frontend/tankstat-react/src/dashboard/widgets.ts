@@ -70,18 +70,49 @@ export function widgetOf(id: string): Widget | null {
   return id.startsWith(CHART) ? { kind: 'saved', id: id.slice(CHART.length) } : null
 }
 
-/** A widget's size when it is put on the dashboard: a figure one column wide and low, a chart two columns wide and tall. */
-export const DEFAULT_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figure: { w: 1, h: 4 }, ready: { w: 2, h: 8 }, saved: { w: 2, h: 8 } }
-/** The least a tile can be: a figure needs its label, value, hint and sparkline (four rows: 180 px), a chart its picture. */
-export const MIN_SIZE: Record<Widget['kind'], { w: number; h: number }> = { figure: { w: 1, h: 4 }, ready: { w: 1, h: 5 }, saved: { w: 1, h: 5 } }
+export interface Size {
+  w: number
+  h: number
+}
+
+/**
+ * A key figure shows what its rows hold (#229, `Figures.tsx`): two rows (84 px) its label and value, three (132 px) its comparison or note
+ * too, four (180 px) its sparkline as well. The least rows each needs are those its label and value take in a one-column desktop tile, as
+ * measured: *Spent this month* lists every currency, so its value wraps with two; *Cost per distance*'s label and value wrap; *Consumption,
+ * latest fill-ups*' label wraps in Hungarian, and its comparison line takes three. Its default rows are what it shows in full: the
+ * sparkline's and the trend figures' four, the plain figures' three.
+ */
+const FIGURE_ROWS: Record<FigureId, { min: number; default: number }> = {
+  thisMonth: { min: 3, default: 4 },
+  consumption: { min: 2, default: 3 },
+  odometer: { min: 2, default: 3 },
+  lastFillUp: { min: 2, default: 3 },
+  spendingTrend: { min: 2, default: 4 },
+  costPerDistance: { min: 4, default: 4 },
+  consumptionTrend: { min: 4, default: 4 },
+  distanceTrend: { min: 2, default: 4 },
+}
+/** The fewest rows any figure can take: what the grid's edit mode must leave a tile's content (`DashboardGrid`). */
+export const MIN_FIGURE_ROWS = Math.min(...Object.values(FIGURE_ROWS).map((r) => r.min))
+
+/** A widget's size when it is put on the dashboard: a figure one column wide and as low as it shows in full, a chart two columns wide and tall. */
+export function defaultSize(id: string): Size {
+  const widget = widgetOf(id)
+  return widget?.kind === 'figure' ? { w: 1, h: FIGURE_ROWS[widget.id].default } : { w: 2, h: 8 }
+}
+/** The least a tile can be: a figure its label and value (`FIGURE_ROWS`), a chart its picture. */
+export function minSize(id: string): Size {
+  const widget = widgetOf(id)
+  return widget?.kind === 'figure' ? { w: 1, h: FIGURE_ROWS[widget.id].min } : { w: 1, h: 5 }
+}
 
 const tile = (id: string, x: number, y: number, w: number, h: number): Tile => ({ id, x, y, w, h, pinned: false })
 
-/** A preset's tiles: four figures in a row at the top, then the charts two by two. */
-const presetTiles = (figures: readonly FigureId[], charts: readonly ReadyChart['id'][]): Tile[] => [
-  ...figures.map((f, i) => tile(f, i, 0, 1, DEFAULT_SIZE.figure.h)),
-  ...charts.map((c, i) => tile(presetKey(c), (i % 2) * 2, DEFAULT_SIZE.figure.h + Math.floor(i / 2) * 8, 2, 8)),
-]
+/** A preset's tiles: four figures in a row at the top, each as tall as the tallest of them shows in full, then the charts two by two. */
+function presetTiles(figures: readonly FigureId[], charts: readonly ReadyChart['id'][]): Tile[] {
+  const row = Math.max(...figures.map((f) => defaultSize(f).h))
+  return [...figures.map((f, i) => tile(f, i, 0, 1, row)), ...charts.map((c, i) => tile(presetKey(c), (i % 2) * 2, row + Math.floor(i / 2) * 8, 2, 8))]
+}
 
 /** The layouts a dashboard can start from, named `dashboard.layoutPresets.<id>`: Standard is the dashboard as it always was. */
 export const LAYOUT_PRESETS = {
@@ -181,7 +212,8 @@ function firstFit(placed: readonly Tile[], t: Tile, cols: number): Tile {
  * The dashboard a stored arrangement gives, with nothing stored the Standard preset: today's dashboard. It merges the way a grid's columns
  * do (`useGridSettings.merge`): a tile the app does not know (any more) is dropped; a saved chart the layout does not mention comes at the
  * bottom, so a new chart always shows and none is lost (taking one off is what `hidden` is for); a figure or ready-made chart it does not
- * mention is not shown, so the widgets of a later release never appear unasked.
+ * mention is not shown, so the widgets of a later release never appear unasked. A tile is only ever raised to its widget's least size,
+ * never lowered, so a stored arrangement keeps its places when a widget's least size goes down.
  */
 export function resolveLayout<S extends { id: string }>(stored: Layout | null, saved: readonly S[]): ResolvedLayout<S> {
   const layout = stored ?? LAYOUT_PRESETS.standard
@@ -191,9 +223,9 @@ export function resolveLayout<S extends { id: string }>(stored: Layout | null, s
     return widget !== null && (widget.kind !== 'saved' || savedIds.has(widget.id))
   }
   const seen = new Set<string>()
-  // No smaller than its widget needs (a figure stored three rows high before figures took four), and no wider than the grid.
+  // No smaller than its widget needs (a figure stored lower than its label and value take), and no wider than the grid.
   const sized = (t: Tile): Tile => {
-    const min = MIN_SIZE[widgetOf(t.id)?.kind ?? 'saved']
+    const min = minSize(t.id)
     return { ...t, w: Math.min(COLUMNS, Math.max(min.w, t.w)), h: Math.min(MAX_ROWS, Math.max(min.h, t.h)) }
   }
   const tiles = layout.tiles.filter((t) => known(t) && !seen.has(t.id) && seen.add(t.id)).map(sized)
@@ -224,8 +256,7 @@ export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }
 
 /** A widget put on the dashboard at the bottom, at its default size. */
 export function addTile(tiles: readonly Tile[], id: string, cols = COLUMNS): Tile[] {
-  const kind = widgetOf(id)?.kind ?? 'saved'
-  const { w, h } = DEFAULT_SIZE[kind]
+  const { w, h } = defaultSize(id)
   const bottom = Math.max(0, ...tiles.map((t) => t.y + t.h))
   return pack([...tiles, tile(id, 0, bottom, w, h)], cols)
 }
@@ -246,7 +277,7 @@ export function moveTile(tiles: readonly Tile[], id: string, step: -1 | 1, cols 
 export function resizeTile(tiles: readonly Tile[], id: string, change: { w?: -1 | 1; h?: -1 | 1 }, cols = COLUMNS): Tile[] {
   const current = tiles.find((t) => t.id === id)
   if (!current) return [...tiles]
-  const min = MIN_SIZE[widgetOf(id)?.kind ?? 'saved']
+  const min = minSize(id)
   const w = Math.max(min.w, Math.min(cols, current.w + (change.w ?? 0)))
   const h = Math.max(min.h, Math.min(MAX_ROWS, current.h + (change.h ?? 0)))
   return pack(tiles.map((t) => (t.id === id ? { ...t, w, h, x: Math.min(t.x, cols - w) } : t)), cols)

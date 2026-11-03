@@ -20,7 +20,7 @@ import { ChartCard } from './ChartCard.tsx'
 import { ChartForm } from './ChartForm.tsx'
 import { NEW_RECIPE, recipeOf, type ChartRecipe } from './chartFormat.ts'
 import { Figure } from './Figures.tsx'
-import { chartKey, presetKey, type FigureId, type ReadyChart } from './widgets.ts'
+import { chartKey, defaultSize, GAP, presetKey, ROW_HEIGHT, type FigureId, type ReadyChart } from './widgets.ts'
 
 type Summary = NonNullable<NonNullable<VehicleDashboardQuery['vehicle']>['summary']>
 type SavedChart = VehicleDashboardQuery['vehicleCharts'][number]
@@ -130,12 +130,14 @@ export function AddWidgetDialog({
   )
   const pane = () => {
     switch (current.kind) {
-      case 'figure':
+      case 'figure': {
+        // As it will be added: at its default rows (#229), in a box as tall as that tile.
+        const rows = defaultSize(current.id).h
         return (
           <>
             {heading(t(`dashboard.kpi.${current.id}`), t(`dashboard.widget.describe.figures.${current.id}`))}
-            <Box sx={{ width: 'min(100%, 18rem)', height: 180 }}>
-              <Figure id={current.id} summary={summary} units={vehicle.units} />
+            <Box sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
+              <Figure id={current.id} rows={rows} summary={summary} units={vehicle.units} />
             </Box>
             <DialogButtons>
               <DialogCancel />
@@ -146,6 +148,7 @@ export function AddWidgetDialog({
             </DialogButtons>
           </>
         )
+      }
       case 'saved':
         return (
           <>

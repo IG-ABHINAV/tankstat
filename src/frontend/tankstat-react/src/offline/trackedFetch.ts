@@ -7,6 +7,7 @@ import { classifyFailure, OfflineError } from './errors.ts'
  */
 export async function trackedFetch(input: string, init?: RequestInit): Promise<Response> {
   if (!connectivity.reachable) throw new OfflineError()
+  const sentIn = connectivity.epoch
   let response: Response
   try {
     response = await fetch(input, init)
@@ -15,6 +16,6 @@ export async function trackedFetch(input: string, init?: RequestInit): Promise<R
     throw error
   }
   if ([502, 503, 504].includes(response.status)) connectivity.failed()
-  else connectivity.succeeded()
+  else connectivity.succeeded(sentIn) // an answer to a request sent before the server went out of reach says nothing about now (#238)
   return response
 }

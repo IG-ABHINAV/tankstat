@@ -8,10 +8,13 @@ export type Reachability = 'unknown' | 'reachable' | 'unreachable'
 
 let state: Reachability = 'unknown'
 let since = Date.now()
+/** Grows each time the server is judged out of reach (the change of state, not every failure: see `succeeded`). */
+let epoch = 0
 const listeners = new Set<() => void>()
 
 function set(next: Reachability) {
   if (state === next) return
+  if (next === 'unreachable') epoch++
   state = next
   since = Date.now()
   listeners.forEach((listener) => listener())
@@ -28,12 +31,22 @@ export const connectivity = {
   get reachable(): boolean {
     return state !== 'unreachable'
   },
+  /** Taken when a request is sent and handed to `succeeded` with its answer. */
+  get epoch(): number {
+    return epoch
+  },
   /** A request got no answer (or only a gateway's). */
   failed(): void {
     set('unreachable')
   },
-  /** The server answered. */
-  succeeded(): void {
+  /**
+   * The server answered. With `sentIn` (the `epoch` when the request was sent), an answer to a request sent before the server was last
+   * judged out of reach is left out (#238): it was on its way when the browser went offline, so it says nothing about now, and counting it
+   * would flip the state back for a moment and spend the runtime's refetch on the way back. Only the change of state grows the epoch, so a
+   * second `offline` event while a probe is out never throws the probe's answer away.
+   */
+  succeeded(sentIn?: number): void {
+    if (sentIn !== undefined && sentIn < epoch) return
     set('reachable')
   },
   subscribe(listener: () => void): () => void {
@@ -82,8 +95,9 @@ export function watchConnectivity(probe: () => Promise<boolean>, deps: WatchDeps
   async function probeNow() {
     if (probing || stopped) return
     probing = true
+    const sentIn = connectivity.epoch
     try {
-      if (await probe()) connectivity.succeeded()
+      if (await probe()) connectivity.succeeded(sentIn)
     } catch {
       // still out of reach
     } finally {

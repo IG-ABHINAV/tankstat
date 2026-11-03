@@ -7,13 +7,19 @@ import { useId, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
-import { TILE_STRIP, TileInsetContext } from './tileChrome.ts'
-import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_SIZE, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
+import { TILE_INSET, TILE_STRIP, TileInsetContext } from './tileChrome.ts'
+import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize, ROW_HEIGHT, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
 const COLS = { lg: COLUMNS, sm: 2, xs: 1 } as const
 const FALLBACK_WIDTH = 1280
+/**
+ * The room the edit strip takes, paid for by a taller row while editing (#233, #228): the strip lies over a tile and the card under it
+ * starts `TILE_INSET` px down, so the lowest figure there is (`MIN_FIGURE_ROWS`, two rows) gains just that and keeps its label and value;
+ * a taller tile gains more.
+ */
+const EDIT_ROW_EXTRA = TILE_INSET / MIN_FIGURE_ROWS
 type Breakpoint = keyof typeof COLS
 /** The breakpoint of a width, as the library picks it: the widest whose least width is reached. */
 const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
@@ -27,8 +33,8 @@ const CLASS = { handle: 'tk-tile-handle' }
  * The dashboard as a grid of tiles (react-grid-layout, #211): the tiles placed and sized as stored, packed by column, the columns fewer on
  * a tablet or a phone (the tiles flowed in reading order). In edit mode a strip lies across the top of every tile (#228): its grip is the
  * drag handle, its menu moves, sizes, pins or removes the tile, which is how it is done with a keyboard or a screen reader (the library has
- * neither); the card under it starts lower (`TileInsetContext`), so the rows stay the same height as outside editing, and the corner
- * resizes it. The library's stylesheet is written here in `sx`, since the app has no stylesheet of its own, and its transitions are off
+ * neither); the card under it starts lower (`TileInsetContext`) and the rows are taller by what that takes from the lowest figure
+ * (`EDIT_ROW_EXTRA`), so a two-row figure keeps its label and value; the corner resizes it. The library's stylesheet is written here in `sx`, since the app has no stylesheet of its own, and its transitions are off
  * under reduced motion.
  */
 export function DashboardGrid({
@@ -58,7 +64,7 @@ export function DashboardGrid({
   const ordered = useMemo(() => inReadingOrder(tiles), [tiles])
 
   const item = (tile: Tile, inFour: boolean): LayoutItem => {
-    const min = MIN_SIZE[widgetOf(tile.id)?.kind ?? 'saved']
+    const min = minSize(tile.id)
     return { i: tile.id, x: tile.x, y: tile.y, w: tile.w, h: tile.h, minW: min.w, minH: min.h, maxH: MAX_ROWS, static: inFour && tile.pinned }
   }
   const layouts = useMemo(
@@ -88,6 +94,9 @@ export function DashboardGrid({
     // The corner that resizes a tile: 44 px for a finger, its mark drawn in the corner.
     '& .react-grid-item > .react-resizable-handle': { position: 'absolute', right: 0, bottom: 0, width: 44, height: 44, cursor: 'se-resize', touchAction: 'none', zIndex: 1 },
     '& .react-grid-item > .react-resizable-handle::after': { content: '""', position: 'absolute', right: 8, bottom: 8, width: 10, height: 10, borderRight: '2px solid', borderBottom: '2px solid', borderColor: 'text.secondary', borderBottomRightRadius: 3 },
+    // Outside edit mode the library still renders the corner, marking its tile `react-resizable-hide`; the rule that hides it is in its
+    // stylesheet, which the app does not load (#227).
+    '& .react-resizable-hide > .react-resizable-handle': { display: 'none' },
     '@media (prefers-reduced-motion: reduce)': { '& .react-grid-layout, & .react-grid-item, & .react-grid-item.react-grid-placeholder': { transition: 'none' } },
   } as const
 
@@ -99,7 +108,7 @@ export function DashboardGrid({
           layouts={layouts}
           breakpoints={BREAKPOINTS}
           cols={COLS}
-          rowHeight={ROW_HEIGHT}
+          rowHeight={editing ? ROW_HEIGHT + EDIT_ROW_EXTRA : ROW_HEIGHT}
           margin={[GAP, GAP]}
           containerPadding={[0, 0]}
           compactor={verticalCompactor}
@@ -135,7 +144,7 @@ function EditStrip({ tile, name, index, count, cols, onAction }: { tile: Tile; n
   const { t } = useTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const menuId = useId()
-  const min = MIN_SIZE[widgetOf(tile.id)?.kind ?? 'saved']
+  const min = minSize(tile.id)
   const choose = (action: TileAction) => {
     setAnchor(null)
     onAction(action)

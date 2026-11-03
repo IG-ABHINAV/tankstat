@@ -5,6 +5,8 @@ import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signIn, sig
 // reaches the server once the browser is back online. Only in-app navigation while offline (the address bar would need the server).
 
 test('keeps a refuelling made offline and sends it when the server is back', async ({ page, context }) => {
+  // The download and the poll below may take 30 s each on a busy runner: more than the default for the whole test.
+  test.setTimeout(90_000)
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   const today = new Date().toISOString().slice(0, 10)

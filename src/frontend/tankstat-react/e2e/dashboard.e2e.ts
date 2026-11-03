@@ -1,6 +1,6 @@
-import { type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
+import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
@@ -71,6 +71,74 @@ test('customizes the vehicle\'s dashboard by the tiles\' menus: a figure moved e
   await expectSoundLayout(page)
 })
 
+/** The 15th of the month `n` months before this one, as `yyyy-MM-dd`: inside the charts' last 12 months whenever the tests run. */
+const monthsAgo = (n: number) => {
+  const day = new Date()
+  day.setUTCDate(15)
+  day.setUTCMonth(day.getUTCMonth() - n)
+  return day.toISOString().slice(0, 10)
+}
+
+/** What sticks out of the chart tiles: a card body that scrolls, a legend or a note past its card, a picture under its least height. */
+const chartTileProblems = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-tile^="preset:"], [data-tile^="chart:"]')].flatMap((tile) => {
+      const card = tile.querySelector<HTMLElement>('.MuiCard-root')!
+      const body = card.lastElementChild as HTMLElement
+      const box = card.getBoundingClientRect()
+      const problems: string[] = []
+      if (body.scrollHeight > body.clientHeight + 1) problems.push(`${tile.dataset.tile}: its body scrolls (${body.scrollHeight} > ${body.clientHeight})`)
+      for (const part of tile.querySelectorAll<HTMLElement>('.MuiChartsLegend-root, figure > p')) {
+        const r = part.getBoundingClientRect()
+        if (r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5) problems.push(`${tile.dataset.tile}: "${part.textContent?.slice(0, 40)}" outside its card`)
+      }
+      const picture = tile.querySelector<HTMLElement>('[role="img"]')
+      if (picture && picture.getBoundingClientRect().height < 119.5) problems.push(`${tile.dataset.tile}: its picture is ${Math.round(picture.getBoundingClientRect().height)} px tall`)
+      return problems
+    }),
+  )
+/** The heights of a tile's chart surfaces (a donut per currency): its svgs but the legend's swatches, which are svgs too. */
+const surfaces = (t: Locator) => t.evaluate((el) => [...el.querySelectorAll('[role="img"] svg')].map((svg) => svg.getBoundingClientRect().height).filter((h) => h > 40))
+/** How many resize corners are displayed (not `display: none`). */
+const cornersShown = (page: Page) => page.evaluate(() => [...document.querySelectorAll('.react-resizable-handle')].filter((h) => getComputedStyle(h).display !== 'none').length)
+
+test('fits each chart in its tile, legend and notes inside and no scrollbar, and shows the resize corners only while arranging', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // Fuel and an expense give Monthly costs a legend; a second currency a note under it (a scale per currency) and a second donut.
+  await logRefueling(page, vehicle.id, { date: monthsAgo(2), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: monthsAgo(1), odometer: 1500, volume: 35, totalCost: 21000 })
+  await addExpense(page, vehicle.id, { date: monthsAgo(1) })
+  await addExpense(page, vehicle.id, { date: monthsAgo(1), amount: 40, currency: 'EUR' })
+  await openVehicle(page, vehicle.id)
+  const monthly = tile(page, 'preset:monthlyCosts')
+  await expect(monthly.locator('.MuiChartsLegend-root')).toBeVisible()
+  await expect(monthly.getByText('Each currency is drawn on a scale of its own; the amounts are in the tooltip and the table.')).toBeVisible()
+  await expect.poll(() => surfaces(tile(page, 'preset:categories'))).toHaveLength(2)
+
+  // The picture takes what the title and the notes leave: nothing scrolls, nothing is cut. The charts lay out after a frame: polled.
+  await expect.poll(() => chartTileProblems(page)).toEqual([])
+  expect(await page.locator('.react-resizable-handle').count()).toBeGreaterThan(0) // drawn by the library, and hidden
+  expect(await cornersShown(page)).toBe(0)
+  // The table is a dialog away (#228), so nothing opens inside the card to make it scroll.
+
+  // While arranging, every tile has its corner, and a taller tile gives its chart the room.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+  await expect.poll(() => cornersShown(page)).toBe(await page.locator('[data-tile]').count())
+  const corner = (await monthly.locator('.react-resizable-handle').boundingBox())!
+  expect([Math.round(corner.width), Math.round(corner.height)]).toEqual([44, 44])
+  await expect.poll(() => chartTileProblems(page)).toEqual([])
+  const before = Math.max(...(await surfaces(monthly)))
+  await menu(page, 'Monthly costs', 'Taller')
+  await expect.poll(async () => Math.max(...(await surfaces(monthly)))).toBeGreaterThan(before + 20)
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  await expect.poll(() => cornersShown(page)).toBe(0)
+  await expect.poll(() => chartTileProblems(page)).toEqual([])
+  await expectSoundLayout(page)
+})
+
 test('resizes a tile by its corner and drags one to the top', async ({ page, isMobile }) => {
   test.skip(isMobile, 'a pointer\'s way; a phone has the menus')
   await signInAsNewUser(page)
@@ -80,7 +148,10 @@ test('resizes a tile by its corner and drags one to the top', async ({ page, isM
   await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
-  // `page.mouse` never scrolls: everything dragged here is in the first screen (the figures and the first two charts).
+  // `page.mouse` never scrolls, and a press past the viewport lands on nothing: the grid is brought up under the top bar first, so the
+  // figures and the first two charts' handles are on screen. Below them, the edit rows' height and the fonts decide: on CI's runner the
+  // Consumption chart's handle was at 914 px of a 900 px viewport, and the drag never started.
+  await region(page).locator('.react-grid-layout').evaluate((grid) => window.scrollBy(0, grid.getBoundingClientRect().top - 120))
   const drag = async (fromX: number, fromY: number, toX: number, toY: number) => {
     await page.mouse.move(fromX, fromY)
     await page.mouse.down()
@@ -188,4 +259,65 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   await page.getByRole('button', { name: 'Add widget' }).click()
   await expect(dialog.getByRole('button', { name: 'Monthly costs' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'My costs' })).toHaveCount(0)
+})
+
+// ---- a figure's rows (#229) -------------------------------------------------------------------------------
+
+/** Today as `yyyy-MM-dd` in UTC: the server's "this month" is UTC's (`StatsService.Today`), so a local date could fall in another month. */
+const today = () => new Date().toISOString().slice(0, 10)
+/** The figure cards whose content is cut: a card is `overflow: hidden`, so only its scroll height tells. */
+const clippedFigures = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-tile]')]
+      .filter((t) => !t.dataset.tile!.includes(':'))
+      .map((t) => ({ id: t.dataset.tile!, card: t.querySelector<HTMLElement>('.MuiCard-root')! }))
+      .filter(({ card }) => card.scrollHeight > card.clientHeight + 1)
+      .map(({ id, card }) => `${id}: ${card.scrollHeight} > ${card.clientHeight}`),
+  )
+const figureHeights = async (page: Page, vehicleId: string) => Object.fromEntries((await stored(page, vehicleId)).shared!.tiles.filter((t) => !t.id.includes(':')).map((t) => [t.id, t.h]))
+
+test('makes figures shorter: each shows what its rows hold, down to what it needs, and nothing is cut', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // Spent this month in two currencies: its value wraps in a desktop column, which is why it stops at three rows.
+  await logRefueling(page, vehicle.id, { date: today() })
+  await addExpense(page, vehicle.id, { date: today(), amount: 40, currency: 'EUR' })
+  await openVehicle(page, vehicle.id)
+  await expect(tile(page, 'thisMonth').getByText(/€40\.00/)).toBeVisible()
+  await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+  await menu(page, 'Odometer', 'Shorter')
+  await menu(page, 'Odometer', 'Shorter')
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Odometer is now 1 wide and 2 tall.')
+  await page.getByRole('button', { name: 'Options for Odometer' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toBeHidden()
+  await menu(page, 'Average consumption', 'Shorter')
+  await menu(page, 'Average consumption', 'Shorter')
+  await menu(page, 'Spent this month', 'Shorter')
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Spent this month is now 1 wide and 3 tall.')
+  await page.getByRole('button', { name: 'Options for Spent this month' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toBeHidden()
+  // While arranging, the rows are taller by the handle's room: a two-row figure keeps its content whole.
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await page.reload()
+  await pageLoaded(page)
+  await expect(tile(page, 'odometer').getByText(/km$/)).toBeVisible()
+  expect(await figureHeights(page, vehicle.id)).toEqual({ thisMonth: 3, consumption: 2, odometer: 2, lastFillUp: 4 })
+  // Two rows: the label and the value, no note. Three: the note, no sparkline. Four: everything.
+  await expect(tile(page, 'consumption').getByText('last 10 full fill-ups')).toBeHidden()
+  await expect(tile(page, 'thisMonth').getByText(/^Last month:/)).toBeVisible()
+  await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toHaveCount(0)
+  await expect(tile(page, 'lastFillUp').getByText('1 fill-ups, 1 expenses')).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await expectSoundLayout(page)
 })

@@ -4,7 +4,7 @@ import { HttpResponse } from 'msw'
 import { graphql } from '../support/graphql.ts'
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
 import App from '../../src/App.tsx'
-import { server } from '../support/server.ts'
+import { answered, server } from '../support/server.ts'
 import { fakeVehicleBackend, healthHandler, renderWithApollo, sessionHandler, user } from '../support/mocks.tsx'
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
@@ -96,6 +96,9 @@ it('lists what needs attention, each with where to act on it', async () => {
 
   await ui.click(within(items[1]).getByRole('link', { name: 'Go to Server settings' }))
   expect(await screen.findByRole('heading', { level: 1, name: 'Server settings' })).toBeInTheDocument()
+  // The page asks for its settings, which this file does not answer: that request fails inside this test, never after the teardown's
+  // reset of the reachability, where it would leave the next test out of reach with no probe to bring it back.
+  await answered()
 })
 
 it('asks the server every time it is opened, never answering from what it kept', async () => {
