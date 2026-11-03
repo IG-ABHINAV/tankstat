@@ -1030,6 +1030,12 @@
       "settingsRefused": "The server would not start with the settings file this backup brings, under this server's environment, so it was not restored. Set what it lacks in the environment (an OIDC client secret, say, which a backup carries only when its server put the secrets into its backups), or restore a backup that holds the secrets.",
       "environmentMissing": "The backup was made on a server whose environment set {{variables}}; this server sets none of them, and the settings file the backup brings holds none either, so it was not restored. Set them in this server's environment, then restore.",
       "held": "The backup is held: release it before deleting it."
+    },
+    "trend": {
+      "invalid": "This period is not valid.",
+      "countRange": "A period is 1 to {{max}} long.",
+      "sinceRange": "A period starts on a day from {{earliest}} to {{latest}}.",
+      "wholeNeedsUnit": "Only weeks, months and years can be whole."
     }
   },
   "a11y": {

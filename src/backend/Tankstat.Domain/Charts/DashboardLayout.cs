@@ -4,7 +4,9 @@ namespace Tankstat.Domain.Charts;
 
 /// <summary>A tile of a vehicle's dashboard: a key figure, a ready-made chart (<c>preset:&lt;id&gt;</c>) or a saved chart (<c>chart:&lt;guid&gt;</c>),
 /// at its place in a grid of <see cref="DashboardLayoutValues.Columns"/> columns. A pinned tile is never moved by dragging the others.</summary>
-public sealed record DashboardTile(string Id, int X, int Y, int W, int H, bool Pinned = false);
+/// <param name="Period">A key figure's own period (#230); null shows the figure's default. Stored with the tiles as JSON, so a tile saved before
+/// periods existed reads as null.</param>
+public sealed record DashboardTile(string Id, int X, int Y, int W, int H, bool Pinned = false, TrendPeriod? Period = null);
 
 /// <summary>
 /// What a vehicle's dashboard shows: its tiles, and the saved charts taken off it. Ids are checked for shape, the places for their bounds
@@ -20,11 +22,15 @@ public sealed partial record DashboardLayoutValues(IReadOnlyList<DashboardTile> 
     public const string PresetPrefix = "preset:";
     public const string ChartPrefix = "chart:";
 
-    /// <summary>Every tile and entry in shape and within bounds, duplicates dropped (the first wins), at most <see cref="MaxItems"/> per list.</summary>
-    public DashboardLayoutValues Checked()
+    /// <summary>
+    /// Every tile and entry in shape and within bounds, duplicates dropped (the first wins), at most <see cref="MaxItems"/> per list. A period
+    /// only on a key figure (not on a chart), and valid on <paramref name="today"/> (<see cref="TrendPeriod.Validated"/>).
+    /// </summary>
+    public DashboardLayoutValues Checked(DateOnly today)
     {
         var tiles = (Tiles ?? []).Select(t => t is not null && IsWidget(t.Id) && t.X >= 0 && t.W >= 1 && t.X + t.W <= Columns && t.Y >= 0 && t.H >= 1 && t.H <= MaxRows
-                ? t
+                    && (t.Period is null || IsFigure(t.Id))
+                ? t with { Period = t.Period?.Validated(today) }
                 : throw new DomainException("dashboard.itemInvalid", "An entry of the dashboard is not valid."))
             .DistinctBy(t => t.Id, StringComparer.Ordinal).ToList();
         if (tiles.Count > MaxItems) throw new DomainException("dashboard.tooMany", $"A dashboard can list at most {MaxItems} of each.", new { Max = MaxItems });
@@ -65,7 +71,8 @@ public abstract class DashboardLayout
 
     protected void Apply(DashboardLayoutValues values, DateTimeOffset now)
     {
-        var checkedValues = values.Checked();
+        // The UTC date, as the statistics' "today" (StatsService.Today): a period this accepts is one the figures accept the same day.
+        var checkedValues = values.Checked(DateOnly.FromDateTime(now.UtcDateTime));
         Tiles = checkedValues.Tiles;
         Hidden = checkedValues.Hidden;
         UpdatedAt = now;
