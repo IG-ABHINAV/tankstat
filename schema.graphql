@@ -913,6 +913,7 @@ type VehicleChart {
   isShared: Boolean!
   createdAt: DateTime!
   canEdit: Boolean! @cost(weight: "10")
+  canDelete: Boolean! @cost(weight: "10")
   createdBy: UserRef @cost(weight: "10")
 }
 
