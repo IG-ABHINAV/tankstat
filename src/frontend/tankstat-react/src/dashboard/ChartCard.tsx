@@ -10,7 +10,9 @@ import { useTranslation } from 'react-i18next'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import { ChartDataDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
+import { ChartTableDialog } from './ChartTable.tsx'
 import { ChartView } from './ChartView.tsx'
+import { useTilePadding } from './tileChrome.ts'
 import { toConfig, type ChartRecipe } from './chartFormat.ts'
 
 /** The room under a chart's picture for its table toggle and notes, and the least a picture gets, in a card that fills its tile. */
@@ -32,9 +34,9 @@ function useHeight(): [React.RefObject<HTMLDivElement | null>, number] {
 }
 
 /**
- * One chart in a titled card: loads its own data from the server and draws it. Used for the ready-made charts, saved charts and the builder's
- * preview. In a dashboard tile (`fill`) the card takes the tile's height and the picture what is left under the title, the table scrolling
- * inside it; on its own the picture is 240 px tall.
+ * One chart in a titled card: loads its own data from the server and draws it, its numbers as a table behind a button in its header (#228).
+ * Used for the ready-made charts, saved charts and the builder's preview. In a dashboard tile (`fill`) the card takes the tile's height and
+ * the picture what is left under the title; on its own the picture is 240 px tall.
  */
 export function ChartCard({
   vehicleId,
@@ -61,9 +63,10 @@ export function ChartCard({
   const { data, error } = useQuery(ChartDataDocument, { variables: { vehicleId, config: toConfig(recipe) }, fetchPolicy: 'cache-and-network' })
   const [body, bodyHeight] = useHeight()
   const height = fill && bodyHeight > 0 ? Math.max(MIN_PICTURE, bodyHeight - BELOW_PICTURE) : 240
+  const pt = useTilePadding(2) // under the edit strip while the dashboard is arranged
 
   return (
-    <Card sx={fill ? { p: 2, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2 }}>
+    <Card sx={fill ? { p: 2, pt, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2, pt }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
         <Stack sx={{ gap: 0.5, minWidth: 0 }}>
           <Typography component={`h${headingLevel}`} variant="h6">
@@ -74,7 +77,10 @@ export function ChartCard({
             {meta}
           </Stack>
         </Stack>
-        {actions}
+        <Stack direction="row" sx={{ gap: 1, flexShrink: 0 }}>
+          {data && <ChartTableDialog data={data.vehicleChartData} recipe={recipe} units={units} title={title} />}
+          {actions}
+        </Stack>
       </Stack>
       <Box ref={body} sx={fill ? { flex: 1, minHeight: 0, overflow: 'auto' } : undefined}>
         {error && <ErrorMessage error={error} />}

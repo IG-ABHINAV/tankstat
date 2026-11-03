@@ -1,10 +1,5 @@
 import Box from '@mui/material/Box'
-import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import { BarPlot } from '@mui/x-charts/BarChart'
 import { ChartsAxis } from '@mui/x-charts/ChartsAxis'
@@ -21,13 +16,12 @@ import { PieChart } from '@mui/x-charts/PieChart'
 import { useReducedMotion } from 'motion/react'
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SurfaceTable } from '../components/SurfaceTable.tsx'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
 import { validLocale } from '../i18n/locale.ts'
-import { standaloneLink } from '../theme/components.ts'
-import { barPlaces, chartAxes, isValue, labelStep, PALETTE, perCurrency, periodLabel, seriesId, shortPeriodLabels, stackOf, type ChartData, type ChartRecipe, type Series } from './chartFormat.ts'
+import { barPlaces, chartAxes, isValue, labelStep, PALETTE, seriesId, shortPeriodLabels, stackOf, type ChartData, type ChartRecipe, type Series } from './chartFormat.ts'
 import { BarLayoutContext, type BarLayout } from './barLayout.ts'
+import { noData, useSeriesText } from './seriesText.ts'
 import { PlacedBar } from './PlacedBar.tsx'
 
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
@@ -37,8 +31,6 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
  * (whose blurred background makes it the reference of fixed children) it landed far outside the screen.
  */
 const tooltipInPage = () => ({ tooltip: { container: document.body } })
-
-const noData = (data: ChartData) => data.series.every((s) => s.points.every((p) => !p.value))
 
 /** The gap between two bars of a period, as a part of a bar's width (MUI's default, named so `PlacedBar` lays them out the same way). */
 const BAR_GAP_RATIO = 0.1
@@ -69,9 +61,9 @@ const OVERLAY_LOOK = { trend: { strokeDasharray: '7 5' }, earlier: { strokeDasha
 
 /**
  * A chart of server-calculated data. The picture is for sighted users (hidden from assistive technology); the same numbers are always
- * available as a table next to it, which is what a screen reader reads. A trend or a year earlier is always a line over the values, in
- * its series' colour and on its scale, dashed or dotted; a bar chart is composed from MUI X's parts so its bars and those lines share
- * the axes.
+ * available as a table (`ChartTable`, which the card opens in a dialog), which is what a screen reader reads. A trend or a year earlier
+ * is always a line over the values, in its series' colour and on its scale, dashed or dotted; a bar chart is composed from MUI X's parts
+ * so its bars and those lines share the axes.
  */
 export function ChartView({
   data,
@@ -89,9 +81,9 @@ export function ChartView({
   const { t, i18n } = useTranslation()
   const format = useFormat()
   const reduce = useReducedMotion() ?? false
-  const [table, setTable] = useState(false)
   const [figure, figureWidth] = useWidth()
   const clipId = useId()
+  const { keyLabel, baseName, name, show, keys, rows } = useSeriesText(data, recipe, units)
 
   if (noData(data)) {
     return (
@@ -101,31 +93,9 @@ export function ChartView({
     )
   }
 
-  const keyLabel = (key: string) => (key === '' ? t('dashboard.uncategorised') : periodLabel(key, validLocale(i18n.language, i18n.resolvedLanguage)))
-  // The first measure's series are named by their kind ("Fuel · HUF"); a second measure's by its metric ("Distance driven"). The recipe
-  // says which is first: the first measure may have no series at all in the range.
+  // The first measure is the recipe's metric: it may have no series at all in the range.
   const firstMetric = recipe.metric
-  const baseName = (s: Series) =>
-    `${s.metric !== firstMetric ? t(`charts.metrics.${s.metric}`) : t(`dashboard.series.${s.kind as 'total' | 'fuel' | 'expenses'}`, { defaultValue: t('dashboard.series.value') })}${s.currency ? ` · ${s.currency}` : ''}`
-  const name = (s: Series) => (isValue(s) ? baseName(s) : `${baseName(s)} · ${t(`dashboard.series.role.${s.role as 'MOVING_AVERAGE' | 'LINEAR' | 'YEAR_EARLIER'}`)}`)
-  // Every series is written in its own measure's unit: a chart of distance and consumption has both.
-  const show = (value: number | null | undefined, s: Series) => {
-    // Nothing spent in a currency in a period is no amount: a dash, as a missing value, not "HUF 0" beside the real ones; a trend line at 0 is a 0.
-    if (value == null || (perCurrency(s.unit) && value === 0 && s.role !== 'LINEAR' && s.role !== 'MOVING_AVERAGE')) return t('common.none')
-    switch (s.unit) {
-      case 'CURRENCY': return format.money(value, s.currency ?? '')
-      case 'COST_PER_DISTANCE': return format.costPerDistance(value, s.currency ?? '', units.distance)
-      case 'PRICE_PER_VOLUME': return format.pricePerUnit(value, s.currency ?? '', units.volume)
-      case 'VOLUME': return format.volume(value, units.volume)
-      case 'DISTANCE': return format.distance(value, units.distance)
-      case 'CONSUMPTION': return format.consumption(value, units)
-      default: return format.number(value)
-    }
-  }
   const axis = (value: number, unit: Series['unit']) => (unit === 'CURRENCY' || unit === 'COUNT' || unit === 'DISTANCE' ? format.compact(value) : format.number(value, { maximumFractionDigits: 1 }))
-
-  const keys = [...new Set(data.series.flatMap((s) => s.points.map((p) => p.key)))]
-  const rows: Record<string, string | number | null>[] = keys.map((key) => ({ key, label: keyLabel(key), ...Object.fromEntries(data.series.map((s) => [seriesId(s), s.points.find((p) => p.key === key)?.value ?? null])) }))
   const colour = (i: number) => PALETTE[i % PALETTE.length]
   const values = data.series.filter(isValue)
   // A year earlier with nothing logged in it is not drawn (a note says so, below); the table still lists it.
@@ -276,7 +246,6 @@ export function ChartView({
       </BarLayoutContext.Provider>
     )
 
-  const categories = recipe.grouping === 'CATEGORY'
   // What the lines drawn from the values say, in words: a linear trend from where it starts to where it ends (in the chart's own units,
   // so miles per gallon read right too), and why a line asked for is not there.
   const trendLines = overlays.filter((s) => s.role === 'LINEAR')
@@ -303,39 +272,6 @@ export function ChartView({
           {note}
         </Typography>
       ))}
-      <Link component="button" type="button" variant="body2" underline="always" aria-expanded={table} onClick={() => setTable(!table)} sx={{ minHeight: 24, mt: 1, ...standaloneLink }}>
-        {table ? t('dashboard.hideTable') : t('dashboard.showTable')}
-      </Link>
-      {table && (
-        <Box sx={{ mt: 1 }}>
-          <SurfaceTable caption={title}>
-            <TableHead>
-              <TableRow>
-                <TableCell>{categories ? t('dashboard.table.category') : t('dashboard.table.period')}</TableCell>
-                {data.series.map((s) => (
-                  <TableCell key={seriesId(s)} align="right">
-                    {name(s)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={String(row.key)}>
-                  <TableCell component="th" scope="row">
-                    {String(row.label)}
-                  </TableCell>
-                  {data.series.map((s) => (
-                    <TableCell key={seriesId(s)} align="right">
-                      {show(typeof row[seriesId(s)] === 'number' ? (row[seriesId(s)] as number) : null, s)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </SurfaceTable>
-        </Box>
-      )}
     </Box>
   )
 }

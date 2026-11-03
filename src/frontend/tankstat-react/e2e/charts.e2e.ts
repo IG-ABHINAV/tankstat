@@ -188,8 +188,9 @@ test('draws a second measure on a scale of its own: distance as bars on the left
   expect(drawn.right.labels).toBeGreaterThan(1)
   await expect(figure.getByText(/scale of its own/)).toHaveCount(0) // one scale per side, each read by its axis
 
-  await figure.getByRole('button', { name: 'Show the data as a table' }).click()
-  const table = page.getByRole('table', { name: 'Distance and consumption' })
+  // The numbers are a dialog away, from the button in the card's header (#228).
+  await page.getByRole('button', { name: 'Distance and consumption as a table' }).click()
+  const table = page.getByRole('dialog', { name: 'Distance and consumption' }).getByRole('table', { name: 'Distance and consumption' })
   await expect(table.getByRole('columnheader')).toHaveText(['Period', 'Total', 'Average consumption'])
   await expect(table).toContainText('km')
   await expect(table).toContainText('L/100 km')
@@ -207,9 +208,9 @@ test('a saved chart of the fuel price before discounts adds the discount back, w
   })
   await openVehicle(page, vehicle.id)
 
-  const figure = page.getByRole('img', { name: 'Pump price: chart', exact: true }).locator('xpath=ancestor::figure[1]')
-  await figure.getByRole('button', { name: 'Show the data as a table' }).click()
-  const table = page.getByRole('table', { name: 'Pump price' })
+  await expect(page.getByRole('img', { name: 'Pump price: chart', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Pump price as a table' }).click()
+  const table = page.getByRole('dialog', { name: 'Pump price' }).getByRole('table', { name: 'Pump price' })
   await expect(table).toContainText('818') // (34 744 + 430) / 43: the pump's price
   await expect(table).not.toContainText('808') // the price paid is the preset's
 })

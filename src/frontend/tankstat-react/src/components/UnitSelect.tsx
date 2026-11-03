@@ -1,10 +1,18 @@
 import FormLabel from '@mui/material/FormLabel'
+import ListItemIcon from '@mui/material/ListItemIcon'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useId, type Ref } from 'react'
+import { useId, type ReactNode, type Ref } from 'react'
 import { LabelBadges, type LabelBadge } from './LabelBadges.tsx'
+
+/** An option of a select: its words, and an icon drawn before them (in the list and in the closed field alike). */
+export interface SelectOption<T extends string> {
+  value: T
+  label: string
+  icon?: ReactNode
+}
 
 /**
  * A labelled choice (units, fuel, a chart's metric, a person): the label names the select (aria-labelledby), the options open in a list.
@@ -25,7 +33,7 @@ export function LabeledSelect<T extends string>({
 }: {
   label: string
   value: T
-  options: { value: T; label: string }[]
+  options: SelectOption<T>[]
   onChange: (value: T) => void
   disabled?: boolean
   placeholder?: string
@@ -82,7 +90,7 @@ export function InlineSelect<T extends string>({
 }: {
   label: string
   value: T
-  options: { value: T; label: string }[]
+  options: SelectOption<T>[]
   onChange: (value: T) => void
   placeholder?: string
 }) {
@@ -106,7 +114,7 @@ function ChoiceSelect<T extends string>({
   /** The id of what describes the select (MUI puts it on the combobox). */
   describedBy?: string
   value: T
-  options: { value: T; label: string }[]
+  options: SelectOption<T>[]
   onChange: (value: T) => void
   disabled?: boolean
   placeholder?: string
@@ -124,12 +132,22 @@ function ChoiceSelect<T extends string>({
       onChange={(event) => onChange(event.target.value as T)}
       disabled={disabled}
       displayEmpty={placeholder !== undefined}
-      renderValue={(selected) =>
-        selected ? options.find((o) => o.value === selected)?.label : <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>{placeholder}</Typography>
-      }
+      renderValue={(selected) => {
+        const chosen = options.find((o) => o.value === selected)
+        if (!chosen) return <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>{placeholder}</Typography>
+        return chosen.icon ? (
+          <Stack direction="row" component="span" sx={{ alignItems: 'center', gap: 1 }}>
+            <Stack component="span" aria-hidden sx={{ color: 'primary.light' }}>{chosen.icon}</Stack>
+            {chosen.label}
+          </Stack>
+        ) : (
+          chosen.label
+        )
+      }}
     >
       {options.map((o) => (
         <MenuItem key={o.value} value={o.value}>
+          {o.icon && <ListItemIcon sx={{ color: 'primary.light' }}>{o.icon}</ListItemIcon>}
           {o.label}
         </MenuItem>
       ))}

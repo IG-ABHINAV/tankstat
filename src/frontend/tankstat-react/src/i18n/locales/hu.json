@@ -1291,16 +1291,13 @@
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
       "none": "–"
     },
-    "addChart": "Grafikon hozzáadása",
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",
     "shared": "Megosztva",
     "by": "{{name}} által",
-    "showTable": "Az adatok megjelenítése táblázatként",
-    "hideTable": "A táblázat elrejtése",
+    "tableButton": "{{title}} táblázatként",
+    "tableDescription": "A grafikon mögötti számok; a képernyőolvasó ezt olvassa.",
     "editChart": "A(z) {{title}} grafikon szerkesztése",
-    "copyChart": "{{title}} másolása saját grafikonként",
-    "copyTitle": "Másolás saját grafikonként",
     "deleteChart": "A(z) {{title}} grafikon törlése",
     "deleteTitle": "Törlöd ezt a grafikont?",
     "deleteDescription": "A(z) „{{title}}” mindenkinek eltűnik, akivel meg van osztva. Maguk az adatok nem változnak.",
@@ -1371,7 +1368,7 @@
       "noCharts": "Ezen az irányítópulton nincs semmi. Szabd testre, és adj hozzá csempéket."
     },
     "edit": {
-      "hint": "Húzd a csempét a fogantyújánál, méretezd a sarkánál, vagy használd a menüjét (billentyűzettel is megy).",
+      "hint": "Húzd a csempét a tetején futó sávnál, méretezd a sarkánál, vagy használd a sáv menüjét (billentyűzettel is megy).",
       "statusName": "Az elrendezés utolsó változása",
       "options": "{{name}} beállításai",
       "earlier": "Előrébb",
@@ -1385,29 +1382,64 @@
       "remove": "Eltávolítás",
       "pinned": "Rögzítve",
       "add": "Csempe hozzáadása",
-      "addHint": "Kattints egyre, hogy alulra kerüljön, vagy húzd az irányítópultra.",
-      "nothingToAdd": "Minden az irányítópulton van.",
-      "figure": "Fő adat",
-      "ready": "Kész grafikon",
-      "savedChart": "Saját grafikon",
-      "sharedChart": "Megosztott grafikon",
       "moved": "{{name}} a(z) {{position}}. helyre került ({{total}} közül).",
       "resized": "{{name}} mostantól {{w}} széles és {{h}} magas.",
       "pinnedSaid": "{{name}} rögzítve.",
       "unpinnedSaid": "{{name}} rögzítése feloldva.",
       "removed": "{{name}} levéve.",
-      "added": "{{name}} hozzáadva.",
-      "dropped": "{{name}} elhelyezve."
+      "added": "{{name}} hozzáadva."
     },
     "sectionLabel": "Irányítópult",
     "layoutPresets": {
       "standard": "Alap",
       "spending": "Költés",
       "usage": "Használat"
+    },
+    "widget": {
+      "title": "Csempe hozzáadása",
+      "description": "Ami még nincs az irányítópulton, és egy saját grafikon a semmiből. Amit kiválasztasz, alulra kerül.",
+      "listLabel": "Mit adjunk hozzá",
+      "groups": {
+        "figures": "Fő adatok",
+        "ready": "Kész grafikonok",
+        "yours": "Saját grafikonok"
+      },
+      "blank": "Üres grafikon",
+      "add": "Hozzáadás az irányítópulthoz",
+      "saveAndAdd": "Mentés és hozzáadás",
+      "customize": "Grafikon testreszabása",
+      "back": "Vissza a listához",
+      "describe": {
+        "figures": {
+          "thisMonth": "Az e havi költés minden használt pénznemben, az előző hónappal és az utolsó hat hónap vonalával.",
+          "consumption": "Az utolsó tíz teli tankolás átlagfogyasztása.",
+          "odometer": "A jármű legutóbbi kilométeróra-állása, bármelyik bejegyzésből.",
+          "lastFillUp": "Az utolsó tankolás napja, és hány tankolás és költség van.",
+          "spendingTrend": "Az utolsó 12 teljes hónap költése az előző 12 hónaphoz képest.",
+          "costPerDistance": "Pénz 100 km-enként vagy 100 mérföldenként az utolsó 12 teljes hónapban, az előző 12 hónaphoz képest.",
+          "consumptionTrend": "A legutóbbi tankolások fogyasztásának átlaga az előző tízhez képest.",
+          "distanceTrend": "Az idén megtett út a tavalyi, ugyanaddig a napig megtett úthoz képest."
+        },
+        "ready": {
+          "monthlyCosts": "Összes költés havonta az utolsó 12 hónapban, üzemanyag és költségek egymásra rakva.",
+          "consumption": "Átlagfogyasztás havonta az utolsó 12 hónapban.",
+          "fuelPrice": "A fizetett átlagos üzemanyagár havonta az utolsó 12 hónapban.",
+          "categories": "Költségek kategóriánként az utolsó 12 hónapban, pénznemenként egy fánk.",
+          "distance": "Megtett út havonta az utolsó 12 hónapban.",
+          "spendSoFar": "Az idei összes költés göngyölítve, mellette a tavalyi.",
+          "costPerDistance": "Költség távolságra vetítve havonta az utolsó 12 hónapban, mozgóátlaggal.",
+          "consumptionTrend": "Átlagfogyasztás negyedévenként a kezdetektől, lineáris trenddel.",
+          "distanceYearEarlier": "Megtett út havonta az utolsó 12 hónapban, ugyanazokkal a hónapokkal egy évvel korábbról.",
+          "distanceAndConsumption": "A megtett út oszlopokként, az átlagfogyasztás vonalként, havonta az utolsó 12 hónapban."
+        },
+        "readyHint": "Kész grafikon: add hozzá ahogy van, vagy szabd testre saját grafikonként; az eredeti megmarad.",
+        "saved": "Egy saját grafikonod, amely nincs az irányítópulton.",
+        "shared": "{{name}} által megosztott grafikon, amely nincs az irányítópulton.",
+        "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja."
+      }
     }
   },
   "charts": {
-    "dialogAdd": "Grafikon hozzáadása",
     "dialogEdit": "Grafikon szerkesztése",
     "dialogDescription": "Válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra. Az előnézet a saját adataidat mutatja.",
     "save": "Grafikon mentése",
@@ -1426,7 +1458,8 @@
       "compareYearEarlier": "Összevetés az egy évvel korábbival",
       "secondMetric": "Második adatsor",
       "secondKind": "A második adatsor megjelenítése",
-      "shared": "Megosztás mindenkivel, aki látja ezt a járművet"
+      "shared": "Megosztás mindenkivel, aki látja ezt a járművet",
+      "also": "Továbbá"
     },
     "hints": {
       "stacked": "Az üzemanyag és a költségek egymás tetején látszanak.",
@@ -1436,7 +1469,12 @@
       "secondMetric": "Ugyanabban a grafikonban, saját léptékben látszik; a trend beállításai az elsőre vonatkoznak.",
       "shared": "Mások látják ezt a grafikont, de csak te módosíthatod.",
       "donut": "A fánkdiagramhoz összegezhető adat kell (költség, mennyiség, távolság, tankolások száma).",
-      "category": "A kategória szerinti csoportosítás csak a költségekhez érhető el."
+      "category": "A kategória szerinti csoportosítás csak a költségekhez érhető el.",
+      "sharedForEveryone": "Mindenki irányítópultján a grafikonnak megosztottnak kell lennie mindenkivel, aki látja a járművet.",
+      "overTime": "Csak időbeli grafikonhoz: havi, negyedéves vagy éves bontásban, nem fánkhoz.",
+      "runningTotalNeedsTotals": "A göngyölített összeghez összeadható mérték kell: költség, mennyiség, út vagy tankolások.",
+      "stackNeedsTotalSpend": "Csak az időbeli összes költés bontható üzemanyagra és költségekre.",
+      "also": "A göngyölített összegnek nincs trendvonala: az egyik választása kikapcsolja a másikat."
     },
     "metrics": {
       "TOTAL_SPEND": "Teljes költés (üzemanyag és költségek)",

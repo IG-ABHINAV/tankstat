@@ -40,9 +40,16 @@ test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', 
   await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
   expect(await violations(page)).toEqual([])
   await page.getByRole('button', { name: 'Customize' }).click()
-  await page.getByRole('button', { name: 'Add widget' }).click()
-  await expect(page.getByRole('region', { name: 'Add widget' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
   expect(await violations(page)).toEqual([])
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add widget' })
+  await expect(dialog).toBeVisible()
+  await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1') // faded in: axe reads the colours as they are drawn
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+  await dialog.getByRole('button', { name: 'Blank chart' }).click()
+  await expect(dialog.getByLabel('Title')).toBeVisible()
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
 })
 
 test('the add vehicle dialog has no axe violations', async ({ page }) => {

@@ -1291,16 +1291,13 @@
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
       "none": "–"
     },
-    "addChart": "Add chart",
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",
     "shared": "Shared",
     "by": "by {{name}}",
-    "showTable": "Show the data as a table",
-    "hideTable": "Hide the table",
+    "tableButton": "{{title}} as a table",
+    "tableDescription": "The numbers behind the chart, which is what a screen reader reads.",
     "editChart": "Edit the chart {{title}}",
-    "copyChart": "Copy {{title}} as my chart",
-    "copyTitle": "Copy as my chart",
     "deleteChart": "Delete the chart {{title}}",
     "deleteTitle": "Delete this chart?",
     "deleteDescription": "“{{title}}” is removed for everyone it is shared with. The data itself is not affected.",
@@ -1371,7 +1368,7 @@
       "noCharts": "Nothing on this dashboard. Customize it to add tiles."
     },
     "edit": {
-      "hint": "Drag a tile by its handle, resize it by its corner, or use its menu (which also works with a keyboard).",
+      "hint": "Drag a tile by the strip across its top, resize it by its corner, or use the strip's menu (which also works with a keyboard).",
       "statusName": "Last change to the arrangement",
       "options": "Options for {{name}}",
       "earlier": "Move earlier",
@@ -1385,29 +1382,64 @@
       "remove": "Remove",
       "pinned": "Pinned",
       "add": "Add widget",
-      "addHint": "Click one to add it at the bottom, or drag it onto the dashboard.",
-      "nothingToAdd": "Everything is on the dashboard.",
-      "figure": "Key figure",
-      "ready": "Ready-made chart",
-      "savedChart": "Your chart",
-      "sharedChart": "Shared chart",
       "moved": "{{name}} moved to position {{position}} of {{total}}.",
       "resized": "{{name}} is now {{w}} wide and {{h}} tall.",
       "pinnedSaid": "{{name}} pinned.",
       "unpinnedSaid": "{{name}} unpinned.",
       "removed": "{{name}} taken off.",
-      "added": "{{name}} added.",
-      "dropped": "{{name}} placed."
+      "added": "{{name}} added."
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {
       "standard": "Standard",
       "spending": "Spending",
       "usage": "Usage"
+    },
+    "widget": {
+      "title": "Add widget",
+      "description": "What is not on the dashboard yet, and a chart of your own from scratch. Whatever you pick is added at the bottom.",
+      "listLabel": "What to add",
+      "groups": {
+        "figures": "Key figures",
+        "ready": "Ready-made charts",
+        "yours": "Your charts"
+      },
+      "blank": "Blank chart",
+      "add": "Add to the dashboard",
+      "saveAndAdd": "Save and add",
+      "customize": "Customize this chart",
+      "back": "Back to the list",
+      "describe": {
+        "figures": {
+          "thisMonth": "What was spent this month, in every currency used, with last month and the last six months as a sparkline.",
+          "consumption": "The average consumption of the last ten full fill-ups.",
+          "odometer": "The vehicle’s latest odometer reading, from any log.",
+          "lastFillUp": "The date of the last fill-up, and how many fill-ups and expenses there are.",
+          "spendingTrend": "What was spent in the last 12 whole months, against the 12 months before.",
+          "costPerDistance": "Money per 100 km or 100 miles driven in the last 12 whole months, against the 12 months before.",
+          "consumptionTrend": "The mean of the latest fill-ups’ consumption, against the ten before.",
+          "distanceTrend": "The distance driven this year, against last year up to the same day."
+        },
+        "ready": {
+          "monthlyCosts": "Total spend by month, last 12 months, fuel and expenses stacked.",
+          "consumption": "Average consumption by month, last 12 months.",
+          "fuelPrice": "The average fuel price paid, by month, last 12 months.",
+          "categories": "Expense costs by category, last 12 months, as a donut per currency.",
+          "distance": "Distance driven by month, last 12 months.",
+          "spendSoFar": "Total spend this year as a running total, with last year beside it.",
+          "costPerDistance": "Cost per distance by month, last 12 months, with a moving average.",
+          "consumptionTrend": "Average consumption by quarter, all time, with a linear trend.",
+          "distanceYearEarlier": "Distance by month, last 12 months, with the same months a year earlier.",
+          "distanceAndConsumption": "Distance as bars with the average consumption as a line, by month, last 12 months."
+        },
+        "readyHint": "Ready-made: add it as it is, or customize it as a chart of your own; the original stays available.",
+        "saved": "A chart of your own, off the dashboard.",
+        "shared": "A chart shared by {{name}}, off the dashboard.",
+        "blank": "A chart of your own, from scratch: what to measure, how to group it, the chart type and the period. The preview shows your data as you choose."
+      }
     }
   },
   "charts": {
-    "dialogAdd": "Add chart",
     "dialogEdit": "Edit chart",
     "dialogDescription": "Choose what to measure, how to group it and for which period. The preview shows your data.",
     "save": "Save chart",
@@ -1426,7 +1458,8 @@
       "compareYearEarlier": "Compare with a year earlier",
       "secondMetric": "Second measure",
       "secondKind": "Second measure drawn as",
-      "shared": "Share with everyone who can see this vehicle"
+      "shared": "Share with everyone who can see this vehicle",
+      "also": "Also"
     },
     "hints": {
       "stacked": "Shows fuel and expenses on top of each other.",
@@ -1436,7 +1469,12 @@
       "secondMetric": "Drawn in the same chart on a scale of its own; the trend options are for the first measure.",
       "shared": "Others can see this chart but only you can change it.",
       "donut": "Donuts need a total (costs, volume, distance, fill-ups).",
-      "category": "Grouping by category is only for expense costs."
+      "category": "Grouping by category is only for expense costs.",
+      "sharedForEveryone": "On everyone’s dashboard a chart has to be shared with everyone who can see the vehicle.",
+      "overTime": "Only for a chart over time: by month, quarter or year, not a donut.",
+      "runningTotalNeedsTotals": "A running total needs what adds up: costs, volume, distance or fill-ups.",
+      "stackNeedsTotalSpend": "Only total spend over time splits into fuel and expenses.",
+      "also": "A running total has no trend line: choosing one turns the other off."
     },
     "metrics": {
       "TOTAL_SPEND": "Total spend (fuel and expenses)",
