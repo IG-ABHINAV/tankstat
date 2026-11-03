@@ -1,6 +1,6 @@
-import { type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
+import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
@@ -66,6 +66,79 @@ test('customizes the vehicle\'s dashboard by the tiles\' menus: a figure moved e
   const layout = (await stored(page, vehicle.id)).shared!.tiles
   expect(layout.find((t) => t.id === 'preset:monthlyCosts')).toMatchObject({ w: isMobile ? 2 : 3 })
   expect(layout.find((t) => t.id === 'odometer')).toMatchObject({ pinned: true })
+  await expectSoundLayout(page)
+})
+
+/** The 15th of the month `n` months before this one, as `yyyy-MM-dd`: inside the charts' last 12 months whenever the tests run. */
+const monthsAgo = (n: number) => {
+  const day = new Date()
+  day.setUTCDate(15)
+  day.setUTCMonth(day.getUTCMonth() - n)
+  return day.toISOString().slice(0, 10)
+}
+
+/** What sticks out of the chart tiles: a card body that scrolls, a legend or a note past its card, a picture under its least height. */
+const chartTileProblems = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-tile^="preset:"], [data-tile^="chart:"]')].flatMap((tile) => {
+      const card = tile.querySelector<HTMLElement>('.MuiCard-root')!
+      const body = card.lastElementChild as HTMLElement
+      const box = card.getBoundingClientRect()
+      const problems: string[] = []
+      if (body.scrollHeight > body.clientHeight + 1) problems.push(`${tile.dataset.tile}: its body scrolls (${body.scrollHeight} > ${body.clientHeight})`)
+      for (const part of tile.querySelectorAll<HTMLElement>('.MuiChartsLegend-root, figure > p')) {
+        const r = part.getBoundingClientRect()
+        if (r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5) problems.push(`${tile.dataset.tile}: "${part.textContent?.slice(0, 40)}" outside its card`)
+      }
+      const picture = tile.querySelector<HTMLElement>('[role="img"]')
+      if (picture && picture.getBoundingClientRect().height < 119.5) problems.push(`${tile.dataset.tile}: its picture is ${Math.round(picture.getBoundingClientRect().height)} px tall`)
+      return problems
+    }),
+  )
+/** The heights of a tile's chart surfaces (a donut per currency): its svgs but the legend's swatches, which are svgs too. */
+const surfaces = (t: Locator) => t.evaluate((el) => [...el.querySelectorAll('[role="img"] svg')].map((svg) => svg.getBoundingClientRect().height).filter((h) => h > 40))
+/** How many resize corners are displayed (not `display: none`). */
+const cornersShown = (page: Page) => page.evaluate(() => [...document.querySelectorAll('.react-resizable-handle')].filter((h) => getComputedStyle(h).display !== 'none').length)
+
+test('fits each chart in its tile, legend and notes inside and no scrollbar, and shows the resize corners only while arranging', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // Fuel and an expense give Monthly costs a legend; a second currency a note under it (a scale per currency) and a second donut.
+  await logRefueling(page, vehicle.id, { date: monthsAgo(2), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: monthsAgo(1), odometer: 1500, volume: 35, totalCost: 21000 })
+  await addExpense(page, vehicle.id, { date: monthsAgo(1) })
+  await addExpense(page, vehicle.id, { date: monthsAgo(1), amount: 40, currency: 'EUR' })
+  await openVehicle(page, vehicle.id)
+  const monthly = tile(page, 'preset:monthlyCosts')
+  await expect(monthly.locator('.MuiChartsLegend-root')).toBeVisible()
+  await expect(monthly.getByText('Each currency is drawn on a scale of its own; the amounts are in the tooltip and the table.')).toBeVisible()
+  await expect.poll(() => surfaces(tile(page, 'preset:categories'))).toHaveLength(2)
+
+  // The picture takes what the title and the notes leave: nothing scrolls, nothing is cut. The charts lay out after a frame: polled.
+  await expect.poll(() => chartTileProblems(page)).toEqual([])
+  expect(await page.locator('.react-resizable-handle').count()).toBeGreaterThan(0) // drawn by the library, and hidden
+  expect(await cornersShown(page)).toBe(0)
+  // An opened table scrolls inside the card, the picture keeping its least height.
+  await monthly.getByRole('button', { name: 'Show the data as a table' }).click()
+  await expect(monthly.getByRole('table', { name: 'Monthly costs' })).toBeVisible()
+  await expect.poll(() => monthly.evaluate((t) => { const body = t.querySelector('.MuiCard-root')!.lastElementChild!; return body.scrollHeight > body.clientHeight })).toBe(true)
+  expect((await monthly.locator('[role="img"]').boundingBox())!.height).toBeGreaterThanOrEqual(119.5)
+  await monthly.getByRole('button', { name: 'Hide the table' }).click()
+
+  // While arranging, every tile has its corner, and a taller tile gives its chart the room.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+  await expect.poll(() => cornersShown(page)).toBe(await page.locator('[data-tile]').count())
+  const corner = (await monthly.locator('.react-resizable-handle').boundingBox())!
+  expect([Math.round(corner.width), Math.round(corner.height)]).toEqual([44, 44])
+  await expect.poll(() => chartTileProblems(page)).toEqual([])
+  const before = Math.max(...(await surfaces(monthly)))
+  await menu(page, 'Monthly costs', 'Taller')
+  await expect.poll(async () => Math.max(...(await surfaces(monthly)))).toBeGreaterThan(before + 20)
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  await expect.poll(() => cornersShown(page)).toBe(0)
+  await expect.poll(() => chartTileProblems(page)).toEqual([])
   await expectSoundLayout(page)
 })
 
