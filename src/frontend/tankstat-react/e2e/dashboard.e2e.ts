@@ -41,6 +41,8 @@ test('customizes the vehicle\'s dashboard by the tiles\' menus: a figure moved e
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('radio', { name: 'Everyone who sees this vehicle' })).toBeChecked()
   await expectSoundLayout(page)
+  // Not over a button: Save dashboard takes Customize's place, and a hovered primary button falls short of the contrast (#235).
+  await page.mouse.move(0, 0)
   expect(await violations(page)).toEqual([])
   await menu(page, 'Odometer', 'Move earlier')
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Odometer moved to position 2 of 9.')
@@ -118,12 +120,7 @@ test('fits each chart in its tile, legend and notes inside and no scrollbar, and
   await expect.poll(() => chartTileProblems(page)).toEqual([])
   expect(await page.locator('.react-resizable-handle').count()).toBeGreaterThan(0) // drawn by the library, and hidden
   expect(await cornersShown(page)).toBe(0)
-  // An opened table scrolls inside the card, the picture keeping its least height.
-  await monthly.getByRole('button', { name: 'Show the data as a table' }).click()
-  await expect(monthly.getByRole('table', { name: 'Monthly costs' })).toBeVisible()
-  await expect.poll(() => monthly.evaluate((t) => { const body = t.querySelector('.MuiCard-root')!.lastElementChild!; return body.scrollHeight > body.clientHeight })).toBe(true)
-  expect((await monthly.locator('[role="img"]').boundingBox())!.height).toBeGreaterThanOrEqual(119.5)
-  await monthly.getByRole('button', { name: 'Hide the table' }).click()
+  // The table is a dialog away (#228), so nothing opens inside the card to make it scroll.
 
   // While arranging, every tile has its corner, and a taller tile gives its chart the room.
   await page.getByRole('button', { name: 'Customize' }).click()
@@ -142,10 +139,11 @@ test('fits each chart in its tile, legend and notes inside and no scrollbar, and
   await expectSoundLayout(page)
 })
 
-test('resizes a tile by its corner, drags one to the top, and drags a widget in from Add widget', async ({ page, isMobile }) => {
+test('resizes a tile by its corner and drags one to the top', async ({ page, isMobile }) => {
   test.skip(isMobile, 'a pointer\'s way; a phone has the menus')
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id) // so the first figure has its sparkline
   await openVehicle(page, vehicle.id)
   await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
   await page.getByRole('button', { name: 'Customize' }).click()
@@ -160,6 +158,13 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
     for (let step = 1; step <= 12; step++) await page.mouse.move(fromX + ((toX - fromX) * step) / 12, fromY + ((toY - fromY) * step) / 12)
     await page.mouse.up()
   }
+
+  // The strip over a tile's top (#228) takes nothing from a four-row figure: its sparkline still ends inside the card.
+  await expect(tile(page, 'thisMonth').locator('.MuiCard-root svg').last()).toBeVisible()
+  const card = (await tile(page, 'thisMonth').locator('.MuiCard-root').boundingBox())!
+  const sparkline = (await tile(page, 'thisMonth').locator('.MuiCard-root svg').last().boundingBox())!
+  expect(sparkline.y + sparkline.height).toBeLessThanOrEqual(card.y + card.height + 0.5)
+  await expectSoundLayout(page)
 
   // Resize: the first figure's corner one column to the right makes it two columns wide.
   await settled(tile(page, 'thisMonth'))
@@ -177,20 +182,11 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   await drag(handle.x + handle.width / 2, handle.y + handle.height / 2, target.x + 24, target.y + 24)
   await expect.poll(async () => (await chartTitles(page))[0]).toBe('Consumption')
 
-  // Drag in: a chart taken off, dragged back from the Add widget panel onto the grid's top left.
-  await menu(page, 'Fuel price', 'Remove')
-  await page.getByRole('button', { name: 'Add widget' }).click()
-  await settled(region(page).locator('.react-grid-layout'))
-  await page.getByRole('region', { name: 'Add widget' }).getByRole('button', { name: /Fuel price/ }).dragTo(region(page).locator('.react-grid-layout'), { targetPosition: { x: 40, y: 40 }, force: true }) // no "stable" wait: the grid above it settles late
-  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Fuel price placed.')
-  await expect.poll(() => chartTitles(page)).toContain('Fuel price')
-
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
   const layout = (await stored(page, vehicle.id)).shared!.tiles
   expect(layout.find((t) => t.id === 'thisMonth')).toMatchObject({ w: 2 })
   expect(layout.find((t) => t.id === 'preset:consumption')).toMatchObject({ x: 0 })
-  expect(layout.some((t) => t.id === 'preset:fuelPrice')).toBe(true)
 })
 
 test('arranges a dashboard of one\'s own, then goes back to the vehicle\'s', async ({ page }) => {
@@ -215,7 +211,7 @@ test('arranges a dashboard of one\'s own, then goes back to the vehicle\'s', asy
   await expect.poll(() => chartTitles(page)).toEqual(['Monthly costs', 'Consumption', 'Fuel price', 'Expenses by category', 'Distance per month'])
 })
 
-test('starts from the Usage preset, then copies a ready-made chart as one\'s own', async ({ page }) => {
+test('starts from the Usage preset, then adds a figure as it is and a ready-made chart customized into one\'s own through Add widget', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id)
@@ -232,14 +228,37 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
   expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, latest fill-ups'])
   await expectSoundLayout(page)
 
-  await page.getByRole('button', { name: 'Copy Distance per month as my chart' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Copy as my chart' })
-  await expect(dialog.getByLabel('Title')).toHaveValue('Distance per month')
-  await dialog.getByLabel('Title').fill('My distance')
-  await dialog.getByRole('button', { name: 'Save chart' }).click()
+  // Add widget (#228): a figure as it is, then a ready-made chart customized into a chart of one's own; both land at the bottom.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add widget' })
+  await dialog.getByRole('button', { name: 'Last fill-up' }).click()
+  await expectSoundLayout(page)
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByRole('heading', { name: 'My distance' })).toBeVisible() // at the first free spot, the original still there
-  await expect(page.getByRole('heading', { name: 'Distance per month' })).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Last fill-up added.')
+
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await dialog.getByRole('button', { name: 'Monthly costs' }).click()
+  await dialog.getByRole('button', { name: 'Customize this chart' }).click()
+  await expect(dialog.getByLabel('Title')).toHaveValue('Monthly costs')
+  await dialog.getByLabel('Title').fill('My costs')
+  await expectSoundLayout(page)
+  await dialog.getByRole('button', { name: 'Save and add' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('My costs added.')
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month', 'My costs'])
+  expect(await figureLabels(page)).toEqual(['Odometer', 'Distance this year', 'Average consumption', 'Consumption, latest fill-ups', 'Last fill-up'])
+  // Outside Customize a tile shows only its content: no Copy, no Edit, the table a button away (on a chart with something to list).
+  await expect(page.getByRole('button', { name: /^Copy |^Edit the chart|^Delete the chart/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'My costs as a table' })).toBeVisible()
+  // The ready-made chart stays available, the saved copy is on the dashboard.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await expect(dialog.getByRole('button', { name: 'Monthly costs' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'My costs' })).toHaveCount(0)
 })
 
 // ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------

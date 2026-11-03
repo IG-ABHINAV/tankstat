@@ -10,14 +10,16 @@ import { useTranslation } from 'react-i18next'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import { ChartDataDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
+import { ChartTableDialog } from './ChartTable.tsx'
 import { ChartView, MIN_PICTURE, PICTURE_HEIGHT } from './ChartView.tsx'
+import { useTilePadding } from './tileChrome.ts'
 import { toConfig, type ChartRecipe } from './chartFormat.ts'
 
 /**
- * One chart in a titled card: loads its own data from the server and draws it. Used for the ready-made charts, saved charts and the builder's
- * preview. In a dashboard tile (`fill`) the card takes the tile's height and the picture what is left under the title and above its notes,
- * laid out by the browser rather than worked out here (MUI X draws a legend above the picture and the notes come under it), the table
- * scrolling inside the card once it is opened; on its own the picture is 240 px tall.
+ * One chart in a titled card: loads its own data from the server and draws it, its numbers as a table behind a button in its header (#228).
+ * Used for the ready-made charts, saved charts and the builder's preview. In a dashboard tile (`fill`) the card takes the tile's height and the picture what is left under the title and above its notes,
+ * laid out by the browser rather than worked out here (MUI X draws a legend above the picture and the notes come under it); on its own
+ * the picture is 240 px tall.
  */
 export function ChartCard({
   vehicleId,
@@ -42,9 +44,12 @@ export function ChartCard({
 }) {
   const { t } = useTranslation()
   const { data, error } = useQuery(ChartDataDocument, { variables: { vehicleId, config: toConfig(recipe) }, fetchPolicy: 'cache-and-network' })
+  // Under the edit strip while the dashboard is arranged, only for the card that fills its tile: the context also reaches a preview in a
+  // dialog opened from a tile (the Edit chart dialog), which is portalled out of the tile but not out of the React tree.
+  const pt = useTilePadding(2)
 
   return (
-    <Card sx={fill ? { p: 2, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2 }}>
+    <Card sx={fill ? { p: 2, pt, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2 }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
         <Stack sx={{ gap: 0.5, minWidth: 0 }}>
           <Typography component={`h${headingLevel}`} variant="h6">
@@ -55,7 +60,10 @@ export function ChartCard({
             {meta}
           </Stack>
         </Stack>
-        {actions}
+        <Stack direction="row" sx={{ gap: 1, flexShrink: 0 }}>
+          {data && <ChartTableDialog data={data.vehicleChartData} recipe={recipe} units={units} title={title} />}
+          {actions}
+        </Stack>
       </Stack>
       <Box sx={fill ? { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' } : undefined}>
         {error && <ErrorMessage error={error} />}

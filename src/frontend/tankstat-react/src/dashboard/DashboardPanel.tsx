@@ -5,8 +5,8 @@ import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState, type DragEvent } from 'react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { IconAction } from '../components/IconAction.tsx'
@@ -28,15 +28,15 @@ import {
 import { ErrorMessage } from '../messages.tsx'
 import { useConnectivity } from '../offline/useConnectivity.ts'
 import { useToast } from '../toast/toastContext.ts'
+import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
 import { ChartCard } from './ChartCard.tsx'
-import { type ChartRecipe } from './chartFormat.ts'
+import { recipeOf } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
 import { Figure } from './Figures.tsx'
 import {
   addTile,
   chartKey,
-  defaultSize,
   FIGURE_GRID,
   FIGURES,
   inReadingOrder,
@@ -64,9 +64,8 @@ interface Editing {
   scope: Scope
   tiles: Tile[]
   hidden: SavedChart[]
+  /** The Add widget dialog is open. */
   adding: boolean
-  /** A widget being dragged in from the Add widget panel. */
-  dropping: { id: string; w: number; h: number } | null
   status: string
 }
 
@@ -87,26 +86,13 @@ function DashboardSkeleton() {
   )
 }
 
-const recipeOf = (c: SavedChart): ChartRecipe => ({
-  metric: c.metric,
-  grouping: c.grouping,
-  kind: c.kind,
-  range: c.range,
-  stacked: c.stacked,
-  from: c.rangeFrom ?? null,
-  to: c.rangeTo ?? null,
-  trend: c.trend,
-  runningTotal: c.runningTotal,
-  compareYearEarlier: c.compareYearEarlier,
-  secondMetric: c.secondMetric ?? null,
-  secondKind: c.secondKind ?? null,
-})
-
 /**
  * The first screen of a vehicle: its key figures and its charts, ready-made and saved, as tiles of a grid arranged the way its dashboard is
- * (#211): the user's own arrangement, else the vehicle's, else the Standard preset (`widgets.ts`). Customize turns the grid into an edit
- * mode in place: the vehicle's dashboard (everyone's, with Edit access to its logs) or one's own; tiles dragged, resized, pinned, taken off
- * and added back (clicked or dragged in from the Add widget panel); saved when done.
+ * (#211): the user's own arrangement, else the vehicle's, else the Standard preset (`widgets.ts`). Outside Customize a tile shows only its
+ * content (and its table behind a button). Customize turns the grid into an edit mode in place (#228): the vehicle's dashboard (everyone's,
+ * with Edit access to its logs) or one's own; tiles dragged, resized, pinned and taken off, one's own saved charts edited or deleted, and
+ * anything added through the Add widget dialog (a figure, a ready-made chart as it is or customized into a chart of one's own, a saved
+ * chart, or a blank chart); saved when done.
  */
 export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Units; logAccess: AccessLevel } }) {
   const { t } = useTranslation()
@@ -130,7 +116,9 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const shared: Layout | null = dashboard?.shared ?? null
   const personal: Layout | null = dashboard?.personal ?? null
   const charts = data.vehicleCharts
-  const chartsFor = (scope: Scope) => (scope === 'shared' ? charts.filter((c) => c.isShared) : charts)
+  // Everyone's dashboard holds only shared charts, except with sign-in off, where everyone is the same user and every chart is theirs
+  // (so a chart of the anonymous user can still be edited and shared from there).
+  const chartsFor = (scope: Scope) => (scope === 'shared' && !signInOff ? charts.filter((c) => c.isShared) : charts)
   const shown = resolveLayout(personal ?? shared, charts)
   const tiles = edit ? edit.tiles : shown.tiles
   const busy = saving.loading || resetting.loading
@@ -162,7 +150,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const editingOf = (scope: Scope): Editing => {
     const start = scope === 'shared' ? shared : (personal ?? shared)
     const resolved = resolveLayout(start, chartsFor(scope))
-    return { scope, tiles: resolved.tiles, hidden: resolved.hidden, adding: false, dropping: null, status: '' }
+    return { scope, tiles: resolved.tiles, hidden: resolved.hidden, adding: false, status: '' }
   }
   const update = (change: (e: Editing) => Partial<Editing>) => setEdit((e) => (e ? { ...e, ...change(e) } : e))
 
@@ -195,29 +183,15 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       }
     })
   }
-  const add = (id: string) =>
-    update((e) => ({ tiles: addTile(e.tiles, id), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: titleOf({ id } as Tile) }) }))
-  const dragStart = (id: string) => (event: DragEvent) => {
-    const { w, h } = defaultSize(id)
-    event.dataTransfer.setData('text/plain', id) // Firefox starts no drag without data
-    event.dataTransfer.effectAllowed = 'move'
-    update(() => ({ dropping: { id, w, h } }))
-  }
+  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. */
+  const add = (id: string, name?: string) =>
+    update((e) => ({ tiles: addTile(e.tiles, id), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
   const applyPreset = (id: LayoutPresetId) =>
     update((e) => {
       const resolved = resolveLayout(LAYOUT_PRESETS[id], chartsFor(e.scope))
       return { tiles: resolved.tiles, hidden: resolved.hidden, status: t('dashboard.customize.started', { name: t(`dashboard.layoutPresets.${id}`) }) }
     })
-  const available = edit
-    ? (() => {
-        const ids = new Set(edit.tiles.map((x) => x.id))
-        return [
-          ...FIGURES.filter((f) => !ids.has(f)).map((f) => ({ id: f, label: t(`dashboard.kpi.${f}`), note: t('dashboard.edit.figure') })),
-          ...READY_CHARTS.filter((c) => !ids.has(presetKey(c.id))).map((c) => ({ id: presetKey(c.id), label: t(`dashboard.presets.${c.id}`), note: t('dashboard.edit.ready') })),
-          ...chartsFor(edit.scope).filter((c) => !ids.has(chartKey(c.id))).map((c) => ({ id: chartKey(c.id), label: c.title, note: c.isShared ? t('dashboard.edit.sharedChart') : t('dashboard.edit.savedChart') })),
-        ]
-      })()
-    : []
+  const onDashboard = new Set(edit?.tiles.map((x) => x.id))
   const scopes: Scope[] = [...(dashboard?.canChangeShared ? (['shared'] as const) : []), ...(!signInOff ? (['personal'] as const) : [])]
   const stored = edit ? (edit.scope === 'shared' ? shared : personal) : null
 
@@ -236,8 +210,9 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
         headingLevel={2}
         meta={c.createdBy && c.isShared ? <UserChip user={c.createdBy} /> : undefined}
         actions={
-          // Each button by its own right (#210): the creator changes a chart, Delete access to the logs removes a shared one too.
-          (c.canEdit || c.canDelete) && !edit ? (
+          // Changing or deleting a chart is part of arranging the dashboard (#228), offered while it is customized, each button by its own
+          // right (#210): the creator changes a chart, Delete access to the logs removes a shared one too.
+          (c.canEdit || c.canDelete) && edit ? (
             <Stack direction="row" sx={{ gap: 1 }}>
               {c.canEdit && (
                 <ChartBuilderDialog
@@ -262,7 +237,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
                   title={t('dashboard.deleteTitle')}
                   description={t('dashboard.deleteDescription', { title: c.title })}
                   confirmLabel={t('dashboard.deleteConfirm')}
-                  onConfirm={() => void act(() => remove({ variables: { id: c.id } }))}
+                  onConfirm={() => void act(() => remove({ variables: { id: c.id } }), () => update((e) => ({ tiles: removeTile(e.tiles, chartKey(c.id)), hidden: e.hidden.filter((h) => h.id !== c.id) })))}
                 />
               )}
             </Stack>
@@ -275,35 +250,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     const widget = widgetOf(tile.id)
     if (widget?.kind === 'figure') return <Figure id={widget.id} rows={tile.h} summary={s} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
-    if (widget?.kind === 'ready') {
-      const title = t(`dashboard.presets.${widget.chart.id}`)
-      return (
-        <ChartCard
-          vehicleId={vehicle.id}
-          title={title}
-          recipe={widget.chart.recipe}
-          units={vehicle.units}
-          fill
-          headingLevel={2}
-          actions={
-            // A ready-made chart copied as one's own: the builder starts from its recipe, the original stays.
-            !edit ? (
-              <ChartBuilderDialog
-                vehicle={vehicle}
-                canShare={canShare}
-                start={{ title, recipe: widget.chart.recipe }}
-                onSaved={() => refetch()}
-                trigger={
-                  <IconAction size="large" label={t('dashboard.copyChart', { title })}>
-                    <Copy size={16} aria-hidden />
-                  </IconAction>
-                }
-              />
-            ) : undefined
-          }
-        />
-      )
-    }
+    if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
     const saved = charts.find((c) => c.id === widget?.id)
     return saved ? savedCard(saved) : null
   }
@@ -335,7 +282,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
                 onChange={(id) => id && applyPreset(id)}
                 options={(Object.keys(LAYOUT_PRESETS) as LayoutPresetId[]).map((id) => ({ value: id, label: t(`dashboard.layoutPresets.${id}`) }))}
               />
-              <Button size="large" variant="soft" aria-expanded={edit.adding} onClick={() => update((e) => ({ adding: !e.adding }))}>
+              <Button size="large" variant="soft" aria-haspopup="dialog" onClick={() => update(() => ({ adding: true }))}>
                 <Plus size={16} aria-hidden />
                 {t('dashboard.edit.add')}
               </Button>
@@ -377,25 +324,12 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             ) : (
               <span />
             )}
-            <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
-              {/* Null for a vehicle added on this device: the Standard preset until the server has it. */}
-              {dashboard && scopes.length > 0 && (
-                <Button size="large" variant="soft" onClick={startEditing}>
-                  {t('dashboard.customize.button')}
-                </Button>
-              )}
-              <ChartBuilderDialog
-                vehicle={vehicle}
-                canShare={canShare}
-                onSaved={() => refetch()}
-                trigger={
-                  <Button size="large">
-                    <Plus size={16} aria-hidden />
-                    {t('dashboard.addChart')}
-                  </Button>
-                }
-              />
-            </Stack>
+            {/* Null for a vehicle added on this device: the Standard preset until the server has it. */}
+            {dashboard && scopes.length > 0 && (
+              <Button size="large" variant="soft" onClick={startEditing}>
+                {t('dashboard.customize.button')}
+              </Button>
+            )}
           </>
         )}
       </Stack>
@@ -406,47 +340,30 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             {edit.scope === 'shared' && charts.some((c) => !c.isShared) ? ` ${t('dashboard.customize.privateHint')}` : ''}
             {!reachable ? ` ${t('dashboard.customize.needsServer')}` : ''}
           </Typography>
-          {edit.adding && (
-            <Box component="section" aria-label={t('dashboard.edit.add')} sx={{ p: 1.5, borderRadius: '12px', bgcolor: 'action.hover' }}>
-              <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
-                {available.length > 0 ? t('dashboard.edit.addHint') : t('dashboard.edit.nothingToAdd')}
-              </Typography>
-              <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
-                {available.map((w) => (
-                  <Button key={w.id} size="large" variant="soft" draggable onDragStart={dragStart(w.id)} onDragEnd={() => update(() => ({ dropping: null }))} onClick={() => add(w.id)} sx={{ flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
-                    <span>{w.label}</span>
-                    <Typography component="span" variant="caption" sx={{ color: 'text.secondary' }}>
-                      {w.note}
-                    </Typography>
-                  </Button>
-                ))}
-              </Stack>
-            </Box>
-          )}
           <Typography variant="body2" role="status" aria-label={t('dashboard.edit.statusName')} sx={{ color: 'text.secondary', minHeight: '1.5em' }}>
             {edit.status}
           </Typography>
+          <AddWidgetDialog
+            open={edit.adding}
+            onClose={() => update(() => ({ adding: false }))}
+            vehicle={vehicle}
+            summary={s}
+            canShare={canShare}
+            everyone={edit.scope === 'shared'}
+            figures={FIGURES.filter((f) => !onDashboard.has(f))}
+            ready={READY_CHARTS.filter((c) => !onDashboard.has(presetKey(c.id)))}
+            saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
+            onAdd={(id) => add(id)}
+            onChartSaved={async (id, title) => {
+              await refetch()
+              add(chartKey(id), title)
+            }}
+          />
         </>
       )}
       {actionError !== undefined && <ErrorMessage error={actionError} />}
       {tiles.length > 0 ? (
-        <DashboardGrid
-          tiles={tiles}
-          editing={edit !== null}
-          render={render}
-          name={titleOf}
-          onTilesChange={(next) => update(() => ({ tiles: next }))}
-          onAction={onAction}
-          dropping={edit?.dropping}
-          onDrop={(next) =>
-            update((e) => ({
-              tiles: next,
-              dropping: null,
-              hidden: e.hidden.filter((c) => chartKey(c.id) !== e.dropping?.id),
-              status: e.dropping ? t('dashboard.edit.dropped', { name: titleOf({ id: e.dropping.id } as Tile) }) : e.status,
-            }))
-          }
-        />
+        <DashboardGrid tiles={tiles} editing={edit !== null} render={render} name={titleOf} onTilesChange={(next) => update(() => ({ tiles: next }))} onAction={onAction} />
       ) : (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('dashboard.customize.noCharts')}

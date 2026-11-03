@@ -7,7 +7,7 @@ import type { Tile } from '../../../src/dashboard/widgets.ts'
 import { ThemeRoot } from '../../../src/theme/ThemeRoot.tsx'
 
 // jsdom lays nothing out, so react-grid-layout never drags here: the grid is stood in for by a component that keeps the props the
-// dashboard hands it, and the test calls its callbacks as the library would during a drag, a resize or a drop. Where the tiles are then
+// dashboard hands it, and the test calls its callbacks as the library would during a drag or a resize. Where the tiles are then
 // drawn is the real browser's to check (`e2e/dashboard.e2e.ts`).
 const grid = vi.hoisted(() => ({ width: 1280, props: [] as Record<string, unknown>[] }))
 vi.mock('react-grid-layout', async (importOriginal) => ({
@@ -25,7 +25,6 @@ const latest = () => grid.props[grid.props.length - 1] as {
   onResize: (layout: Layout, old: LayoutItem | null, item: LayoutItem | null) => void
   onDragStop: (layout: Layout) => void
   onResizeStop: (layout: Layout) => void
-  onDrop: (layout: Layout, item: LayoutItem | undefined) => void
 }
 const tile = (id: string, x: number, y: number, w = 2, h = 8, pinned = false): Tile => ({ id, x, y, w, h, pinned })
 const at = (i: string, x: number, y: number, w = 2, h = 8): LayoutItem => ({ i, x, y, w, h })
@@ -75,22 +74,6 @@ describe('DashboardGrid while a tile is dragged or resized (#227, #240)', () => 
     act(() => latest().onResizeStop([at('preset:monthlyCosts', 0, 0, 3), at('preset:consumption', 2, 0), at('preset:fuelPrice', 0, 8)]))
     expect(latest().children[0]).toBe(before[0])
     expect(onTilesChange).toHaveBeenCalledWith([tile('preset:monthlyCosts', 0, 0, 3), tile('preset:consumption', 2, 0, 2, 8, true), tile('preset:fuelPrice', 0, 8)])
-  })
-
-  it('leaves a widget dragged in from outside alone: the library draws its drop spot itself, and no drag stop ever ends it', () => {
-    const onDrop = vi.fn()
-    const dropping = { id: 'preset:distance', w: 2, h: 8 }
-    themed(<DashboardGrid tiles={TILES} editing render={show} name={name} dropping={dropping} onDrop={onDrop} />)
-    const before = latest().children
-
-    act(() => latest().onDrag([], null, at('preset:distance', 0, 16)))
-    act(() => latest().onDrag([], null, null)) // the library can call it without an item
-    expect(latest().children).toEqual(before)
-    latest().children.forEach((cell, i) => expect(cell).toBe(before[i]))
-
-    // Dropped: the tiles with it where it landed, at the width it was brought in with.
-    act(() => latest().onDrop([at('preset:monthlyCosts', 0, 0), at('preset:consumption', 2, 0), at('preset:fuelPrice', 0, 8), at('__dropping-elem__', 2, 8)], at('__dropping-elem__', 2, 8)))
-    expect(onDrop).toHaveBeenCalledWith([tile('preset:monthlyCosts', 0, 0), tile('preset:consumption', 2, 0, 2, 8, true), tile('preset:fuelPrice', 0, 8), tile('preset:distance', 2, 8)])
   })
 
   it('on fewer columns gives the tiles in their new order, flowed back into four', () => {
