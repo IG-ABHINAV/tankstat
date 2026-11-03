@@ -18,7 +18,7 @@ export E2E_URL="http://127.0.0.1:${port}"
 # The app and the six waiting servers take seven ports from it: one already answering (another run, another session's) would answer
 # for them, and the tests would fail on its data (#236).
 for p in $(seq "$port" $((port + 6))); do
-  if curl -s -o /dev/null "http://127.0.0.1:${p}"; then
+  if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:${p}"; then
     echo "Something already answers on port ${p} (this run takes ${port}-$((port + 6))): stop it, or choose another start with E2E_PORT." >&2
     exit 1
   fi

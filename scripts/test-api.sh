@@ -5,7 +5,7 @@ set -euo pipefail
 # Away from scripts/test-e2e.sh's servers (5097 and the six after it) and screenshots.sh's (5110), so they can run side by side (#236).
 port="${TANKSTAT_API_PORT:-5120}"
 export TANKSTAT_API_URL="http://localhost:${port}"
-if curl -s -o /dev/null "$TANKSTAT_API_URL"; then
+if curl -s -o /dev/null --max-time 2 "$TANKSTAT_API_URL"; then
   echo "Something already answers on $TANKSTAT_API_URL: stop it, or choose another port with TANKSTAT_API_PORT." >&2
   exit 1
 fi
