@@ -159,11 +159,8 @@ test('starts from the Usage preset, then copies a ready-made chart as one\'s own
 
 // ---- a figure's rows (#229) -------------------------------------------------------------------------------
 
-/** Today as `yyyy-MM-dd` in the browser's own time: "this month" is the run day's. */
-const today = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+/** Today as `yyyy-MM-dd` in UTC: the server's "this month" is UTC's (`StatsService.Today`), so a local date could fall in another month. */
+const today = () => new Date().toISOString().slice(0, 10)
 /** The figure cards whose content is cut: a card is `overflow: hidden`, so only its scroll height tells. */
 const clippedFigures = (page: Page) =>
   page.evaluate(() =>
