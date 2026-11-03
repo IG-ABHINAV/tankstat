@@ -1,10 +1,15 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
-import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { type Locator, type Page } from '@playwright/test'
+import { expect, test } from './support/test.ts'
+import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
 // Arranging a vehicle's dashboard (#211): a grid of tiles dragged, resized, pinned and taken off in place; the vehicle's, which everyone
 // who sees it gets, and one's own, which wins for oneself alone.
+
+// Reduced motion (#236): the grid's own media rule turns its transitions off, so a tile is where it is drawn the moment it is drawn and a
+// drag by the pointer never starts beside a tile still moving into place.
+test.use({ reducedMotion: 'reduce' })
 
 const region = (page: Page) => page.getByRole('region', { name: 'Dashboard' })
 /** The charts' titles in the order the tiles come (the grid draws them in reading order). */
@@ -154,6 +159,7 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   }
 
   // Resize: the first figure's corner one column to the right makes it two columns wide.
+  await settled(tile(page, 'thisMonth'))
   const grid = (await region(page).locator('.react-grid-layout').boundingBox())!
   const column = grid.width / 4
   const corner = (await tile(page, 'thisMonth').locator('.react-resizable-handle').boundingBox())!
@@ -161,6 +167,8 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   await expect.poll(async () => (await tile(page, 'thisMonth').boundingBox())!.width).toBeGreaterThan(column * 1.5)
 
   // Drag: the Consumption chart's handle to the first figure's place; the others go round it.
+  await settled(tile(page, 'preset:consumption'))
+  await settled(tile(page, 'thisMonth'))
   const handle = (await tile(page, 'preset:consumption').locator('.tk-tile-handle').boundingBox())!
   const target = (await tile(page, 'thisMonth').boundingBox())!
   await drag(handle.x + handle.width / 2, handle.y + handle.height / 2, target.x + 24, target.y + 24)
@@ -169,6 +177,7 @@ test('resizes a tile by its corner, drags one to the top, and drags a widget in 
   // Drag in: a chart taken off, dragged back from the Add widget panel onto the grid's top left.
   await menu(page, 'Fuel price', 'Remove')
   await page.getByRole('button', { name: 'Add widget' }).click()
+  await settled(region(page).locator('.react-grid-layout'))
   await page.getByRole('region', { name: 'Add widget' }).getByRole('button', { name: /Fuel price/ }).dragTo(region(page).locator('.react-grid-layout'), { targetPosition: { x: 40, y: 40 }, force: true }) // no "stable" wait: the grid above it settles late
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Fuel price placed.')
   await expect.poll(() => chartTitles(page)).toContain('Fuel price')

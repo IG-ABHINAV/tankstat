@@ -30,9 +30,9 @@ afterEach(async () => {
   installPrompt.reset()
   appUpdate.reset()
   offlineReady.reset()
+  resetSignedOutHere() // no sign-out being told, none waiting to be told again (before connectivity changes: nothing left to wake)
   connectivity.reset()
   deviceData.reset() // a fresh, empty device: what one test kept is never another's
-  resetSignedOutHere() // no sign-out being told, none waiting to be told again
   await i18n.changeLanguage('en')
 })
 

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { pageLoaded, signInAsNewUser } from './support/app.ts'
 
 // Importing another app's export (Fuelio): the file, where it goes, what will be imported, and the vehicle it made.

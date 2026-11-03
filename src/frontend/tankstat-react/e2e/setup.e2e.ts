@@ -1,4 +1,5 @@
-import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test'
+import { request, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test } from './support/test.ts'
 import { ADMIN, addVehicle, graphql, pageLoaded, signIn, tag } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+import { expect, test, newContext } from './support/test.ts'
 import { addVehicle, createUser, pageLoaded, signIn, signInAsNewUser, tag } from './support/app.ts'
 
 // What an administrator does with people: a new user with the one-time link (and the same user created twice at once), disabling someone, a grant on someone else's data, and
@@ -19,7 +20,7 @@ test('creates a user, who sets a password through the link and signs in', async 
   const url = (await link.textContent())!.trim()
 
   // The new user, in a browser of their own.
-  const theirs = await browser.newContext()
+  const theirs = await newContext(browser)
   const them = await theirs.newPage()
   try {
     await them.goto(url)
@@ -66,7 +67,7 @@ test('disables a user, who can no longer sign in', async ({ page, browser }) => 
   await page.getByRole('checkbox', { name: `Disabled: ${user.name}` }).click()
   await expect(page.getByRole('checkbox', { name: `Disabled: ${user.name}` })).toBeChecked()
 
-  const theirs = await browser.newContext()
+  const theirs = await newContext(browser)
   const them = await theirs.newPage()
   try {
     await them.goto('/')
@@ -87,7 +88,7 @@ async function choose(page: Page, label: string, option: string) {
 
 test("grants a user view access to another user's data", async ({ page, browser }) => {
   // The owner and their vehicle.
-  const ownerContext = await browser.newContext()
+  const ownerContext = await newContext(browser)
   const ownerPage = await ownerContext.newPage()
   const owner = await signInAsNewUser(ownerPage)
   const vehicle = await addVehicle(ownerPage)
@@ -103,7 +104,7 @@ test("grants a user view access to another user's data", async ({ page, browser 
   await page.getByRole('button', { name: 'Grant access' }).click()
   await expect(page.getByText(`${grantee.name} may view the data of ${owner.name}`)).toBeVisible()
 
-  const theirs = await browser.newContext()
+  const theirs = await newContext(browser)
   const them = await theirs.newPage()
   try {
     await signIn(them, grantee)
