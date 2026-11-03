@@ -1,5 +1,8 @@
-import type { ApolloClient } from '@apollo/client'
+import { ApolloLink, gql, Observable, type ApolloClient } from '@apollo/client'
 import { ServerError, ServerParseError } from '@apollo/client/errors'
+import { execute } from '@apollo/client/link'
+import { createOfflineLink } from '../../src/offline/offlineLink.ts'
+import { trackedFetch } from '../../src/offline/trackedFetch.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connectivity, nextDelay, watchConnectivity } from '../../src/offline/connectivity.ts'
 import { classifyFailure, isConnectionFailure, OfflineError } from '../../src/offline/errors.ts'
@@ -47,6 +50,90 @@ describe('classifyFailure', () => {
   it('a request that got no answer in time is "nothing answered"; one the app took back itself is not', () => {
     expect(classifyFailure(new DOMException('signal timed out', 'TimeoutError'))).toBe('network')
     expect(classifyFailure(new DOMException('aborted', 'AbortError'))).toBe('answered')
+  })
+})
+
+describe('a late answer (#238)', () => {
+  it('to a request sent before the server was judged out of reach leaves it out of reach; a bare success still counts', () => {
+    const sentIn = connectivity.epoch
+    connectivity.failed()
+    connectivity.succeeded(sentIn)
+    expect(connectivity.reachable).toBe(false)
+    connectivity.succeeded(connectivity.epoch)
+    expect(connectivity.reachable).toBe(true)
+    connectivity.failed()
+    connectivity.succeeded()
+    expect(connectivity.reachable).toBe(true)
+  })
+
+  it('grows the epoch on the change to out of reach only, so a probe out during a second offline event still counts', async () => {
+    let answer: (ok: boolean) => void = () => undefined
+    const probe = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)))
+    const watch = watchConnectivity(probe, { setTimer: () => undefined as unknown as ReturnType<typeof setTimeout>, clearTimer: () => undefined })
+    try {
+      window.dispatchEvent(new Event('offline'))
+      const asked = watch.probeNow()
+      window.dispatchEvent(new Event('offline')) // the browser says it again while the probe is out
+      answer(true)
+      await asked
+      expect(connectivity.reachable).toBe(true)
+    } finally {
+      watch.stop()
+    }
+  })
+
+  it('through the offline link does not count as the server being back, so its real return refetches the screen and downloads', async () => {
+    let now = 0
+    const refetchQueries = vi.fn(async () => [])
+    const client = { query: vi.fn(() => new Promise(() => undefined)), refetchQueries } as unknown as ApolloClient
+    const runtime = startOfflineRuntime(client, () => now)
+    // A request sent while the server could be reached; its answer comes whenever the test says.
+    let answer: (() => void) | undefined
+    const terminal = new ApolloLink(
+      () =>
+        new Observable((observer) => {
+          answer = () => {
+            observer.next({ data: { vehicle: null } })
+            observer.complete()
+          }
+        }),
+    )
+    const received: unknown[] = []
+    try {
+      connectivity.succeeded()
+      const sub = execute(ApolloLink.from([createOfflineLink(), terminal]), { query: gql`query VehicleDetails { vehicle(id: "x") { id } }` }, { client: {} as ApolloClient }).subscribe({
+        next: (result) => received.push(result.data),
+        error: () => undefined,
+      })
+      now = 1_190
+      window.dispatchEvent(new Event('offline'))
+      now = 1_270
+      answer!() // landing after the offline event
+      await Promise.resolve()
+      expect(received).toEqual([{ vehicle: null }]) // its data still goes on
+      expect([connectivity.reachable, refetchQueries.mock.calls.length]).toEqual([false, 0])
+
+      now = 3_830
+      connectivity.succeeded(connectivity.epoch) // the server is really back
+      expect(refetchQueries).toHaveBeenCalledTimes(1)
+      sub.unsubscribe()
+    } finally {
+      runtime.stop()
+    }
+  })
+
+  it('through trackedFetch does not count either', async () => {
+    let answer: (response: Response) => void = () => undefined
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))))
+    try {
+      const asked = trackedFetch('/media/me/avatar', { method: 'PUT' })
+      connectivity.failed()
+      answer(new Response(null, { status: 204 }))
+      expect((await asked).status).toBe(204)
+      expect(connectivity.reachable).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

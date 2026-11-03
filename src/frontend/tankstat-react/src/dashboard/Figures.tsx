@@ -12,21 +12,29 @@ import type { FigureId } from './widgets.ts'
 type Summary = NonNullable<NonNullable<VehicleDashboardQuery['vehicle']>['summary']>
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
 
-function Kpi({ label, value, hint, children }: { label: string; value: string; hint?: string; children?: ReactNode }) {
+/**
+ * A key figure's card, showing what its tile's rows hold (#229, the rows per figure in `widgets.ts` `FIGURE_ROWS`): two rows the label
+ * and the value, packed closer (84 px); three the comparison line too, or the note where there is none (132 px); four or more everything,
+ * spaced as always (180 px), so an arrangement of four-row figures looks as it did. The label stays the card's first paragraph.
+ */
+function Kpi({ rows, label, value, hint, change, sparkline }: { rows: number; label: string; value: string; hint?: string; change?: ReactNode; sparkline?: ReactNode }) {
+  const full = rows >= 4
+  const third = rows >= 3
   return (
-    <Card sx={{ p: 2, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <Card sx={{ px: 2, py: third ? 2 : 1.5, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         {label}
       </Typography>
-      <Typography variant="h3" component="p" sx={{ my: 0.5 }}>
+      <Typography variant="h3" component="p" sx={{ my: full ? 0.5 : 0 }}>
         {value}
       </Typography>
-      {hint && (
+      {hint && (full || (third && !change)) && (
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
           {hint}
         </Typography>
       )}
-      {children}
+      {third && change}
+      {full && sparkline}
     </Card>
   )
 }
@@ -61,7 +69,7 @@ function Change({ recent, earlier, words, size, count, none, noneRecent }: { rec
 }
 
 /** One key figure of a vehicle's dashboard, by its id (`widgets.ts` `FIGURES`). */
-export function Figure({ id, summary: s, units }: { id: FigureId; summary: Summary | null | undefined; units: Units }) {
+export function Figure({ id, rows, summary: s, units }: { id: FigureId; rows: number; summary: Summary | null | undefined; units: Units }) {
   const { t } = useTranslation()
   const format = useFormat()
   const none = t('dashboard.kpi.none')
@@ -71,53 +79,68 @@ export function Figure({ id, summary: s, units }: { id: FigureId; summary: Summa
       const main = trends?.spending[0]
       const others = trends?.spending.slice(1).filter((c) => c.recent) ?? []
       return (
-        <Kpi label={t('dashboard.kpi.spendingTrend')} value={main ? format.money(main.recent ?? 0, main.currency) : none} hint={others.length > 0 ? others.map((c) => format.money(c.recent ?? 0, c.currency)).join(' · ') : undefined}>
-          {main && <Change recent={main.recent} earlier={main.earlier} words={['moreThanBefore', 'lessThanBefore', 'sameAsBefore']} size={(v) => format.money(v, main.currency)} none={t('dashboard.trend.nothingBefore')} />}
-        </Kpi>
+        <Kpi
+          rows={rows}
+          label={t('dashboard.kpi.spendingTrend')}
+          value={main ? format.money(main.recent ?? 0, main.currency) : none}
+          hint={others.length > 0 ? others.map((c) => format.money(c.recent ?? 0, c.currency)).join(' · ') : undefined}
+          change={main && <Change recent={main.recent} earlier={main.earlier} words={['moreThanBefore', 'lessThanBefore', 'sameAsBefore']} size={(v) => format.money(v, main.currency)} none={t('dashboard.trend.nothingBefore')} />}
+        />
       )
     }
     case 'costPerDistance': {
       const main = trends?.costPerDistance[0]
       return (
-        <Kpi label={t('dashboard.kpi.costPerDistance')} value={main?.recent != null ? format.costPerDistance(main.recent, main.currency, units.distance) : none}>
-          {main && <Change recent={main.recent} earlier={main.earlier} words={['moreThanBefore', 'lessThanBefore', 'sameAsBefore']} size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} noneRecent={t('dashboard.trend.nothingDriven')} />}
-        </Kpi>
+        <Kpi
+          rows={rows}
+          label={t('dashboard.kpi.costPerDistance')}
+          value={main?.recent != null ? format.costPerDistance(main.recent, main.currency, units.distance) : none}
+          change={main && <Change recent={main.recent} earlier={main.earlier} words={['moreThanBefore', 'lessThanBefore', 'sameAsBefore']} size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} noneRecent={t('dashboard.trend.nothingDriven')} />}
+        />
       )
     }
     case 'consumptionTrend': {
       const c = trends?.consumption
       // Fuel per distance in both windows (the stored figure), whatever unit the words show it in: more is more fuel, in mpg too.
       return (
-        <Kpi label={t('dashboard.kpi.consumptionTrend')} value={c?.recent != null ? format.consumption(c.recent, units) : none} hint={c ? t('dashboard.kpi.lastFillUps', { count: c.recentFillUps }) : undefined}>
-          {trends && <Change recent={c?.recent} earlier={c?.earlier} words={['moreFuel', 'lessFuel', 'sameFuel']} count={c?.earlierFillUps} none={t('dashboard.trend.tooFew')} />}
-        </Kpi>
+        <Kpi
+          rows={rows}
+          label={t('dashboard.kpi.consumptionTrend')}
+          value={c?.recent != null ? format.consumption(c.recent, units) : none}
+          hint={c ? t('dashboard.kpi.lastFillUps', { count: c.recentFillUps }) : undefined}
+          change={trends && <Change recent={c?.recent} earlier={c?.earlier} words={['moreFuel', 'lessFuel', 'sameFuel']} count={c?.earlierFillUps} none={t('dashboard.trend.tooFew')} />}
+        />
       )
     }
     case 'distanceTrend': {
       const d = trends?.distance
       return (
-        <Kpi label={t('dashboard.kpi.distanceTrend')} value={d?.recent != null ? format.distance(d.recent, units.distance) : none}>
-          {d && <Change recent={d.recent} earlier={d.earlier} words={['moreThanLastYear', 'lessThanLastYear', 'sameAsLastYear']} size={(v) => format.distance(v, units.distance)} none={t('dashboard.trend.nothingBefore')} />}
-        </Kpi>
+        <Kpi
+          rows={rows}
+          label={t('dashboard.kpi.distanceTrend')}
+          value={d?.recent != null ? format.distance(d.recent, units.distance) : none}
+          change={d && <Change recent={d.recent} earlier={d.earlier} words={['moreThanLastYear', 'lessThanLastYear', 'sameAsLastYear']} size={(v) => format.distance(v, units.distance)} none={t('dashboard.trend.nothingBefore')} />}
+        />
       )
     }
     case 'thisMonth':
       return (
         <Kpi
+          rows={rows}
           label={t('dashboard.kpi.thisMonth')}
           value={(s && spentText(s.spending, 'thisMonth', format)) ?? none}
           hint={s && s.spending.length > 0 ? t('dashboard.kpi.lastMonth', { amount: spentText(s.spending, 'lastMonth', format) }) : undefined}
-        >
-          {s && s.currency && <LazySparkline points={s.spendTrend} currency={s.currency} />}
-        </Kpi>
+          sparkline={s && s.currency && <LazySparkline points={s.spendTrend} currency={s.currency} />}
+        />
       )
     case 'consumption':
-      return <Kpi label={t('dashboard.kpi.consumption')} value={s?.averageConsumption != null ? format.consumption(s.averageConsumption, units) : none} hint={t('dashboard.kpi.consumptionHint')} />
+      return <Kpi rows={rows} label={t('dashboard.kpi.consumption')} value={s?.averageConsumption != null ? format.consumption(s.averageConsumption, units) : none} hint={t('dashboard.kpi.consumptionHint')} />
     case 'odometer':
-      return <Kpi label={t('dashboard.kpi.odometer')} value={s?.latestOdometer != null ? format.distance(s.latestOdometer, units.distance) : none} />
+      return <Kpi rows={rows} label={t('dashboard.kpi.odometer')} value={s?.latestOdometer != null ? format.distance(s.latestOdometer, units.distance) : none} />
     case 'lastFillUp':
       return (
         <Kpi
+          rows={rows}
           label={t('dashboard.kpi.lastFillUp')}
           value={s?.lastFillUpDate ? format.date(s.lastFillUpDate) : none}
           hint={s ? t('dashboard.kpi.counts', { fuel: s.fillUpCount, expenses: s.expenseCount }) : undefined}

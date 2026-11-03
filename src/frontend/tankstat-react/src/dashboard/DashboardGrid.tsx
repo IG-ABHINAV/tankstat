@@ -7,7 +7,7 @@ import { cloneElement, useCallback, useId, useMemo, useState, type ReactNode } f
 import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
-import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_SIZE, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
+import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize, ROW_HEIGHT, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
@@ -16,9 +16,12 @@ const FALLBACK_WIDTH = 1280
 /** The gaps between the tiles and around the grid: constants, since the library's tiles re-render when theirs change identity. */
 const MARGIN: [number, number] = [GAP, GAP]
 const PADDING: [number, number] = [0, 0]
-/** The chrome of a tile being edited (its 44 px handle row and the gap under it), paid for by a taller row: a four-row figure gains just that. */
+/**
+ * The chrome of a tile being edited (its 44 px handle row and the gap under it), paid for by a taller row: the lowest figure there is
+ * (`MIN_FIGURE_ROWS`, two rows) gains just that and keeps its content's height; a taller tile gains more.
+ */
 const EDIT_CHROME = 48
-const EDIT_ROW_EXTRA = EDIT_CHROME / MIN_SIZE.figure.h
+const EDIT_ROW_EXTRA = EDIT_CHROME / MIN_FIGURE_ROWS
 type Breakpoint = keyof typeof COLS
 /** The breakpoint of a width, as the library picks it: the widest whose least width is reached. */
 const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
@@ -83,7 +86,7 @@ export function DashboardGrid({
   )
 
   const item = (tile: Tile, inFour: boolean): LayoutItem => {
-    const min = MIN_SIZE[widgetOf(tile.id)?.kind ?? 'saved']
+    const min = minSize(tile.id)
     return { i: tile.id, x: tile.x, y: tile.y, w: tile.w, h: tile.h, minW: min.w, minH: min.h, maxH: MAX_ROWS, static: inFour && tile.pinned }
   }
   const layouts = useMemo(
@@ -190,7 +193,7 @@ function EditChrome({ tile, name, index, count, cols, onAction }: { tile: Tile; 
   const { t } = useTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const menuId = useId()
-  const min = MIN_SIZE[widgetOf(tile.id)?.kind ?? 'saved']
+  const min = minSize(tile.id)
   const choose = (action: TileAction) => {
     setAnchor(null)
     onAction(action)

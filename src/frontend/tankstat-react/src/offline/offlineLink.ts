@@ -1,7 +1,7 @@
 import { ApolloLink } from '@apollo/client'
 import { getMainDefinition, print } from '@apollo/client/utilities'
 import type { DocumentNode } from 'graphql'
-import { catchError, from, map, mergeMap, of, tap, throwError, type Observable } from 'rxjs'
+import { catchError, defer, from, map, mergeMap, of, tap, throwError, type Observable } from 'rxjs'
 import { tellLeftOverSignOut } from '../auth/signedOutHere.ts'
 import type { AuthMode, SessionQuery } from '../gql/generated.ts'
 import { appliedMutations } from './appliedMutations.ts'
@@ -124,11 +124,15 @@ export function createOfflineLink(device = deviceData): ApolloLink {
       )
     }
 
+    // The epoch is taken as the request goes (on subscription), so a late answer to one sent before the server went out of reach does
+    // not count as the server being back (#238); its data still goes on and is kept.
     const fromServer = (): Observable<ApolloLink.Result> =>
-      forward(operation).pipe(
+      defer(() => {
+        const sentIn = connectivity.epoch
+        return forward(operation).pipe(tap({ next: () => connectivity.succeeded(sentIn) }))
+      }).pipe(
         tap({
           next: (result) => {
-            connectivity.succeeded()
             if (result.errors?.length || result.data == null) return
             if (!isQuery) {
               if (name && SIGN_IN_MUTATIONS.has(name)) device.unconfirm()
