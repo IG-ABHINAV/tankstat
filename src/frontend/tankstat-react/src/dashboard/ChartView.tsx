@@ -64,7 +64,8 @@ function useWidth(): [RefObject<HTMLElement | null>, number] {
   return [ref, width]
 }
 
-/** The least a chart's picture gets in a card that fills its tile (`fill`): below it, the card scrolls. */
+/** How tall a chart's picture is on its own (the builder's preview); in a card that fills its tile (`fill`) it gets at least `MIN_PICTURE`, below which the card scrolls. */
+export const PICTURE_HEIGHT = 240
 export const MIN_PICTURE = 120
 
 /** How a line drawn from the values looks: a trend dashed, a year earlier dotted and fainter (never told apart by colour alone). */
@@ -74,7 +75,7 @@ const OVERLAY_LOOK = { trend: { strokeDasharray: '7 5' }, earlier: { strokeDasha
  * A chart of server-calculated data. The picture is for sighted users (hidden from assistive technology); the same numbers are always
  * available as a table next to it, which is what a screen reader reads. A trend or a year earlier is always a line over the values, in
  * its series' colour and on its scale, dashed or dotted; a bar chart is composed from MUI X's parts so its bars and those lines share
- * the axes. The picture is `height` px tall, or with `fill` (a dashboard tile) as tall as the room the figure has (#227): the figure, the
+ * the axes. The picture is `PICTURE_HEIGHT` px tall, or with `fill` (a dashboard tile) as tall as the room the figure has (#227): the figure, the
  * picture and MUI X's wrapper are flex columns down to the surface, which MUI X sizes from its box, so the legend above it and the notes
  * under it are counted by the browser and nothing overflows; never under `MIN_PICTURE`.
  */
@@ -83,15 +84,13 @@ export function ChartView({
   recipe,
   units,
   title,
-  height = 240,
   fill = false,
 }: {
   data: ChartData
   recipe: Pick<ChartRecipe, 'kind' | 'metric' | 'grouping' | 'stacked'> & Partial<Pick<ChartRecipe, 'trend' | 'compareYearEarlier' | 'secondKind'>>
   units: Units
   title: string
-  height?: number
-  /** As tall as the figure's room, not `height` (a dashboard tile: the card is a flex column). */
+  /** As tall as the figure's room, not `PICTURE_HEIGHT` (a dashboard tile: the card is a flex column). */
   fill?: boolean
 }) {
   const { t, i18n } = useTranslation()
@@ -101,7 +100,7 @@ export function ChartView({
   const [figure, figureWidth] = useWidth()
   const clipId = useId()
   // No height for MUI X in a tile: its wrapper then takes `height: 100%` and its surface the box it is given.
-  const size = fill ? undefined : height
+  const size = fill ? undefined : PICTURE_HEIGHT
 
   if (noData(data)) {
     return (

@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import { ChartDataDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
-import { ChartView, MIN_PICTURE } from './ChartView.tsx'
+import { ChartView, MIN_PICTURE, PICTURE_HEIGHT } from './ChartView.tsx'
 import { toConfig, type ChartRecipe } from './chartFormat.ts'
 
 /**
@@ -65,7 +65,7 @@ export function ChartCard({
               {t('app.loading')}
             </span>
             {/* In a tile, the room the picture will take: the tile does not jump when the data comes. */}
-            <Skeleton variant="rounded" aria-hidden {...(fill ? { sx: { flex: 1, minHeight: MIN_PICTURE } } : { height: 240 })} />
+            <Skeleton variant="rounded" aria-hidden {...(fill ? { sx: { flex: 1, minHeight: MIN_PICTURE } } : { height: PICTURE_HEIGHT })} />
           </>
         )}
         {data && <ChartView data={data.vehicleChartData} recipe={recipe} units={units} title={title} fill={fill} />}
