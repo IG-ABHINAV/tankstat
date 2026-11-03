@@ -89,9 +89,9 @@ export async function logRefueling(page: Page, vehicleId: string, { date = '2026
 }
 
 /** An expense of a vehicle. */
-export async function addExpense(page: Page, vehicleId: string, { title = 'Car wash', date = '2026-01-20', amount = 3000 } = {}) {
+export async function addExpense(page: Page, vehicleId: string, { title = 'Car wash', date = '2026-01-20', amount = 3000, currency = 'HUF' } = {}) {
   const data = await graphql<{ addExpense: { id: string } }>(page, 'mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }', {
-    i: { vehicleId, date, title, amount, currency: 'HUF' },
+    i: { vehicleId, date, title, amount, currency },
   })
   return data.addExpense
 }

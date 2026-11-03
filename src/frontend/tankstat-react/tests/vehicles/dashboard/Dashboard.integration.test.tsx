@@ -1,8 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { delay } from 'msw'
 import { axe } from 'vitest-axe'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
+import { graphql } from '../../support/graphql.ts'
 import { server } from '../../support/server.ts'
 import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeTile, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
 import { dateValue, findDateField, typeDate } from '../../support/dates.ts'
@@ -161,6 +163,20 @@ it('deletes a chart after a confirmation', async () => {
 
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'My chart' })).not.toBeInTheDocument())
   expect(state.calls.DeleteChart).toEqual([{ id: 'c1' }])
+})
+
+it('gives a tile\'s chart the room its tile has, never a height of its own, and the builder\'s preview its 240 px (#227)', async () => {
+  const { ui } = setup()
+  // The charts' data never comes, so their loading outlines stay: jsdom lays nothing out, and this is the size the picture is given.
+  server.use(graphql.query('ChartData', () => delay('infinite')))
+
+  const tile = (await screen.findByRole('heading', { name: 'Monthly costs' })).closest('[data-tile]') as HTMLElement
+  const outline = await waitFor(() => tile.querySelector<HTMLElement>('.MuiSkeleton-root')!)
+  expect(outline.style.height).toBe('') // sized by the browser: what the card has under its title
+
+  await ui.click(screen.getByRole('button', { name: 'Add chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add chart' })
+  expect((await waitFor(() => dialog.querySelector<HTMLElement>('.MuiSkeleton-root')!)).style.height).toBe('240px')
 })
 
 // ---- the arrangement ----------------------------------------------------------------------------------------

@@ -5,36 +5,19 @@ import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import { ChartDataDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
-import { ChartView } from './ChartView.tsx'
+import { ChartView, MIN_PICTURE } from './ChartView.tsx'
 import { toConfig, type ChartRecipe } from './chartFormat.ts'
-
-/** The room under a chart's picture for its table toggle and notes, and the least a picture gets, in a card that fills its tile. */
-const BELOW_PICTURE = 44
-const MIN_PICTURE = 120
-
-/** How tall an element is now (0 until it is laid out, and in jsdom). */
-function useHeight(): [React.RefObject<HTMLDivElement | null>, number] {
-  const ref = useRef<HTMLDivElement>(null)
-  const [height, setHeight] = useState(0)
-  useEffect(() => {
-    const element = ref.current
-    if (!element || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(([entry]) => setHeight(Math.round(entry.contentRect.height)))
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
-  return [ref, height]
-}
 
 /**
  * One chart in a titled card: loads its own data from the server and draws it. Used for the ready-made charts, saved charts and the builder's
- * preview. In a dashboard tile (`fill`) the card takes the tile's height and the picture what is left under the title, the table scrolling
- * inside it; on its own the picture is 240 px tall.
+ * preview. In a dashboard tile (`fill`) the card takes the tile's height and the picture what is left under the title and above its notes,
+ * laid out by the browser rather than worked out here (MUI X draws a legend above the picture and the notes come under it), the table
+ * scrolling inside the card once it is opened; on its own the picture is 240 px tall.
  */
 export function ChartCard({
   vehicleId,
@@ -59,8 +42,6 @@ export function ChartCard({
 }) {
   const { t } = useTranslation()
   const { data, error } = useQuery(ChartDataDocument, { variables: { vehicleId, config: toConfig(recipe) }, fetchPolicy: 'cache-and-network' })
-  const [body, bodyHeight] = useHeight()
-  const height = fill && bodyHeight > 0 ? Math.max(MIN_PICTURE, bodyHeight - BELOW_PICTURE) : 240
 
   return (
     <Card sx={fill ? { p: 2, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2 }}>
@@ -76,17 +57,18 @@ export function ChartCard({
         </Stack>
         {actions}
       </Stack>
-      <Box ref={body} sx={fill ? { flex: 1, minHeight: 0, overflow: 'auto' } : undefined}>
+      <Box sx={fill ? { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' } : undefined}>
         {error && <ErrorMessage error={error} />}
         {!data && !error && (
           <>
             <span role="status" style={visuallyHidden}>
               {t('app.loading')}
             </span>
-            <Skeleton variant="rounded" height={height} aria-hidden />
+            {/* In a tile, the room the picture will take: the tile does not jump when the data comes. */}
+            <Skeleton variant="rounded" aria-hidden {...(fill ? { sx: { flex: 1, minHeight: MIN_PICTURE } } : { height: 240 })} />
           </>
         )}
-        {data && <ChartView data={data.vehicleChartData} recipe={recipe} units={units} title={title} height={height} />}
+        {data && <ChartView data={data.vehicleChartData} recipe={recipe} units={units} title={title} fill={fill} />}
       </Box>
     </Card>
   )
