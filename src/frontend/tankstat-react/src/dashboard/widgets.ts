@@ -1,4 +1,5 @@
 import { NEW_RECIPE, type ChartRecipe } from './chartFormat.ts'
+import { isTrendFigure, stored, toInput, type TrendPeriod } from './trendPeriod.ts'
 
 /**
  * What a vehicle's dashboard can show, and how a stored arrangement becomes the dashboard's tiles (#211). Pure, like `chartFormat.ts`: no
@@ -45,6 +46,8 @@ export interface Tile {
   h: number
   /** Never moved by dragging the other tiles. */
   pinned: boolean
+  /** A trend figure's own period (#230, `trendPeriod.ts`); none (or null) for its default, and for every other tile. */
+  period?: TrendPeriod | null
 }
 
 /** How a dashboard is stored: its tiles, and the saved charts taken off it. */
@@ -246,20 +249,32 @@ export function resolveLayout<S extends { id: string }>(stored: Layout | null, s
   }
 }
 
+/** A tile as the server takes it: its period only when it has one of its own (a trend figure's, not its default), in GraphQL's shape. */
+export type StoredTile = Omit<Tile, 'period'> & { period?: ReturnType<typeof toInput> }
+
 /** What the server stores for a dashboard as it is arranged on screen. */
-export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }[]): { tiles: Tile[]; hidden: string[] } => ({
-  tiles: tiles.map((t) => ({ id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned })),
+export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }[]): { tiles: StoredTile[]; hidden: string[] } => ({
+  tiles: tiles.map((t) => {
+    const period = isTrendFigure(t.id) ? stored(t.id, t.period) : null
+    return { id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned, ...(period ? { period: toInput(period) } : {}) }
+  }),
   hidden: hidden.map((c) => chartKey(c.id)),
 })
 
 // ---- what the tile menu does (the keyboard's and a screen reader's way to arrange) --------------------------------
 
-/** A widget put on the dashboard at the bottom, at its default size. */
-export function addTile(tiles: readonly Tile[], id: string, cols = COLUMNS): Tile[] {
+/** A widget put on the dashboard at the bottom, at its default size; a trend figure with the period chosen for it (none: its default). */
+export function addTile(tiles: readonly Tile[], id: string, cols = COLUMNS, period: TrendPeriod | null = null): Tile[] {
   const { w, h } = defaultSize(id)
   const bottom = Math.max(0, ...tiles.map((t) => t.y + t.h))
-  return pack([...tiles, tile(id, 0, bottom, w, h)], cols)
+  const added = tile(id, 0, bottom, w, h)
+  const own = isTrendFigure(id) ? stored(id, period) : null
+  return pack([...tiles, own ? { ...added, period: own } : added], cols)
 }
+
+/** A trend figure given a period of its own (or back to its default with null). */
+export const setTilePeriod = (tiles: readonly Tile[], id: string, period: TrendPeriod | null): Tile[] =>
+  tiles.map((t) => (t.id === id ? { ...t, period: isTrendFigure(id) ? stored(id, period) : null } : t))
 
 export const removeTile = (tiles: readonly Tile[], id: string, cols = COLUMNS): Tile[] => pack(tiles.filter((t) => t.id !== id), cols)
 

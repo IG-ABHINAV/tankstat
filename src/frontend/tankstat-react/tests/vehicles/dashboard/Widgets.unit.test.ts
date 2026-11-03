@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { addTile, chartKey, defaultSize, FIGURES, flow, LAYOUT_PRESETS, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, resizeTile, resolveLayout, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
+import { addTile, chartKey, defaultSize, FIGURES, flow, LAYOUT_PRESETS, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
+import { DEFAULT_PERIOD } from '../../../src/dashboard/trendPeriod.ts'
 
 const chart = (id: string) => ({ id, title: `Chart ${id}` })
 const tile = (id: string, x: number, y: number, w = 2, h = 8, pinned = false): Tile => ({ id, x, y, w, h, pinned })
@@ -70,6 +71,24 @@ describe('resolveLayout', () => {
       'thisMonth@0,0', 'consumption@1,0', 'odometer@2,0', 'lastFillUp@3,0',
       'preset:monthlyCosts@0,4', 'preset:consumption@2,4', 'preset:fuelPrice@0,12', 'preset:categories@2,12', 'preset:distance@0,20',
     ])
+  })
+
+  it('keeps a trend figure\'s own period through the merge and the packing, and stores it as GraphQL takes it, the default as none (#230)', () => {
+    const weeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' } as const
+    const readBack = { __typename: 'TrendPeriod', ...weeks } // as the server answers it
+    const stored = { tiles: [{ ...tile('spendingTrend', 0, 5, 1, 4), period: readBack }, { ...tile('consumptionTrend', 1, 0, 1, 4), period: DEFAULT_PERIOD.consumptionTrend }, tile('odometer', 2, 0, 1, 3)], hidden: [] }
+    const layout = resolveLayout(stored, [])
+
+    expect(layout.tiles.find((t) => t.id === 'spendingTrend')).toMatchObject({ y: 0, period: weeks }) // lifted by the packing, the period kept
+    expect(toLayout(layout.tiles, []).tiles).toEqual([
+      { id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false, period: weeks }, // no __typename: the server refuses it in an input
+      { id: 'consumptionTrend', x: 1, y: 0, w: 1, h: 4, pinned: false }, // its default: none stored
+      tile('odometer', 2, 0, 1, 3),
+    ])
+    expect(toLayout([{ ...tile('odometer', 0, 0, 1, 3), period: weeks }], []).tiles).toEqual([tile('odometer', 0, 0, 1, 3)]) // never on a figure without one
+    expect(addTile([], 'distanceTrend', 4, weeks)).toEqual([{ ...tile('distanceTrend', 0, 0, 1, 4), period: weeks }])
+    expect(addTile([], 'distanceTrend', 4, DEFAULT_PERIOD.distanceTrend)).toEqual([tile('distanceTrend', 0, 0, 1, 4)])
+    expect(setTilePeriod(layout.tiles, 'spendingTrend', null).find((t) => t.id === 'spendingTrend')?.period).toBeNull()
   })
 })
 
