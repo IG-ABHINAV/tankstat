@@ -76,6 +76,43 @@ test('trashes a refuelling and takes it back with Undo', async ({ page }) => {
   await expect(row(page, '41 L')).toBeVisible()
 })
 
+test('lets a tap on a toast through to the page under it, only its Undo takes one', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', volume: 42 })
+  await openVehicle(page, vehicle.id, 'refuelings')
+  await page.getByRole('button', { name: 'Delete the refuelling of Jan 15, 2026' }).click()
+  await page.getByRole('alertdialog', { name: 'Move this refuelling to the trash?' }).getByRole('button', { name: 'Move to trash' }).click()
+  const undo = page.getByRole('button', { name: 'Undo' })
+  await expect(undo).toBeVisible()
+  // The toast grows in: it is hit-tested once its box holds still.
+  let last = ''
+  await expect
+    .poll(async () => {
+      const now = JSON.stringify(await page.locator('.MuiSnackbar-root').boundingBox())
+      const still = now === last
+      last = now
+      return still
+    }, { intervals: [100] })
+    .toBe(true)
+  // What a tap would reach (#239): the page at the message and beside it (on a phone the toast's root spans the screen's width), the
+  // button at Undo. A click on whatever lies under the toast would not do: it differs by size, and Playwright waits rather than fails.
+  const hits = await page.evaluate(() => {
+    const root = document.querySelector('.MuiSnackbar-root')!
+    const message = root.querySelector('.MuiAlert-message')!.getBoundingClientRect()
+    const button = root.querySelector('.MuiAlert-action button')!.getBoundingClientRect()
+    const box = root.getBoundingClientRect()
+    const inToast = (x: number, y: number) => root.contains(document.elementFromPoint(x, y))
+    return {
+      message: inToast(message.left + message.width / 2, message.top + message.height / 2),
+      beside: inToast(box.left + 2, box.top + box.height / 2),
+      undo: document.elementFromPoint(button.left + button.width / 2, button.top + button.height / 2)?.closest('button')?.textContent ?? null,
+    }
+  })
+  expect(hits).toEqual({ message: false, beside: false, undo: 'Undo' })
+  await undo.click()
+  await expect(row(page, '42 L')).toBeVisible()
+})
+
 test('restores a trashed refuelling from the trash', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: '2026-01-15', volume: 42 })

@@ -8,7 +8,7 @@ import { glass } from '../theme/components.ts'
 import { ToastContext, type Toast, type ToastApi } from './toastContext.ts'
 
 const SHORT_MS = 4_000
-/** Long enough to find and press Undo; the timer also stops while the pointer or the focus is on the message. */
+/** Long enough to find and press Undo; the timer also stops while the pointer is on Undo or the focus is in the message. */
 const WITH_ACTION_MS = 10_000
 
 const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error: CircleX }
@@ -16,7 +16,8 @@ const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error:
 /**
  * Shows the app's short messages one at a time, in order, at the bottom of the screen; above the routes, so a message survives
  * navigation (a vehicle trashed from its own page). A status, not an alert: it is announced politely. An error (a failed undo) does not
- * wait: it cuts the current message short and comes next.
+ * wait: it cuts the current message short and comes next. A message lets taps through to the page under it, only its button takes them
+ * (#239): it comes at the bottom of the screen, over whatever control is there, sometimes on its own time ("can now be used offline").
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
@@ -56,6 +57,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         autoHideDuration={current?.action ? WITH_ACTION_MS : SHORT_MS}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         onClose={(_, reason) => reason !== 'clickaway' && close()}
+        // Inherited by the message: a tap on it reaches the page (`auto` again on its button). On a phone the root is the screen's width.
+        sx={{ pointerEvents: 'none' }}
         slotProps={{ transition: { onExited: () => setQueue((all) => all.slice(1)) } }}
       >
         {current && (
@@ -79,6 +82,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   size="small"
                   variant="soft"
                   color={severity === 'error' ? 'error' : 'primary'}
+                  sx={{ pointerEvents: 'auto' }}
                   onClick={() => {
                     current.action!.run()
                     close()
