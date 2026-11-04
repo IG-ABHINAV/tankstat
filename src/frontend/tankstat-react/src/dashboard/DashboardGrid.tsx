@@ -239,7 +239,8 @@ function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, ac
           {name}
         </Typography>
       </Box>
-      <Box ref={leadSlot} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', '&:empty': { display: 'none' }, ml: 1 }} />
+      {/* What it holds takes the slot's width (a chip's own 60% would be of the slot): the period stays readable beside the name. */}
+      <Box ref={leadSlot} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', '&:empty': { display: 'none' }, '& > *': { maxWidth: '100%' }, ml: 1 }} />
       {/* The grip is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself. */}
       <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '1 1 auto', minWidth: 24, justifyContent: 'center' }}>
         <GripHorizontal size={18} aria-hidden />

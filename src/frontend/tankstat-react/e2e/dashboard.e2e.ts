@@ -604,6 +604,10 @@ test('keeps every tile as tall while arranging as in view mode, the strip naming
   await expect.poll(async () => Object.fromEntries(Object.entries(await tileHeights(page)).map(([id, h]) => [id, h.tile]))).toEqual(Object.fromEntries(Object.entries(view).map(([id, h]) => [id, h.tile])))
   const arranged = await tileHeights(page)
   expect(Math.abs(arranged['preset:monthlyCosts'].picture! - view['preset:monthlyCosts'].picture!)).toBeLessThanOrEqual(40)
+  // A 2-row figure's value fits under the strip as it is, not in a smaller or one-line form (2 px to spare at 84 px).
+  await expect(tile(page, 'odometer').locator('[data-kpi="value"]')).toHaveClass(/MuiTypography-h3/)
+  // The period readable beside the name, not squeezed to a third of the strip.
+  expect((await tile(page, 'distanceTrend').getByRole('button', { name: /period: This year/ }).boundingBox())!.width).toBeGreaterThan(48)
 
   // The strip names the tile: a chart's heading, the card's own title not drawn; a figure's label not in its card.
   await expect(chart.getByRole('heading', { level: 2, name: 'Monthly costs' })).toHaveCount(1)
