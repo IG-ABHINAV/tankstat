@@ -40,6 +40,18 @@ export const sampleDate = (language: string, format: DateFormat | null) =>
 
 const DISTANCE_UNITS: Record<DistanceUnit, 'kilometer' | 'mile'> = { KILOMETERS: 'kilometer', MILES: 'mile' }
 
+/** Where a measurement's number goes in its words, to find it again (`apart`): a character no translation holds. */
+const MARK = '\u0000'
+
+/**
+ * A measurement's words split at its number (#259): what comes before the mark joins the number (no language writes a unit first today),
+ * what comes after is the unit. `value + ' ' + unit` is the measurement as its formatter writes it.
+ */
+function apart(words: string, value: string): { value: string; unit: string } {
+  const at = words.indexOf(MARK)
+  return { value: words.slice(0, at) + value, unit: words.slice(at + MARK.length).trimStart() }
+}
+
 /**
  * Dates, numbers, money and measurements in the selected UI language, always through Intl. Numbers are stored exactly as
  * entered in the vehicle's own units, so the unit decides how a value is shown, never a conversion.
@@ -64,6 +76,15 @@ export function useFormat() {
       }
     }
     const clock = timeFormat ? HOUR_CYCLES[timeFormat] : {}
+    const mpgOf = (per100: number, units: { distance: DistanceUnit; volume: VolumeUnit }) => per100 > 0 && units.distance === 'MILES' && units.volume !== 'LITERS'
+    const consumptionNumber = (per100: number, units: { distance: DistanceUnit; volume: VolumeUnit }) =>
+      mpgOf(per100, units) ? number(100 / per100, { maximumFractionDigits: 1 }) : number(per100, { maximumFractionDigits: 2 })
+    /** The consumption's words around its number (`value`: the number written, or a mark where it goes). */
+    const consumptionWords = (per100: number, units: { distance: DistanceUnit; volume: VolumeUnit }, value = consumptionNumber(per100, units)) => {
+      if (mpgOf(per100, units)) return t(units.volume === 'US_GALLONS' ? 'units.consumption.mpgUs' : 'units.consumption.mpgImperial', { value })
+      return t('units.consumption.perDistance', { value, volume: t(`units.volumeShort.${units.volume}`), distance: t(`units.distanceShort.${units.distance}`) })
+    }
+    const costPerDistanceWords = (amount: string, unit: DistanceUnit) => t('units.costPerDistance', { amount, distance: t(`units.distanceShort.${unit}`) })
     return {
       number,
       /** Short form for axes: 12 500 becomes 12.5K (or 12,5 E in Hungarian). */
@@ -121,17 +142,13 @@ export function useFormat() {
         new Intl.NumberFormat(language, { style: 'unit', unit: DISTANCE_UNITS[unit], unitDisplay: 'short', maximumFractionDigits: 0 }).format(value),
       volume: (value: number, unit: VolumeUnit) => `${number(value, { maximumFractionDigits: 2 })} ${t(`units.volumeShort.${unit}`)}`,
       /** Fuel used per 100 distance units, in the vehicle's own units; miles with gallons read as miles per gallon, the way those countries say it. */
-      consumption: (per100: number, units: { distance: DistanceUnit; volume: VolumeUnit }) => {
-        const mpg = per100 > 0 && units.distance === 'MILES' && units.volume !== 'LITERS'
-        if (mpg) return t(units.volume === 'US_GALLONS' ? 'units.consumption.mpgUs' : 'units.consumption.mpgImperial', { value: number(100 / per100, { maximumFractionDigits: 1 }) })
-        return t('units.consumption.perDistance', {
-          value: number(per100, { maximumFractionDigits: 2 }),
-          volume: t(`units.volumeShort.${units.volume}`),
-          distance: t(`units.distanceShort.${units.distance}`),
-        })
-      },
+      consumption: (per100: number, units: { distance: DistanceUnit; volume: VolumeUnit }) => consumptionWords(per100, units),
+      /** The same apart (#259): the number, and the unit after it, so a key figure can write the unit smaller ("6.83" and "L/100 km"). */
+      consumptionParts: (per100: number, units: { distance: DistanceUnit; volume: VolumeUnit }) => apart(consumptionWords(per100, units, MARK), consumptionNumber(per100, units)),
       /** Money per 100 of the vehicle's distance units ("HUF 4,500 / 100 km"), written as `money` writes an amount. */
-      costPerDistance: (value: number, currency: string, unit: DistanceUnit) => t('units.costPerDistance', { amount: money(value, currency), distance: t(`units.distanceShort.${unit}`) }),
+      costPerDistance: (value: number, currency: string, unit: DistanceUnit) => costPerDistanceWords(money(value, currency), unit),
+      /** The same apart (#259): the amount, and the unit after it ("HUF 4,500" and "/ 100 km"). */
+      costPerDistanceParts: (value: number, currency: string, unit: DistanceUnit) => apart(costPerDistanceWords(MARK, unit), money(value, currency)),
       pricePerUnit: (value: number, currency: string, unit: VolumeUnit) => `${(() => {
         try {
           return new Intl.NumberFormat(language, { style: 'currency', currency, maximumFractionDigits: 3 }).format(value)

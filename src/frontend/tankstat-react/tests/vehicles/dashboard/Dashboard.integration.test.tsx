@@ -9,6 +9,9 @@ import { server } from '../../support/server.ts'
 import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeTile, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
 import { dateValue, findDateField, typeDate } from '../../support/dates.ts'
 
+/** A key figure's value read whole: its unit is written apart in small type (#259), so the words span two elements of one paragraph. */
+const whole = (text: string) => (_: string, element: Element | null) => element?.tagName === 'P' && element.textContent?.replace(/\s+/g, ' ').trim() === text
+
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => {
   server.resetHandlers()
@@ -83,7 +86,7 @@ it('shows the key figures', async () => {
 
   expect(screen.getByText(/52,000/)).toBeInTheDocument()
   expect(screen.getByText(/Last month: .*40,000/)).toBeInTheDocument()
-  expect(screen.getByText('6.25 L/100 km')).toBeInTheDocument()
+  expect(screen.getByText(whole('6.25 L/100 km'))).toBeInTheDocument()
   expect(screen.getByText(/123,456 km/)).toBeInTheDocument()
   expect(screen.getByText('Sep 17, 2026')).toBeInTheDocument()
   expect(screen.getByText('5 fill-ups, 2 expenses')).toBeInTheDocument()
@@ -340,7 +343,7 @@ it('shows what a figure\'s rows hold: label and value at two, the comparison or 
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
   expect(await within(region).findByText('12,000 km')).toBeInTheDocument() // two rows: the value
-  expect(within(region).getByText('6.5 L/100 km')).toBeInTheDocument()
+  expect(within(region).getByText(whole('6.5 L/100 km'))).toBeInTheDocument()
   expect(within(region).queryByText('last 10 full fill-ups')).not.toBeInTheDocument() // but not the note
   expect(within(region).getByText('5 fill-ups, 2 expenses')).toBeInTheDocument() // three rows: the note
   expect(within(region).getByText(/Last month: .*40,000/)).toBeInTheDocument()
@@ -442,9 +445,9 @@ it('words the trend figures with an arrow and a change, never by colour alone', 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
   expect(await within(region).findByText('HUF 560,000')).toBeInTheDocument()
   expect(within(region).getByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument()
-  expect(within(region).getByText('HUF 4,480 / 100 km')).toBeInTheDocument()
+  expect(within(region).getByText(whole('HUF 4,480 / 100 km'))).toBeInTheDocument()
   expect(within(region).getByText('HUF 480 / 100 km (12%) more than the 12 months before')).toBeInTheDocument()
-  expect(within(region).getByText('6.5 L/100 km')).toBeInTheDocument()
+  expect(within(region).getByText(whole('6.5 L/100 km'))).toBeInTheDocument()
   expect(within(region).getByText('last 10 fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument()
   expect(within(region).getByText('12,500 km')).toBeInTheDocument()
@@ -506,7 +509,7 @@ it('words a consumption trend with few fill-ups before, and a cost per distance 
   })
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
-  expect(await within(region).findByText('7.5 L/100 km')).toBeInTheDocument() // the latest mean shows as soon as there is one
+  expect(await within(region).findByText(whole('7.5 L/100 km'))).toBeInTheDocument() // the latest mean shows as soon as there is one
   expect(within(region).getByText('last 4 fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('needs 3 earlier fill-ups to compare with')).toBeInTheDocument()
   expect(await within(region).findByText('nothing driven in this period')).toBeInTheDocument() // the recent window is the empty one

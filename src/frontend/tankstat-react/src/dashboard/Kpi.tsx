@@ -39,6 +39,22 @@ export function Kpi({ rows, label, chip, value, hint, change, sparkline }: { row
   )
 }
 
+/**
+ * A measurement's number in the figure's size and its unit after it in small type (#259: "HUF 4,293" and "/ 100 km"), at every height, so
+ * a per-distance value fits a narrow tile on one line; read out as one ("HUF 4,293 / 100 km"). `format.consumptionParts` and
+ * `costPerDistanceParts` split them.
+ */
+export function ValueWithUnit({ value, unit }: { value: string; unit: string }) {
+  return (
+    <>
+      {value}{' '}
+      <Box component="span" sx={{ typography: 'body2', fontWeight: 600, color: 'text.secondary' }}>
+        {unit}
+      </Box>
+    </>
+  )
+}
+
 /** What a rise means for the figure: spending or fuel going up is `worse`; more distance is neither good nor bad (`neutral`). */
 export type Meaning = 'worseUp' | 'neutral'
 /** The arrow's colour by its meaning (#228): never alone, the arrow's direction and the words say the same. */

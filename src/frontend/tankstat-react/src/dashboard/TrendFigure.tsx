@@ -6,7 +6,7 @@ import { visuallyHidden } from '../components/visuallyHidden.ts'
 import type { DistanceUnit, VehicleTrendQuery, VolumeUnit } from '../gql/generated.ts'
 import { useErrorText } from '../i18n/errors.ts'
 import { useFormat } from '../i18n/format.ts'
-import { Change, Kpi } from './Kpi.tsx'
+import { Change, Kpi, ValueWithUnit } from './Kpi.tsx'
 import { comparedWith, namesFillUps, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
 
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
@@ -67,7 +67,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           rows={rows}
           label={label}
           chip={chip}
-          value={main?.recent != null ? format.costPerDistance(main.recent, main.currency, units.distance) : none}
+          value={main?.recent != null ? <ValueWithUnit {...format.costPerDistanceParts(main.recent, main.currency, units.distance)} /> : none}
           change={main && <Change recent={main.recent} earlier={main.earlier} than={than} meaning="worseUp" size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} noneRecent={t('dashboard.trend.nothingDriven')} />}
         />
       )
@@ -81,7 +81,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           rows={rows}
           label={label}
           chip={chip}
-          value={c?.recent != null ? format.consumption(c.recent, units) : none}
+          value={c?.recent != null ? <ValueWithUnit {...format.consumptionParts(c.recent, units)} /> : none}
           hint={c ? (fillUps ? t('dashboard.kpi.fillUpsIn', { count: c.recentFillUps }) : t('dashboard.kpi.lastFillUps', { count: c.recentFillUps })) : undefined}
           change={
             <Change

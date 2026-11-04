@@ -3,7 +3,7 @@ import type { DistanceUnit, VehicleDashboardQuery, VolumeUnit } from '../gql/gen
 import { useFormat } from '../i18n/format.ts'
 import { spentText } from '../spending.ts'
 import { LazySparkline } from './LazySparkline.tsx'
-import { Kpi } from './Kpi.tsx'
+import { Kpi, ValueWithUnit } from './Kpi.tsx'
 import type { PeriodControl } from './TrendPeriodPopover.tsx'
 import { TrendTile } from './TrendTile.tsx'
 import { isTrendFigure, type TrendPeriod } from './trendPeriod.ts'
@@ -33,7 +33,7 @@ export function Figure({ id, vehicleId, period, control, rows, summary: s, units
         />
       )
     case 'consumption':
-      return <Kpi rows={rows} label={t('dashboard.kpi.consumption')} value={s?.averageConsumption != null ? format.consumption(s.averageConsumption, units) : none} hint={t('dashboard.kpi.consumptionHint')} />
+      return <Kpi rows={rows} label={t('dashboard.kpi.consumption')} value={s?.averageConsumption != null ? <ValueWithUnit {...format.consumptionParts(s.averageConsumption, units)} /> : none} hint={t('dashboard.kpi.consumptionHint')} />
     case 'odometer':
       return <Kpi rows={rows} label={t('dashboard.kpi.odometer')} value={s?.latestOdometer != null ? format.distance(s.latestOdometer, units.distance) : none} />
     case 'lastFillUp':
