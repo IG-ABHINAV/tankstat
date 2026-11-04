@@ -8,7 +8,7 @@ import { cloneElement, useCallback, useId, useMemo, useState, type ReactNode } f
 import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
-import { TILE_INSET, TILE_STRIP, TileInsetContext } from './tileChrome.ts'
+import { TILE_INSET, TILE_STRIP, TileInsetContext, TileStripSlotContext } from './tileChrome.ts'
 import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
@@ -109,19 +109,26 @@ export function DashboardGrid({
     [fromGrid, onTilesChange],
   )
 
+  // Each tile's place on its strip (`TileStripSlotContext`), by tile, set by the strip's own callback ref, so the element follows a strip
+  // drawn again (a dragged tile's new element); the state changes only when the element does.
+  const [slots, setSlots] = useState<Record<string, HTMLElement | null>>({})
+  const onSlot = useCallback((id: string, element: HTMLElement | null) => setSlots((all) => (all[id] === element ? all : { ...all, [id]: element })), [])
+
   // The tiles' elements, in `ordered`'s order, kept across the grid's own renders (a drag's moves): while a tile is dragged only its own
   // element is new (`moving`). They are made again whenever the page renders, since its `render`, `name` and `onAction` are new then.
   const cells = useMemo(
     () =>
       ordered.map((tile, i) => (
         <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {editing && <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onAction={(action) => onAction?.(tile, action)} />}
+          {editing && <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onSlot={onSlot} onAction={(action) => onAction?.(tile, action)} />}
           <TileInsetContext.Provider value={editing}>
-            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
+            <TileStripSlotContext.Provider value={editing ? (slots[tile.id] ?? null) : null}>
+              <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
+            </TileStripSlotContext.Provider>
           </TileInsetContext.Provider>
         </Box>
       )),
-    [ordered, editing, cols, name, render, onAction],
+    [ordered, editing, cols, name, render, onAction, slots, onSlot],
   )
 
   const styles = {
@@ -175,10 +182,12 @@ export function DashboardGrid({
 
 /**
  * The strip across the top of a tile while the dashboard is edited: over the card's top edge (the tile is positioned, the card starts
- * under it), its grip the handle for a pointer, its menu for everyone, the pin shown when the tile is pinned.
+ * under it), its grip the handle for a pointer, its menu for everyone, the pin shown when the tile is pinned; on its left the tile's own
+ * slot (`TileStripSlotContext`: a trend figure's period chip, #260), outside the grip, so pressing it never starts a drag.
  */
-function EditStrip({ tile, name, index, count, cols, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; onAction: (action: TileAction) => void }) {
+function EditStrip({ tile, name, index, count, cols, onSlot, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; onSlot: (id: string, element: HTMLElement | null) => void; onAction: (action: TileAction) => void }) {
   const { t } = useTranslation()
+  const slotRef = useCallback((element: HTMLElement | null) => onSlot(tile.id, element), [onSlot, tile.id])
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   /** An action that opens a dialog, done once the menu is gone (`LogFab`): the menu's leaving would take the focus back from it. */
   const [opening, setOpening] = useState<TileAction | null>(null)
@@ -203,6 +212,7 @@ function EditStrip({ tile, name, index, count, cols, onAction }: { tile: Tile; n
   ]
   return (
     <Box sx={(theme) => ({ position: 'absolute', top: 0, left: 0, right: 0, height: TILE_STRIP, zIndex: 2, display: 'flex', alignItems: 'center', gap: 0.5, pr: 0.5, borderRadius: '12px 12px 0 0', bgcolor: theme.vars.palette.primary.soft, color: theme.vars.palette.primary.softText })}>
+      <Box ref={slotRef} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '60%', pl: 1, '&:empty': { display: 'none' } }} />
       {/* The handle is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself. */}
       <Box className={CLASS.handle} aria-hidden sx={{ flex: 1, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <GripHorizontal size={18} />
