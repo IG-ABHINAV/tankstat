@@ -1,6 +1,6 @@
 import { type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
 // The dashboard's charts as they are drawn (jsdom lays nothing out): costs in two currencies, each on a scale of its own (#159).
@@ -92,9 +92,7 @@ test('a chart that first had no data names as many months once its data comes in
   let odometer = 10_000
   for (let back = 11; back >= 0; back--) {
     odometer += 500
-    await graphql(page, 'mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }', {
-      i: { vehicleId: vehicle.id, date: monthStart(back), volume: 40, totalCost: 24_000, currency: 'HUF', odometer, isFullTank: true },
-    })
+    await logRefueling(page, vehicle.id, { date: monthStart(back), odometer })
   }
   await page.getByRole('tab', { name: 'Refuelings' }).click()
   await expect(page.getByRole('tab', { name: 'Refuelings' })).toHaveAttribute('aria-selected', 'true')
