@@ -56,7 +56,7 @@ export function Kpi({ fitKey = '', ...props }: KpiProps) {
   const fit = state.key === key ? state.fit : FULL
   const offers = offersOf(props)
 
-  // Measured once a form is shown: at the start, after each step and after starting again (each step turns a flag on, so it ends).
+  // Measured once a form is shown: at the start, after each step and after starting again (the steps always end, `kpiFit.ts` `Fit`).
   useLayoutEffect(() => {
     if (!card.current) return
     const next = nextFit(fit, measure(card.current), offers)
@@ -108,6 +108,9 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
   const full = rows >= 4
   const third = rows >= 3
   const offers = offersOf({ rows, sparkline, hint, change, shrink, short })
+  // The comparison as its line where the rows offer it and it has room, else as its arrow alone before the value (#260).
+  const asLine = offers.change === 'line' && fit.drop < 3
+  const step = VALUE_STEPS[fit.step]
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -117,13 +120,14 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
       </Box>
       {/* The value's row: the comparison's arrow alone before it (#260), a sibling, so the value's clipping never cuts the arrow's touch area. */}
       <Box data-kpi="value-row" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, my: full ? 0.5 : 0 }}>
-        {change && (offers.change === 'arrow' || fit.drop >= 3) && <ChangeArrow words={change} period={period} />}
+        {change && !asLine && <ChangeArrow words={change} period={period} />}
         {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
         <Typography
           data-kpi="value"
-          variant={VALUE_STEPS[fit.step].variant}
+          variant={step.variant}
           component="p"
-          sx={{ minWidth: 0, ...(fit.step === VALUE_STEPS.length - 1 && { fontSize: VALUE_STEPS[fit.step].px, lineHeight: '20px' }), ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}
+          // Growing to the row's room: its line is what is left beside the arrow, and a loading skeleton's 60% is of that, not of nothing.
+          sx={{ flex: '1 1 auto', minWidth: 0, ...('size' in step && step.size), ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}
         >
           {fit.short && short ? short : value}
         </Typography>
@@ -133,7 +137,7 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
           {hint}
         </Typography>
       )}
-      {change && offers.change === 'line' && fit.drop < 3 && <ChangeLine words={change} />}
+      {change && asLine && <ChangeLine words={change} />}
       {offers.sparkline && fit.drop < 1 && sparkline}
     </Card>
   )

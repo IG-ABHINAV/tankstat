@@ -526,6 +526,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await keyboardFocus(page, more)
   await expect(page.getByRole('tooltip')).toHaveText(/^(?=.*€40\.00)(?=.*\$50\.00)(?=.*£30\.00)(?=.*CHF.20\.00)/)
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('tooltip')).toHaveCount(0) // gone before the next one opens: MUI unmounts it a little later, reduced motion too
   // Outside Customize the label has the row to itself (no chip, #260): whole, no tab stop, in a desktop column too.
   const consumptionLabel = tile(page, 'consumptionTrend').locator('[data-kpi="label"]')
   await expect(consumptionLabel).toHaveText('Consumption change')
@@ -540,14 +541,16 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await expect(page.getByRole('tooltip')).toContainText('the 10 fill-ups before')
   await expect(page.getByRole('tooltip')).toContainText('Last 10 fill-ups')
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
   await expect(tile(page, 'costPerDistance').locator('[data-kpi="value-row"] > button')).toHaveAccessibleName(/than the 12 months before \(12 full months\)$/)
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page) // the "+1" and the arrows 44 px to a finger on a phone
 
   if (!isMobile) {
     // A one-column tile near the grid's narrowest four columns (four from a 900 px container; 904 here, since the browser's width has
-    // fractions: 186 px of content): Cost per distance change and its arrow fit on one line by stepping the value down (#260), never cut.
+    // fractions: 186 px of content): Cost per distance change and its arrow on one line, the value stepping down (#260).
     const grid = page.locator('.react-grid-layout')
+    const own = page.viewportSize()!
     for (let round = 0; round < 2; round++) {
       const width = await grid.evaluate((g) => g.clientWidth)
       const viewport = page.viewportSize()!
@@ -557,10 +560,18 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
     await expect.poll(async () => (await tile(page, 'costPerDistance').boundingBox())!.width).toBeLessThan(230) // four columns: a quarter of the grid
     const costValue = tile(page, 'costPerDistance').locator('[data-kpi="value"]')
     await expect(tile(page, 'costPerDistance').locator('[data-kpi="value-row"] > button')).toBeVisible()
-    await expect.poll(() => costValue.evaluate((v) => v.scrollWidth <= v.clientWidth + 1)).toBe(true)
-    expect(await costValue.evaluate((v) => parseFloat(getComputedStyle(v).fontSize))).toBeGreaterThanOrEqual(14)
+    // Stepped down, and either on its line whole or at the 14 px floor, past which it is cut at the card's edge (#260's decision 5: a
+    // font wider than ours, as on CI, may take it there).
+    const sized = () => costValue.evaluate((v) => ({ size: parseFloat(getComputedStyle(v).fontSize), fits: v.scrollWidth <= v.clientWidth + 1 }))
+    await expect
+      .poll(async () => {
+        const { size, fits } = await sized()
+        return size < 24 && (fits || Math.abs(size - 14) < 0.5)
+      })
+      .toBe(true)
+    expect((await sized()).size).toBeGreaterThanOrEqual(14)
     await expect.poll(() => clippedFigures(page)).toEqual([])
-    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.setViewportSize(own)
   }
 
   // While arranging, the tiles keep their rows (taller by the strip's room): still nothing cut.

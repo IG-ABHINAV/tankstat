@@ -4,7 +4,11 @@
  * its full form).
  */
 
-/** The form a card shows. Each step of `nextFit` turns one of these on, so the steps always end. */
+/**
+ * The form a card shows. The steps of `nextFit` always end: each drops one more level, turns the one-line form or the short value on (once
+ * each), or takes the value one size step down (at most `LAST_STEP` before the short value, which starts from its own size, and as many after
+ * it), and last sets whether the label is cut: at most 15 in all.
+ */
 export interface Fit {
   /**
    * The value's size, a step of `VALUE_STEPS` (#260): one step smaller for a value that wraps where the figure allows it (*Spent this
@@ -24,13 +28,16 @@ export interface Fit {
 /** The form a card starts from, and starts from again whenever what it shows or its size changes. */
 export const FULL: Fit = { step: 0, drop: 0, oneLine: false, short: false, labelCut: false }
 
-/** The value's sizes, step by step (#260): the headings h3 to h6, then 14 px, past which a value too wide is cut at the card's edge. */
+/**
+ * The value's sizes, step by step (#260): the headings h3 to h6 (24, 20, 18, 16 px, `theme/typography.ts`), then h6 at body text's size
+ * (14 px, in rem like the rest, so it follows the browser's text size), past which a value too wide is cut at the card's edge.
+ */
 export const VALUE_STEPS = [
-  { variant: 'h3', px: 24 },
-  { variant: 'h4', px: 20 },
-  { variant: 'h5', px: 18 },
-  { variant: 'h6', px: 16 },
-  { variant: 'h6', px: 14 },
+  { variant: 'h3' },
+  { variant: 'h4' },
+  { variant: 'h5' },
+  { variant: 'h6' },
+  { variant: 'h6', size: { fontSize: '0.875rem', lineHeight: '1.25rem' } },
 ] as const
 const LAST_STEP = VALUE_STEPS.length - 1
 
