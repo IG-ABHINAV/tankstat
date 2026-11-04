@@ -49,7 +49,7 @@ export function Kpi({ fitKey = '', ...props }: KpiProps) {
   // A change of what is measured fits it afresh from the full form (derived state: set while rendering, so the old form is never painted).
   if (state.key !== key) setState({ key, fit: FULL })
   const fit = state.key === key ? state.fit : FULL
-  const offers = offered(props.rows, { sparkline: !!props.sparkline, hint: !!props.hint, change: !!props.change, shrink: !!props.shrink, short: !!props.short })
+  const offers = offersOf(props)
 
   // Measured once a form is shown: at the start, after each step and after starting again (each step turns a flag on, so it ends).
   useLayoutEffect(() => {
@@ -78,6 +78,10 @@ export function Kpi({ fitKey = '', ...props }: KpiProps) {
   return <KpiCard {...props} fit={fit} cardRef={card} />
 }
 
+/** What a card's rows offer of what it was given (`kpiFit.ts` `offered`): `Kpi` fits by it, `KpiCard` draws by it. */
+const offersOf = (p: Pick<KpiProps, 'rows' | 'sparkline' | 'hint' | 'change' | 'shrink' | 'short'>) =>
+  offered(p.rows, { sparkline: !!p.sparkline, hint: !!p.hint, change: !!p.change, shrink: !!p.shrink, short: !!p.short })
+
 /** What a card measures in the form it shows (`kpiFit.ts`): jsdom measures 0 and no line height, so there nothing overflows or wraps. */
 function measure(card: HTMLElement): Measured {
   const value = card.querySelector<HTMLElement>('[data-kpi="value"]')
@@ -98,7 +102,7 @@ const ONE_LINE = { whiteSpace: 'nowrap', overflow: 'hidden' } as const
 export function KpiCard({ rows, label, chip, value, short, hint, change, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
   const full = rows >= 4
   const third = rows >= 3
-  const offers = offered(rows, { sparkline: !!sparkline, hint: !!hint, change: !!change, shrink: !!shrink, short: !!short })
+  const offers = offersOf({ rows, sparkline, hint, change, shrink, short })
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
