@@ -61,9 +61,15 @@ export function Kpi({ fitKey = '', ...props }: KpiProps) {
   useEffect(() => {
     const element = card.current
     if (!element || typeof ResizeObserver === 'undefined') return
+    // The observer's first callback reports the size the card was fitted at when it mounted: only a size after it fits the card afresh,
+    // so a card takes its steps once on mount, not twice.
+    let seen = ''
     const observer = new ResizeObserver(([entry]) => {
       const next = `${Math.round(entry.contentRect.width)}x${Math.round(entry.contentRect.height)}`
-      setSize((last) => (last === next ? last : next))
+      const first = seen === ''
+      if (next === seen) return
+      seen = next
+      if (!first) setSize(next)
     })
     observer.observe(element)
     return () => observer.disconnect()
