@@ -2,6 +2,22 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.2 (2026-11-04)
+
+A bugfix release for the dashboard's charts.
+
+### Fixed
+
+- **A chart that first had no data named every period along its bottom** (#237: #251). A vehicle's dashboard seen while it had no data, logs added, then back to the Dashboard tab: the charts came in without their width measured, so Monthly costs named all 12 months where 6 fit on a desktop and 4 on a phone, overlapping there, until a reload. A chart now measures its picture whenever it is drawn, so it names only the periods that fit.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. `0.19` and `latest` move to this release.
+
+### For developers
+
+- A real-browser test sees a new vehicle's dashboard empty, logs twelve monthly refuellings, comes back to the tab and checks that Monthly costs names fewer than all 12 months, as many as after a reload, at both sizes.
+
 ## 0.19.1 (2026-11-04)
 
 A bugfix release for colour contrast.
