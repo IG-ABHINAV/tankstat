@@ -69,7 +69,10 @@ export function nextFit(fit: Fit, measured: Measured, offers: Offered): Fit {
   return fit
 }
 
-/** The form a card ends on, measuring each step with `measure`: what `Kpi` does through its layout effect, one step a render. */
+/**
+ * The form a card ends on, measuring each step with `measure`: the whole way at once, for the tests to follow a card's steps with a model of
+ * its layout. `Kpi` itself takes the same steps one a render, through its layout effect, measuring the browser's card between them.
+ */
 export function settle(measure: (fit: Fit) => Measured, offers: Offered, start: Fit = FULL): Fit {
   let fit = start
   for (let step = 0; step < 12; step++) {
