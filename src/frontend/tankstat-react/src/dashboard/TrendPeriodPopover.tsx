@@ -15,9 +15,9 @@ import { TrendFigure } from './TrendFigure.tsx'
 import { TrendPeriodForm } from './TrendPeriodForm.tsx'
 import { useTrendPreview } from './useTrendPreview.ts'
 
-/** What the tile's chip can do with a period: where Apply puts it (worded), whether it can now, and the saving itself. */
+/** What the tile's chip can do with a period while the dashboard is arranged (#260): where Apply puts it (worded), whether it can, and the change itself. */
 export interface PeriodControl {
-  /** Where Apply puts the period, or why it cannot now (the server is out of reach). */
+  /** Where Apply puts the period: the arrangement being edited, kept by Save dashboard. */
   hint: string
   canApply: boolean
   apply: (period: TrendPeriod) => Promise<void>
@@ -25,8 +25,8 @@ export interface PeriodControl {
 
 /**
  * A trend tile's period, chosen in a popover from its chip (#230): the form, the figure as the tile will show it (the server's answer for
- * the period being chosen), where Apply saves it, Cancel and Apply. Enter applies (the form never goes to the browser: a sent form
- * would load the page again); it closes once the period is saved.
+ * the period being chosen), where Apply puts it, Cancel and Apply. Enter applies (the form never goes to the browser: a sent form
+ * would load the page again); it closes once the period is applied.
  */
 export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, control, onClose }: { anchor: HTMLElement | null; figure: TrendFigureId; vehicleId: string; units: { distance: DistanceUnit; volume: VolumeUnit }; period: TrendPeriod; control: PeriodControl; onClose: () => void }) {
   const { t } = useTranslation()

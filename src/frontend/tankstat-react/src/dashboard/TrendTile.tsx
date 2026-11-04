@@ -28,10 +28,15 @@ export function TrendTile({ figure, vehicleId, period, rows, units, control }: {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const label = t(`dashboard.kpi.${figure}`)
   const words = periodText(figure, p)
-  const editing = useContext(TileInsetContext)
+  // Null outside Customize (and `control` undefined), so the chip is only ever on a strip being shown.
   const slot = useContext(TileStripSlotContext)
-  const chip = editing && control && slot && createPortal(<PeriodChip words={words} name={t('dashboard.period.chipName', { figure: label, period: words })} open={anchor !== null} onClick={(e) => setAnchor(e.currentTarget)} />, slot)
-  const popover = editing && control && anchor && <TrendPeriodPopover anchor={anchor} figure={figure} vehicleId={vehicleId} units={units} period={p} control={control} onClose={() => setAnchor(null)} />
+  const chip = control && slot && createPortal(<PeriodChip words={words} name={t('dashboard.period.chipName', { figure: label, period: words })} open={anchor !== null} onClick={(e) => setAnchor(e.currentTarget)} />, slot)
+  // The popover's preview is no tile under a strip (`TileInsetContext` off): it keeps a card's own padding, not the strip's inset.
+  const popover = control && anchor && (
+    <TileInsetContext.Provider value={false}>
+      <TrendPeriodPopover anchor={anchor} figure={figure} vehicleId={vehicleId} units={units} period={p} control={control} onClose={() => setAnchor(null)} />
+    </TileInsetContext.Provider>
+  )
   return (
     <>
       <TrendFigure figure={figure} period={p} data={data?.vehicleTrend} error={error} rows={rows} units={units} label={label} periodWords={words} />
