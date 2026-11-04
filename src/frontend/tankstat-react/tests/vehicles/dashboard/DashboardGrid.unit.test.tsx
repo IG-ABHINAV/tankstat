@@ -1,4 +1,5 @@
-import { act, render } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Layout, LayoutItem } from 'react-grid-layout'
@@ -87,5 +88,29 @@ describe('DashboardGrid while a tile is dragged or resized (#227, #240)', () => 
     expect(ids).toEqual(['preset:fuelPrice', 'preset:monthlyCosts', 'preset:consumption'])
     // Their desktop widths and the pin are kept: a phone's single column says nothing about them.
     expect((onTilesChange.mock.calls[0][0] as Tile[]).map((t) => [t.w, t.pinned])).toEqual([[2, false], [2, false], [2, true]])
+  })
+})
+
+describe("a tile's menu", () => {
+  it("offers to customize only a ready-made chart, and does it once the menu has gone (#247)", async () => {
+    const ui = userEvent.setup()
+    const onAction = vi.fn()
+    themed(<DashboardGrid tiles={[tile('preset:monthlyCosts', 0, 0), tile('chart:c1', 2, 0), tile('odometer', 0, 8, 1, 3)]} editing render={show} name={name} onAction={onAction} />)
+
+    for (const id of ['chart:c1', 'odometer']) {
+      await ui.click(screen.getByRole('button', { name: `Options for ${id}` }))
+      expect(await screen.findByRole('menuitem', { name: 'Remove' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Customize as my chart…' })).not.toBeInTheDocument()
+      await ui.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    }
+
+    await ui.click(screen.getByRole('button', { name: 'Options for preset:monthlyCosts' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items[0]).toHaveTextContent('Customize as my chart…') // first, the arranging under it
+    await ui.click(items[0])
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'preset:monthlyCosts' }), 'customize'))
+    expect(onAction).toHaveBeenCalledTimes(1)
   })
 })

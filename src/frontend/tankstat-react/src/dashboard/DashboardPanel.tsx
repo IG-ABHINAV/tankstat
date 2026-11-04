@@ -6,7 +6,7 @@ import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { IconAction } from '../components/IconAction.tsx'
@@ -46,6 +46,7 @@ import {
   presetKey,
   READY_CHARTS,
   removeTile,
+  replaceTile,
   resizeTile,
   resolveLayout,
   setTilePeriod,
@@ -70,6 +71,11 @@ interface Editing {
   hidden: SavedChart[]
   /** The Add widget dialog is open. */
   adding: boolean
+  /**
+   * The ready-made chart (its tile's id) being customized into a chart of one's own from its tile's menu (#247), while its dialog is shown;
+   * once saved, the tile that replaced it, whose menu button takes the focus when the dialog is gone.
+   */
+  customizing: { tile: string; open: boolean; focus?: string } | null
   status: string
 }
 
@@ -111,6 +117,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const [actionError, setActionError] = useState<unknown>()
   const [edit, setEdit] = useState<Editing | null>(null)
   const periodText = usePeriodText()
+  const panel = useRef<HTMLElement>(null)
   const canShare = vehicle.logAccess === 'EDIT' || vehicle.logAccess === 'DELETE'
 
   if (error) return <ErrorMessage error={error} />
@@ -154,7 +161,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const editingOf = (scope: Scope): Editing => {
     const start = scope === 'shared' ? shared : (personal ?? shared)
     const resolved = resolveLayout(start, chartsFor(scope))
-    return { scope, tiles: resolved.tiles, hidden: resolved.hidden, adding: false, status: '' }
+    return { scope, tiles: resolved.tiles, hidden: resolved.hidden, adding: false, customizing: null, status: '' }
   }
   const update = (change: (e: Editing) => Partial<Editing>) => setEdit((e) => (e ? { ...e, ...change(e) } : e))
 
@@ -184,6 +191,8 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
           const saved = charts.find((c) => chartKey(c.id) === tile.id)
           return { tiles: removeTile(e.tiles, tile.id), hidden: saved ? [...e.hidden, saved] : e.hidden, status: t('dashboard.edit.removed', { name }) }
         }
+        case 'customize':
+          return { customizing: { tile: tile.id, open: true } }
       }
     })
   }
@@ -223,6 +232,18 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       const resolved = resolveLayout(LAYOUT_PRESETS[id], chartsFor(e.scope))
       return { tiles: resolved.tiles, hidden: resolved.hidden, status: t('dashboard.customize.started', { name: t(`dashboard.layoutPresets.${id}`) }) }
     })
+  /**
+   * A ready-made chart customized from its tile (#247) was saved as a chart of one's own: it takes the tile's place, size and pin, once the
+   * charts hold it (a tile whose chart is not among them is drawn as nothing), and its menu button takes the focus when the dialog is gone.
+   * A dialog dismissed while the chart was being saved leaves the tile as it is: the chart stays saved (among one's own in Add widget).
+   */
+  const customized = async (from: string, id: string, title: string) => {
+    await refetch()
+    const name = titleOf({ id: from } as Tile)
+    const status = title === name ? t('dashboard.edit.customized', { name }) : t('dashboard.edit.customizedRenamed', { name, title })
+    update((e) => (e.customizing?.tile === from ? { tiles: replaceTile(e.tiles, from, chartKey(id)), status, customizing: { ...e.customizing, focus: chartKey(id) } } : {}))
+  }
+  const customizing = edit?.customizing ? widgetOf(edit.customizing.tile) : null
   const onDashboard = new Set(edit?.tiles.map((x) => x.id))
   const scopes: Scope[] = [...(dashboard?.canChangeShared ? (['shared'] as const) : []), ...(!signInOff ? (['personal'] as const) : [])]
   const stored = edit ? (edit.scope === 'shared' ? shared : personal) : null
@@ -288,7 +309,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   }
 
   return (
-    <Stack component="section" aria-label={t('dashboard.sectionLabel')} sx={{ gap: 2 }}>
+    <Stack ref={panel} component="section" aria-label={t('dashboard.sectionLabel')} sx={{ gap: 2 }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
         {edit ? (
           <>
@@ -383,7 +404,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             canShare={canShare}
             everyone={edit.scope === 'shared'}
             figures={FIGURES.filter((f) => !onDashboard.has(f))}
-            ready={READY_CHARTS.filter((c) => !onDashboard.has(presetKey(c.id)))}
+            ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: onDashboard.has(presetKey(c.id)) }))}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
             onAdd={(id, period) => add(id, undefined, period)}
             onChartSaved={async (id, title) => {
@@ -391,6 +412,22 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
               add(chartKey(id), title)
             }}
           />
+          {customizing?.kind === 'ready' && edit.customizing && (
+            <ChartBuilderDialog
+              vehicle={vehicle}
+              canShare={canShare}
+              shareLocked={edit.scope === 'shared'}
+              copyOf={{ title: t(`dashboard.presets.${customizing.chart.id}`), recipe: customizing.chart.recipe }}
+              open={edit.customizing.open}
+              onOpenChange={(open) => update((e) => ({ customizing: e.customizing && { ...e.customizing, open } }))}
+              onClosed={() => {
+                const id = edit.customizing?.focus
+                update(() => ({ customizing: null }))
+                if (id) panel.current?.querySelector<HTMLElement>(`[data-tile="${CSS.escape(id)}"] [aria-haspopup="menu"]`)?.focus()
+              }}
+              onSaved={(id, title) => customized(edit.customizing!.tile, id, title)}
+            />
+          )}
         </>
       )}
       {actionError !== undefined && <ErrorMessage error={actionError} />}

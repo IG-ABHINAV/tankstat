@@ -278,6 +278,13 @@ export const setTilePeriod = (tiles: readonly Tile[], id: string, period: TrendP
 
 export const removeTile = (tiles: readonly Tile[], id: string, cols = COLUMNS): Tile[] => pack(tiles.filter((t) => t.id !== id), cols)
 
+/**
+ * A tile given another widget in its place (#247: a ready-made chart customized into a chart of one's own): the same place, size and pin,
+ * no period (only a trend figure has one), nothing else moved.
+ */
+export const replaceTile = (tiles: readonly Tile[], from: string, to: string): Tile[] =>
+  tiles.map((t) => (t.id === from ? { id: to, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned } : t))
+
 /** A tile moved one step earlier or later in the reading order, the tiles flowed afresh so the new order holds on screen. */
 export function moveTile(tiles: readonly Tile[], id: string, step: -1 | 1, cols = COLUMNS): Tile[] {
   const order = inReadingOrder(tiles)

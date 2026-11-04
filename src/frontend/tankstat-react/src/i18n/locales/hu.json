@@ -1489,7 +1489,10 @@
       "pinnedSaid": "{{name}} rögzítve.",
       "unpinnedSaid": "{{name}} rögzítése feloldva.",
       "removed": "{{name}} levéve.",
-      "added": "{{name}} hozzáadva."
+      "added": "{{name}} hozzáadva.",
+      "customize": "Testreszabás saját grafikonként…",
+      "customized": "{{name}} mostantól saját grafikonod, ugyanott.",
+      "customizedRenamed": "{{name}} mostantól saját grafikonod, {{title}} néven, ugyanott."
     },
     "sectionLabel": "Irányítópult",
     "layoutPresets": {
@@ -1537,8 +1540,10 @@
         "readyHint": "Kész grafikon: add hozzá ahogy van, vagy szabd testre saját grafikonként; az eredeti megmarad.",
         "saved": "Egy saját grafikonod, amely nincs az irányítópulton.",
         "shared": "{{name}} által megosztott grafikon, amely nincs az irányítópulton.",
-        "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja."
-      }
+        "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja.",
+        "readyOnDashboard": "Már az irányítópulton van, ezért itt csak testre szabható: saját grafikonként mentve alulra kerül, a kész grafikon mellé."
+      },
+      "onDashboard": "Az irányítópulton"
     }
   },
   "charts": {
@@ -1618,7 +1623,11 @@
       "MOVING_AVERAGE": "Mozgóátlag (3 időszak)",
       "LINEAR": "Lineáris trend"
     },
-    "secondNone": "Nincs"
+    "secondNone": "Nincs",
+    "dialogCustomize": "Grafikon testreszabása",
+    "dialogCustomizeDescription": "A(z) {{title}} kész grafikon. Mentve saját grafikonod lesz, és átveszi ennek a csempének a helyét és méretét; a kész grafikon a Csempe hozzáadása alatt megmarad.",
+    "saveAsMine": "Mentés saját grafikonként",
+    "mustChange": "Változtass valamit, hogy saját grafikonként menthesd."
   },
   "photos": {
     "waitUpload": "A mentés megvárja, amíg a fotók feltöltődnek.",

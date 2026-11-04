@@ -264,6 +264,46 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   await expect(dialog.getByRole('button', { name: 'My costs' })).toHaveCount(0)
 })
 
+test("customizes a preset's ready-made chart from its tile's menu into one's own, in the tile's place and size, kept after a reload (#247)", async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id)
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('combobox', { name: 'Start from a preset' }).click()
+  await page.getByRole('option', { name: 'Usage' }).click()
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  const before = (await stored(page, vehicle.id)).shared!.tiles.find((x) => x.id === 'preset:consumptionTrend')!
+
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await menu(page, 'Consumption trend', 'Customize as my chart…')
+  const dialog = page.getByRole('dialog', { name: 'Customize chart' })
+  await expect(dialog.getByLabel('Title')).toHaveValue('Consumption trend')
+  // Nothing differs yet, so it cannot be saved; the dialog scrolls in its content only, at either size (#249).
+  await expect(dialog.getByRole('button', { name: 'Save as my chart' })).toBeDisabled()
+  await expect(dialog.getByText('Change something to save it as your own chart.')).toBeVisible()
+  await expectSoundLayout(page)
+  // A toggle's radio is visually hidden inside its segment, so the segment (its label) is what is clicked.
+  await dialog.getByRole('radiogroup', { name: 'Group by' }).getByRole('radio', { name: 'Year' }).locator('xpath=..').click()
+  await dialog.getByLabel('Title').fill('Consumption by year')
+  await dialog.getByRole('button', { name: 'Save as my chart' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Consumption trend is now your own chart, Consumption by year, in the same place.')
+  await expect(page.getByRole('button', { name: 'Options for Consumption by year' })).toBeFocused()
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await page.reload()
+  await pageLoaded(page)
+  await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption by year', 'Distance and consumption', 'Distance per month'])
+  const tiles = (await stored(page, vehicle.id)).shared!.tiles
+  expect(tiles.map((x) => x.id)).not.toContain('preset:consumptionTrend')
+  const copy = tiles.find((x) => x.id.startsWith('chart:'))!
+  expect({ x: copy.x, y: copy.y, w: copy.w, h: copy.h }).toEqual({ x: before.x, y: before.y, w: before.w, h: before.h })
+})
+
 // ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------
 
 /** Pressed at the middle of `part` and moved in `steps`: after each step `part` is back under the pointer, a frame or two later, polled briefly. */

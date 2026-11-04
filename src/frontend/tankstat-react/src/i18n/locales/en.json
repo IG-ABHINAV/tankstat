@@ -1489,7 +1489,10 @@
       "pinnedSaid": "{{name}} pinned.",
       "unpinnedSaid": "{{name}} unpinned.",
       "removed": "{{name}} taken off.",
-      "added": "{{name}} added."
+      "added": "{{name}} added.",
+      "customize": "Customize as my chart…",
+      "customized": "{{name}} is now your own chart, in the same place.",
+      "customizedRenamed": "{{name}} is now your own chart, {{title}}, in the same place."
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {
@@ -1537,8 +1540,10 @@
         "readyHint": "Ready-made: add it as it is, or customize it as a chart of your own; the original stays available.",
         "saved": "A chart of your own, off the dashboard.",
         "shared": "A chart shared by {{name}}, off the dashboard.",
-        "blank": "A chart of your own, from scratch: what to measure, how to group it, the chart type and the period. The preview shows your data as you choose."
-      }
+        "blank": "A chart of your own, from scratch: what to measure, how to group it, the chart type and the period. The preview shows your data as you choose.",
+        "readyOnDashboard": "It is on the dashboard already, so here it can only be customized: saved as a chart of your own, it is added at the bottom, beside the ready-made one."
+      },
+      "onDashboard": "On the dashboard"
     }
   },
   "charts": {
@@ -1618,7 +1623,11 @@
       "MOVING_AVERAGE": "Moving average (3 periods)",
       "LINEAR": "Linear trend"
     },
-    "secondNone": "None"
+    "secondNone": "None",
+    "dialogCustomize": "Customize chart",
+    "dialogCustomizeDescription": "{{title}} is a ready-made chart. Saved, it becomes a chart of your own and takes this tile's place and size; the ready-made one stays in Add widget.",
+    "saveAsMine": "Save as my chart",
+    "mustChange": "Change something to save it as your own chart."
   },
   "photos": {
     "waitUpload": "Saving waits until the photos are uploaded.",
