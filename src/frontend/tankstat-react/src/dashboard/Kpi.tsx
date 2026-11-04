@@ -5,11 +5,12 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
 import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useFormat } from '../i18n/format.ts'
 import { COARSE } from '../theme/components.ts'
 import { FULL, type Fit, type Measured, nextFit, offered } from './kpiFit.ts'
-import { useTilePadding } from './tileChrome.ts'
+import { useTilePadding, useTileStrip } from './tileChrome.ts'
 
 export interface KpiProps {
   rows: number
@@ -33,8 +34,8 @@ export interface KpiProps {
 /**
  * A key figure's card, showing what its tile's rows hold (#229): two rows the label and the value, packed closer (84 px); three the
  * comparison line too, or the note where there is none (132 px); four or more everything, spaced as always (180 px), so an arrangement of
- * four-row figures looks as it did. The label stays the card's first paragraph; a trend figure's period chip (#230) sits beside it, in the
- * label row under the edit strip, never in it.
+ * four-row figures looks as it did. The label stays the card's first paragraph, a trend figure's period chip (#230) beside it; while the
+ * dashboard is arranged both are in the tile's strip instead (#262: the strip is the tile's header, the card starts under it).
  *
  * What does not fit the card's height is never cut (#259): the card measures itself (`kpiFit.ts`, one step a render in a layout effect, so
  * nothing is painted half way) and leaves out from the bottom what has no room, then puts the label and the value on one line each. It
@@ -44,7 +45,9 @@ export interface KpiProps {
 export function Kpi({ fitKey = '', ...props }: KpiProps) {
   const card = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState('')
-  const key = `${props.rows}|${size}|${props.label}|${props.hint ?? ''}|${fitKey}`
+  // Arranging moves the label into the tile's strip and the card under it (#262): the tile keeps its size, so that fits it afresh too.
+  const arranged = useTileStrip() !== null
+  const key = `${props.rows}|${size}|${props.label}|${props.hint ?? ''}|${arranged}|${fitKey}`
   const [state, setState] = useState({ key, fit: FULL })
   // A change of what is measured fits it afresh from the full form (derived state: set while rendering, so the old form is never painted).
   if (state.key !== key) setState({ key, fit: FULL })
@@ -104,12 +107,18 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, sparkli
   const third = rows >= 3
   const offers = offersOf({ rows, sparkline, hint, change, shrink, short })
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
+  // While arranging, the strip is the tile's header (#262): it names the figure, and a trend figure's chip goes into it.
+  const strip = useTileStrip()
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
-        <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
-        {chip}
-      </Box>
+      {strip ? (
+        chip && strip.lead && createPortal(chip, strip.lead)
+      ) : (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
+          <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
+          {chip}
+        </Box>
+      )}
       {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
       <Typography data-kpi="value" variant={fit.smaller ? 'h4' : 'h3'} component="p" sx={{ my: full ? 0.5 : 0, ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}>
         {fit.short && short ? short : value}

@@ -95,7 +95,7 @@ const FIGURE_ROWS: Record<FigureId, number> = {
   consumptionTrend: 4,
   distanceTrend: 4,
 }
-/** The fewest rows a figure can take, its label and value: also what the grid's edit mode must leave a tile's content (`DashboardGrid`). */
+/** The fewest rows a figure can take, its label and value (while arranging its value under the edit strip, which names it: #262). */
 export const MIN_FIGURE_ROWS = 2
 
 /** A widget's size when it is put on the dashboard: a figure one column wide and as low as it shows in full, a chart two columns wide and tall. */

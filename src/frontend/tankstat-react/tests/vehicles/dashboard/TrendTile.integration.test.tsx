@@ -131,6 +131,10 @@ it('sets a period since a day, checks the number, and offers whole periods only 
 it('keeps a period with the tiles being arranged until the dashboard is saved, and adds a trend figure at the period chosen in Add widget', async () => {
   const { ui, state } = setup()
   await ui.click(await screen.findByRole('button', { name: 'Customize' }))
+  // While arranging the chip is in the tile's strip, beside its name, not in the card under it (#262); the popover opens from there.
+  const inStrip = await chip('12 full months')
+  expect(inStrip.closest('.MuiCard-root')).toBeNull()
+  expect(inStrip.closest('[data-tile="spendingTrend"]')).not.toBeNull()
   const dialog = await openPeriod(ui)
   expect(within(dialog).getByText('Kept with the arrangement you are editing until you save it.')).toBeInTheDocument()
   await ui.click(within(dialog).getByRole('radio', { name: '6 full months' }))

@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DialogFrame } from '../dialogs/DialogFrame.tsx'
+import { OutsideTile } from './tileChrome.ts'
 import { DialogTrigger } from '../dialogs/DialogTrigger.tsx'
 import { useDialogState } from '../dialogs/useDialogState.ts'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
@@ -64,20 +65,23 @@ export function ChartBuilderDialog({
         description={copyOf ? t('charts.dialogCustomizeDescription', { title: copyOf.title }) : t('charts.dialogDescription')}
       >
         {open && (
-          <ChartForm
-            vehicle={vehicle}
-            chart={chart}
-            start={copyOf}
-            mustChange={copyOf !== undefined}
-            shareLocked={shareLocked}
-            submitLabel={copyOf ? t('charts.saveAsMine') : undefined}
-            canShare={canShare}
-            onSaved={async (id, title) => {
-              await onSaved(id, title)
-              setOpen(false)
-              toast(t('toast.saved'))
-            }}
-          />
+          // Opened from a tile's strip while arranging: its preview is a card of its own, not the tile's (#262).
+          <OutsideTile>
+            <ChartForm
+              vehicle={vehicle}
+              chart={chart}
+              start={copyOf}
+              mustChange={copyOf !== undefined}
+              shareLocked={shareLocked}
+              submitLabel={copyOf ? t('charts.saveAsMine') : undefined}
+              canShare={canShare}
+              onSaved={async (id, title) => {
+                await onSaved(id, title)
+                setOpen(false)
+                toast(t('toast.saved'))
+              }}
+            />
+          </OutsideTile>
         )}
       </DialogFrame>
     </>

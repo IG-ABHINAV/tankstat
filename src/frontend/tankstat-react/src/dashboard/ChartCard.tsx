@@ -6,13 +6,14 @@ import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import { ChartDataDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { ChartTableDialog } from './ChartTable.tsx'
 import { ChartView, MIN_PICTURE, PICTURE_HEIGHT } from './ChartView.tsx'
-import { useTilePadding } from './tileChrome.ts'
+import { useTilePadding, useTileStrip } from './tileChrome.ts'
 import { toConfig, type ChartRecipe } from './chartFormat.ts'
 
 /**
@@ -47,24 +48,44 @@ export function ChartCard({
   // Under the edit strip while the dashboard is arranged, only for the card that fills its tile: the context also reaches a preview in a
   // dialog opened from a tile (the Edit chart dialog), which is portalled out of the tile but not out of the React tree.
   const pt = useTilePadding(2)
+  // While the dashboard is arranged the tile's strip is its header (#262): it names the tile (the heading) and carries the buttons, so the
+  // card is as tall as in view mode and its picture keeps its size. Only the card that fills its tile: a dialog opened from one is outside.
+  const strip = useTileStrip()
+  const inStrip = fill && strip !== null
+  const buttons = (
+    <>
+      {data && <ChartTableDialog data={data.vehicleChartData} recipe={recipe} units={units} title={title} />}
+      {actions}
+    </>
+  )
+  // Who sees and made the chart: under its title, or under the strip while arranging (kept there, #262).
+  const byline = (
+    <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+      {shared && <Chip color="primary" label={t('dashboard.shared')} />}
+      {meta}
+    </Stack>
+  )
 
   return (
     <Card sx={fill ? { p: 2, pt, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, boxSizing: 'border-box' } : { p: 2 }}>
-      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
-        <Stack sx={{ gap: 0.5, minWidth: 0 }}>
-          <Typography component={`h${headingLevel}`} variant="h6">
-            {title}
-          </Typography>
-          <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-            {shared && <Chip color="primary" label={t('dashboard.shared')} />}
-            {meta}
+      {inStrip ? (
+        <>
+          {strip.actions && createPortal(buttons, strip.actions)}
+          {(shared || meta) && <Box sx={{ mb: 1.5 }}>{byline}</Box>}
+        </>
+      ) : (
+        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
+          <Stack sx={{ gap: 0.5, minWidth: 0 }}>
+            <Typography component={`h${headingLevel}`} variant="h6">
+              {title}
+            </Typography>
+            {byline}
+          </Stack>
+          <Stack direction="row" sx={{ gap: 1, flexShrink: 0 }}>
+            {buttons}
           </Stack>
         </Stack>
-        <Stack direction="row" sx={{ gap: 1, flexShrink: 0 }}>
-          {data && <ChartTableDialog data={data.vehicleChartData} recipe={recipe} units={units} title={title} />}
-          {actions}
-        </Stack>
-      </Stack>
+      )}
       <Box sx={fill ? { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' } : undefined}>
         {error && <ErrorMessage error={error} />}
         {!data && !error && (

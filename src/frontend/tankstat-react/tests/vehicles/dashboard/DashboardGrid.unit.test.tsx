@@ -1,9 +1,11 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Layout, LayoutItem } from 'react-grid-layout'
 import { DashboardGrid } from '../../../src/dashboard/DashboardGrid.tsx'
+import { OutsideTile, useTileStrip } from '../../../src/dashboard/tileChrome.ts'
 import type { Tile } from '../../../src/dashboard/widgets.ts'
 import { ThemeRoot } from '../../../src/theme/ThemeRoot.tsx'
 
@@ -112,5 +114,68 @@ describe("a tile's menu", () => {
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'preset:monthlyCosts' }), 'customize'))
     expect(onAction).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DashboardGrid while customizing: the strip is the tile\'s header (#262)', () => {
+  /** A tile's content that puts a button into each of the strip's slots, as a trend figure's chip and a chart's buttons do. */
+  const renders = vi.fn()
+  function Content({ id }: { id: string }) {
+    const strip = useTileStrip()
+    renders(id)
+    if (!strip) return <span>{`${id} own header`}</span>
+    return (
+      <>
+        {strip.lead && createPortal(<button type="button">{`${id} chip`}</button>, strip.lead)}
+        {strip.actions && createPortal(<button type="button">{`${id} table`}</button>, strip.actions)}
+      </>
+    )
+  }
+  const content = (t: Tile) => <Content id={t.id} />
+  const MIXED = [tile('preset:monthlyCosts', 0, 0), tile('odometer', 2, 0, 1, 2)]
+  afterEach(() => renders.mockClear())
+
+  it('keeps the rows as tall as in view mode', () => {
+    const { rerender } = themed(<DashboardGrid tiles={MIXED} editing={false} render={content} name={name} />)
+    const viewRows = (latest() as unknown as { rowHeight: number }).rowHeight
+    rerender(<ThemeRoot instant><DashboardGrid tiles={MIXED} editing render={content} name={name} /></ThemeRoot>)
+    expect((latest() as unknown as { rowHeight: number }).rowHeight).toBe(viewRows)
+  })
+
+  it('names the tile in its strip, a chart as its heading, and puts the content\'s chip and buttons there in order', async () => {
+    themed(<DashboardGrid tiles={MIXED} editing render={content} name={name} />)
+    const chart = document.querySelector<HTMLElement>('[data-tile="preset:monthlyCosts"]')!
+    expect(await within(chart).findByRole('button', { name: 'preset:monthlyCosts chip' })).toBeInTheDocument()
+    expect(within(chart).getByRole('heading', { level: 2, name: 'preset:monthlyCosts' })).toBeInTheDocument()
+    // The strip's buttons in reading order: the chip after the name, the content's actions before the menu.
+    expect(within(chart).getAllByRole('button').map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual([
+      'preset:monthlyCosts chip',
+      'preset:monthlyCosts table',
+      'Options for preset:monthlyCosts',
+    ])
+    // A figure's name is text, not a heading; the content draws no header of its own while the strip is there.
+    const figure = document.querySelector<HTMLElement>('[data-tile="odometer"]')!
+    expect(within(figure).getByText('odometer')).toBeInTheDocument()
+    expect(within(figure).queryByRole('heading')).not.toBeInTheDocument()
+    expect(screen.queryByText(/own header/)).not.toBeInTheDocument()
+    // The handle (the name and the grip) holds no button: a pointer never drags a tile by one.
+    for (const handle of document.querySelectorAll('.tk-tile-handle')) expect(handle.querySelector('button')).toBeNull()
+  })
+
+  it('gives the content no strip outside Customize, or in a dialog opened from a tile', () => {
+    themed(<DashboardGrid tiles={MIXED} editing={false} render={content} name={name} />)
+    expect(screen.getByText('preset:monthlyCosts own header')).toBeInTheDocument()
+    cleanup()
+    themed(<DashboardGrid tiles={MIXED} editing render={(t) => <OutsideTile>{content(t)}</OutsideTile>} name={name} />)
+    expect(screen.getByText('preset:monthlyCosts own header')).toBeInTheDocument()
+  })
+
+  it('does not render a tile\'s content again on a drag\'s moves (#227): the strip it is given keeps its identity', async () => {
+    themed(<DashboardGrid tiles={MIXED} editing render={content} name={name} />)
+    await screen.findByRole('button', { name: 'odometer chip' })
+    renders.mockClear()
+    act(() => latest().onDrag([], null, at('odometer', 1, 0, 1, 2)))
+    act(() => latest().onDrag([], null, at('odometer', 0, 8, 1, 2)))
+    expect(renders).not.toHaveBeenCalled()
   })
 })

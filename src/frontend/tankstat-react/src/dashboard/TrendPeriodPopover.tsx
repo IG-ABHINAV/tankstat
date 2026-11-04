@@ -10,6 +10,7 @@ import { Form } from '../forms/Form.tsx'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { MEDIA } from '../theme/media.ts'
+import { OutsideTile } from './tileChrome.ts'
 import { samePeriod, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
 import { TrendFigure } from './TrendFigure.tsx'
 import { TrendPeriodForm } from './TrendPeriodForm.tsx'
@@ -74,7 +75,12 @@ export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, c
           </Typography>
           <TrendPeriodForm figure={figure} value={draft} onChange={setDraft} preview={preview} />
           <Box role="status" aria-live="polite" aria-label={t('dashboard.period.preview')} sx={{ minHeight: 132 }}>
-            {preview.data && <TrendFigure figure={figure} period={draft} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />}
+            {/* Opened from a tile's strip while arranging: the preview is a card of its own, not the tile's (#262). */}
+            {preview.data && (
+              <OutsideTile>
+                <TrendFigure figure={figure} period={draft} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />
+              </OutsideTile>
+            )}
           </Box>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {control.hint}

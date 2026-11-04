@@ -53,7 +53,11 @@ const pick = async (ui: ReturnType<typeof userEvent.setup>, group: string, optio
 /** One of the builder's extras (a running total, a year earlier, the split): a checkbox in the Also group. */
 const extra = (name: string) => within(screen.getByRole('group', { name: 'Also' })).getByRole('checkbox', { name })
 
-const cardOf = async (title: string) => (await screen.findByRole('heading', { name: title })).closest('.MuiCard-root') as HTMLElement
+/** A chart's tile by its heading (the card's, or the strip's while customizing, #262, where its buttons are too); a card outside a tile. */
+const cardOf = async (title: string) => {
+  const heading = await screen.findByRole('heading', { name: title })
+  return (heading.closest('[data-tile]') ?? heading.closest('.MuiCard-root')) as HTMLElement
+}
 /** Enters Customize (where a chart is added, edited or deleted). */
 const customize = async (ui: ReturnType<typeof userEvent.setup>) => {
   await ui.click(await screen.findByRole('button', { name: 'Customize' }))
@@ -202,6 +206,37 @@ it('deletes a chart after a confirmation, while customizing', async () => {
 
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'My chart' })).not.toBeInTheDocument())
   expect(state.calls.DeleteChart).toEqual([{ id: 'c1' }])
+})
+
+it('makes a chart tile\'s strip its header while customizing: its one heading and its buttons there, the edit dialog\'s preview its own (#262)', async () => {
+  const { ui } = setup()
+  const heading = await screen.findByRole('heading', { level: 2, name: 'My chart' })
+  const tile = heading.closest('[data-tile]') as HTMLElement
+  expect(heading.closest('.MuiCard-root')).not.toBeNull() // in view mode the card's own header
+  await within(tile).findByRole('button', { name: 'My chart as a table' })
+
+  await customize(ui)
+  const strip = await waitFor(() => {
+    const titles = within(tile).getAllByRole('heading', { level: 2, name: 'My chart' })
+    expect(titles).toHaveLength(1) // the strip's, the card's own title not drawn meanwhile
+    expect(titles[0].closest('.MuiCard-root')).toBeNull()
+    return titles[0].closest('.tk-tile-handle')!.parentElement as HTMLElement
+  })
+  // The table, edit and delete buttons in the strip, in its order, before the tile's menu; the card keeps the byline only.
+  await within(strip).findByRole('button', { name: 'My chart as a table' })
+  expect(within(strip).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual([
+    'My chart as a table',
+    'Edit the chart My chart',
+    'Delete the chart My chart',
+    'Options for My chart',
+  ])
+  expect(within(tile.querySelector<HTMLElement>('.MuiCard-root')!).queryAllByRole('button', { name: /My chart/ })).toEqual([])
+
+  // The edit dialog, opened from the strip, draws its preview as a card of its own, with its own heading.
+  await ui.click(within(strip).getByRole('button', { name: 'Edit the chart My chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit chart' })
+  expect(within(dialog).getByRole('heading', { level: 2, name: 'My chart' }).closest('.MuiCard-root')).not.toBeNull()
+  expect(within(tile).getAllByRole('heading', { level: 2, name: 'My chart', hidden: true })).toHaveLength(1)
 })
 
 /** A chart card's loading outline, once it is there (`waitFor` retries only on a throw, not on a null). */
