@@ -1,10 +1,13 @@
 import Box from '@mui/material/Box'
+import ButtonBase from '@mui/material/ButtonBase'
 import Card from '@mui/material/Card'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
 import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFormat } from '../i18n/format.ts'
+import { COARSE } from '../theme/components.ts'
 import { FULL, type Fit, type Measured, nextFit, offered } from './kpiFit.ts'
 import { useTilePadding } from './tileChrome.ts'
 
@@ -15,6 +18,8 @@ export interface KpiProps {
   value: ReactNode
   /** The value may go one type step smaller when it wraps (#259: *Spent this month* in several currencies). */
   shrink?: boolean
+  /** The value's short form, for the one-line form when even that line is too wide (the main currency and "+1", `MoreCount`). */
+  short?: ReactNode
   hint?: string
   change?: ReactNode
   sparkline?: ReactNode
@@ -44,7 +49,7 @@ export function Kpi({ fitKey = '', ...props }: KpiProps) {
   // A change of what is measured fits it afresh from the full form (derived state: set while rendering, so the old form is never painted).
   if (state.key !== key) setState({ key, fit: FULL })
   const fit = state.key === key ? state.fit : FULL
-  const offers = offered(props.rows, { sparkline: !!props.sparkline, hint: !!props.hint, change: !!props.change, shrink: !!props.shrink, short: false })
+  const offers = offered(props.rows, { sparkline: !!props.sparkline, hint: !!props.hint, change: !!props.change, shrink: !!props.shrink, short: !!props.short })
 
   // Measured once a form is shown: at the start, after each step and after starting again (each step turns a flag on, so it ends).
   useLayoutEffect(() => {
@@ -84,21 +89,20 @@ function measure(card: HTMLElement): Measured {
 const ONE_LINE = { whiteSpace: 'nowrap', overflow: 'hidden' } as const
 
 /** A key figure's card in a given form (`Fit`): what `Kpi` draws once it has measured, and what the tests draw in each form. */
-export function KpiCard({ rows, label, chip, value, hint, change, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
+export function KpiCard({ rows, label, chip, value, short, hint, change, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
   const full = rows >= 4
   const third = rows >= 3
-  const offers = offered(rows, { sparkline: !!sparkline, hint: !!hint, change: !!change, shrink: !!shrink, short: false })
+  const offers = offered(rows, { sparkline: !!sparkline, hint: !!hint, change: !!change, shrink: !!shrink, short: !!short })
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
-        <Typography data-kpi="label" variant="body2" sx={{ color: 'text.secondary', minWidth: 0, ...(fit.oneLine && { ...ONE_LINE, textOverflow: 'ellipsis' }) }}>
-          {label}
-        </Typography>
+        <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
         {chip}
       </Box>
-      <Typography data-kpi="value" variant={fit.smaller ? 'h4' : 'h3'} component="p" sx={{ my: full ? 0.5 : 0, ...(fit.oneLine && ONE_LINE) }}>
-        {value}
+      {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
+      <Typography data-kpi="value" variant={fit.smaller ? 'h4' : 'h3'} component="p" sx={{ my: full ? 0.5 : 0, ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}>
+        {fit.short && short ? short : value}
       </Typography>
       {offers.hint && fit.drop < 2 && (
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
@@ -108,6 +112,51 @@ export function KpiCard({ rows, label, chip, value, hint, change, sparkline, shr
       {offers.change && fit.drop < 3 && change}
       {offers.sparkline && fit.drop < 1 && sparkline}
     </Card>
+  )
+}
+
+/**
+ * The card's label: wrapping as it needs, or on one line in the one-line form, cut with an ellipsis. Cut (#259), it takes the focus and shows
+ * itself whole in a tooltip on hover, focus and tap, 44 px tall to a finger (padding the margin gives back, so nothing moves); a screen reader
+ * reads it whole either way, since only its look is cut.
+ */
+function CutLabel({ label, oneLine, cut }: { label: string; oneLine: boolean; cut: boolean }) {
+  const text = (
+    <Typography
+      data-kpi="label"
+      variant="body2"
+      tabIndex={cut ? 0 : undefined}
+      sx={{ color: 'text.secondary', minWidth: 0, ...(oneLine && { ...ONE_LINE, textOverflow: 'ellipsis' }), ...(cut && { [COARSE]: { py: '12px', my: '-12px' } }) }}
+    >
+      {label}
+    </Typography>
+  )
+  if (!cut) return text
+  return (
+    <Tooltip title={label} describeChild enterTouchDelay={0} leaveTouchDelay={8000}>
+      {text}
+    </Tooltip>
+  )
+}
+
+/**
+ * "+1" after the main currency's amount (#259): the other currencies spent, in its tooltip (hover, focus, tap) and in its name ("and 1 more:
+ * €40.00"). A small pill, its button 44 px to a finger around it (padding the margin gives back).
+ */
+export function MoreCount({ others }: { others: string[] }) {
+  const { t } = useTranslation()
+  const list = others.join(' · ')
+  return (
+    <Tooltip title={list} describeChild enterTouchDelay={0} leaveTouchDelay={8000}>
+      <ButtonBase
+        aria-label={t('dashboard.kpi.moreCurrencies', { number: others.length, list })}
+        sx={{ ml: 0.75, verticalAlign: 'baseline', borderRadius: 9999, [COARSE]: { py: '12px', px: '10px', my: '-12px', mx: '-10px', ml: '-4px' } }}
+      >
+        <Box component="span" sx={{ typography: 'caption', fontWeight: 600, px: 0.75, py: 0.25, borderRadius: 9999, bgcolor: 'primary.soft', color: 'primary.softText' }}>
+          {t('dashboard.kpi.moreCount', { number: others.length })}
+        </Box>
+      </ButtonBase>
+    </Tooltip>
   )
 }
 

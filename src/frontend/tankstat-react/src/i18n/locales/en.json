@@ -1297,7 +1297,9 @@
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
       "none": "–",
       "fillUpsIn_one": "{{count}} fill-up in the period",
-      "fillUpsIn_other": "{{count}} fill-ups in the period"
+      "fillUpsIn_other": "{{count}} fill-ups in the period",
+      "moreCurrencies": "and {{number}} more: {{list}}",
+      "moreCount": "+{{number}}"
     },
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",

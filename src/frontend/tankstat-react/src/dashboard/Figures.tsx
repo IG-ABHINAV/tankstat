@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import type { DistanceUnit, VehicleDashboardQuery, VolumeUnit } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
-import { spentText } from '../spending.ts'
+import { spentParts, spentText } from '../spending.ts'
 import { LazySparkline } from './LazySparkline.tsx'
-import { Kpi, ValueWithUnit } from './Kpi.tsx'
+import { Kpi, MoreCount, ValueWithUnit } from './Kpi.tsx'
 import type { PeriodControl } from './TrendPeriodPopover.tsx'
 import { TrendTile } from './TrendTile.tsx'
 import { isTrendFigure, type TrendPeriod } from './trendPeriod.ts'
@@ -24,12 +24,14 @@ export function Figure({ id, vehicleId, period, control, rows, summary: s, units
   switch (id) {
     case 'thisMonth': {
       const spent = (s && spentText(s.spending, 'thisMonth', format)) ?? none
+      const parts = s && spentParts(s.spending, 'thisMonth', format)
       return (
         <Kpi
           rows={rows}
           label={t('dashboard.kpi.thisMonth')}
           value={spent}
-          shrink // several currencies wrap in a narrow tile: one type step smaller first (#259)
+          shrink // several currencies wrap in a narrow tile: one type step smaller first (#259), then the main one and "+1"
+          short={parts && parts.others.length > 0 ? <>{parts.main}<MoreCount others={parts.others} /></> : undefined}
           fitKey={spent}
           hint={s && s.spending.length > 0 ? t('dashboard.kpi.lastMonth', { amount: spentText(s.spending, 'lastMonth', format) }) : undefined}
           sparkline={s && s.currency && <LazySparkline points={s.spendTrend} currency={s.currency} />}

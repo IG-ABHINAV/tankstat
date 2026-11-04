@@ -1297,7 +1297,9 @@
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
       "none": "–",
       "fillUpsIn_one": "{{count}} tankolás az időszakban",
-      "fillUpsIn_other": "{{count}} tankolás az időszakban"
+      "fillUpsIn_other": "{{count}} tankolás az időszakban",
+      "moreCurrencies": "és még {{number}}: {{list}}",
+      "moreCount": "+{{number}}"
     },
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",
