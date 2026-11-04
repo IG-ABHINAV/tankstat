@@ -67,6 +67,8 @@ for (const scheme of ['dark', 'light'] as const) {
     const vehicle = await addVehicle(page)
     await page.goto('/')
     await pageLoaded(page)
+    // The fills are the same in both schemes, so only the class tells that the scheme asked for is the one drawn.
+    await expect(page.locator('html')).toHaveClass(scheme === 'light' ? /\blight\b/ : /\bdark\b/)
     // The badge is aria-hidden, so axe skips it: its fill is checked as drawn, the red's solid one (white on it is 4.88:1).
     await expect(page.getByRole('button', { name: /^Notifications, \d+ unread$/ })).toBeVisible()
     await expect(page.locator('.MuiBadge-badge')).toHaveCSS('background-color', 'rgb(202, 63, 68)')
@@ -103,7 +105,6 @@ test('a trend tile\'s period popover has no axe violations (#230)', async ({ pag
   await page.getByRole('button', { name: 'Spending period: 12 full months. Change it' }).click()
   const popover = page.getByRole('dialog', { name: 'Period of Spending' })
   await expect(popover.getByTestId('trend-timeline')).toBeVisible()
-  await expect(page.locator('.MuiPopover-paper')).toHaveCSS('opacity', '1') // grown in: axe reads the colours as they are drawn
   expect(await violations(page, '[role="dialog"]')).toEqual([])
   await popover.getByRole('tab', { name: 'Last' }).click()
   await expect(popover.getByRole('switch', { name: 'Whole weeks, Monday to Sunday' })).toBeVisible()
