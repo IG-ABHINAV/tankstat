@@ -2,7 +2,8 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
 import { axe } from 'vitest-axe'
-import { Change, KpiCard, MoreCount } from '../../../src/dashboard/Kpi.tsx'
+import type { ChangeWords } from '../../../src/dashboard/changeWords.ts'
+import { KpiCard, MoreCount } from '../../../src/dashboard/Kpi.tsx'
 import { FULL, type Fit } from '../../../src/dashboard/kpiFit.ts'
 import { renderWithApollo } from '../../support/mocks.tsx'
 
@@ -62,23 +63,39 @@ it('makes a cut label a tab stop whose tooltip shows it whole, and leaves a labe
   expect(screen.getByText('Költség távolságra, változás')).not.toHaveAttribute('tabindex')
 })
 
-it('leaves out at three rows a comparison with no room, and the note does not take its row', () => {
-  const card = (fit: Fit) => (
-    <KpiCard
-      rows={3}
-      label="Consumption change"
-      value="6.83"
-      hint="last 10 fill-ups"
-      change={<Change recent={6.5} earlier={7} fuel than="the 10 fill-ups before" meaning="worseUp" none="-" />}
-      fit={fit}
-    />
-  )
-  const { container, rerender } = renderWithApollo(card(FULL))
-  expect(within(container).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument()
+const less: ChangeWords = { sentence: 'uses 7% less fuel than the 10 fill-ups before', icon: 'down', tone: 'good' }
+const trend = (rows: number, fit: Fit, change: ChangeWords = less) => (
+  <KpiCard rows={rows} label="Consumption change" value="6.83" hint="last 10 fill-ups" change={change} fit={fit} />
+)
+
+it('shows a comparison with no row of its own as its arrow alone before the value, the sentence its name and tooltip (#260)', async () => {
+  const ui = userEvent.setup()
+  const { container, rerender } = renderWithApollo(trend(2, FULL)) // two rows: no row for the sentence
+
+  const arrow = screen.getByRole('button', { name: 'uses 7% less fuel than the 10 fill-ups before' })
+  expect(arrow.closest('[data-kpi="value-row"]')).toContainElement(screen.getByText('6.83')) // in the value's row, before it
+  expect(arrow.compareDocumentPosition(screen.getByText('6.83')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(arrow.querySelector('[data-tone]')).toHaveAttribute('data-tone', 'good') // its tone as the line's, never alone: the arrow points down
+  expect(within(container).queryByText('uses 7% less fuel than the 10 fill-ups before')).not.toBeInTheDocument() // no line
+  await ui.tab()
+  expect(arrow).toHaveFocus()
+  expect(await screen.findByRole('tooltip')).toHaveTextContent('uses 7% less fuel than the 10 fill-ups before')
+  expect((await axe(container, { rules: { 'color-contrast': { enabled: false } } })).violations).toEqual([])
+
+  // Nothing to compare with yet: a grey dash, the same way.
+  rerender(trend(2, FULL, { sentence: 'needs 3 earlier fill-ups to compare with', icon: 'same', tone: 'same' }))
+  expect(screen.getByRole('button', { name: 'needs 3 earlier fill-ups to compare with' }).querySelector('[data-tone]')).toHaveAttribute('data-tone', 'same')
+})
+
+it('turns a comparison line with no room at three rows into its arrow, and the note does not take its row', () => {
+  const { container, rerender } = renderWithApollo(trend(3, FULL))
+  expect(within(container).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument() // the line, with room
+  expect(screen.queryByRole('button')).not.toBeInTheDocument()
   expect(within(container).queryByText('last 10 fill-ups')).not.toBeInTheDocument() // three rows: the comparison, not the note (#229)
 
-  rerender(card(form({ drop: 3 })))
+  rerender(trend(3, form({ drop: 3 })))
   expect(within(container).queryByText('uses 7% less fuel than the 10 fill-ups before')).not.toBeInTheDocument()
-  expect(within(container).queryByText('last 10 fill-ups')).not.toBeInTheDocument() // its row stays empty (#259, N2)
+  expect(screen.getByRole('button', { name: 'uses 7% less fuel than the 10 fill-ups before' })).toBeInTheDocument()
+  expect(within(container).queryByText('last 10 fill-ups')).not.toBeInTheDocument() // its row stays empty (#259 N2, kept in #260)
   expect(within(container).getByText('6.83')).toBeInTheDocument()
 })

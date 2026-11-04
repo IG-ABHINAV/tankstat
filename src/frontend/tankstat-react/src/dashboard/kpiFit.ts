@@ -8,7 +8,7 @@
 export interface Fit {
   /** The value one type step smaller (h3 → h4), for a value that wraps (*Spent this month* in several currencies), at every height. */
   smaller: boolean
-  /** What is left out from the bottom: 0 nothing, 1 the sparkline, 2 the note too, 3 the comparison too. */
+  /** What is left out from the bottom: 0 nothing, 1 the sparkline, 2 the note too, 3 the comparison's line too, which then is its arrow alone (#260). */
   drop: 0 | 1 | 2 | 3
   /** The label and the value on one line each, the label cut with an ellipsis when it does not fit. */
   oneLine: boolean
@@ -21,11 +21,14 @@ export interface Fit {
 /** The form a card starts from, and starts from again whenever what it shows or its size changes. */
 export const FULL: Fit = { smaller: false, drop: 0, oneLine: false, short: false, labelCut: false }
 
-/** What a card's rows offer of what it has (#229): the sparkline at four rows, the comparison from three, the note at four, or at three without a comparison. */
+/**
+ * What a card's rows offer of what it has (#229): the sparkline at four rows, the note at four, or at three without a comparison; a trend
+ * figure's comparison as its line from three rows, and as its arrow alone before the value at two (#260), where the sentence has no row.
+ */
 export interface Offered {
   sparkline: boolean
   hint: boolean
-  change: boolean
+  change: 'line' | 'arrow' | false
   /** The value may go one type step smaller when it wraps. */
   shrink: boolean
   /** The value has a short form for the one-line form. */
@@ -35,7 +38,7 @@ export interface Offered {
 export function offered(rows: number, has: { sparkline: boolean; hint: boolean; change: boolean; shrink: boolean; short: boolean }): Offered {
   const full = rows >= 4
   const third = rows >= 3
-  return { sparkline: full && has.sparkline, hint: has.hint && (full || (third && !has.change)), change: third && has.change, shrink: has.shrink, short: has.short }
+  return { sparkline: full && has.sparkline, hint: has.hint && (full || (third && !has.change)), change: has.change ? (third ? 'line' : 'arrow') : false, shrink: has.shrink, short: has.short }
 }
 
 /** What the card measured in the form it shows. */
@@ -53,15 +56,15 @@ export interface Measured {
 /**
  * The next form to try after measuring `fit`, or `fit` itself when it is the one to show. In order: the value one step smaller when it wraps
  * and may (whether the card overflows or not: a wrapped value is always written smaller); then, while the content is taller than the card,
- * left out from the bottom what the rows offer, the sparkline, the note, the comparison (a left-out comparison leaves its row empty: the note
- * never comes into its place, #259's N2); then the one-line form; in it, the short value when the line is too wide (in the figure's own size
+ * left out from the bottom what the rows offer, the sparkline, the note, the comparison's line (which becomes its arrow alone before the value,
+ * #260; its row stays empty: the note never comes into its place, #259's N2); then the one-line form; in it, the short value when the line is too wide (in the figure's own size
  * again, one step smaller only when even the short value is too wide in it, so its "+1" is never cut at the card's edge); last, whether the
  * one-line label is cut.
  */
 export function nextFit(fit: Fit, measured: Measured, offers: Offered): Fit {
   if (offers.shrink && !fit.smaller && !fit.oneLine && measured.valueWraps) return { ...fit, smaller: true }
   if (measured.overflows) {
-    const levels = [offers.sparkline, offers.hint, offers.change]
+    const levels = [offers.sparkline, offers.hint, offers.change === 'line']
     for (let level = fit.drop; level < levels.length; level++) if (levels[level]) return { ...fit, drop: (level + 1) as Fit['drop'] }
     if (!fit.oneLine) return { ...fit, oneLine: true }
   }

@@ -35,7 +35,7 @@ function measureOf(c: Card) {
       valueLines * (fit.smaller ? 26 : 30) +
       (c.rows >= 4 ? 8 : 0) +
       (offers.hint && fit.drop < 2 ? 16 : 0) +
-      (offers.change && fit.drop < 3 ? (c.change ?? 0) * 16 : 0) +
+      (offers.change === 'line' && fit.drop < 3 ? (c.change ?? 0) * 16 : 0) +
       (offers.sparkline && fit.drop < 1 ? 34 : 0)
     return {
       overflows: height > ROOM[c.rows],
@@ -76,7 +76,7 @@ describe('a key figure fitted to its card (#259)', () => {
     expect(fitOf({ rows: 2, label: 3, value: 1, change: 3 })).toEqual(form({ oneLine: true, labelCut: true })) // Cost per distance change in Hungarian
   })
 
-  it('leaves out at three rows a comparison that has no room, and its row stays empty: the note never takes its place', () => {
+  it('turns at three rows a comparison line that has no room into its arrow (#260), and its row stays empty: the note never takes its place', () => {
     // Cost per distance change in Hungarian (label 60, value 30, comparison 48 of 100 px) and Consumption change in Hungarian (40, 30, 48).
     expect(fitOf({ rows: 3, label: 3, value: 1, change: 3 })).toEqual(form({ drop: 3 }))
     expect(fitOf({ rows: 3, label: 2, value: 1, note: true, change: 3 })).toEqual(form({ drop: 3 }))
@@ -84,7 +84,7 @@ describe('a key figure fitted to its card (#259)', () => {
     expect(fitOf({ rows: 3, label: 2, value: 1, change: 2 })).toEqual(form({ drop: 3 }))
   })
 
-  it('leaves out from the bottom one at a time, the sparkline, the note, then the comparison, only what the rows offer', () => {
+  it('leaves out from the bottom one at a time, the sparkline, the note, then the comparison\'s line (its arrow stays), only what the rows offer', () => {
     const tall: Card = { rows: 4, label: 3, value: 2, note: true, change: 3, sparkline: true }
     const measure = measureOf(tall)
     const steps: Fit['drop'][] = []
@@ -106,9 +106,9 @@ describe('a key figure fitted to its card (#259)', () => {
 
   it('offers what the rows hold (#229): the comparison from three rows, the note at four or without a comparison, the sparkline at four', () => {
     const has = { sparkline: true, hint: true, change: true, shrink: false, short: false }
-    expect(offered(2, has)).toMatchObject({ sparkline: false, hint: false, change: false })
-    expect(offered(3, has)).toMatchObject({ sparkline: false, hint: false, change: true })
+    expect(offered(2, has)).toMatchObject({ sparkline: false, hint: false, change: 'arrow' }) // no row for the sentence: its arrow alone (#260)
+    expect(offered(3, has)).toMatchObject({ sparkline: false, hint: false, change: 'line' })
     expect(offered(3, { ...has, change: false })).toMatchObject({ hint: true })
-    expect(offered(4, has)).toMatchObject({ sparkline: true, hint: true, change: true })
+    expect(offered(4, has)).toMatchObject({ sparkline: true, hint: true, change: 'line' })
   })
 })

@@ -6,7 +6,8 @@ import { visuallyHidden } from '../components/visuallyHidden.ts'
 import type { DistanceUnit, VehicleTrendQuery, VolumeUnit } from '../gql/generated.ts'
 import { useErrorText } from '../i18n/errors.ts'
 import { useFormat } from '../i18n/format.ts'
-import { Change, Kpi, ValueWithUnit } from './Kpi.tsx'
+import { useChangeWords } from './changeWords.ts'
+import { Kpi, ValueWithUnit } from './Kpi.tsx'
 import { comparedWith, namesFillUps, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
 
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
@@ -21,6 +22,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
   const { t } = useTranslation()
   const format = useFormat()
   const errorText = useErrorText()
+  const wordsOf = useChangeWords()
   const none = t('dashboard.kpi.none')
   // The answer and its period are what the card shows in words: a new one fits it afresh (#259).
   const fitKey = JSON.stringify([p, data ?? null, !!error])
@@ -60,7 +62,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           fitKey={fitKey}
           value={main ? format.money(main.recent ?? 0, main.currency) : none}
           hint={others.length > 0 ? others.map((c) => format.money(c.recent ?? 0, c.currency)).join(' · ') : undefined}
-          change={main && <Change recent={main.recent} earlier={main.earlier} than={than} meaning="worseUp" size={(v) => format.money(v, main.currency)} none={t('dashboard.trend.nothingBefore')} />}
+          change={main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.money(v, main.currency), none: t('dashboard.trend.nothingBefore') })}
         />
       )
     }
@@ -73,7 +75,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           chip={chip}
           fitKey={fitKey}
           value={main?.recent != null ? <ValueWithUnit {...format.costPerDistanceParts(main.recent, main.currency, units.distance)} /> : none}
-          change={main && <Change recent={main.recent} earlier={main.earlier} than={than} meaning="worseUp" size={(v) => format.costPerDistance(v, main.currency, units.distance)} none={t('dashboard.trend.nothingBefore')} noneRecent={t('dashboard.trend.nothingDriven')} />}
+          change={main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.costPerDistance(v, main.currency, units.distance), none: t('dashboard.trend.nothingBefore'), noneRecent: t('dashboard.trend.nothingDriven') })}
         />
       )
     }
@@ -89,17 +91,15 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           fitKey={fitKey}
           value={c?.recent != null ? <ValueWithUnit {...format.consumptionParts(c.recent, units)} /> : none}
           hint={c ? (fillUps ? t('dashboard.kpi.fillUpsIn', { count: c.recentFillUps }) : t('dashboard.kpi.lastFillUps', { count: c.recentFillUps })) : undefined}
-          change={
-            <Change
-              recent={c?.recent}
-              earlier={c?.earlier}
-              fuel
-              than={than}
-              meaning="worseUp"
-              wrap={fillUps && c ? (sentence) => t('dashboard.trend.fillUpCounts', { sentence, recent: c.recentFillUps, earlier: c.earlierFillUps }) : undefined}
-              none={t('dashboard.trend.tooFew')}
-            />
-          }
+          change={wordsOf({
+            recent: c?.recent,
+            earlier: c?.earlier,
+            fuel: true,
+            than,
+            meaning: 'worseUp',
+            wrap: fillUps && c ? (sentence) => t('dashboard.trend.fillUpCounts', { sentence, recent: c.recentFillUps, earlier: c.earlierFillUps }) : undefined,
+            none: t('dashboard.trend.tooFew'),
+          })}
         />
       )
     }
@@ -112,7 +112,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           chip={chip}
           fitKey={fitKey}
           value={d?.recent != null ? format.distance(d.recent, units.distance) : none}
-          change={d && <Change recent={d.recent} earlier={d.earlier} than={than} meaning="neutral" size={(v) => format.distance(v, units.distance)} none={t('dashboard.trend.nothingBefore')} />}
+          change={d ? wordsOf({ recent: d.recent, earlier: d.earlier, than, meaning: 'neutral', size: (v) => format.distance(v, units.distance), none: t('dashboard.trend.nothingBefore') }) : undefined}
         />
       )
     }
