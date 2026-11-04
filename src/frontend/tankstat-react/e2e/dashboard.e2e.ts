@@ -386,7 +386,7 @@ const daysAgo = (days: number, years = 0) => {
   return d.toISOString().slice(0, 10)
 }
 
-test('sets a trend figure\'s period from its chip, and one while arranging, each kept after a reload (#230)', async ({ page }) => {
+test('sets trend figures\' periods from their chips on the edit strips, kept with the arrangement and saved with it, and no chip outside Customize (#230, #260)', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   // A fill-up in the last 8 weeks and one a year before it: the figure compares HUF 24,000 with 20,000.
@@ -398,22 +398,40 @@ test('sets a trend figure\'s period from its chip, and one while arranging, each
     { id: 'odometer', x: 2, y: 0, w: 1, h: 3, pinned: false },
   ])
   await openVehicle(page, vehicle.id)
+  const chips = region(page).getByRole('button', { name: /period: .+\. Change it$/ })
+  await expect(region(page).getByText('HUF 4,000 (20%) more than the 12 months before')).toBeVisible()
+  await expect(chips).toHaveCount(0) // outside Customize no chip: the arrow says the period when it stands alone (#260)
 
-  await page.getByRole('button', { name: 'Spending period: 12 full months. Change it' }).click()
+  // While arranging, each trend tile's chip is on its strip, outlined, outside the card.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  const spendingChip = tile(page, 'spendingTrend').getByRole('button', { name: 'Spending period: 12 full months. Change it' })
+  await expect(spendingChip).toBeVisible()
+  await expect(tile(page, 'spendingTrend').locator('.MuiCard-root').getByRole('button', { name: /period/ })).toHaveCount(0)
+  await expectSoundLayout(page) // the strip's chips 44 px to a finger on a phone, nothing past the screen
+  await spendingChip.click()
   const spending = page.getByRole('dialog', { name: 'Period of Spending' })
+  await expect(spending.getByText('Kept with the arrangement you are editing until you save it.')).toBeVisible()
   await spending.getByRole('tab', { name: 'Last' }).click()
   await spending.getByRole('combobox', { name: 'Compared with' }).click()
   await page.getByRole('option', { name: 'The same dates a year earlier' }).click()
   await expect(spending.getByText('HUF 4,000 (20%) more than the same 8 weeks a year earlier')).toBeVisible() // the server's answer for the draft
   await expect(spending.getByTestId('trend-timeline')).toBeVisible()
-  await expectSoundLayout(page) // the popover inside the screen, its controls 44 px on a phone, the chip too
+  await expectSoundLayout(page) // the popover inside the screen, its controls 44 px on a phone
   await spending.getByRole('button', { name: 'Apply' }).click()
-  await expect(page.getByText('Period saved.')).toBeVisible()
-  await expect(region(page).getByText('HUF 4,000 (20%) more than the same 8 weeks a year earlier')).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText(/^Spending now shows Last 8 weeks/)
+  await page.getByRole('button', { name: 'Distance driven period: This year. Change it' }).click()
+  const distance = page.getByRole('dialog', { name: 'Period of Distance driven' })
+  await distance.getByRole('tab', { name: 'Since' }).click() // starts from the first day of the month three months back
+  await expect(distance.getByTestId('trend-timeline')).toBeVisible()
+  await distance.getByRole('button', { name: 'Apply' }).click()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText(/^Distance driven now shows Since /)
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
 
   await page.reload()
   await pageLoaded(page)
-  await expect(page.getByRole('button', { name: 'Spending period: Last 8 weeks · vs a year earlier. Change it' })).toBeVisible()
+  await expect(region(page).getByText('HUF 4,000 (20%) more than the same 8 weeks a year earlier')).toBeVisible()
+  await expect(chips).toHaveCount(0)
   const periods = async () => {
     const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown }[] } } } }>(
       page,
@@ -422,24 +440,12 @@ test('sets a trend figure\'s period from its chip, and one while arranging, each
     )
     return Object.fromEntries(data.vehicle.dashboard.shared.tiles.map((t) => [t.id, t.period]))
   }
-  expect((await periods()).spendingTrend).toEqual({ kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' })
-
-  // While arranging, a period goes with the tiles being edited and is saved with them.
+  const read = await periods()
+  expect(read.spendingTrend).toEqual({ kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' })
+  expect(read.distanceTrend).toMatchObject({ kind: 'SINCE', against: 'YEAR_EARLIER' }) // its own comparison kept
   await page.getByRole('button', { name: 'Customize' }).click()
-  await page.getByRole('button', { name: 'Distance driven period: This year. Change it' }).click()
-  const distance = page.getByRole('dialog', { name: 'Period of Distance driven' })
-  await expect(distance.getByText('Kept with the arrangement you are editing until you save it.')).toBeVisible()
-  await distance.getByRole('tab', { name: 'Since' }).click() // starts from the first day of the month three months back
-  await expect(distance.getByTestId('trend-timeline')).toBeVisible()
-  await expectSoundLayout(page)
-  await distance.getByRole('button', { name: 'Apply' }).click()
-  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText(/^Distance driven now shows Since /)
-  await page.getByRole('button', { name: 'Save dashboard' }).click()
-  await expect(page.getByText('Saved.')).toBeVisible()
-  await page.reload()
-  await pageLoaded(page)
+  await expect(page.getByRole('button', { name: 'Spending period: Last 8 weeks · vs a year earlier. Change it' })).toBeVisible()
   await expect(page.getByRole('button', { name: /^Distance driven period: Since .+\. Change it$/ })).toBeVisible()
-  expect((await periods()).distanceTrend).toMatchObject({ kind: 'SINCE', against: 'YEAR_EARLIER' }) // its own comparison kept
 })
 
 const figureHeights = async (page: Page, vehicleId: string) => Object.fromEntries((await stored(page, vehicleId)).shared!.tiles.filter((t) => !t.id.includes(':')).map((t) => [t.id, t.h]))
@@ -520,15 +526,10 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await keyboardFocus(page, more)
   await expect(page.getByRole('tooltip')).toHaveText(/^(?=.*€40\.00)(?=.*\$50\.00)(?=.*£30\.00)(?=.*CHF.20\.00)/)
   await page.keyboard.press('Escape')
+  // Outside Customize the label has the row to itself (no chip, #260): whole, no tab stop, in a desktop column too.
   const consumptionLabel = tile(page, 'consumptionTrend').locator('[data-kpi="label"]')
   await expect(consumptionLabel).toHaveText('Consumption change')
-  if (isMobile) await expect(consumptionLabel).not.toHaveAttribute('tabindex') // a phone's tile has room for it beside its chip
-  else {
-    // A desktop column: the label beside its chip is cut, a tab stop showing it whole.
-    await expect(consumptionLabel).toHaveAttribute('tabindex', '0')
-    await keyboardFocus(page, consumptionLabel)
-    await expect(page.getByRole('tooltip')).toHaveText('Consumption change')
-  }
+  await expect(consumptionLabel).not.toHaveAttribute('tabindex')
   // Its unit small beside the amount, on one line.
   await expect(tile(page, 'costPerDistance').locator('[data-kpi="value"]')).toHaveText(/^HUF\s[\d,]+ \/ 100 km$/)
   await expect(tile(page, 'costPerDistance').locator('[data-kpi="value"] > span')).toHaveText('/ 100 km')
@@ -568,23 +569,18 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await page.getByRole('button', { name: 'Cancel' }).click()
 
-  // Three rows in Hungarian: a comparison line with no room becomes its arrow, its row empty; on a phone the line fits.
+  // Three rows in Hungarian: Consumption change's comparison is either its line whole or its arrow alone (named by the sentence), never
+  // both and never cut. With no chip beside the label outside Customize (#260) the line takes 98 of 100 px on a desktop, so the fonts
+  // decide which; a line with no room becoming its arrow is Kpi.integration's and KpiFit's to pin.
   await arrange(page, vehicle.id, lowFigures(3))
   await page.addInitScript(() => localStorage.setItem('tankstat.language', 'hu'))
   await page.reload()
   await pageLoaded(page)
   await expect(spentTile(page).locator('[data-kpi="label"]')).toHaveText('Költés ebben a hónapban')
-  const comparison = tile(page, 'consumptionTrend').getByText(/üzemanyagot használ/)
+  const line = tile(page, 'consumptionTrend').getByText(/üzemanyagot használ/)
   const arrow = tile(page, 'consumptionTrend').locator('[data-kpi="value-row"] > button')
-  if (isMobile) {
-    await expect(comparison).toBeVisible()
-    await expect(arrow).toHaveCount(0)
-  } else {
-    await expect(tile(page, 'consumptionTrend').locator('[data-kpi="value"]')).toHaveText(/l\/100 km$/)
-    await expect(comparison).toHaveCount(0)
-    await expect(arrow).toHaveAccessibleName(/üzemanyagot használ.*\(Utolsó 10 tankolás\)$/)
-    await expect(tile(page, 'consumptionTrend').getByText('utolsó 10 tankolás', { exact: true })).toHaveCount(0) // the note does not take its row
-  }
+  await expect.poll(async () => (await line.count()) + (await arrow.count())).toBe(1)
+  if (await arrow.count()) await expect(arrow).toHaveAccessibleName(/üzemanyagot használ.*\(Utolsó 10 tankolás\)$/)
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page)
 })
