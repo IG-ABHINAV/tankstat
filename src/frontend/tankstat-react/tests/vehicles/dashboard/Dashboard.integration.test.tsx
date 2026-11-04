@@ -351,7 +351,7 @@ it('shows what a figure\'s rows hold: label and value at two, the comparison or 
   expect(figureLabels()).toEqual(['Odometer', 'Average consumption', 'Spent this month', 'Last fill-up', 'Distance driven', 'Spending'])
 })
 
-it('makes a figure shorter down to what its content needs, and saves the rows (#229)', async () => {
+it('makes a figure shorter down to two rows, its label and value, and saves the rows (#229, #259)', async () => {
   const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
   await screen.findByRole('heading', { name: 'Monthly costs' })
   await ui.click(screen.getByRole('button', { name: 'Customize' }))
@@ -366,16 +366,18 @@ it('makes a figure shorter down to what its content needs, and saves the rows (#
   await ui.keyboard('{Escape}')
   await tileMenu(ui, 'Spent this month', 'Shorter')
   expect(said()).toHaveTextContent('Spent this month is now 1 wide and 3 tall.')
+  await tileMenu(ui, 'Spent this month', 'Shorter')
+  expect(said()).toHaveTextContent('Spent this month is now 1 wide and 2 tall.') // its card fits several currencies to two rows (#259)
   await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   await ui.click(screen.getByRole('button', { name: 'Options for Spent this month' }))
-  expect(screen.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true') // its value lists every currency: three rows
+  expect(screen.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
   await ui.keyboard('{Escape}')
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; h: number }[] } }).input.tiles
   expect(tiles.find((t) => t.id === 'odometer')).toMatchObject({ h: 2 })
-  expect(tiles.find((t) => t.id === 'thisMonth')).toMatchObject({ h: 3 })
+  expect(tiles.find((t) => t.id === 'thisMonth')).toMatchObject({ h: 2 })
   expect(tiles.find((t) => t.id === 'consumption')).toMatchObject({ h: 4 })
 })
 
@@ -434,7 +436,7 @@ it('with sign-in off, everyone is the same visitor: the vehicle\'s dashboard onl
 it('words the trend figures with an arrow and a change, never by colour alone', async () => {
   setup(fakeVehicle(), [], undefined, {
     signedIn: true,
-    arranged: (s) => (s.dashboard.shared = layout({ tiles: [fakeTile('spendingTrend', 0, 0, 1, 3), fakeTile('costPerDistance', 1, 0, 1, 3), fakeTile('consumptionTrend', 2, 0, 1, 3), fakeTile('distanceTrend', 3, 0, 1, 3)] })),
+    arranged: (s) => (s.dashboard.shared = layout({ tiles: [fakeTile('spendingTrend', 0, 0, 1, 3), fakeTile('costPerDistance', 1, 0, 1, 4), fakeTile('consumptionTrend', 2, 0, 1, 4), fakeTile('distanceTrend', 3, 0, 1, 3)] })),
   })
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })

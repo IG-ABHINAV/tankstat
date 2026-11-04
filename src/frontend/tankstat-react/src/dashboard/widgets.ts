@@ -79,34 +79,34 @@ export interface Size {
 }
 
 /**
- * A key figure shows what its rows hold (#229, `Figures.tsx`): two rows (84 px) its label and value, three (132 px) its comparison or note
- * too, four (180 px) its sparkline as well. The least rows each needs are those its label and value take in a one-column desktop tile, as
- * measured: *Spent this month* lists every currency, so its value wraps with two; *Cost per distance*'s label and value wrap; *Consumption,
- * latest fill-ups*' label wraps in Hungarian, and its comparison line takes three. Its default rows are what it shows in full: the
- * sparkline's and the trend figures' four, the plain figures' three.
+ * A key figure shows what its rows hold (#229, `Kpi.tsx`): two rows (84 px) its label and value, three (132 px) its comparison or note
+ * too, four (180 px) its sparkline as well. Every figure can be made as low as two rows (#259): its card fits what it shows to its height by
+ * measuring (`Kpi.tsx`), leaving out from the bottom what has no room and putting a label or value that would wrap on one line, so the
+ * least rows never depend on a width, a language or the currencies used. Its default rows are what it shows in full: the sparkline's and
+ * the trend figures' four, the plain figures' three.
  */
-const FIGURE_ROWS: Record<FigureId, { min: number; default: number }> = {
-  thisMonth: { min: 3, default: 4 },
-  consumption: { min: 2, default: 3 },
-  odometer: { min: 2, default: 3 },
-  lastFillUp: { min: 2, default: 3 },
-  spendingTrend: { min: 2, default: 4 },
-  costPerDistance: { min: 4, default: 4 },
-  consumptionTrend: { min: 4, default: 4 },
-  distanceTrend: { min: 2, default: 4 },
+const FIGURE_ROWS: Record<FigureId, number> = {
+  thisMonth: 4,
+  consumption: 3,
+  odometer: 3,
+  lastFillUp: 3,
+  spendingTrend: 4,
+  costPerDistance: 4,
+  consumptionTrend: 4,
+  distanceTrend: 4,
 }
-/** The fewest rows any figure can take: what the grid's edit mode must leave a tile's content (`DashboardGrid`). */
-export const MIN_FIGURE_ROWS = Math.min(...Object.values(FIGURE_ROWS).map((r) => r.min))
+/** The fewest rows a figure can take, its label and value: also what the grid's edit mode must leave a tile's content (`DashboardGrid`). */
+export const MIN_FIGURE_ROWS = 2
 
 /** A widget's size when it is put on the dashboard: a figure one column wide and as low as it shows in full, a chart two columns wide and tall. */
 export function defaultSize(id: string): Size {
   const widget = widgetOf(id)
-  return widget?.kind === 'figure' ? { w: 1, h: FIGURE_ROWS[widget.id].default } : { w: 2, h: 8 }
+  return widget?.kind === 'figure' ? { w: 1, h: FIGURE_ROWS[widget.id] } : { w: 2, h: 8 }
 }
-/** The least a tile can be: a figure its label and value (`FIGURE_ROWS`), a chart its picture. */
+/** The least a tile can be: a figure its label and value (`MIN_FIGURE_ROWS`), a chart its picture. */
 export function minSize(id: string): Size {
   const widget = widgetOf(id)
-  return widget?.kind === 'figure' ? { w: 1, h: FIGURE_ROWS[widget.id].min } : { w: 1, h: 5 }
+  return widget?.kind === 'figure' ? { w: 1, h: MIN_FIGURE_ROWS } : { w: 1, h: 5 }
 }
 
 const tile = (id: string, x: number, y: number, w: number, h: number): Tile => ({ id, x, y, w, h, pinned: false })

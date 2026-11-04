@@ -137,33 +137,35 @@ describe('the tile menu', () => {
     expect(places(moveTile(start, presetKey('distance'), 1))).toEqual(places(start))
   })
 
-  it('gives each figure the rows it needs and shows in full, and lifts a stored figure only up to what it needs (#229)', () => {
+  it('lets every figure go down to two rows, gives each the rows it shows in full, and lifts a stored figure only up to two (#229, #259)', () => {
+    // Every figure fits what it shows to its card by measuring (#259), so the least is its label and value: two rows, whatever it lists.
     expect(Object.fromEntries(FIGURES.map((f) => [f, `${minSize(f).h}..${defaultSize(f).h}`]))).toEqual({
-      thisMonth: '3..4', // its value lists every currency, two of them wrap in a desktop column
+      thisMonth: '2..4',
       consumption: '2..3',
       odometer: '2..3',
       lastFillUp: '2..3',
       spendingTrend: '2..4',
-      costPerDistance: '4..4', // its label and its value wrap
-      consumptionTrend: '4..4', // its label wraps in Hungarian, its comparison takes three lines
+      costPerDistance: '2..4',
+      consumptionTrend: '2..4',
       distanceTrend: '2..4',
     })
     expect(MIN_FIGURE_ROWS).toBe(2)
     expect(minSize(presetKey('distance'))).toEqual({ w: 1, h: 5 })
     expect(defaultSize(chartKey('x'))).toEqual({ w: 2, h: 8 })
-    // Shorter stops where each figure's content would be cut.
+    // Shorter stops at two rows for every figure, the ones whose words wrap in a desktop column too.
     const row = [tile('odometer', 0, 0, 1, 3), tile('thisMonth', 1, 0, 1, 4), tile('costPerDistance', 2, 0, 1, 4)]
     expect(places(resizeTile(resizeTile(row, 'odometer', { h: -1 }), 'odometer', { h: -1 }))).toContain('odometer@0,0 1x2')
-    expect(places(resizeTile(resizeTile(row, 'thisMonth', { h: -1 }), 'thisMonth', { h: -1 }))).toContain('thisMonth@1,0 1x3')
-    expect(places(resizeTile(row, 'costPerDistance', { h: -1 }))).toContain('costPerDistance@2,0 1x4')
-    // A stored arrangement is only ever raised to what a figure needs: these two were saved three rows high.
-    expect(places(resolveLayout({ tiles: [tile('costPerDistance', 0, 0, 1, 3), tile('odometer', 1, 0, 1, 3)], hidden: [] }, []).tiles)).toEqual(['costPerDistance@0,0 1x4', 'odometer@1,0 1x3'])
+    const lowered = resizeTile(resizeTile(resizeTile(row, 'thisMonth', { h: -1 }), 'thisMonth', { h: -1 }), 'thisMonth', { h: -1 })
+    expect(places(lowered)).toContain('thisMonth@1,0 1x2')
+    expect(places(resizeTile(resizeTile(resizeTile(row, 'costPerDistance', { h: -1 }), 'costPerDistance', { h: -1 }), 'costPerDistance', { h: -1 }))).toContain('costPerDistance@2,0 1x2')
+    // A stored arrangement is kept as it was saved down to two rows, and only a figure stored lower is raised to them.
+    expect(places(resolveLayout({ tiles: [tile('costPerDistance', 0, 0, 1, 3), tile('odometer', 1, 0, 1, 1)], hidden: [] }, []).tiles)).toEqual(['costPerDistance@0,0 1x3', 'odometer@1,0 1x2'])
   })
 
   it('resizes a tile by a step within its least size and the grid, and pins it', () => {
     expect(places(resizeTile(start, presetKey('distance'), { w: 1, h: 1 }))).toContain('preset:distance@0,3 3x9')
     expect(places(resizeTile(start, presetKey('distance'), { w: -1 }))).toContain('preset:distance@0,3 1x8')
-    expect(places(resizeTile(start, 'thisMonth', { w: -1, h: -1 }))).toContain('thisMonth@0,0 1x3') // no smaller than its value with every currency needs: three rows (this one was stored lower)
+    expect(places(resizeTile(start, 'thisMonth', { w: -1, h: -1 }))).toContain('thisMonth@0,0 1x2') // no lower than two rows, its label and value (#259)
     expect(places(resizeTile([tile('odometer', 3, 0, 1, 3)], 'odometer', { w: 1 }))).toEqual(['odometer@2,0 2x3']) // widened at the right edge: moved left
     expect(pinTile(start, 'odometer', true).find((t) => t.id === 'odometer')?.pinned).toBe(true)
   })
