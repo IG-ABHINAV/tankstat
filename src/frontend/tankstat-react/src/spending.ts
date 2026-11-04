@@ -14,8 +14,11 @@ export interface CurrencySpend {
  */
 export function spentText(spending: readonly CurrencySpend[], month: 'thisMonth' | 'lastMonth', format: ReturnType<typeof useFormat>): string | null {
   const parts = spentParts(spending, month, format)
-  return parts && [parts.main, ...parts.others].join(' · ')
+  return parts && joinSpent(parts)
 }
+
+/** The amounts of `spentParts` in one line, main currency first, as `spentText` writes them. */
+export const joinSpent = (parts: { main: string; others: string[] }) => [parts.main, ...parts.others].join(' · ')
 
 /** The same amounts apart, the main currency's and the others' (#259: a key figure too narrow for them all shows the main one and "+1"). */
 export function spentParts(spending: readonly CurrencySpend[], month: 'thisMonth' | 'lastMonth', format: ReturnType<typeof useFormat>): { main: string; others: string[] } | null {

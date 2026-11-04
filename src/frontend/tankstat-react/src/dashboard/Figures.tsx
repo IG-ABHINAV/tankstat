@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { DistanceUnit, VehicleDashboardQuery, VolumeUnit } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
-import { spentParts, spentText } from '../spending.ts'
+import { joinSpent, spentParts, spentText } from '../spending.ts'
 import { LazySparkline } from './LazySparkline.tsx'
 import { Kpi, MoreCount, ValueWithUnit } from './Kpi.tsx'
 import type { PeriodControl } from './TrendPeriodPopover.tsx'
@@ -23,8 +23,8 @@ export function Figure({ id, vehicleId, period, control, rows, summary: s, units
   if (isTrendFigure(id)) return <TrendTile figure={id} vehicleId={vehicleId} period={period} control={control} rows={rows} units={units} />
   switch (id) {
     case 'thisMonth': {
-      const spent = (s && spentText(s.spending, 'thisMonth', format)) ?? none
       const parts = s && spentParts(s.spending, 'thisMonth', format)
+      const spent = parts ? joinSpent(parts) : none
       return (
         <Kpi
           rows={rows}
