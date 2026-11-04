@@ -1,6 +1,6 @@
 import { type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, openVehicle, signInAsNewUser } from './support/app.ts'
+import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
 // The dashboard's charts as they are drawn (jsdom lays nothing out): costs in two currencies, each on a scale of its own (#159).
@@ -81,6 +81,32 @@ test('draws a chart of costs in two currencies on a scale for each, with only th
   const years = [...new Set([0, 11].map((back) => monthStart(back).slice(0, 4)))]
   for (const year of years) expect(labels.join(' ')).toContain(year)
   await expectSoundLayout(page)
+})
+
+test('a chart that first had no data names as many months once its data comes in as after a reload (#237)', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // The dashboard seen empty: its chart answers stay in the page's cache and draw the charts first when the tab comes back.
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByText('No data for this period yet.').first()).toBeVisible()
+  let odometer = 10_000
+  for (let back = 11; back >= 0; back--) {
+    odometer += 500
+    await logRefueling(page, vehicle.id, { date: monthStart(back), odometer })
+  }
+  await page.getByRole('tab', { name: 'Refuelings' }).click()
+  await expect(page.getByRole('tab', { name: 'Refuelings' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: 'Dashboard' }).click()
+
+  // Twelve labels is every month named: the width never measured. A chart measured names only those that fit (6 on a desktop, 4 on a phone).
+  const named = async () => (await measureChart(page, 'Monthly costs')).labels.filter(Boolean).length
+  await expect.poll(named).toBeGreaterThan(0)
+  await expect.poll(named).toBeLessThan(12)
+  const inPlace = await named()
+
+  await page.reload()
+  await pageLoaded(page)
+  await expect.poll(named).toBe(inPlace)
 })
 
 test('draws a moving average and a year earlier as lines over the bars, on the bars\' scale, the bars still one width and evenly placed', async ({ page, isMobile }) => {

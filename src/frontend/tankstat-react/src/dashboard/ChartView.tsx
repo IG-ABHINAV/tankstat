@@ -14,7 +14,7 @@ import { ChartsWrapper } from '@mui/x-charts/ChartsWrapper'
 import { AreaPlot, LineChart, LinePlot, MarkPlot } from '@mui/x-charts/LineChart'
 import { PieChart } from '@mui/x-charts/PieChart'
 import { useReducedMotion } from 'motion/react'
-import { useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
@@ -42,18 +42,21 @@ const BAR_GAP_RATIO = 0.1
  */
 const LABEL_ROOM = { bars: 18, points: 32 }
 
-/** How wide an element is now (0 until it is laid out, and in jsdom): the axis names as many periods as fit in it. */
-function useWidth(): [RefObject<HTMLElement | null>, number] {
-  const ref = useRef<HTMLElement>(null)
+/**
+ * How wide an element is now (0 until it is laid out, and in jsdom): the axis names as many periods as fit in it. The element comes
+ * through a callback ref, so it is measured whenever it is rendered: a chart that first said it had no data has no figure at mount, and
+ * gets one when its data comes in (#237). The last width is kept while it is gone, so a figure coming back names no extra periods meanwhile.
+ */
+function useWidth(): [(element: HTMLElement | null) => void, number] {
+  const [element, setElement] = useState<HTMLElement | null>(null)
   const [width, setWidth] = useState(0)
   useEffect(() => {
-    const element = ref.current
     if (!element || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
-  return [ref, width]
+  }, [element])
+  return [setElement, width]
 }
 
 /** How tall a chart's picture is on its own (the builder's preview); in a card that fills its tile (`fill`) it gets at least `MIN_PICTURE`, below which the card scrolls. */
