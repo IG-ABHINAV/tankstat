@@ -2,6 +2,22 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.3 (2026-11-04)
+
+A bugfix release for dialogs.
+
+### Fixed
+
+- **A dialog taller than the screen scrolled as a whole as well as its content** (#249: #252). In Add widget with *Customize this chart* unfolded, the dialog had a second scrollbar beside its content's, and blank space under the content once that one was scrolled. The visually hidden inputs of the segmented choices (and the text saying why a choice is off) were placed against the dialog's frame instead of its content, so one low in the chart builder stretched the frame. They are now placed within the content in every dialog, and within their own row of choices anywhere else, so only a dialog's content scrolls.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. `0.19` and `latest` move to this release.
+
+### For developers
+
+- The real-browser layout check reports a dialog whose frame scrolls, down or sideways, as `dialog "Add widget": its frame scrolls 998/868`; it runs in every dialog's layout check. The Add widget test failed on it at both sizes before the fix.
+
 ## 0.19.2 (2026-11-04)
 
 A bugfix release for the dashboard's charts.
