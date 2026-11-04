@@ -223,6 +223,49 @@ public class DashboardApiTests : IDisposable
     }
 
     [Fact]
+    public async Task ATrendFigure_OverAPeriodOfItsOwn_GivesItsWindowsAndValues_AndABadPeriodIsRefused()
+    {
+        var (alice, bob, _) = await Users();
+        var id = await CarWithLogs(alice);
+        const string trend = "query($id: UUID!, $f: TrendFigure!, $p: TrendPeriodInput!) { vehicleTrend(vehicleId: $id, figure: $f, period: $p) { recent { start end fillUps } earlier { start end fillUps } currencies { currency recent earlier } consumption { recent recentFillUps } distance { recent earlier } } }";
+
+        // The last two fill-ups against the two before: the latest two months' 18 000 and 17 500, the oil change of this month too.
+        var spending = (await alice.Gql(trend, new { id, f = "SPENDING", p = new { kind = "LAST", unit = "FILL_UPS", count = 2 } })).Data().GetProperty("vehicleTrend");
+        Assert.Equal(2, spending.GetProperty("recent").GetProperty("fillUps").GetInt32());
+        Assert.Equal(DateTime.UtcNow.ToString("yyyy-MM-dd"), spending.GetProperty("recent").GetProperty("end").GetString());
+        var huf = Assert.Single(spending.GetProperty("currencies").EnumerateArray());
+        Assert.Equal(("HUF", 70500m), (huf.GetProperty("currency").GetString(), huf.GetProperty("recent").GetDecimal()));
+        // This year so far against last year to the same day: the defaults' fourth.
+        var distance = (await alice.Gql(trend, new { id, f = "DISTANCE", p = new { kind = "THIS_YEAR", against = "YEAR_EARLIER" } })).Data().GetProperty("vehicleTrend");
+        Assert.NotEqual(JsonValueKind.Null, distance.GetProperty("distance").ValueKind);
+
+        Assert.Equal("trend.countRange", (await alice.Gql(trend, new { id, f = "SPENDING", p = new { kind = "LAST", unit = "DAYS", count = 0 } })).ErrorKey());
+        Assert.Equal("trend.sinceRange", (await alice.Gql(trend, new { id, f = "SPENDING", p = new { kind = "SINCE", since = DateTime.UtcNow.AddDays(2).ToString("yyyy-MM-dd") } })).ErrorKey());
+        Assert.Equal("vehicle.notFound", (await bob.Gql(trend, new { id, f = "SPENDING", p = new { kind = "THIS_YEAR" } })).ErrorKey());
+    }
+
+    [Fact]
+    public async Task ATilesPeriod_IsSavedAndReadBack_AndATileWithoutOne_AsAnOlderClientSendsIt_StillSaves()
+    {
+        var (alice, _, _) = await Users();
+        var id = await AddVehicle(alice);
+        const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
+        const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { personal { tiles { id period { kind unit count since whole against } } } } } }";
+        var period = new { kind = "LAST", unit = "WEEKS", count = 8, whole = true, against = "YEAR_EARLIER" };
+
+        await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period }, new { id = "odometer", x = 1, y = 0, w = 1, h = 4 } } } });
+
+        var tiles = (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").GetProperty("tiles");
+        var saved = tiles[0].GetProperty("period");
+        Assert.Equal(("LAST", "WEEKS", 8, true, "YEAR_EARLIER"), (saved.GetProperty("kind").GetString(), saved.GetProperty("unit").GetString(), saved.GetProperty("count").GetInt32(), saved.GetProperty("whole").GetBoolean(), saved.GetProperty("against").GetString()));
+        Assert.Equal(JsonValueKind.Null, saved.GetProperty("since").ValueKind);
+        Assert.Equal(JsonValueKind.Null, tiles[1].GetProperty("period").ValueKind); // the figure's default
+        // A period on a chart, or one that does not hold, is refused whole.
+        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "preset:monthlyCosts", x = 0, y = 0, w = 2, h = 8, period } } } })).ErrorKey());
+        Assert.Equal("trend.wholeNeedsUnit", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "DAYS", count = 8, whole = true } } } } })).ErrorKey());
+    }
+
+    [Fact]
     public async Task StrangersGetNothing()
     {
         var (alice, bob, _) = await Users();

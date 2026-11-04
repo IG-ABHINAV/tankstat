@@ -1,6 +1,7 @@
 using Tankstat.Application.Access;
 using Tankstat.Application.Auth;
 using Tankstat.Application.Vehicles;
+using Tankstat.Domain;
 using Tankstat.Domain.Access;
 using Tankstat.Domain.Charts;
 using Tankstat.Domain.Vehicles;
@@ -20,6 +21,20 @@ public sealed class StatsService(IVehicleRepository vehicles, IStatsRepository s
         config = config.Validated();
         await RequireVisibleAsync(vehicleId, ct);
         return StatsCalculator.Chart(config, await stats.LoadAsync(vehicleId, ct), Today);
+    }
+
+    /// <summary>
+    /// A trend figure over its own period (#230), checked against today first (<see cref="TrendPeriod.Validated"/>), in the main currency the
+    /// summary headlines; <c>vehicle.notFound</c> for a vehicle that is not visible, as a chart's.
+    /// </summary>
+    public async Task<TrendFigureData> TrendAsync(Guid vehicleId, TrendFigure figure, TrendPeriod period, CancellationToken ct)
+    {
+        var today = Today;
+        period = period.Validated(today);
+        if (!Enum.IsDefined(figure)) throw new DomainException("trend.invalid", "This period is not valid.");
+        await RequireVisibleAsync(vehicleId, ct);
+        var data = await stats.LoadAsync(vehicleId, ct);
+        return StatsCalculator.Trend(data, figure, period, today, StatsCalculator.MainCurrency(data, today));
     }
 
     /// <summary>Null when the vehicle is not visible.</summary>

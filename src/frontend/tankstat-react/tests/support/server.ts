@@ -19,6 +19,8 @@ export const server = setupServer(
   // The Standard preset's ready-made charts ask for their data (the grid draws them once it is measured, which can be after the test that
   // passed through the page has ended): nothing to draw.
   graphql.query('ChartData', () => HttpResponse.json({ data: { vehicleChartData: { __typename: 'ChartData', unit: 'CURRENCY', series: [] } } })),
+  // A trend figure asks for its own (#230): nothing in either window.
+  graphql.query('VehicleTrend', () => HttpResponse.json({ data: { vehicleTrend: emptyTrend() } })),
   graphql.query('RecurringExpenses', ({ variables }) =>
     HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.vehicleId, recurring: [] } } }),
   ),
@@ -93,4 +95,10 @@ export async function answered() {
     // A turn of the event loop: a request the app has just sent reaches msw (and this count) a few ticks after its fetch.
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
   } while (inFlight.size > 0)
+}
+
+/** A trend figure with nothing in either window, as the server answers a vehicle without logs. */
+export const emptyTrend = () => {
+  const window = { __typename: 'TrendWindow', start: '2026-10-01', end: '2026-10-01', fillUps: 0 }
+  return { __typename: 'TrendFigureData', recent: window, earlier: { ...window }, currencies: [], consumption: null, distance: null }
 }

@@ -88,6 +88,11 @@ type Query {
   importFormats: [String!]!
   vehicleChartData(vehicleId: UUID!, config: ChartConfigInput!): ChartData!
     @cost(weight: "10")
+  vehicleTrend(
+    vehicleId: UUID!
+    figure: TrendFigure!
+    period: TrendPeriodInput!
+  ): TrendFigureData! @cost(weight: "10")
   vehicleCharts(vehicleId: UUID!): [VehicleChart!]! @cost(weight: "10")
   uiSettings: UiSettingsInfo! @cost(weight: "10")
   offlineChanges(input: OfflineChangesInput!): OfflineChanges!
@@ -353,6 +358,7 @@ type DashboardTileInfo {
   w: Int!
   h: Int!
   pinned: Boolean!
+  period: TrendPeriod
 }
 
 type DashboardTrends {
@@ -815,6 +821,29 @@ type SystemSettingsInfo {
   folders: [ServerFolder!]!
 }
 
+type TrendFigureData {
+  recent: TrendWindow!
+  earlier: TrendWindow!
+  currencies: [CurrencyChange!]!
+  consumption: ConsumptionChange
+  distance: ValueChange
+}
+
+type TrendPeriod {
+  kind: TrendWindowKind!
+  unit: TrendUnit
+  count: Int
+  since: LocalDate
+  whole: Boolean!
+  against: TrendComparison!
+}
+
+type TrendWindow {
+  start: LocalDate!
+  end: LocalDate!
+  fillUps: Int!
+}
+
 type UiSettingsInfo {
   navOpen: Boolean
   language: String
@@ -1051,6 +1080,7 @@ input DashboardTileInput {
   w: Int!
   h: Int!
   pinned: Boolean
+  period: TrendPeriodInput
 }
 
 input DeleteUserInput {
@@ -1199,6 +1229,15 @@ input SystemSettingChangeInput {
   key: String!
   value: String
   clear: Boolean! = false
+}
+
+input TrendPeriodInput {
+  kind: TrendWindowKind!
+  unit: TrendUnit
+  count: Int
+  since: LocalDate
+  whole: Boolean
+  against: TrendComparison
 }
 
 input UpdateExpenseInput {
@@ -1634,6 +1673,32 @@ enum SyncTargetState {
 enum TimeFormat {
   TWENTY_FOUR_HOUR
   TWELVE_HOUR
+}
+
+enum TrendComparison {
+  BEFORE
+  YEAR_EARLIER
+}
+
+enum TrendFigure {
+  SPENDING
+  COST_PER_DISTANCE
+  CONSUMPTION
+  DISTANCE
+}
+
+enum TrendUnit {
+  DAYS
+  WEEKS
+  MONTHS
+  YEARS
+  FILL_UPS
+}
+
+enum TrendWindowKind {
+  LAST
+  SINCE
+  THIS_YEAR
 }
 
 enum UserDataDisposition {

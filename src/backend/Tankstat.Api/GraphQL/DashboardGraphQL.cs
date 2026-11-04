@@ -33,6 +33,12 @@ public sealed class VehicleChartType : ObjectType<VehicleChart>
     }
 }
 
+/// <summary>A trend figure's period as stored with its tile: its fields only, never the domain's check.</summary>
+public sealed class TrendPeriodType : ObjectType<TrendPeriod>
+{
+    protected override void Configure(IObjectTypeDescriptor<TrendPeriod> descriptor) => descriptor.Ignore(p => p.Validated(default));
+}
+
 [ExtendObjectType<VehicleChart>]
 public sealed class VehicleChartExtensions
 {
@@ -69,19 +75,29 @@ public sealed class VehicleSummaryExtensions
 /// <param name="X">The column (0 to 3) and <paramref name="Y"/> the row of the tile's top left in a grid of four columns.</param>
 /// <param name="W">Columns wide (1 to 4) and <paramref name="H"/> rows tall.</param>
 /// <param name="Pinned">Never moved by dragging the other tiles.</param>
-public sealed record DashboardTileInfo(string Id, int X, int Y, int W, int H, bool Pinned);
+/// <param name="Period">A key figure's own period (#230); null for its default (and for every chart).</param>
+public sealed record DashboardTileInfo(string Id, int X, int Y, int W, int H, bool Pinned, TrendPeriod? Period);
 
 /// <param name="Tiles">The tiles shown (a saved chart none names is shown at the end).</param>
 /// <param name="Hidden">The saved charts taken off the dashboard.</param>
 public sealed record DashboardLayoutInfo(IReadOnlyList<DashboardTileInfo> Tiles, IReadOnlyList<string> Hidden, DateTimeOffset UpdatedAt)
 {
     public static DashboardLayoutInfo? From(DashboardLayout? layout) =>
-        layout is null ? null : new(layout.Tiles.Select(t => new DashboardTileInfo(t.Id, t.X, t.Y, t.W, t.H, t.Pinned)).ToList(), layout.Hidden, layout.UpdatedAt);
+        layout is null ? null : new(layout.Tiles.Select(t => new DashboardTileInfo(t.Id, t.X, t.Y, t.W, t.H, t.Pinned, t.Period)).ToList(), layout.Hidden, layout.UpdatedAt);
 }
 
-public sealed record DashboardTileInput(string Id, int X, int Y, int W, int H, bool? Pinned)
+/// <param name="Period">A key figure's own period; null or left out is its default (an older client sends none).</param>
+public sealed record DashboardTileInput(string Id, int X, int Y, int W, int H, bool? Pinned, TrendPeriodInput? Period = null)
 {
-    public DashboardTile ToDomain() => new(Id, X, Y, W, H, Pinned ?? false);
+    public DashboardTile ToDomain() => new(Id, X, Y, W, H, Pinned ?? false, Period?.ToDomain());
+}
+
+/// <summary>A trend figure's period (#230): the last N units (<paramref name="Unit"/>, <paramref name="Count"/>), since a date, or this year so far.</summary>
+/// <param name="Whole">Weeks, months or years whole (Monday to Sunday, calendar months and years, the running one left out); null or left out is false.</param>
+/// <param name="Against">What the period is compared with; null or left out is the period before.</param>
+public sealed record TrendPeriodInput(TrendWindowKind Kind, TrendUnit? Unit, int? Count, DateOnly? Since, bool? Whole = null, TrendComparison? Against = null)
+{
+    public TrendPeriod ToDomain() => new(Kind, Unit, Count, Since, Whole ?? false, Against ?? TrendComparison.Before);
 }
 
 /// <param name="Shared">The vehicle's dashboard, which everyone who sees it gets; null for the Standard preset.</param>
@@ -98,6 +114,13 @@ public sealed class DashboardQueries
     /// <summary>The data of a chart, calculated from the vehicle's logs (costs per currency). Used for saved charts, presets and the builder's preview.</summary>
     public Task<ChartData> GetVehicleChartData(Guid vehicleId, ChartConfigInput config, [Service] StatsService stats, CancellationToken ct) =>
         stats.ChartAsync(vehicleId, config.ToDomain(), ct);
+
+    /// <summary>
+    /// A trend figure over a period of its own (#230): the two windows compared and the figure's values in them, from the vehicle's logs
+    /// (money per currency, never converted). Each trend tile asks its own; the popover asks it for the period being chosen.
+    /// </summary>
+    public Task<TrendFigureData> GetVehicleTrend(Guid vehicleId, TrendFigure figure, TrendPeriodInput period, [Service] StatsService stats, CancellationToken ct) =>
+        stats.TrendAsync(vehicleId, figure, period.ToDomain(), ct);
 
     /// <summary>The charts of a vehicle's dashboard: the user's own and the shared ones, oldest first.</summary>
     public Task<IReadOnlyList<VehicleChart>> GetVehicleCharts(Guid vehicleId, [Service] ChartService charts, CancellationToken ct) => charts.ListAsync(vehicleId, ct);

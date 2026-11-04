@@ -1030,6 +1030,12 @@
       "settingsRefused": "The server would not start with the settings file this backup brings, under this server's environment, so it was not restored. Set what it lacks in the environment (an OIDC client secret, say, which a backup carries only when its server put the secrets into its backups), or restore a backup that holds the secrets.",
       "environmentMissing": "The backup was made on a server whose environment set {{variables}}; this server sets none of them, and the settings file the backup brings holds none either, so it was not restored. Set them in this server's environment, then restore.",
       "held": "The backup is held: release it before deleting it."
+    },
+    "trend": {
+      "invalid": "This period is not valid.",
+      "countRange": "A period is 1 to {{max}} long.",
+      "sinceRange": "A period starts on a day from {{earliest}} to {{latest}}.",
+      "wholeNeedsUnit": "Only weeks, months and years can be whole."
     }
   },
   "a11y": {
@@ -1283,13 +1289,15 @@
       "consumptionHint": "last 10 full fill-ups",
       "odometer": "Odometer",
       "lastFillUp": "Last fill-up",
-      "spendingTrend": "Spending, last 12 full months",
-      "costPerDistance": "Cost per distance, last 12 full months",
-      "consumptionTrend": "Consumption, latest fill-ups",
+      "spendingTrend": "Spending",
+      "costPerDistance": "Cost per distance change",
+      "consumptionTrend": "Consumption change",
       "lastFillUps": "last {{count}} fill-ups",
-      "distanceTrend": "Distance this year",
+      "distanceTrend": "Distance driven",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
-      "none": "–"
+      "none": "–",
+      "fillUpsIn_one": "{{count}} fill-up in the period",
+      "fillUpsIn_other": "{{count}} fill-ups in the period"
     },
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",
@@ -1337,18 +1345,112 @@
       "distanceAndConsumption": "Distance and consumption"
     },
     "trend": {
-      "moreThanBefore": "{{change}} more than the 12 months before",
-      "lessThanBefore": "{{change}} less than the 12 months before",
-      "sameAsBefore": "the same as the 12 months before",
-      "moreFuel": "uses {{change}} more fuel than the {{count}} fill-ups before",
-      "lessFuel": "uses {{change}} less fuel than the {{count}} fill-ups before",
-      "sameFuel": "uses as much fuel as the {{count}} fill-ups before",
-      "moreThanLastYear": "{{change}} more than last year to this day",
-      "lessThanLastYear": "{{change}} less than last year to this day",
-      "sameAsLastYear": "the same as last year to this day",
+      "moreFuel": "uses {{change}} more fuel than {{than}}",
+      "lessFuel": "uses {{change}} less fuel than {{than}}",
+      "sameFuel": "uses as much fuel as {{than}}",
       "nothingBefore": "nothing to compare with yet",
       "tooFew": "needs 3 earlier fill-ups to compare with",
-      "nothingDriven": "nothing driven in the last 12 full months"
+      "nothingDriven": "nothing driven in this period",
+      "more": "{{change}} more than {{than}}",
+      "less": "{{change}} less than {{than}}",
+      "same": "the same as {{than}}",
+      "fillUpCounts": "{{sentence}} ({{recent}} fill-ups against {{earlier}})",
+      "than": {
+        "before": {
+          "days_one": "the day before",
+          "days_other": "the {{count}} days before",
+          "weeks_one": "the week before",
+          "weeks_other": "the {{count}} weeks before",
+          "months_one": "the month before",
+          "months_other": "the {{count}} months before",
+          "years_one": "the year before",
+          "years_other": "the {{count}} years before",
+          "fillUps_one": "the fill-up before",
+          "fillUps_other": "the {{count}} fill-ups before"
+        },
+        "yearEarlier": {
+          "days_one": "the same day a year earlier",
+          "days_other": "the same {{count}} days a year earlier",
+          "weeks_one": "the same week a year earlier",
+          "weeks_other": "the same {{count}} weeks a year earlier",
+          "months_one": "the same month a year earlier",
+          "months_other": "the same {{count}} months a year earlier",
+          "years_one": "the same year a year earlier",
+          "years_other": "the same {{count}} years a year earlier"
+        },
+        "sameDaysYearEarlier": "the same days a year earlier",
+        "lastYearToDate": "last year to this day"
+      }
+    },
+    "period": {
+      "thisYear": "This year",
+      "since": "Since {{date}}",
+      "last": {
+        "days_one": "Last day",
+        "days_other": "Last {{count}} days",
+        "weeks_one": "Last week",
+        "weeks_other": "Last {{count}} weeks",
+        "months_one": "Last month",
+        "months_other": "Last {{count}} months",
+        "years_one": "Last year",
+        "years_other": "Last {{count}} years",
+        "fillUps_one": "Last fill-up",
+        "fillUps_other": "Last {{count}} fill-ups"
+      },
+      "whole": {
+        "weeks_one": "{{count}} full week",
+        "weeks_other": "{{count}} full weeks",
+        "months_one": "{{count}} full month",
+        "months_other": "{{count}} full months",
+        "years_one": "{{count}} full year",
+        "years_other": "{{count}} full years"
+      },
+      "vs": {
+        "before": "vs the period before",
+        "yearEarlier": "vs a year earlier"
+      },
+      "withAgainst": "{{period}} · {{against}}",
+      "title": "Period of {{figure}}",
+      "chipName": "{{figure}} period: {{period}}. Change it",
+      "tabsLabel": "How the period is set",
+      "tabs": {
+        "quick": "Quick",
+        "last": "Last",
+        "since": "Since"
+      },
+      "quickLabel": "Quick picks",
+      "count": "Number",
+      "unit": "Unit",
+      "units": {
+        "days": "Days",
+        "weeks": "Weeks",
+        "months": "Months",
+        "years": "Years",
+        "fillUps": "Fill-ups"
+      },
+      "wholeSwitch": {
+        "weeks": "Whole weeks, Monday to Sunday",
+        "months": "Whole months",
+        "years": "Whole years"
+      },
+      "wholeHint": "The running one is left out.",
+      "endsToday": "The period ends today.",
+      "fillUpsHint": "From the oldest of them to today.",
+      "sinceDate": "First day",
+      "against": "Compared with",
+      "againstBefore": "The period before",
+      "againstYearEarlier": "The same dates a year earlier",
+      "preview": "The tile will show",
+      "apply": "Apply",
+      "saveTo": {
+        "own": "Apply saves it into your own arrangement of this dashboard.",
+        "shared": "Apply saves it into the vehicle’s dashboard, for everyone who sees it.",
+        "newOwn": "Apply saves it into an arrangement of your own, made from what you see.",
+        "editing": "Kept with the arrangement you are editing until you save it."
+      },
+      "needsServer": "Changing the period needs the server, which is out of reach right now.",
+      "saved": "Period saved.",
+      "changedSaid": "{{name}} now shows {{period}}."
     },
     "customize": {
       "button": "Customize",
@@ -1415,10 +1517,10 @@
           "consumption": "The average consumption of the last ten full fill-ups.",
           "odometer": "The vehicle’s latest odometer reading, from any log.",
           "lastFillUp": "The date of the last fill-up, and how many fill-ups and expenses there are.",
-          "spendingTrend": "What was spent in the last 12 whole months, against the 12 months before.",
-          "costPerDistance": "Money per 100 km or 100 miles driven in the last 12 whole months, against the 12 months before.",
-          "consumptionTrend": "The mean of the latest fill-ups’ consumption, against the ten before.",
-          "distanceTrend": "The distance driven this year, against last year up to the same day."
+          "spendingTrend": "What was spent over the period you choose, against the period before or a year earlier; to start, the last 12 whole months against the 12 before.",
+          "costPerDistance": "Money per 100 km or 100 miles driven over the period you choose, against the period before or a year earlier; to start, the last 12 whole months.",
+          "consumptionTrend": "The mean consumption over the period you choose, against the period before or a year earlier; to start, the latest 10 fill-ups against the 10 before.",
+          "distanceTrend": "The distance driven over the period you choose, against the period before or a year earlier; to start, this year against last year up to the same day."
         },
         "ready": {
           "monthlyCosts": "Total spend by month, last 12 months, fuel and expenses stacked.",

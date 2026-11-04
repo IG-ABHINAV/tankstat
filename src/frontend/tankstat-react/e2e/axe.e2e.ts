@@ -1,5 +1,5 @@
 import { expect, test } from './support/test.ts'
-import { addVehicle, pageLoaded, signIn } from './support/app.ts'
+import { addVehicle, graphql, pageLoaded, signIn } from './support/app.ts'
 import { violations } from './support/axe.ts'
 
 // axe in a real browser: what jsdom cannot judge (the colour contrast of the real styles, what is hidden after layout). The jsdom scans
@@ -51,6 +51,23 @@ test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', 
   expect(await violations(page, '[role="dialog"]')).toEqual([])
   await dialog.getByRole('button', { name: 'Blank chart' }).click()
   await expect(dialog.getByLabel('Title')).toBeVisible()
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+})
+
+test('a trend tile\'s period popover has no axe violations (#230)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await graphql(page, 'mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }', {
+    i: { vehicleId: vehicle.id, personal: false, tiles: [{ id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false }], hidden: [] },
+  })
+  await page.goto(`/vehicles/${vehicle.id}`)
+  await pageLoaded(page)
+  await page.getByRole('button', { name: 'Spending period: 12 full months. Change it' }).click()
+  const popover = page.getByRole('dialog', { name: 'Period of Spending' })
+  await expect(popover.getByTestId('trend-timeline')).toBeVisible()
+  await expect(page.locator('.MuiPopover-paper')).toHaveCSS('opacity', '1') // grown in: axe reads the colours as they are drawn
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+  await popover.getByRole('tab', { name: 'Last' }).click()
+  await expect(popover.getByRole('switch', { name: 'Whole weeks, Monday to Sunday' })).toBeVisible()
   expect(await violations(page, '[role="dialog"]')).toEqual([])
 })
 

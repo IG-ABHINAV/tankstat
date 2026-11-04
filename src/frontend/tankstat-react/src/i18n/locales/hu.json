@@ -1030,6 +1030,12 @@
       "settingsRefused": "A kiszolgáló nem indulna el azzal a beállításfájllal, amelyet ez a mentés hoz, ennek a kiszolgálónak a környezetében, ezért nem állította vissza. Állítsd be a környezetben, ami hiányzik (például egy OIDC-kliens titkát, amelyet a mentés csak akkor tartalmaz, ha a kiszolgálója a titkokat a mentéseibe tette), vagy állíts vissza olyan mentést, amely tartalmazza a titkokat.",
       "environmentMissing": "A mentés olyan kiszolgálón készült, amelynek a környezete beállította ezeket: {{variables}}; ez a kiszolgáló egyiket sem állítja be, és a mentés beállításfájlja sem tartalmazza őket, ezért nem állította vissza. Állítsd be őket ennek a kiszolgálónak a környezetében, majd állítsd vissza.",
       "held": "A mentés meg van tartva: a törlés előtt oldd fel."
+    },
+    "trend": {
+      "invalid": "Ez az időszak nem érvényes.",
+      "countRange": "Egy időszak 1 és {{max}} között lehet.",
+      "sinceRange": "Egy időszak {{earliest}} és {{latest}} közötti napon kezdődhet.",
+      "wholeNeedsUnit": "Csak a hetek, a hónapok és az évek lehetnek egészek."
     }
   },
   "a11y": {
@@ -1283,13 +1289,15 @@
       "consumptionHint": "az utolsó 10 teli tankolás",
       "odometer": "Kilométeróra",
       "lastFillUp": "Utolsó tankolás",
-      "spendingTrend": "Költés, utolsó 12 teljes hónap",
-      "costPerDistance": "Költség távolságra, utolsó 12 teljes hónap",
-      "consumptionTrend": "Fogyasztás, legutóbbi tankolások",
+      "spendingTrend": "Költés",
+      "costPerDistance": "Költség távolságra, változás",
+      "consumptionTrend": "Fogyasztás változása",
       "lastFillUps": "utolsó {{count}} tankolás",
-      "distanceTrend": "Idei megtett távolság",
+      "distanceTrend": "Megtett távolság",
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
-      "none": "–"
+      "none": "–",
+      "fillUpsIn_one": "{{count}} tankolás az időszakban",
+      "fillUpsIn_other": "{{count}} tankolás az időszakban"
     },
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",
@@ -1337,18 +1345,112 @@
       "distanceAndConsumption": "Távolság és fogyasztás"
     },
     "trend": {
-      "moreThanBefore": "{{change}}-kal/-kel több, mint az azt megelőző 12 hónapban",
-      "lessThanBefore": "{{change}}-kal/-kel kevesebb, mint az azt megelőző 12 hónapban",
-      "sameAsBefore": "ugyanannyi, mint az azt megelőző 12 hónapban",
-      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint az előző {{count}} tankolásnál",
-      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint az előző {{count}} tankolásnál",
-      "sameFuel": "ugyanannyi üzemanyagot használ, mint az előző {{count}} tankolásnál",
-      "moreThanLastYear": "{{change}}-kal/-kel több, mint tavaly ugyaneddig",
-      "lessThanLastYear": "{{change}}-kal/-kel kevesebb, mint tavaly ugyaneddig",
-      "sameAsLastYear": "ugyanannyi, mint tavaly ugyaneddig",
+      "moreFuel": "{{change}}-kal/-kel több üzemanyagot használ, mint {{than}}",
+      "lessFuel": "{{change}}-kal/-kel kevesebb üzemanyagot használ, mint {{than}}",
+      "sameFuel": "ugyanannyi üzemanyagot használ, mint {{than}}",
       "nothingBefore": "még nincs mivel összevetni",
       "tooFew": "3 korábbi tankolás kell az összevetéshez",
-      "nothingDriven": "az utolsó 12 teljes hónapban nem volt megtett út"
+      "nothingDriven": "ebben az időszakban nem volt megtett út",
+      "more": "{{change}}-kal/-kel több, mint {{than}}",
+      "less": "{{change}}-kal/-kel kevesebb, mint {{than}}",
+      "same": "ugyanannyi, mint {{than}}",
+      "fillUpCounts": "{{sentence}} ({{recent}} tankolás, szemben {{earlier}} korábbival)",
+      "than": {
+        "before": {
+          "days_one": "az azt megelőző napon",
+          "days_other": "az azt megelőző {{count}} napban",
+          "weeks_one": "az azt megelőző héten",
+          "weeks_other": "az azt megelőző {{count}} hétben",
+          "months_one": "az azt megelőző hónapban",
+          "months_other": "az azt megelőző {{count}} hónapban",
+          "years_one": "az azt megelőző évben",
+          "years_other": "az azt megelőző {{count}} évben",
+          "fillUps_one": "az előző tankolásnál",
+          "fillUps_other": "az előző {{count}} tankolásnál"
+        },
+        "yearEarlier": {
+          "days_one": "ugyanazon a napon egy évvel korábban",
+          "days_other": "ugyanabban a(z) {{count}} napban egy évvel korábban",
+          "weeks_one": "ugyanazon a héten egy évvel korábban",
+          "weeks_other": "ugyanabban a(z) {{count}} hétben egy évvel korábban",
+          "months_one": "ugyanabban a hónapban egy évvel korábban",
+          "months_other": "ugyanabban a(z) {{count}} hónapban egy évvel korábban",
+          "years_one": "ugyanabban az évben egy évvel korábban",
+          "years_other": "ugyanabban a(z) {{count}} évben egy évvel korábban"
+        },
+        "sameDaysYearEarlier": "ugyanezeken a napokon egy évvel korábban",
+        "lastYearToDate": "tavaly ugyaneddig"
+      }
+    },
+    "period": {
+      "thisYear": "Idén",
+      "since": "{{date}} óta",
+      "last": {
+        "days_one": "Utolsó nap",
+        "days_other": "Utolsó {{count}} nap",
+        "weeks_one": "Utolsó hét",
+        "weeks_other": "Utolsó {{count}} hét",
+        "months_one": "Utolsó hónap",
+        "months_other": "Utolsó {{count}} hónap",
+        "years_one": "Utolsó év",
+        "years_other": "Utolsó {{count}} év",
+        "fillUps_one": "Utolsó tankolás",
+        "fillUps_other": "Utolsó {{count}} tankolás"
+      },
+      "whole": {
+        "weeks_one": "{{count}} teljes hét",
+        "weeks_other": "{{count}} teljes hét",
+        "months_one": "{{count}} teljes hónap",
+        "months_other": "{{count}} teljes hónap",
+        "years_one": "{{count}} teljes év",
+        "years_other": "{{count}} teljes év"
+      },
+      "vs": {
+        "before": "az előzőhöz képest",
+        "yearEarlier": "egy évvel korábbihoz képest"
+      },
+      "withAgainst": "{{period}} · {{against}}",
+      "title": "{{figure}} időszaka",
+      "chipName": "{{figure}} időszaka: {{period}}. Módosítás",
+      "tabsLabel": "Az időszak megadása",
+      "tabs": {
+        "quick": "Gyors",
+        "last": "Utolsó",
+        "since": "Ettől"
+      },
+      "quickLabel": "Gyakori időszakok",
+      "count": "Szám",
+      "unit": "Egység",
+      "units": {
+        "days": "Nap",
+        "weeks": "Hét",
+        "months": "Hónap",
+        "years": "Év",
+        "fillUps": "Tankolás"
+      },
+      "wholeSwitch": {
+        "weeks": "Teljes hetek, hétfőtől vasárnapig",
+        "months": "Teljes hónapok",
+        "years": "Teljes évek"
+      },
+      "wholeHint": "A folyamatban lévő kimarad.",
+      "endsToday": "Az időszak ma ér véget.",
+      "fillUpsHint": "A legrégebbitől máig.",
+      "sinceDate": "Első nap",
+      "against": "Összevetve",
+      "againstBefore": "Az előző időszakkal",
+      "againstYearEarlier": "Ugyanezekkel a napokkal egy évvel korábban",
+      "preview": "A csempe ezt mutatja majd",
+      "apply": "Alkalmaz",
+      "saveTo": {
+        "own": "Az Alkalmaz a saját elrendezésedbe menti.",
+        "shared": "Az Alkalmaz a jármű irányítópultjába menti, mindenkinek, aki látja.",
+        "newOwn": "Az Alkalmaz egy saját elrendezésbe menti, abból, amit most látsz.",
+        "editing": "A szerkesztett elrendezéssel marad, amíg el nem mented."
+      },
+      "needsServer": "Az időszak módosításához a szerver kell, ami most nem érhető el.",
+      "saved": "Időszak mentve.",
+      "changedSaid": "{{name}} mostantól: {{period}}."
     },
     "customize": {
       "button": "Testreszabás",
@@ -1415,10 +1517,10 @@
           "consumption": "Az utolsó tíz teli tankolás átlagfogyasztása.",
           "odometer": "A jármű legutóbbi kilométeróra-állása, bármelyik bejegyzésből.",
           "lastFillUp": "Az utolsó tankolás napja, és hány tankolás és költség van.",
-          "spendingTrend": "Az utolsó 12 teljes hónap költése az előző 12 hónaphoz képest.",
-          "costPerDistance": "Pénz 100 km-enként vagy 100 mérföldenként az utolsó 12 teljes hónapban, az előző 12 hónaphoz képest.",
-          "consumptionTrend": "A legutóbbi tankolások fogyasztásának átlaga az előző tízhez képest.",
-          "distanceTrend": "Az idén megtett út a tavalyi, ugyanaddig a napig megtett úthoz képest."
+          "spendingTrend": "A választott időszak költése az előzőhöz vagy egy évvel korábbihoz képest; kezdetben az utolsó 12 teljes hónap az előző 12-höz képest.",
+          "costPerDistance": "Pénz 100 km-enként vagy 100 mérföldenként a választott időszakban, az előzőhöz vagy egy évvel korábbihoz képest; kezdetben az utolsó 12 teljes hónap.",
+          "consumptionTrend": "Az átlagfogyasztás a választott időszakban, az előzőhöz vagy egy évvel korábbihoz képest; kezdetben a legutóbbi 10 tankolás az előző 10-hez képest.",
+          "distanceTrend": "A megtett út a választott időszakban, az előzőhöz vagy egy évvel korábbihoz képest; kezdetben az idei a tavalyi, ugyanaddig a napig megtett úthoz képest."
         },
         "ready": {
           "monthlyCosts": "Összes költés havonta az utolsó 12 hónapban, üzemanyag és költségek egymásra rakva.",

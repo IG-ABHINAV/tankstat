@@ -2,6 +2,7 @@ import type { ExpenseSortField, RefuelingSortField, SortDirection, VehicleSortFi
 import { keptPhotosOf, type Change } from './changes.ts'
 import { connectivity } from './connectivity.ts'
 import type { LogKind, LogRow, PullCursor, RowStore, VehicleRow } from './deviceStorage.ts'
+import { todayIso } from '../forms/dates.ts'
 import { keptPhotos } from './keptPhotos.ts'
 import { outbox } from './outbox.ts'
 
@@ -449,6 +450,14 @@ const vehicleDashboard: Resolver = async (_rows, variables) =>
 const chartData: Resolver = async (_rows, variables) =>
   addedVehicle(variables.vehicleId) ? { vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } } : undefined
 
+/** Nor a trend figure (#230): both windows today with nothing in them, so the tile says it has nothing to show yet. */
+const vehicleTrend: Resolver = async (_rows, variables) => {
+  if (!addedVehicle(variables.vehicleId)) return undefined
+  const today = todayIso()
+  const empty = () => ({ __typename: 'TrendWindow', start: today, end: today, fillUps: 0 })
+  return { vehicleTrend: { __typename: 'TrendFigureData', recent: empty(), earlier: empty(), currencies: [], consumption: null, distance: null } }
+}
+
 const RESOLVERS: Record<string, Resolver> = {
   Refuelings: list('refuelings', 'refuelings', 'refuelingCount'),
   Expenses: list('expenses', 'expenses', 'expenseCount'),
@@ -465,6 +474,7 @@ const RESOLVERS: Record<string, Resolver> = {
   RecurringExpenses: recurringExpenses,
   VehicleDashboard: vehicleDashboard,
   ChartData: chartData,
+  VehicleTrend: vehicleTrend,
 }
 
 /** The device's own answer to a query, or undefined when it has none (not one of these queries, or not downloaded). */

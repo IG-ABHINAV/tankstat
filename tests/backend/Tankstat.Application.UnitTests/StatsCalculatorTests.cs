@@ -521,4 +521,102 @@ public class StatsCalculatorTests
         Assert.Null(t.Consumption);
         Assert.Null(t.Distance); // no reading at all: no distance, not 0 km
     }
+
+    // ---- a trend figure over its own period (#230) ---------------------------------------------------------------
+
+    private static (DateOnly, DateOnly) Days(string start, string end) => (DateOnly.Parse(start), DateOnly.Parse(end));
+    private static TrendFigureData Trend(TrendPeriod period, StatsData? data = null, string today = "2026-11-03", TrendFigure figure = TrendFigure.Spending) =>
+        StatsCalculator.Trend(data ?? Data(), figure, period, DateOnly.Parse(today), "HUF");
+    private static ((DateOnly, DateOnly) Recent, (DateOnly, DateOnly) Earlier) Windows(TrendFigureData t) => ((t.Recent.Start, t.Recent.End), (t.Earlier.Start, t.Earlier.End));
+    private static TrendPeriod Last(TrendUnit unit, int count, bool whole = false, TrendComparison against = TrendComparison.Before) => new(TrendWindowKind.Last, unit, count, Whole: whole, Against: against);
+
+    [Fact]
+    public void Trend_TheLastDaysOrWeeks_EndToday_AndTheOnesBefore_AreAsLong()
+    {
+        Assert.Equal((Days("2026-10-28", "2026-11-03"), Days("2026-10-21", "2026-10-27")), Windows(Trend(Last(TrendUnit.Days, 7))));
+        Assert.Equal((Days("2026-09-09", "2026-11-03"), Days("2026-07-15", "2026-09-08")), Windows(Trend(Last(TrendUnit.Weeks, 8))));
+    }
+
+    [Fact]
+    public void Trend_WholeWeeks_AreMondayToSunday_TheRunningOneLeftOut_ALastWeekOnAMonday()
+    {
+        // 3 November 2026 is a Tuesday: the last whole week ended on Sunday the 1st.
+        Assert.Equal((Days("2026-10-05", "2026-11-01"), Days("2026-09-07", "2026-10-04")), Windows(Trend(Last(TrendUnit.Weeks, 4, whole: true))));
+        // On a Monday no day of the running week has passed: the last whole week is the one that ended yesterday, never an empty one.
+        Assert.Equal(Days("2026-10-26", "2026-11-01"), Windows(Trend(Last(TrendUnit.Weeks, 1, whole: true), today: "2026-11-02")).Recent);
+        // On a Sunday the week is still running: the last whole one ended a week ago.
+        Assert.Equal(Days("2026-10-19", "2026-10-25"), Windows(Trend(Last(TrendUnit.Weeks, 1, whole: true), today: "2026-11-01")).Recent);
+    }
+
+    [Fact]
+    public void Trend_Months_AreCalendarMonths_WholeOnesTheLastCompleted_LastOneMonthLastMonthAlone()
+    {
+        Assert.Equal((Days("2026-08-04", "2026-11-03"), Days("2026-05-04", "2026-08-03")), Windows(Trend(Last(TrendUnit.Months, 3))));
+        Assert.Equal((Days("2026-10-01", "2026-10-31"), Days("2026-09-01", "2026-09-30")), Windows(Trend(Last(TrendUnit.Months, 1, whole: true))));
+        Assert.Equal((Days("2026-05-01", "2026-10-31"), Days("2025-11-01", "2026-04-30")), Windows(Trend(Last(TrendUnit.Months, 6, whole: true))));
+    }
+
+    [Fact]
+    public void Trend_Years_EndToday_OrWhole_TheLastCalendarYearsCompleted()
+    {
+        Assert.Equal((Days("2025-11-04", "2026-11-03"), Days("2024-11-04", "2025-11-03")), Windows(Trend(Last(TrendUnit.Years, 1))));
+        Assert.Equal((Days("2024-01-01", "2025-12-31"), Days("2022-01-01", "2023-12-31")), Windows(Trend(Last(TrendUnit.Years, 2, whole: true))));
+    }
+
+    [Fact]
+    public void Trend_ASince_EndsToday_AndTheDaysBefore_AreAsMany()
+    {
+        Assert.Equal((Days("2026-10-15", "2026-11-03"), Days("2026-09-25", "2026-10-14")), Windows(Trend(new TrendPeriod(TrendWindowKind.Since, Since: DateOnly.Parse("2026-10-15")))));
+        Assert.Equal(Days("2026-10-15", "2026-11-03"), Windows(Trend(new TrendPeriod(TrendWindowKind.Since, Since: DateOnly.Parse("2026-10-15"), Against: TrendComparison.YearEarlier))).Recent);
+    }
+
+    [Fact]
+    public void Trend_AYearEarlier_IsTheSameDatesAYearBack_ALeapDayOnThe28th_WholeMonthsStayWhole()
+    {
+        Assert.Equal(Days("2025-09-09", "2025-11-03"), Windows(Trend(Last(TrendUnit.Weeks, 8, against: TrendComparison.YearEarlier))).Earlier);
+        Assert.Equal(Days("2023-02-28", "2023-02-28"), Windows(Trend(Last(TrendUnit.Days, 1, against: TrendComparison.YearEarlier), today: "2024-02-29")).Earlier);
+        Assert.Equal(Days("2027-02-01", "2027-02-28"), Windows(Trend(Last(TrendUnit.Months, 1, whole: true, against: TrendComparison.YearEarlier), today: "2028-03-10")).Earlier);
+        // This year so far against last year to the same day, or against the same number of days before it.
+        Assert.Equal((Days("2026-01-01", "2026-11-03"), Days("2025-01-01", "2025-11-03")), Windows(Trend(TrendPeriod.ThisYearAgainstLast)));
+        Assert.Equal(Days("2025-02-28", "2025-12-31"), Windows(Trend(TrendPeriod.ThisYearAgainstLast with { Against = TrendComparison.Before })).Earlier); // 307 days each
+    }
+
+    [Fact]
+    public void Trend_TheLastFillUps_RunFromTheOldestOfThemToToday_AndTheOnesBefore_FewerWhenThereAreFewer()
+    {
+        var fills = Enumerable.Range(0, 7).Select(i => Fill(new DateOnly(2026, 10, 1).AddDays(i * 3).ToString("yyyy-MM-dd"), 30, 100 + i, 1000 + i * 100, consumption: 5m + i)).ToArray(); // the 1st, 4th, ..., 19th
+        var t = Trend(Last(TrendUnit.FillUps, 3), Data(fills));
+
+        Assert.Equal((Days("2026-10-13", "2026-11-03"), Days("2026-10-04", "2026-10-12")), Windows(t));
+        Assert.Equal((3, 3), (t.Recent.FillUps, t.Earlier.FillUps));
+        Assert.Equal([new CurrencyChange("HUF", 315m, 306m)], t.Currencies); // 104 + 105 + 106 against 101 + 102 + 103
+        var few = Trend(Last(TrendUnit.FillUps, 5), Data(fills));
+        Assert.Equal((5, 2), (few.Recent.FillUps, few.Earlier.FillUps)); // seven in all: two before
+        var none = Trend(Last(TrendUnit.FillUps, 5));
+        Assert.Equal((Days("2026-11-03", "2026-11-03"), 0, 0), ((none.Recent.Start, none.Recent.End), none.Recent.FillUps, none.Earlier.FillUps));
+        Assert.Equal([new CurrencyChange("HUF", 0m, null)], none.Currencies); // the main currency is always listed; nothing before to compare with
+    }
+
+    [Fact]
+    public void Trend_Consumption_OverFillUps_IsTheirOwn_FromThreeBefore_AndOverDates_TheOnesInside()
+    {
+        var fills = Enumerable.Range(0, 7).Select(i => Fill(new DateOnly(2026, 10, 1).AddDays(i * 3).ToString("yyyy-MM-dd"), 30, 100, 1000 + i * 100, consumption: 5m + i)).ToArray();
+
+        Assert.Equal(new ConsumptionChange(10m, 7m, 3, 3), Trend(Last(TrendUnit.FillUps, 3), Data(fills), figure: TrendFigure.Consumption).Consumption); // 9, 10, 11 against 6, 7, 8
+        Assert.Equal(new ConsumptionChange(9m, null, 5, 2), Trend(Last(TrendUnit.FillUps, 5), Data(fills), figure: TrendFigure.Consumption).Consumption); // 7..11; two before: not compared
+        // The last 16 days (19 Oct to 3 Nov) hold the 19th's fill-up alone; the 16 before (3 to 18 Oct) the 4th's to the 16th's.
+        Assert.Equal(new ConsumptionChange(11m, 8m, 1, 5), Trend(Last(TrendUnit.Days, 16), Data(fills), figure: TrendFigure.Consumption).Consumption);
+    }
+
+    [Fact]
+    public void Trend_CostPerDistance_AndDistance_OverTheirWindows_NullWithoutAReading()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2026-09-01"), 10000), new OdometerPoint(DateOnly.Parse("2026-10-01"), 10500), new OdometerPoint(DateOnly.Parse("2026-11-01"), 11500) };
+        var data = Data([Fill("2026-10-20", 40, 20000, 11000)], readings: readings);
+        var month = new TrendPeriod(TrendWindowKind.Last, TrendUnit.Months, 1, Whole: true); // October against September
+
+        Assert.Equal([new CurrencyChange("HUF", 4000m, null)], Trend(month, data, figure: TrendFigure.CostPerDistance).Currencies); // 20 000 over 500 km; nothing spent before
+        Assert.Equal(new ValueChange(500m, 0m), Trend(month, data, figure: TrendFigure.Distance).Distance); // September holds one reading and none before it: 0, as the charts count
+        Assert.Null(Trend(month, Data([Fill("2026-10-20", 40, 20000, 11000)], readings: []), figure: TrendFigure.Distance).Distance);
+    }
 }

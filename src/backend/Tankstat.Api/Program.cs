@@ -83,6 +83,7 @@ do
         .AddTypeExtension<ImportQueries>()
         .AddTypeExtension<ImportMutations>()
         .AddType<VehicleChartType>()
+        .AddType<TrendPeriodType>()
         .AddTypeExtension<VehicleChartExtensions>()
         .AddTypeExtension<VehicleSummaryExtensions>()
         .AddTypeExtension<DashboardQueries>()

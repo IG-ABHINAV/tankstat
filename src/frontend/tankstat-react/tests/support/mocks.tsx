@@ -986,6 +986,18 @@ export interface FakeTile {
   w: number
   h: number
   pinned: boolean
+  /** A trend figure's own period (#230), as the input sends it; none for its default. */
+  period?: FakePeriod | null
+}
+
+/** A trend figure's period, as `TrendPeriodInput` sends it. */
+export interface FakePeriod {
+  kind: string
+  unit?: string | null
+  count?: number | null
+  since?: string | null
+  whole?: boolean | null
+  against?: string | null
 }
 
 export interface FakeLayout {
@@ -1022,12 +1034,54 @@ export const fakeChart = (over: Partial<FakeChart> = {}): FakeChart => ({
  * A small in-memory backend for a vehicle's dashboard: key figures, saved charts and chart data (a fixed answer per unit; a trend line or a
  * year earlier asked for comes as a series of its own, as the server's do).
  */
+/** A trend figure's answer (`vehicleTrend`), without its types. */
+export interface FakeTrend {
+  recent: { start: string; end: string; fillUps: number }
+  earlier: { start: string; end: string; fillUps: number }
+  currencies: { currency: string; recent: number | null; earlier: number | null }[]
+  consumption: { recent: number | null; earlier: number | null; recentFillUps: number; earlierFillUps: number } | null
+  distance: { recent: number | null; earlier: number | null } | null
+}
+
+/**
+ * What the server answers for a trend figure at its default period, from the summary's `trends` (the figures as they were before periods,
+ * #230): the last 12 whole months against the 12 before, the fill-ups compared, this year against last.
+ */
+export function trendOfSummary(summary: FakeSummary, figure: string): FakeTrend {
+  const tr = summary.trends
+  const c = tr.consumption
+  const months = { recent: { start: '2025-10-01', end: '2026-09-30', fillUps: 0 }, earlier: { start: '2024-10-01', end: '2025-09-30', fillUps: 0 } }
+  const empty = { currencies: [], consumption: null, distance: null }
+  switch (figure) {
+    case 'SPENDING':
+      return { ...months, ...empty, currencies: tr.spending }
+    case 'COST_PER_DISTANCE':
+      return { ...months, ...empty, currencies: tr.costPerDistance }
+    case 'CONSUMPTION':
+      return { recent: { start: '2026-03-01', end: '2026-10-01', fillUps: c?.recentFillUps ?? 0 }, earlier: { start: '2025-08-01', end: '2026-02-28', fillUps: c?.earlierFillUps ?? 0 }, ...empty, consumption: c }
+    default:
+      return { recent: { start: '2026-01-01', end: '2026-10-01', fillUps: 0 }, earlier: { start: '2025-01-01', end: '2025-10-01', fillUps: 0 }, ...empty, distance: tr.distance }
+  }
+}
+
+const typedTrend = (t: FakeTrend) => ({
+  __typename: 'TrendFigureData',
+  recent: { __typename: 'TrendWindow', ...t.recent },
+  earlier: { __typename: 'TrendWindow', ...t.earlier },
+  currencies: t.currencies.map((c) => ({ __typename: 'CurrencyChange', ...c })),
+  consumption: t.consumption && { __typename: 'ConsumptionChange', ...t.consumption },
+  distance: t.distance && { __typename: 'ValueChange', ...t.distance },
+})
+
 export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] = []) {
   const state = {
     vehicle,
     charts: [...charts],
     calls: {} as Record<string, unknown[]>,
     chartRequests: [] as { vehicleId: string; config: Record<string, unknown> }[],
+    trendRequests: [] as { vehicleId: string; figure: string; period: FakePeriod }[],
+    /** A trend figure's answer for a period of its own (#230); none: what the summary's trends say, as for the defaults. */
+    trendFor: undefined as ((figure: string, period: FakePeriod) => FakeTrend | undefined) | undefined,
     failWith: undefined as { message: string; key: string; args?: Record<string, unknown> } | undefined,
     nextId: 400,
     /** How the dashboard is arranged: the vehicle's and the user's own (null for none), and whether the user may change the vehicle's. */
@@ -1071,7 +1125,9 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
 
   const handlers = [
     graphql.query('VehicleDashboard', ({ variables }) => {
-      const layout = (l: FakeLayout | null) => (l ? { __typename: 'DashboardLayoutInfo', ...l } : null)
+      // Every tile says its period, as the server does: null for none.
+      const tiles = (l: FakeLayout) => l.tiles.map((t) => ({ ...t, period: t.period ? { __typename: 'TrendPeriod', unit: null, count: null, since: null, whole: false, against: 'BEFORE', ...t.period } : null }))
+      const layout = (l: FakeLayout | null) => (l ? { __typename: 'DashboardLayoutInfo', ...l, tiles: tiles(l) } : null)
       const dashboard = { __typename: 'DashboardInfo', shared: layout(state.dashboard.shared), personal: layout(state.dashboard.personal), canChangeShared: state.dashboard.canChangeShared }
       return HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, summary: state.vehicle.summary, dashboard } : null, vehicleCharts: state.charts } })
     }),
@@ -1086,6 +1142,11 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
       record('ResetDashboardLayout', variables)
       state.dashboard[variables.personal ? 'personal' : 'shared'] = null
       return HttpResponse.json({ data: { resetDashboardLayout: true } })
+    }),
+    graphql.query('VehicleTrend', ({ variables }) => {
+      state.trendRequests.push(variables as never)
+      const { figure, period } = variables as { figure: string; period: FakePeriod }
+      return HttpResponse.json({ data: { vehicleTrend: typedTrend(state.trendFor?.(figure, period) ?? trendOfSummary(state.vehicle.summary, figure)) } })
     }),
     graphql.query('ChartData', ({ variables }) => {
       state.chartRequests.push(variables as never)

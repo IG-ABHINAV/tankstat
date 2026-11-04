@@ -106,6 +106,29 @@ public class StatsRepositoryTests
     }
 
     [Fact]
+    public async Task AFiguresPeriod_IsStoredWithItsTile_ByName_AndATileSavedBeforePeriodsExisted_ReadsWithout()
+    {
+        await using var db = new TestDatabase();
+        var car = await AddVehicle(db);
+        var repo = db.Get<IDashboardLayoutRepository>();
+        var period = new TrendPeriod(TrendWindowKind.Last, TrendUnit.Weeks, 8, Whole: true, Against: TrendComparison.YearEarlier);
+        await repo.SaveSharedAsync(VehicleDashboardLayout.Create(car.Id, new([new DashboardTile("spendingTrend", 0, 0, 1, 3, Period: period)], []), new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero)), default);
+
+        Assert.Equal(period, (await repo.FindSharedAsync(car.Id, default))!.Tiles.Single().Period);
+        await using (var context = db.Get<IDbContextFactory<AppDbContext>>().CreateDbContext())
+        {
+            var stored = await context.Database.SqlQueryRaw<string>("SELECT Tiles AS Value FROM VehicleDashboardLayouts").SingleAsync();
+            Assert.Contains("\"Unit\":\"Weeks\"", stored); // by name: a later order of the members never remaps it
+            Assert.Contains("\"Against\":\"YearEarlier\"", stored);
+            // A row written before periods existed: no such member at all.
+            await context.Database.ExecuteSqlRawAsync("UPDATE VehicleDashboardLayouts SET Tiles = {0}", "[{\"Id\":\"distanceTrend\",\"X\":0,\"Y\":0,\"W\":1,\"H\":3,\"Pinned\":false}]");
+        }
+
+        var old = (await repo.FindSharedAsync(car.Id, default))!.Tiles.Single();
+        Assert.Equal(("distanceTrend", null), (old.Id, old.Period));
+    }
+
+    [Fact]
     public async Task DashboardLayouts_AreStoredPerVehicleAndPerUser_ReplacedByTheNextSave_AndRemovedWithTheVehicle()
     {
         await using var db = new TestDatabase();
