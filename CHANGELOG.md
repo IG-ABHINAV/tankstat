@@ -2,6 +2,39 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.0 (2026-11-04)
+
+### Added
+
+- **Dashboard editing, redesigned** (#228: #234). Outside *Customize* a tile shows only its content, and a chart's numbers open as a table in a dialog from the button in its card's header. While customizing, a strip lies across the top of each tile: its grip drags the tile, its ⋮ menu moves, sizes, pins or removes it, and Edit and Delete of one's own saved chart sit on its tile. **One *Add widget* dialog** replaces the old panel, *Add chart* and *Copy as my chart*: the key figures and ready-made charts not on the dashboard, the saved charts not on it and *Blank chart*, each with a live preview; a ready-made chart goes on as it is, or *Customize this chart* makes it one of your own. The chart builder has icon toggles, and what a choice rules out is dimmed with its reason, never hidden. The trend figures' arrows are coloured by meaning (spending, cost per distance and consumption up red, down green; distance neutral); the arrow and the words still say it.
+- **A period of its own for each trend figure** (#230: #245). The chip at a trend tile's top right names its period and opens a popover: quick picks, the last so many days, weeks, months, years or fill-ups (weeks, months and years whole if you like), or since a day, compared with the period before or the same dates a year earlier, with a timeline of both and the figure live. Apply keeps it with the dashboard (your own arrangement, else the vehicle's where you may change it, else a new one of your own); *Add widget* offers the same controls. The defaults are the windows the figures always had. The figures' labels are shorter (*Spending*, *Cost per distance change*, *Consumption change*, *Distance driven*), since the chip names the period.
+- **Key figures in fewer rows** (#229: #233). A figure shows what its tile's rows hold: two rows its label and value, three its comparison or note as well, four its little chart too. It can be made as low as two rows, except *Spent this month* (three) and the two trend figures whose words need the room (four).
+
+### Changed
+
+- **A chart fits its tile** (#227: #232, #240): its legend and the notes under it are counted, so a tile no longer scrolls or cuts its legend; the resize corner shows only while customizing; a dragged tile follows the pointer instead of freezing until it crosses into another cell.
+- **A toast lets a tap through** to the page under it (#239: #241); only its *Undo* takes one, so on a phone it no longer swallows the tap meant for the control at the bottom of the screen.
+
+### Fixed
+
+- **A shared chart offered Edit to someone with Delete access who did not make it**, and the save was refused (#210: #231). The creator edits a chart; the vehicle's owner, an administrator or a Delete grant can delete a shared one, and see only that.
+- **Back online, the app caught up only after up to an hour** (#238: #244): an answer that arrived just after going offline counted as the server being back, so the real return refreshed nothing and a change kept on the device waited for the hourly download. A sign-out made offline is told to the server as soon as it can be reached again (#236: #242).
+
+### Upgrading
+
+- **No database migration and no setting changed.** A trend figure's period is stored with its tile in the dashboard's arrangement; an arrangement saved by 0.18 reads as the defaults.
+- **The GraphQL schema** gains `VehicleChart.canDelete`, `vehicleTrend` and a tile's `period`; `VehicleChart.canEdit` now means the chart's creator only. A web app of 0.18 still open shows someone with Delete access on someone else's shared chart neither Edit nor Delete until *Reload* on the update notice.
+- With sign-in off, Everyone's dashboard offers your private charts, but the server keeps only shared charts in the vehicle's arrangement, so a private chart's tile there does not keep a move, a resize or a removal; share it to keep it there.
+- The Docker Compose example now runs 0.19 (`TANKSTAT_VERSION` in `.env.example`).
+
+### For developers
+
+- **Real-browser tests without the service worker** (#236: #242): every file imports `test` and `expect` from `e2e/support/test.ts`, whose context deletes `navigator.serviceWorker`, so the "can now be used offline" toast never lands on a phone test's control; only `offline.e2e.ts` keeps it. Pointer drags run under reduced motion and wait for `settled(locator)`.
+- **The test scripts' ports**: the API layer on 5120 (`TANKSTAT_API_PORT`), outside the real-browser tests' 5097-5103; both scripts stop when something already answers on their port (#242).
+- **Reachability** counts an answer only for a request sent since the server was last judged out of reach (`connectivity.epoch`, `succeeded(sentIn)`, #244); a jsdom test that navigates at its end waits for its requests with `answered()`, or a failure after the teardown leaves the next test out of reach.
+- `DashboardGrid.unit` drives the grid's drag, resize and drop callbacks through a stand-in for react-grid-layout, which jsdom cannot drag (#240).
+- The README's screenshots are taken again with the redesigned dashboard.
+
 ## 0.18.0 (2026-11-03)
 
 ### Added
