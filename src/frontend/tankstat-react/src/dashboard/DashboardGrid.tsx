@@ -213,8 +213,9 @@ function EditStrip({ tile, name, index, count, cols, onSlot, onAction }: { tile:
   return (
     <Box sx={(theme) => ({ position: 'absolute', top: 0, left: 0, right: 0, height: TILE_STRIP, zIndex: 2, display: 'flex', alignItems: 'center', gap: 0.5, pr: 0.5, borderRadius: '12px 12px 0 0', bgcolor: theme.vars.palette.primary.soft, color: theme.vars.palette.primary.softText })}>
       <Box ref={slotRef} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '60%', pl: 1, '&:empty': { display: 'none' } }} />
-      {/* The handle is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself. */}
-      <Box className={CLASS.handle} aria-hidden sx={{ flex: 1, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* The handle is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself; 44 px wide at least, so a chip
+          beside it in a narrow tile is cut (its ellipsis) before the grip is. */}
+      <Box className={CLASS.handle} aria-hidden sx={{ flex: 1, minWidth: 44, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <GripHorizontal size={18} />
       </Box>
       {tile.pinned && (
