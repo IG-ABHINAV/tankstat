@@ -63,9 +63,14 @@ it('Enter twice on Undo runs the undo once (#243)', async () => {
   show(undo)
 
   await ui.click(screen.getByRole('button', { name: 'Trash' }))
-  ;(await screen.findByRole('button', { name: 'Undo' })).focus()
+  const button = await screen.findByRole('button', { name: 'Undo' })
+  const keys = vi.fn()
+  button.addEventListener('keydown', keys)
+  button.focus()
   await ui.keyboard('{Enter}{Enter}')
 
+  // Both reached the button (it stays while the message goes), else this would pass without the fix.
+  expect(keys).toHaveBeenCalledTimes(2)
   expect(undo).toHaveBeenCalledOnce()
 })
 
