@@ -2,6 +2,22 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.4 (2026-11-04)
+
+A bugfix release for the toasts.
+
+### Fixed
+
+- **Undo on a toast ran twice on a double tap, then said it had failed** (#243: #255). After a tap on *Undo* the message faded out, but its button stayed on the page, focused, while it went. A second tap, or a second Enter or Space, in that time ran the undo again. The second restore was refused by the server (the entry was no longer in the trash), so right after an Undo that worked the toast said *It could not be put back. Find it in the trash.* The button now runs its action once: once the message is on its way out, a further tap or key does nothing.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. `0.19` and `latest` move to this release.
+
+### For developers
+
+- The real-browser test that trashes a refuelling and takes it back double-taps *Undo* and checks that exactly one `restoreRefueling` request was sent, at both sizes; it failed with two before the fix. Two integration tests (two clicks at once, Enter twice) check the undo runs once, the second one also that both keys reached the button.
+
 ## 0.19.3 (2026-11-04)
 
 A bugfix release for dialogs.
