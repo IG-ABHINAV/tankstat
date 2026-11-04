@@ -64,6 +64,9 @@ describe('a key figure fitted to its card (#259)', () => {
     expect(fitOf({ ...spent, rows: 2, smaller: 2, tooWide: { own: true, smaller: true } })).toEqual(form({ oneLine: true, short: true }))
     // At three rows a value too wide even smaller may wrap again: there is room for it.
     expect(fitOf({ ...spent, rows: 3, smaller: 2 })).toEqual(form({ smaller: true }))
+    // The short value too wide in the figure's own size (a narrow desktop column): one step smaller again, so its "+1" is not cut.
+    const narrow = (fit: Fit): Measured => ({ overflows: !fit.oneLine, valueWraps: !fit.oneLine, valueTooWide: fit.oneLine && (!fit.short || !fit.smaller), labelCut: false })
+    expect(settle(narrow, offersOf({ ...spent, rows: 2 }))).toEqual(form({ oneLine: true, short: true, smaller: true }))
     // A value with no short form (a single amount too long) stays on its line, cut at the card's edge only as the last resort.
     expect(fitOf({ ...spent, rows: 2, smaller: 2, short: false, tooWide: { own: true, smaller: true } })).toEqual(form({ smaller: true, oneLine: true }))
   })

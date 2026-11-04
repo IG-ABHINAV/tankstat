@@ -55,7 +55,8 @@ export interface Measured {
  * and may (whether the card overflows or not: a wrapped value is always written smaller); then, while the content is taller than the card,
  * left out from the bottom what the rows offer, the sparkline, the note, the comparison (a left-out comparison leaves its row empty: the note
  * never comes into its place, #259's N2); then the one-line form; in it, the short value when the line is too wide (in the figure's own size
- * again); last, whether the one-line label is cut.
+ * again, one step smaller only when even the short value is too wide in it, so its "+1" is never cut at the card's edge); last, whether the
+ * one-line label is cut.
  */
 export function nextFit(fit: Fit, measured: Measured, offers: Offered): Fit {
   if (offers.shrink && !fit.smaller && !fit.oneLine && measured.valueWraps) return { ...fit, smaller: true }
@@ -65,6 +66,7 @@ export function nextFit(fit: Fit, measured: Measured, offers: Offered): Fit {
     if (!fit.oneLine) return { ...fit, oneLine: true }
   }
   if (fit.oneLine && offers.short && !fit.short && measured.valueTooWide) return { ...fit, short: true, smaller: false }
+  if (fit.oneLine && fit.short && offers.shrink && !fit.smaller && measured.valueTooWide) return { ...fit, smaller: true }
   if (fit.oneLine && measured.labelCut !== fit.labelCut) return { ...fit, labelCut: measured.labelCut }
   return fit
 }
