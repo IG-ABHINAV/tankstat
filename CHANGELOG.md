@@ -2,6 +2,30 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.6 (2026-11-04)
+
+A bugfix release for the dashboard's trend figures.
+
+### Fixed
+
+- **A trend figure without room for its comparison hid it** (#260: #265, #266). *Spending*, *Cost per distance change*, *Consumption change* and *Distance driven* showed no comparison at all at two rows, and left it out at three or four when its sentence did not fit. Its arrow now always shows: when the sentence has no room, the arrow stands alone before the value, pointing up or down in its colour, and hovering, focusing or tapping it shows the sentence and the period. *Nothing to compare with yet* shows a grey dash the same way. The sentence is never cut.
+- **A value too wide for a narrow tile was cut at the card's edge** (#260: #265). In a one-column tile a value such as *HUF 4,293 / 100 km* with its arrow did not fit one line. Every key figure's value now gets smaller step by step until it fits, down to the size of body text, and only past that is it cut. *Spent this month* takes these steps before it shows its main currency and "+N".
+
+### Changed
+
+- **The period chip is shown only while customizing** (#260: #266). Outside *Customize* a trend figure shows no chip: the label has its row to itself, and the arrow says the period. While customizing, the chip sits on the tile's strip, outlined, and opens the period as before; *Apply* keeps the period with the arrangement and *Save dashboard* saves it. A period is no longer saved straight from the dashboard you see.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. A period saved earlier stays as it is. `0.19` and `latest` move to this release.
+
+### For developers
+
+- A trend figure's comparison is described once (`changeWords.ts` `useChangeWords`) and drawn as its line (`ChangeLine`) or as its arrow alone (`ChangeArrow`, in the value row `data-kpi="value-row"`, named by the sentence and, outside Customize, the period: `dashboard.trend.arrowName`). `offered().change` is `'line'` from three rows and `'arrow'` at two; `nextFit`'s last drop level turns the line into the arrow.
+- `Fit.step` (`VALUE_STEPS`: h3, h4, h5, h6, then 0.875rem) replaces `smaller`: in the one-line form the value steps down while too wide for its line, then the short value (*Spent this month*'s "+N") in its own size and the steps again.
+- Each tile's edit strip has a slot of the tile's own (`TileStripSlotContext`); `TrendTile` portals its `PeriodChip` into it while editing, and `DashboardPanel` makes a `PeriodControl` only then. The strings of the save at once (`dashboard.period.saved`, `saveTo.own`, `.shared`, `.newOwn`, `needsServer`) are gone.
+- The real-browser tests cover both at both sizes: the arrows alone at two rows with their tooltips, a 904 px grid fitting *Cost per distance change* and its arrow (the 14 px floor allowed, as CI's wider fonts reach it), and the periods set from the strips' chips in Customize, saved and read back.
+
 ## 0.19.5 (2026-11-04)
 
 A bugfix release for the dashboard.
