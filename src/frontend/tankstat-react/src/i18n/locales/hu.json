@@ -1382,7 +1382,8 @@
         },
         "sameDaysYearEarlier": "ugyanezeken a napokon egy évvel korábban",
         "lastYearToDate": "tavaly ugyaneddig"
-      }
+      },
+      "arrowName": "{{sentence}} ({{period}})"
     },
     "period": {
       "thisYear": "Idén",

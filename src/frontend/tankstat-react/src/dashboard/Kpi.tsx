@@ -4,24 +4,27 @@ import Card from '@mui/material/Card'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
-import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useFormat } from '../i18n/format.ts'
+import type { ChangeWords, Tone } from './changeWords.ts'
 import { COARSE } from '../theme/components.ts'
-import { FULL, type Fit, type Measured, nextFit, offered } from './kpiFit.ts'
-import { useTilePadding } from './tileChrome.ts'
+import { FULL, type Fit, type Measured, nextFit, offered, VALUE_STEPS } from './kpiFit.ts'
+import { TileInsetContext, useTilePadding } from './tileChrome.ts'
 
 export interface KpiProps {
   rows: number
   label: string
   chip?: ReactNode
   value: ReactNode
-  /** The value may go one type step smaller when it wraps (#259: *Spent this month* in several currencies). */
+  /** The value may go one type step smaller when it wraps (#259: *Spent this month* in several currencies), at every height. */
   shrink?: boolean
   /** The value's short form, for the one-line form when even that line is too wide (the main currency and "+1", `MoreCount`). */
   short?: ReactNode
   hint?: string
-  change?: ReactNode
+  /** A trend figure's comparison (`useChangeWords`): its line when there is room, else its arrow alone before the value (#260). */
+  change?: ChangeWords
+  /** A trend figure's period in words ("12 full months"), said by its arrow alone outside Customize (#260). */
+  period?: string
   sparkline?: ReactNode
   /**
    * What the card shows, in words, beyond its label and note (its value, its comparison's figures): a change of it fits the card afresh
@@ -33,13 +36,15 @@ export interface KpiProps {
 /**
  * A key figure's card, showing what its tile's rows hold (#229): two rows the label and the value, packed closer (84 px); three the
  * comparison line too, or the note where there is none (132 px); four or more everything, spaced as always (180 px), so an arrangement of
- * four-row figures looks as it did. The label stays the card's first paragraph; a trend figure's period chip (#230) sits beside it, in the
+ * four-row figures looks as it did. A trend figure's comparison without a row of its own (two rows, or a line that does not fit) is its arrow
+ * alone before the value, the sentence in its tooltip (#260). The label stays the card's first paragraph; a trend figure's period chip (#230) sits beside it, in the
  * label row under the edit strip, never in it.
  *
  * What does not fit the card's height is never cut (#259): the card measures itself (`kpiFit.ts`, one step a render in a layout effect, so
  * nothing is painted half way) and leaves out from the bottom what has no room, then puts the label and the value on one line each. It
  * starts from the full form again whenever its size, rows or words change; a card whose height follows its content (a preview) never
- * overflows, so it shows everything, its value smaller only where it wraps.
+ * overflows, so it shows everything, its value smaller only where it wraps. In the one-line form a value too wide for its line steps down
+ * the type scale to 14 px (#260, `VALUE_STEPS`); only past that is it cut at the card's edge.
  */
 export function Kpi({ fitKey = '', ...props }: KpiProps) {
   const card = useRef<HTMLDivElement>(null)
@@ -51,7 +56,7 @@ export function Kpi({ fitKey = '', ...props }: KpiProps) {
   const fit = state.key === key ? state.fit : FULL
   const offers = offersOf(props)
 
-  // Measured once a form is shown: at the start, after each step and after starting again (each step turns a flag on, so it ends).
+  // Measured once a form is shown: at the start, after each step and after starting again (the steps always end, `kpiFit.ts` `Fit`).
   useLayoutEffect(() => {
     if (!card.current) return
     const next = nextFit(fit, measure(card.current), offers)
@@ -99,10 +104,13 @@ function measure(card: HTMLElement): Measured {
 const ONE_LINE = { whiteSpace: 'nowrap', overflow: 'hidden' } as const
 
 /** A key figure's card in a given form (`Fit`): what `Kpi` draws once it has measured, and what the tests draw in each form. */
-export function KpiCard({ rows, label, chip, value, short, hint, change, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
+export function KpiCard({ rows, label, chip, value, short, hint, change, period, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
   const full = rows >= 4
   const third = rows >= 3
   const offers = offersOf({ rows, sparkline, hint, change, shrink, short })
+  // The comparison as its line where the rows offer it and it has room, else as its arrow alone before the value (#260).
+  const asLine = offers.change === 'line' && fit.drop < 3
+  const step = VALUE_STEPS[fit.step]
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -110,16 +118,26 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, sparkli
         <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
         {chip}
       </Box>
-      {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
-      <Typography data-kpi="value" variant={fit.smaller ? 'h4' : 'h3'} component="p" sx={{ my: full ? 0.5 : 0, ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}>
-        {fit.short && short ? short : value}
-      </Typography>
+      {/* The value's row: the comparison's arrow alone before it (#260), a sibling, so the value's clipping never cuts the arrow's touch area. */}
+      <Box data-kpi="value-row" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, my: full ? 0.5 : 0 }}>
+        {change && !asLine && <ChangeArrow words={change} period={period} />}
+        {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
+        <Typography
+          data-kpi="value"
+          variant={step.variant}
+          component="p"
+          // Growing to the row's room: its line is what is left beside the arrow, and a loading skeleton's 60% is of that, not of nothing.
+          sx={{ flex: '1 1 auto', minWidth: 0, ...('size' in step && step.size), ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}
+        >
+          {fit.short && short ? short : value}
+        </Typography>
+      </Box>
       {offers.hint && fit.drop < 2 && (
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
           {hint}
         </Typography>
       )}
-      {offers.change && fit.drop < 3 && change}
+      {change && asLine && <ChangeLine words={change} />}
       {offers.sparkline && fit.drop < 1 && sparkline}
     </Card>
   )
@@ -179,50 +197,61 @@ export function ValueWithUnit({ value, unit }: { value: string; unit: string }) 
   return (
     <>
       {value}{' '}
-      <Box component="span" sx={{ typography: 'body2', fontWeight: 600, color: 'text.secondary' }}>
+      {/* Never bigger than the number (#260: the value steps down to 14 px, the size the unit has). */}
+      <Box component="span" sx={{ typography: 'body2', fontSize: 'min(0.875rem, 1em)', fontWeight: 600, color: 'text.secondary' }}>
         {unit}
       </Box>
     </>
   )
 }
 
-/** What a rise means for the figure: spending or fuel going up is `worse`; more distance is neither good nor bad (`neutral`). */
-export type Meaning = 'worseUp' | 'neutral'
-/** The arrow's colour by its meaning (#228): never alone, the arrow's direction and the words say the same. */
-type Tone = 'bad' | 'good' | 'neutral' | 'same'
+/** The arrow's colour by the change's tone (#228): never alone, the arrow's direction and the words say the same. */
 const TONE: Record<Tone, 'error' | 'success' | 'primary' | 'neutral'> = { bad: 'error', good: 'success', neutral: 'primary', same: 'neutral' }
+const ICON: Record<ChangeWords['icon'], typeof Minus> = { up: ArrowUp, down: ArrowDown, same: Minus }
 
-/**
- * A change in words with an arrow, coloured by what the change means (up is red for spending and fuel, green down; distance is neutral
- * either way) but never by colour alone: "HUF 60,000 (12%) more than the 12 months before", `than` being what the recent window is
- * compared with (`trendPeriod.ts` `comparedWith`). `size` writes the difference in the figure's unit; left out (consumption, `fuel`), the
- * per cent alone says it; `wrap` adds to a comparison (the fill-ups compared). Nothing to compare with yet is said so (`none`), and so is a
- * recent window with nothing in it (`noneRecent`), which is the other way round.
- */
-export function Change({ recent, earlier, fuel = false, than, meaning, size, wrap, none, noneRecent }: { recent: number | null | undefined; earlier: number | null | undefined; fuel?: boolean; than: string; meaning: Meaning; size?: (value: number) => string; wrap?: (sentence: string) => string; none: string; noneRecent?: string }) {
-  const { t } = useTranslation()
-  const format = useFormat()
-  let text: string
-  let Icon = Minus
-  let tone: Tone = 'same'
-  if (recent == null) text = earlier != null && noneRecent ? noneRecent : none
-  else if (earlier == null || earlier === 0) text = none
-  else {
-    const diff = recent - earlier
-    const percent = format.number(Math.abs(diff) / earlier, { style: 'percent', maximumFractionDigits: 0 })
-    const change = size ? `${size(Math.abs(diff))} (${percent})` : percent
-    const way = diff > 0 ? 'more' : diff < 0 ? 'less' : 'same'
-    const sentence = t(`dashboard.trend.${way}${fuel ? 'Fuel' : ''}`, { change, than })
-    text = wrap ? wrap(sentence) : sentence
-    Icon = diff > 0 ? ArrowUp : diff < 0 ? ArrowDown : Minus
-    tone = diff === 0 ? 'same' : meaning === 'neutral' ? 'neutral' : (diff > 0) === (meaning === 'worseUp') ? 'bad' : 'good'
-  }
+/** The arrow in its circle, coloured by its tone (`data-tone` for the tests); a picture only, the words say the same. */
+function ChangeIcon({ words }: { words: ChangeWords }) {
+  const Icon = ICON[words.icon]
+  return (
+    <Box component="span" data-tone={words.tone} aria-hidden sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: '50%', flex: 'none', bgcolor: `${TONE[words.tone]}.soft`, color: `${TONE[words.tone]}.softText` }}>
+      <Icon size={14} />
+    </Box>
+  )
+}
+
+/** The comparison's line: the arrow and the sentence beside it. */
+export function ChangeLine({ words }: { words: ChangeWords }) {
   return (
     <Typography variant="caption" component="p" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 1 }}>
-      <Box component="span" data-tone={tone} aria-hidden sx={(theme) => ({ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: '50%', flex: 'none', bgcolor: theme.vars.palette[TONE[tone]].soft, color: theme.vars.palette[TONE[tone]].softText })}>
-        <Icon size={14} />
-      </Box>
-      <span>{text}</span>
+      <ChangeIcon words={words} />
+      <span>{words.sentence}</span>
     </Typography>
+  )
+}
+
+/**
+ * The comparison's arrow alone, before the value (#260): a button named by the sentence, which its tooltip shows on hover, focus and tap,
+ * 44 px to a finger around it (padding the margin gives back, so nothing moves). Outside Customize it also says the figure's period, under
+ * the sentence and in its name ("… than the 12 months before (12 full months)"); while arranging, the period is on the tile's strip.
+ */
+export function ChangeArrow({ words, period }: { words: ChangeWords; period?: string }) {
+  const { t } = useTranslation()
+  const said = useContext(TileInsetContext) ? undefined : period
+  const title = said ? (
+    <>
+      {words.sentence}
+      <Box component="span" sx={{ display: 'block', mt: 0.5, opacity: 0.75 }}>
+        {said}
+      </Box>
+    </>
+  ) : (
+    words.sentence
+  )
+  return (
+    <Tooltip title={title} describeChild enterTouchDelay={0} leaveTouchDelay={8000}>
+      <ButtonBase aria-label={said ? t('dashboard.trend.arrowName', { sentence: words.sentence, period: said }) : words.sentence} sx={{ flex: 'none', borderRadius: 9999, [COARSE]: { p: '10px', m: '-10px' } }}>
+        <ChangeIcon words={words} />
+      </ButtonBase>
+    </Tooltip>
   )
 }
