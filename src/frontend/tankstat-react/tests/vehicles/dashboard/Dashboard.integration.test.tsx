@@ -823,6 +823,104 @@ it('blocks a chart without a title', async () => {
 
 // The dashboard's axe scans, a few per test (CLAUDE.md): a scan of the whole page takes seconds with coverage on, so each test gets the
 // 30 s the accessibility files give theirs, and a slow runner names the element rather than a timeout.
+// ---- a ready-made chart customized from its tile (#247) --------------------------------------------------------------------
+
+/** The Usage preset applied while customizing: its charts are ready-made tiles. */
+const usagePreset = async (ui: ReturnType<typeof userEvent.setup>) => {
+  await screen.findByRole('heading', { name: 'Monthly costs' })
+  await customize(ui)
+  await choose(ui, 'Start from a preset', 'Usage')
+  await screen.findByRole('heading', { name: 'Consumption trend' })
+}
+const saveAsMine = () => within(screen.getByRole('dialog', { name: 'Customize chart' })).getByRole('button', { name: 'Save as my chart' })
+
+it("customizes a ready-made chart from its tile's menu into a chart of one's own, in the tile's place, size and pin (#247)", async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await usagePreset(ui)
+  await tileMenu(ui, 'Consumption trend', 'Pin')
+
+  // Only a ready-made chart's menu offers it.
+  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  await ui.click(screen.getByRole('button', { name: 'Options for Odometer' }))
+  expect(await screen.findByRole('menuitem', { name: 'Move later' })).toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: 'Customize as my chart…' })).not.toBeInTheDocument()
+  await ui.keyboard('{Escape}')
+
+  await tileMenu(ui, 'Consumption trend', 'Customize as my chart…')
+  const dialog = await screen.findByRole('dialog', { name: 'Customize chart' })
+  expect(dialog).toHaveAccessibleDescription(/Consumption trend is a ready-made chart\. Saved, it becomes a chart of your own and takes this tile's place and size/)
+  // Its fields open, from the ready-made chart's title and recipe.
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Consumption trend')
+  expect(screen.getByRole('combobox', { name: 'What to measure' })).toHaveTextContent('Average consumption')
+  expect(radio('Group by', 'Quarter')).toBeChecked()
+  expect(radio('Period', 'All time')).toBeChecked()
+  expect(radio('Trend line', 'Linear trend')).toBeChecked()
+  // Everyone's dashboard: shared, and it must be.
+  expect(within(dialog).getByRole('switch', { name: /Share with everyone/ })).toBeChecked()
+  expect(within(dialog).getByRole('switch', { name: /Share with everyone/ })).toBeDisabled()
+  // Nothing differs yet: Save is off and says why; a change turns it on, undoing it off again.
+  expect(saveAsMine()).toBeDisabled()
+  expect(within(dialog).getByText('Change something to save it as your own chart.')).toBeInTheDocument()
+  await pick(ui, 'Group by', 'Year')
+  expect(saveAsMine()).toBeEnabled()
+  expect(within(dialog).queryByText('Change something to save it as your own chart.')).not.toBeInTheDocument()
+  await pick(ui, 'Group by', 'Quarter')
+  expect(saveAsMine()).toBeDisabled()
+  await pick(ui, 'Group by', 'Year')
+  await ui.clear(within(dialog).getByLabelText('Title'))
+  await ui.type(within(dialog).getByLabelText('Title'), 'Consumption by year')
+  await ui.click(saveAsMine())
+
+  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
+  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: null, title: 'Consumption by year', shared: true, config: { metric: 'AVERAGE_CONSUMPTION', grouping: 'YEAR', range: 'ALL', trend: 'LINEAR' } } })
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(said()).toHaveTextContent('Consumption trend is now your own chart, Consumption by year, in the same place.')
+  // The focus is on the new tile's menu button: the one that opened the dialog went with the ready-made tile.
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Consumption by year' })))
+  expect(await chartTitles()).toEqual(['Distance, this year and last', 'Consumption by year', 'Distance and consumption', 'Distance per month'])
+  expect(within(await cardOf('Consumption by year')).getByRole('button', { name: 'Edit the chart Consumption by year' })).toBeInTheDocument()
+
+  // The ready-made one is off the dashboard now, so Add widget offers it to add as it is again.
+  await ui.click(screen.getByRole('button', { name: 'Add widget' }))
+  const adding = await screen.findByRole('dialog', { name: 'Add widget' })
+  expect(within(adding).getByRole('button', { name: 'Consumption trend' })).toBeInTheDocument()
+  await ui.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; pinned: boolean }[] } }).input.tiles
+  expect(tiles).toContainEqual(expect.objectContaining({ id: expect.stringMatching(/^chart:/), x: 2, y: 4, w: 2, h: 8, pinned: true }))
+  expect(tiles.map((x) => x.id)).not.toContain('preset:consumptionTrend')
+})
+
+it("customizes a ready-made chart from its tile on one's own dashboard into a private chart; Cancel leaves the tile and its focus (#247)", async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await screen.findByRole('heading', { name: 'Monthly costs' })
+  await customize(ui)
+  await ui.click(screen.getByRole('radio', { name: 'Just me' }))
+
+  await tileMenu(ui, 'Fuel price', 'Customize as my chart…')
+  let dialog = await screen.findByRole('dialog', { name: 'Customize chart' })
+  await ui.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Fuel price' })))
+  expect(state.calls.SaveChart).toBeUndefined()
+
+  await tileMenu(ui, 'Fuel price', 'Customize as my chart…')
+  dialog = await screen.findByRole('dialog', { name: 'Customize chart' })
+  const share = within(dialog).getByRole('switch', { name: /Share with everyone/ })
+  expect(share).not.toBeChecked()
+  expect(share).toBeEnabled()
+  await pick(ui, 'Period', 'This year')
+  await ui.click(saveAsMine())
+  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
+  expect(state.calls.SaveChart![0]).toMatchObject({ input: { title: 'Fuel price', shared: false, config: { metric: 'AVERAGE_PRICE_PER_UNIT', range: 'THIS_YEAR' } } })
+  await waitFor(() => expect(said()).toHaveTextContent('Fuel price is now your own chart, in the same place.'))
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Fuel price' })))
+  expect(within(await cardOf('Fuel price')).getByRole('button', { name: 'Edit the chart Fuel price' })).toBeInTheDocument()
+})
+
 const a11ySetup = () => setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })])
 const check = async (node: HTMLElement) => {
   const results = await axe(node, { rules: { 'color-contrast': { enabled: false } } })
@@ -856,5 +954,14 @@ it('has no accessibility violations: the Add widget dialog, its list and the bla
   await check(document.body)
   await ui.click(within(dialog).getByRole('button', { name: 'Blank chart' }))
   await within(dialog).findByLabelText('Title')
+  await check(document.body)
+})
+
+it("has no accessibility violations: a ready-made chart's Customize dialog, opened from its tile's menu (#247)", { timeout: 30_000 }, async () => {
+  const { ui } = a11ySetup()
+  await screen.findByRole('heading', { name: 'Shared one' })
+  await customize(ui)
+  await tileMenu(ui, 'Monthly costs', 'Customize as my chart…')
+  await screen.findByRole('dialog', { name: 'Customize chart' })
   await check(document.body)
 })

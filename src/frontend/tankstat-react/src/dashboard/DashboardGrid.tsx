@@ -1,4 +1,5 @@
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
@@ -8,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
 import { TILE_INSET, TILE_STRIP, TileInsetContext } from './tileChrome.ts'
-import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize, ROW_HEIGHT, type Tile } from './widgets.ts'
+import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
@@ -28,7 +29,8 @@ type Breakpoint = keyof typeof COLS
 const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
 
 /** What the tile menu offers: the keyboard's and a screen reader's way to do what dragging does. */
-export type TileAction = 'earlier' | 'later' | 'wider' | 'narrower' | 'taller' | 'shorter' | 'pin' | 'unpin' | 'remove'
+/** What a tile's menu does; `customize` (a ready-made chart's only, #247) opens a dialog, so it comes once the menu has gone. */
+export type TileAction = 'earlier' | 'later' | 'wider' | 'narrower' | 'taller' | 'shorter' | 'pin' | 'unpin' | 'remove' | 'customize'
 
 const CLASS = { handle: 'tk-tile-handle' }
 
@@ -176,11 +178,15 @@ export function DashboardGrid({
 function EditStrip({ tile, name, index, count, cols, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; onAction: (action: TileAction) => void }) {
   const { t } = useTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  /** An action that opens a dialog, done once the menu is gone (`LogFab`): the menu's leaving would take the focus back from it. */
+  const [opening, setOpening] = useState<TileAction | null>(null)
   const menuId = useId()
   const min = minSize(tile.id)
+  const ready = widgetOf(tile.id)?.kind === 'ready'
   const choose = (action: TileAction) => {
     setAnchor(null)
-    onAction(action)
+    if (action === 'customize') setOpening(action)
+    else onAction(action)
   }
   const items: { action: TileAction; label: string; disabled?: boolean }[] = [
     { action: 'earlier', label: t('dashboard.edit.earlier'), disabled: index === 0 },
@@ -209,7 +215,25 @@ function EditStrip({ tile, name, index, count, cols, onAction }: { tile: Tile; n
       <IconAction size="large" variant="ghost" tone="primary" label={t('dashboard.edit.options', { name })} aria-haspopup="menu" aria-controls={anchor ? menuId : undefined} aria-expanded={anchor ? true : undefined} onClick={(e) => setAnchor(e.currentTarget)}>
         <EllipsisVertical size={18} aria-hidden />
       </IconAction>
-      <Menu id={menuId} anchorEl={anchor} open={anchor !== null} onClose={() => setAnchor(null)}>
+      <Menu
+        id={menuId}
+        anchorEl={anchor}
+        open={anchor !== null}
+        onClose={() => setAnchor(null)}
+        slotProps={{
+          transition: {
+            onExited: () => {
+              if (opening) onAction(opening)
+              setOpening(null)
+            },
+          },
+        }}
+      >
+        {/* A ready-made chart is made one's own from here (#247), the arranging below. */}
+        {ready && (
+          <MenuItem onClick={() => choose('customize')}>{t('dashboard.edit.customize')}</MenuItem>
+        )}
+        {ready && <Divider />}
         {items.map((it) => (
           <MenuItem key={it.action} disabled={it.disabled} onClick={() => choose(it.action)}>
             {it.label}

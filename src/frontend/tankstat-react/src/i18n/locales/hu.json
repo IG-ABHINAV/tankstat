@@ -1489,7 +1489,10 @@
       "pinnedSaid": "{{name}} rögzítve.",
       "unpinnedSaid": "{{name}} rögzítése feloldva.",
       "removed": "{{name}} levéve.",
-      "added": "{{name}} hozzáadva."
+      "added": "{{name}} hozzáadva.",
+      "customize": "Testreszabás saját grafikonként…",
+      "customized": "{{name}} mostantól saját grafikonod, ugyanott.",
+      "customizedRenamed": "{{name}} mostantól saját grafikonod, {{title}} néven, ugyanott."
     },
     "sectionLabel": "Irányítópult",
     "layoutPresets": {

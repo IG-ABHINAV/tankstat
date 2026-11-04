@@ -1489,7 +1489,10 @@
       "pinnedSaid": "{{name}} pinned.",
       "unpinnedSaid": "{{name}} unpinned.",
       "removed": "{{name}} taken off.",
-      "added": "{{name}} added."
+      "added": "{{name}} added.",
+      "customize": "Customize as my chart…",
+      "customized": "{{name}} is now your own chart, in the same place.",
+      "customizedRenamed": "{{name}} is now your own chart, {{title}}, in the same place."
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {
