@@ -14,7 +14,7 @@ export async function violations(page: Page, include?: string) {
         for (let node: Element | null = part; node; node = node.parentElement) if (getComputedStyle(node).opacity !== '1') return false
         return true
       })
-    }, include)
+    }, include, { timeout: 5_000 }) // a selector that matches nothing fails here, named, rather than at the test's timeout
   const builder = new AxeBuilder({ page })
   if (include) builder.include(include)
   const { violations } = await builder.analyze()

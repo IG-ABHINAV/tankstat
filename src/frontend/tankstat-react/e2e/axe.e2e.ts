@@ -1,5 +1,5 @@
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, openVehicle, pageLoaded, signIn } from './support/app.ts'
+import { addVehicle, createUser, graphql, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 
 // axe in a real browser: what jsdom cannot judge (the colour contrast of the real styles, what is hidden after layout). The jsdom scans
@@ -55,12 +55,21 @@ test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', 
 // The solid fills (#235): a primary button under the pointer, and a red confirmation at rest and under it, in both schemes; a hover is
 // a pointer's, so on a desktop only. Each scan waits for the fill to be the hover's (MUI's 250 ms transition), as it is drawn.
 for (const scheme of ['dark', 'light'] as const) {
-  test(`a hovered primary button and a red confirmation have no axe violations, ${scheme}`, async ({ page, isMobile }) => {
+  test(`a hovered primary button, a red confirmation and the bell's badge reach 4.5:1, ${scheme}`, async ({ page, request, isMobile }) => {
     test.skip(isMobile, 'a hover is a pointer\'s')
     if (scheme === 'light') await page.addInitScript(() => localStorage.setItem('tankstat.colorMode', 'light'))
+    // A user of its own, whom someone else grants access to their vehicle: the bell then has an unread count.
+    const me = await signInAsNewUser(page)
+    const owner = await createUser()
+    await signIn(request, owner)
+    const theirs = await addVehicle(request)
+    await graphql(request, 'mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }', { i: { vehicleId: theirs.id, userId: me.id, level: 'EDIT' } })
     const vehicle = await addVehicle(page)
     await page.goto('/')
     await pageLoaded(page)
+    // The badge is aria-hidden, so axe skips it: its fill is checked as drawn, the red's solid one (white on it is 4.88:1).
+    await expect(page.getByRole('button', { name: /^Notifications, \d+ unread$/ })).toBeVisible()
+    await expect(page.locator('.MuiBadge-badge')).toHaveCSS('background-color', 'rgb(202, 63, 68)')
     // The add vehicle dialog's submit is a contained primary button (the toolbar's own is a soft one).
     await page.getByRole('button', { name: 'Add vehicle' }).first().click()
     const dialog = page.getByRole('dialog', { name: 'Add vehicle' })
