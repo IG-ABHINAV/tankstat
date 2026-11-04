@@ -16,7 +16,9 @@ export interface SegmentedOption<V extends string> {
   reason?: string
 }
 
+// Positioned, so the segments' hidden inputs and reasons are placed within the pill, inside whatever scrolls around it (#249).
 const pill = (theme: Theme) => ({
+  position: 'relative' as const,
   display: 'inline-flex',
   flexWrap: 'wrap' as const,
   p: '3px',
