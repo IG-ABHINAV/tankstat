@@ -1382,7 +1382,8 @@
         },
         "sameDaysYearEarlier": "the same days a year earlier",
         "lastYearToDate": "last year to this day"
-      }
+      },
+      "arrowName": "{{sentence}} ({{period}})"
     },
     "period": {
       "thisYear": "This year",

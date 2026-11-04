@@ -18,7 +18,7 @@ export type TrendData = VehicleTrendQuery['vehicleTrend']
  * (`data` null) the same card waits with its label and chip, or says why it has none (`error`): one card either way, so its chip stays the
  * same element, and a popover opened from it keeps its anchor when the answer comes.
  */
-export function TrendFigure({ figure, period: p, data, error, rows, units, label, chip }: { figure: TrendFigureId; period: TrendPeriod; data: TrendData | null | undefined; error?: unknown; rows: number; units: Units; label: string; chip?: ReactNode }) {
+export function TrendFigure({ figure, period: p, data, error, rows, units, label, chip, periodWords }: { figure: TrendFigureId; period: TrendPeriod; data: TrendData | null | undefined; error?: unknown; rows: number; units: Units; label: string; chip?: ReactNode; periodWords?: string }) {
   const { t } = useTranslation()
   const format = useFormat()
   const errorText = useErrorText()
@@ -59,6 +59,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           rows={rows}
           label={label}
           chip={chip}
+          period={periodWords}
           fitKey={fitKey}
           value={main ? format.money(main.recent ?? 0, main.currency) : none}
           hint={others.length > 0 ? others.map((c) => format.money(c.recent ?? 0, c.currency)).join(' · ') : undefined}
@@ -73,6 +74,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           rows={rows}
           label={label}
           chip={chip}
+          period={periodWords}
           fitKey={fitKey}
           value={main?.recent != null ? <ValueWithUnit {...format.costPerDistanceParts(main.recent, main.currency, units.distance)} /> : none}
           change={main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.costPerDistance(v, main.currency, units.distance), none: t('dashboard.trend.nothingBefore'), noneRecent: t('dashboard.trend.nothingDriven') })}
@@ -88,6 +90,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           rows={rows}
           label={label}
           chip={chip}
+          period={periodWords}
           fitKey={fitKey}
           value={c?.recent != null ? <ValueWithUnit {...format.consumptionParts(c.recent, units)} /> : none}
           hint={c ? (fillUps ? t('dashboard.kpi.fillUpsIn', { count: c.recentFillUps }) : t('dashboard.kpi.lastFillUps', { count: c.recentFillUps })) : undefined}
@@ -110,6 +113,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           rows={rows}
           label={label}
           chip={chip}
+          period={periodWords}
           fitKey={fitKey}
           value={d?.recent != null ? format.distance(d.recent, units.distance) : none}
           change={d ? wordsOf({ recent: d.recent, earlier: d.earlier, than, meaning: 'neutral', size: (v) => format.distance(v, units.distance), none: t('dashboard.trend.nothingBefore') }) : undefined}

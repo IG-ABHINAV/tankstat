@@ -5,6 +5,7 @@ import { axe } from 'vitest-axe'
 import type { ChangeWords } from '../../../src/dashboard/changeWords.ts'
 import { KpiCard, MoreCount } from '../../../src/dashboard/Kpi.tsx'
 import { FULL, type Fit } from '../../../src/dashboard/kpiFit.ts'
+import { TileInsetContext } from '../../../src/dashboard/tileChrome.ts'
 import { renderWithApollo } from '../../support/mocks.tsx'
 
 // A key figure's card in each form the fit can end on (#259): jsdom lays nothing out, so `Kpi` itself always shows the full form here,
@@ -88,6 +89,23 @@ it('shows a comparison with no row of its own as its arrow alone before the valu
   // Nothing to compare with yet: a grey dash, the same way.
   rerender(trend(2, FULL, { sentence: 'needs 3 earlier fill-ups to compare with', icon: 'same', tone: 'same' }))
   expect(screen.getByRole('button', { name: 'needs 3 earlier fill-ups to compare with' }).querySelector('[data-tone]')).toHaveAttribute('data-tone', 'same')
+})
+
+it('says the period with the arrow outside Customize, in its name and under the sentence in its tooltip, and not while arranging (#260)', async () => {
+  const ui = userEvent.setup()
+  const card = <KpiCard rows={2} label="Spending" value="HUF 463,600" change={{ sentence: 'HUF 335,400 (262%) more than the 12 months before', icon: 'up', tone: 'bad' }} period="12 full months" fit={FULL} />
+  const { rerender } = renderWithApollo(card)
+  const arrow = screen.getByRole('button', { name: 'HUF 335,400 (262%) more than the 12 months before (12 full months)' })
+  expect(arrow.querySelector('[data-tone]')).toHaveAttribute('data-tone', 'bad')
+  await ui.tab()
+  const tooltip = await screen.findByRole('tooltip')
+  expect(tooltip).toHaveTextContent('HUF 335,400 (262%) more than the 12 months before')
+  expect(within(tooltip).getByText('12 full months')).toBeInTheDocument() // on a line of its own
+  await ui.keyboard('{Escape}')
+
+  // While arranging the period is on the tile's strip (its chip): the arrow says the sentence alone.
+  rerender(<TileInsetContext.Provider value>{card}</TileInsetContext.Provider>)
+  expect(screen.getByRole('button', { name: 'HUF 335,400 (262%) more than the 12 months before' })).toBeInTheDocument()
 })
 
 it('turns a comparison line with no room at three rows into its arrow, and the note does not take its row', () => {

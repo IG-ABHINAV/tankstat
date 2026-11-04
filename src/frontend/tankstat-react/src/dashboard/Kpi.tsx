@@ -4,12 +4,12 @@ import Card from '@mui/material/Card'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
-import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeWords, Tone } from './changeWords.ts'
 import { COARSE } from '../theme/components.ts'
 import { FULL, type Fit, type Measured, nextFit, offered, VALUE_STEPS } from './kpiFit.ts'
-import { useTilePadding } from './tileChrome.ts'
+import { TileInsetContext, useTilePadding } from './tileChrome.ts'
 
 export interface KpiProps {
   rows: number
@@ -23,6 +23,8 @@ export interface KpiProps {
   hint?: string
   /** A trend figure's comparison (`useChangeWords`): its line when there is room, else its arrow alone before the value (#260). */
   change?: ChangeWords
+  /** A trend figure's period in words ("12 full months"), said by its arrow alone outside Customize (#260). */
+  period?: string
   sparkline?: ReactNode
   /**
    * What the card shows, in words, beyond its label and note (its value, its comparison's figures): a change of it fits the card afresh
@@ -102,7 +104,7 @@ function measure(card: HTMLElement): Measured {
 const ONE_LINE = { whiteSpace: 'nowrap', overflow: 'hidden' } as const
 
 /** A key figure's card in a given form (`Fit`): what `Kpi` draws once it has measured, and what the tests draw in each form. */
-export function KpiCard({ rows, label, chip, value, short, hint, change, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
+export function KpiCard({ rows, label, chip, value, short, hint, change, period, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
   const full = rows >= 4
   const third = rows >= 3
   const offers = offersOf({ rows, sparkline, hint, change, shrink, short })
@@ -115,7 +117,7 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, sparkli
       </Box>
       {/* The value's row: the comparison's arrow alone before it (#260), a sibling, so the value's clipping never cuts the arrow's touch area. */}
       <Box data-kpi="value-row" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, my: full ? 0.5 : 0 }}>
-        {change && (offers.change === 'arrow' || fit.drop >= 3) && <ChangeArrow words={change} />}
+        {change && (offers.change === 'arrow' || fit.drop >= 3) && <ChangeArrow words={change} period={period} />}
         {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
         <Typography
           data-kpi="value"
@@ -225,12 +227,25 @@ export function ChangeLine({ words }: { words: ChangeWords }) {
 
 /**
  * The comparison's arrow alone, before the value (#260): a button named by the sentence, which its tooltip shows on hover, focus and tap,
- * 44 px to a finger around it (padding the margin gives back, so nothing moves).
+ * 44 px to a finger around it (padding the margin gives back, so nothing moves). Outside Customize it also says the figure's period, under
+ * the sentence and in its name ("… than the 12 months before (12 full months)"); while arranging, the period is on the tile's strip.
  */
-export function ChangeArrow({ words }: { words: ChangeWords }) {
+export function ChangeArrow({ words, period }: { words: ChangeWords; period?: string }) {
+  const { t } = useTranslation()
+  const said = useContext(TileInsetContext) ? undefined : period
+  const title = said ? (
+    <>
+      {words.sentence}
+      <Box component="span" sx={{ display: 'block', mt: 0.5, opacity: 0.75 }}>
+        {said}
+      </Box>
+    </>
+  ) : (
+    words.sentence
+  )
   return (
-    <Tooltip title={words.sentence} describeChild enterTouchDelay={0} leaveTouchDelay={8000}>
-      <ButtonBase aria-label={words.sentence} sx={{ flex: 'none', borderRadius: 9999, [COARSE]: { p: '10px', m: '-10px' } }}>
+    <Tooltip title={title} describeChild enterTouchDelay={0} leaveTouchDelay={8000}>
+      <ButtonBase aria-label={said ? t('dashboard.trend.arrowName', { sentence: words.sentence, period: said }) : words.sentence} sx={{ flex: 'none', borderRadius: 9999, [COARSE]: { p: '10px', m: '-10px' } }}>
         <ChangeIcon words={words} />
       </ButtonBase>
     </Tooltip>

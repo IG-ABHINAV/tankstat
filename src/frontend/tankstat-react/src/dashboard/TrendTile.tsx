@@ -34,7 +34,7 @@ export function TrendTile({ figure, vehicleId, period, rows, units, control }: {
   const popover = control && anchor && <TrendPeriodPopover anchor={anchor} figure={figure} vehicleId={vehicleId} units={units} period={p} control={control} onClose={() => setAnchor(null)} />
   return (
     <>
-      <TrendFigure figure={figure} period={p} data={data?.vehicleTrend} error={error} rows={rows} units={units} label={label} chip={chip} />
+      <TrendFigure figure={figure} period={p} data={data?.vehicleTrend} error={error} rows={rows} units={units} label={label} chip={chip} periodWords={words} />
       {popover}
     </>
   )
