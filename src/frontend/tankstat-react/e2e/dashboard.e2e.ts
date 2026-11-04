@@ -16,6 +16,8 @@ const region = (page: Page) => page.getByRole('region', { name: 'Dashboard' })
 const chartTitles = (page: Page) => region(page).getByRole('heading', { level: 2 }).allTextContents()
 const figureLabels = (page: Page) => region(page).locator('.MuiCard-root > div:first-child > p:first-child').allTextContents()
 const tile = (page: Page, id: string) => page.locator(`[data-tile="${id}"]`)
+/** A tile's grip while arranging: the strip's second handle, after the tile's name, which is a handle too (#262). */
+const grip = (tile: Locator) => tile.locator('.tk-tile-handle').last()
 const menu = async (page: Page, name: string, entry: string) => {
   await page.getByRole('button', { name: `Options for ${name}` }).click()
   await page.getByRole('menuitem', { name: entry }).click()
@@ -147,7 +149,7 @@ test('resizes a tile by its corner and drags one to the top', async ({ page, isM
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
   // `page.mouse` never scrolls, and a press past the viewport lands on nothing: the grid is brought up under the top bar first, so the
-  // figures and the first two charts' handles are on screen. Below them, the edit rows' height and the fonts decide: on CI's runner the
+  // figures and the first two charts' handles are on screen. Below them, the rows' height and the fonts decide: on CI's runner the
   // Consumption chart's handle was at 914 px of a 900 px viewport, and the drag never started.
   await region(page).locator('.react-grid-layout').evaluate((grid) => window.scrollBy(0, grid.getBoundingClientRect().top - 120))
   const drag = async (fromX: number, fromY: number, toX: number, toY: number) => {
@@ -175,7 +177,7 @@ test('resizes a tile by its corner and drags one to the top', async ({ page, isM
   // Drag: the Consumption chart's handle to the first figure's place; the others go round it.
   await settled(tile(page, 'preset:consumption'))
   await settled(tile(page, 'thisMonth'))
-  const handle = (await tile(page, 'preset:consumption').locator('.tk-tile-handle').boundingBox())!
+  const handle = (await grip(tile(page, 'preset:consumption')).boundingBox())!
   const target = (await tile(page, 'thisMonth').boundingBox())!
   await drag(handle.x + handle.width / 2, handle.y + handle.height / 2, target.x + 24, target.y + 24)
   await expect.poll(async () => (await chartTitles(page))[0]).toBe('Consumption')
@@ -312,7 +314,7 @@ const followsThePointer = async (page: Page, part: Locator, steps: number, by: {
   // (react-grid-layout's edge scroll, `EDGE_THRESHOLD`), which moves the tile away from a pointer that stays put. Where the part starts
   // depends on the layout above it (CI's fonts put Monthly costs' handle at 866 of 900 px, and the pointer reached the edge at step 17).
   await part.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'center' }))
-  // Measured once it holds still (`settled`): the tiles move to their places after a drop, and grow into the edit rows.
+  // Measured once it holds still (`settled`): the tiles move to their places after a drop.
   await settled(part)
   const box = (await part.boundingBox())!
   const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
@@ -343,7 +345,7 @@ test('keeps a dragged tile under the pointer at every step, above the spot it wi
   // After each step the tile is drawn where the pointer is (React draws a document event's update in a task of its own). A tile frozen
   // until it crosses into another cell (#227) never gets there.
   const moved = tile(page, 'preset:monthlyCosts')
-  await followsThePointer(page, moved.locator('.tk-tile-handle'), 20, { x: 14, y: 2 })
+  await followsThePointer(page, grip(moved), 20, { x: 14, y: 2 })
   // The grid's own drop spot shows where it will land, under the tile.
   const layers = await page.evaluate(() => ({
     tile: getComputedStyle(document.querySelector('[data-tile="preset:monthlyCosts"]')!).zIndex,
@@ -472,7 +474,7 @@ test('makes figures shorter: each shows what its rows hold, down to two rows, an
   await expect(page.getByRole('menuitem', { name: 'Shorter' })).not.toHaveAttribute('aria-disabled', 'true') // every figure goes down to two (#259)
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toBeHidden()
-  // While arranging, the rows are taller by the handle's room: a two-row figure keeps its content whole.
+  // While arranging, the rows are as tall as in view mode and the label is in the strip (#262): a two-row figure keeps its value whole.
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
@@ -535,7 +537,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page) // the "+1" 44 px to a finger on a phone
 
-  // While arranging, the tiles keep their rows (taller by the strip's room): still nothing cut.
+  // While arranging, the tiles keep their size, the labels and chips in the strips (#262): still nothing cut.
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
   await expect.poll(() => clippedFigures(page)).toEqual([])
@@ -556,4 +558,84 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   }
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page)
+  // Arranged in Hungarian at three rows: the label in the strip, the card fitted afresh under it, nothing cut (#262).
+  await page.getByRole('button', { name: 'Testreszabás' }).click()
+  await expect(page.getByRole('button', { name: 'Irányítópult mentése' })).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+})
+
+// ---- the strip as the tile's header (#262) ------------------------------------------------------------------------------------
+
+/** Each tile's height and its chart's picture height (the widest `svg` of its `figure`), by tile. */
+const tileHeights = (page: Page) =>
+  page.evaluate(() =>
+    Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>('[data-tile]')].map((t) => {
+        const pictures = [...t.querySelectorAll<SVGElement>('figure svg')].map((s) => s.getBoundingClientRect()).sort((a, b) => b.width - a.width)
+        return [t.dataset.tile!, { tile: Math.round(t.closest<HTMLElement>('.react-grid-item')!.getBoundingClientRect().height), picture: pictures[0] ? Math.round(pictures[0].height) : null }]
+      }),
+    ),
+  )
+
+test('keeps every tile as tall while arranging as in view mode, the strip naming it and holding its chip and a chart\'s buttons (#262)', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: daysAgo(40), totalCost: 20000, odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: daysAgo(10), totalCost: 24000, odometer: 1600 })
+  // Two 2-row figures stacked, a 4-row figure, a 2-row trend figure under it and an 8-row chart.
+  await arrange(page, vehicle.id, [
+    { id: 'odometer', x: 0, y: 0, w: 1, h: 2, pinned: false },
+    { id: 'consumption', x: 0, y: 2, w: 1, h: 2, pinned: false },
+    { id: 'lastFillUp', x: 1, y: 0, w: 1, h: 4, pinned: false },
+    { id: 'distanceTrend', x: 1, y: 4, w: 1, h: 2, pinned: false },
+    { id: 'preset:monthlyCosts', x: 2, y: 0, w: 2, h: 8, pinned: false },
+  ])
+  await openVehicle(page, vehicle.id)
+  const chart = tile(page, 'preset:monthlyCosts')
+  await expect(chart.locator('figure svg').first()).toBeVisible()
+  await expect(tile(page, 'distanceTrend').locator('[data-kpi="value"]')).toHaveText(/km$/)
+  const view = await tileHeights(page)
+  expect(view.odometer.tile).toBe(84) // 2 rows of 36 px and a 12 px gap
+  expect(view['preset:monthlyCosts'].tile).toBe(372)
+
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+  // The same size, a chart's picture too (within a few px: the byline under the strip instead of the title).
+  await expect.poll(async () => Object.fromEntries(Object.entries(await tileHeights(page)).map(([id, h]) => [id, h.tile]))).toEqual(Object.fromEntries(Object.entries(view).map(([id, h]) => [id, h.tile])))
+  const arranged = await tileHeights(page)
+  expect(Math.abs(arranged['preset:monthlyCosts'].picture! - view['preset:monthlyCosts'].picture!)).toBeLessThanOrEqual(40)
+
+  // The strip names the tile: a chart's heading, the card's own title not drawn; a figure's label not in its card.
+  await expect(chart.getByRole('heading', { level: 2, name: 'Monthly costs' })).toHaveCount(1)
+  await expect(chart.locator('.MuiCard-root').getByRole('heading')).toHaveCount(0)
+  await expect(tile(page, 'odometer').locator('[data-kpi="label"]')).toHaveCount(0)
+  await expect(tile(page, 'odometer').getByText('Odometer', { exact: true })).toBeVisible()
+
+  // The chip in the strip opens the period's popover from there.
+  const chip = tile(page, 'distanceTrend').getByRole('button', { name: 'Distance driven period: This year. Change it' })
+  await expect(chip).toBeVisible()
+  expect(await chip.evaluate((b) => b.closest('.MuiCard-root') === null)).toBe(true)
+  await chip.click()
+  const popover = page.getByRole('dialog', { name: 'Period of Distance driven' })
+  await expect(popover).toBeVisible()
+  await expect(popover.getByText('Kept with the arrangement you are editing until you save it.')).toBeVisible()
+  await popover.getByRole('button', { name: 'Cancel' }).click()
+  await expect(popover).toBeHidden()
+
+  // A chart's table button is in its strip and opens its numbers.
+  const table = chart.getByRole('button', { name: 'Monthly costs as a table' })
+  expect(await table.evaluate((b) => b.closest('.MuiCard-root') === null)).toBe(true)
+  await table.click()
+  const dialog = page.getByRole('dialog', { name: 'Monthly costs' })
+  await expect(dialog.getByRole('table')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await expectSoundLayout(page) // the strip's buttons 44 px to a finger on a phone
+
+  // Back in view mode: the same heights, the card's own header back.
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(chart.locator('.MuiCard-root').getByRole('heading', { level: 2, name: 'Monthly costs' })).toBeVisible()
+  expect(Object.fromEntries(Object.entries(await tileHeights(page)).map(([id, h]) => [id, h.tile]))).toEqual(Object.fromEntries(Object.entries(view).map(([id, h]) => [id, h.tile])))
 })
