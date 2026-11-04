@@ -1,13 +1,13 @@
 import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DialogFrame } from '../dialogs/DialogFrame.tsx'
-import { OutsideTile } from './tileChrome.ts'
 import { DialogTrigger } from '../dialogs/DialogTrigger.tsx'
 import { useDialogState } from '../dialogs/useDialogState.ts'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { useToast } from '../toast/toastContext.ts'
 import type { ChartRecipe } from './chartFormat.ts'
 import { ChartForm, type EditableChart } from './ChartForm.tsx'
+import { OutsideTile } from './tileChrome.ts'
 
 export type { EditableChart } from './ChartForm.tsx'
 

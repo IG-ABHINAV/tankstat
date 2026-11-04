@@ -233,14 +233,15 @@ function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, ac
   ]
   return (
     <Box sx={(theme) => ({ position: 'absolute', top: 0, left: 0, right: 0, height: TILE_STRIP, zIndex: 2, display: 'flex', alignItems: 'center', gap: 0.5, pr: 0.5, borderRadius: '12px 12px 0 0', bgcolor: theme.vars.palette.primary.soft, color: theme.vars.palette.primary.softText })}>
-      {/* The name: cut with an ellipsis before the chip and the buttons give way. A chart's is its heading while arranging. */}
+      {/* The name: cut with an ellipsis (with the chip beside it sharing the shrinking; the buttons never give way). A chart's is its heading while arranging. */}
       <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '0 1 auto', pl: 1.5 }}>
         <Typography component={chart ? 'h2' : 'span'} variant="subtitle2" noWrap sx={{ color: 'text.primary', minWidth: 0 }}>
           {name}
         </Typography>
       </Box>
-      {/* What it holds takes the slot's width (a chip's own 60% would be of the slot): the period stays readable beside the name. */}
-      <Box ref={leadSlot} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', '&:empty': { display: 'none' }, '& > *': { maxWidth: '100%' }, ml: 1 }} />
+      {/* What it holds takes the slot's width (a chip's own 60% would be of the slot): the period stays readable beside the name. `&&` so
+          the rule outranks the chip's own class whichever was inserted first (a trend figure added while arranging comes after the strip). */}
+      <Box ref={leadSlot} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', '&:empty': { display: 'none' }, '&& > *': { maxWidth: '100%' }, ml: 1 }} />
       {/* The grip is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself. */}
       <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '1 1 auto', minWidth: 24, justifyContent: 'center' }}>
         <GripHorizontal size={18} aria-hidden />
