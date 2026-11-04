@@ -202,7 +202,9 @@ export const components: Components<T> = {
     },
   },
   MuiDialogTitle: { styleOverrides: { root: ({ theme }) => ({ ...theme.typography.h4, padding: '24px 24px 8px' }) } },
-  MuiDialogContent: { styleOverrides: { root: { padding: '0 24px 24px' } } },
+  // Positioned, so whatever is absolutely placed in a dialog's content (a visually hidden input) is laid out, scrolled and clipped with it:
+  // laid out against the frame, it stretched the frame past its content, which then scrolled as a whole too (#249).
+  MuiDialogContent: { styleOverrides: { root: { padding: '0 24px 24px', position: 'relative' } } },
   MuiDialogContentText: { styleOverrides: { root: ({ theme }) => ({ ...theme.typography.body2, color: theme.vars.palette.text.primary, marginBottom: 16 }) } },
   MuiDialogActions: { styleOverrides: { root: { padding: '0 24px 24px', gap: 12, '& > :not(style) ~ :not(style)': { marginLeft: 0 } } } },
   MuiBackdrop: { styleOverrides: { root: { backgroundColor: 'rgba(0, 0, 0, 0.5)' }, invisible: { backgroundColor: 'transparent' } } },
