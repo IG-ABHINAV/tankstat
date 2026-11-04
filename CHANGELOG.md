@@ -2,6 +2,22 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.1 (2026-11-04)
+
+A bugfix release for colour contrast.
+
+### Fixed
+
+- **Text on solid colours reaches 4.5:1** (#235: #248). Every red button (the confirmations: move to the trash, sign out, delete a user, restore a backup, delete a chart) and the bell's unread badge were white on a red of 3.91:1, and a hovered primary button in the dark scheme 4.28:1, under WCAG's 4.5:1. Each colour now has a fill chosen for the text on it, at rest and under the pointer: red is a little darker, a primary button looks the same at rest and a little darker under the pointer, in both schemes (the light scheme's hover changes by a shade too). Borders, focus rings and checked controls keep their colours.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. `0.19` and `latest` move to this release.
+
+### For developers
+
+- The real-browser axe scans wait for a dialog or popover they are asked to scan to finish fading in (at most 5 s), scan a hovered primary button and a red confirmation at rest and under the pointer in both schemes, and check the bell badge's fill as drawn (axe skips it, it is `aria-hidden`). The theme's unit test checks every colour's solid fill against its text in both schemes.
+
 ## 0.19.0 (2026-11-04)
 
 ### Added
