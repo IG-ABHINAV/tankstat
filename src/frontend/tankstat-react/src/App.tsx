@@ -238,7 +238,7 @@ function SkipLink() {
         px: 1.5,
         py: 1,
         borderRadius: '9px',
-        backgroundColor: theme.vars.palette.primary.main,
+        backgroundColor: theme.vars.palette.primary.solid,
         color: theme.vars.palette.primary.contrastText,
         '&:focus': { top: 'calc(12px + env(safe-area-inset-top, 0px))' },
       })}

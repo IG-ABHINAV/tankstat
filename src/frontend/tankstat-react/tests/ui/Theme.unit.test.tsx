@@ -34,6 +34,32 @@ describe('the theme keeps the old look', () => {
       }
   })
 
+  // WCAG 2's contrast of two #rrggbb colours (1.4.3 asks 4.5:1 of text under 18.66 px bold or 24 px; a button's is 14 to 16 px).
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  it('fills a solid control so its text reaches 4.5:1, at rest and under the pointer, every tone in both schemes (#235)', () => {
+    const short: string[] = []
+    for (const scheme of ['dark', 'light'] as const)
+      for (const tone of TONES) {
+        const c = theme.colorSchemes[scheme]!.palette[tone]
+        for (const [state, fill] of [['rest', c.solid], ['hover', c.solidHover]] as const) {
+          expect(fill, `${scheme} ${tone} ${state}`).toMatch(/^#[0-9a-f]{6}$/)
+          const ratio = contrast(c.contrastText, fill)
+          if (ratio < 4.5) short.push(`${scheme} ${tone} ${state}: ${c.contrastText} on ${fill} is ${ratio.toFixed(2)}:1`)
+        }
+        expect(c.solidHover, `${scheme} ${tone}: the hover is told apart`).not.toBe(c.solid)
+        expect(c.dark, `${scheme} ${tone}: MUI's own hover follows the solid one`).toBe(c.solidHover)
+      }
+    expect(short).toEqual([])
+  })
+
   it('maps the heading sizes: h6 is the old size 3 (16 px) up to h1, the old size 8 (35 px)', () => {
     expect([theme.typography.h6.fontSize, theme.typography.h4.fontSize, theme.typography.h1.fontSize]).toEqual(['1rem', '1.25rem', '2.1875rem'])
   })

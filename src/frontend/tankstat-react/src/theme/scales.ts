@@ -54,6 +54,19 @@ export const HUES: Record<'indigo' | 'red' | 'amber' | 'green' | 'blue', Record<
   },
 }
 
+/**
+ * The solid fills under white text (#235): Radix's step 9 is no contrast step, and with white on it only indigo passes WCAG's 4.5:1 (red
+ * 3.91, green 3.16, blue 3.26), while step 10, its hover, is lighter than 9 in the dark scheme (indigo 4.28). So these are step 9 darkened
+ * in sRGB until white reaches 4.5:1 with a margin (indigo already does), and a darker hover; step 9 is the same in both schemes, so one
+ * pair serves both. Amber carries dark text and passes on its own steps (`theme/palette.ts`).
+ */
+export const SOLID: Record<'indigo' | 'red' | 'green' | 'blue', { rest: string; hover: string }> = {
+  indigo: { rest: '#3e63dd', hover: '#3859c7' }, // 5.21 and 6.14 with white
+  red: { rest: '#ca3f44', hover: '#b73a3e' }, // 4.88 and 5.69
+  green: { rest: '#258054', hover: '#22734c' }, // 4.89 and 5.79
+  blue: { rest: '#0072c9', hover: '#0066b5' }, // 4.94 and 5.89
+}
+
 /** Chart series: step 9 of indigo, cyan, amber, grass, tomato, violet, teal and pink (the same in both schemes). */
 export const SERIES_COLORS = ['#3e63dd', '#00a2c7', '#ffc53d', '#46a758', '#e54d2e', '#6e56cf', '#12a594', '#d6409f'] as const
 

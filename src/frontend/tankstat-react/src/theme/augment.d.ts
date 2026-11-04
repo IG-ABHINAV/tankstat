@@ -13,11 +13,17 @@ declare module '@mui/material/styles' {
     softHover: string
     /** Readable text in this colour on the app's background or its soft surface (Radix step 11). */
     softText: string
+    /** The fill under `contrastText` (a contained button, a badge, a solid chip): at least 4.5:1 with it (#235). */
+    solid: string
+    /** The solid fill under the pointer, at least 4.5:1 with `contrastText` too; also MUI's `dark`. */
+    solidHover: string
   }
   interface SimplePaletteColorOptions {
     soft?: string
     softHover?: string
     softText?: string
+    solid?: string
+    solidHover?: string
   }
   interface Palette {
     /** The gray of the app (Radix "sand"): high-contrast solid, soft surfaces, secondary text. */

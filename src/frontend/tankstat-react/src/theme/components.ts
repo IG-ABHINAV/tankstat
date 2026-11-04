@@ -135,6 +135,12 @@ export const components: Components<T> = {
       sizeLarge: { minHeight: controlHeights.large, padding: '0 16px', fontSize: '1rem', lineHeight: '1.5rem', gap: 12, [COARSE]: { minHeight: 44 } },
     },
     variants: [
+      // A contained button is drawn on its tone's solid fill, chosen for its text (#235), not on `main`: MUI reads `--variant-containedBg`.
+      // Its hover is MUI's own rule, which reads `dark`: the palette sets `dark` to `solidHover` (theme/palette.ts, pinned by the theme test).
+      ...TONES.map((tone) => ({
+        props: { variant: 'contained' as const, color: tone },
+        style: ({ theme }: { theme: T }) => ({ '--variant-containedBg': theme.vars.palette[tone].solid }),
+      })),
       ...TONES.map((tone) => ({ props: { variant: 'soft' as const, color: tone }, style: ({ theme }: { theme: T }) => softTone(theme, tone) })),
       ...TONES.map((tone) => ({ props: { variant: 'ghost' as const, color: tone }, style: ({ theme }: { theme: T }) => ghostTone(theme, tone) })),
       {
@@ -174,9 +180,17 @@ export const components: Components<T> = {
       },
       ...TONES.map((tone) => ({
         props: { variant: 'solid' as const, color: tone },
-        style: ({ theme }: { theme: T }) => ({ backgroundColor: theme.vars.palette[tone].main, color: theme.vars.palette[tone].contrastText }),
+        style: ({ theme }: { theme: T }) => ({ backgroundColor: theme.vars.palette[tone].solid, color: theme.vars.palette[tone].contrastText }),
       })),
     ],
+  },
+
+  // A badge (the bell's count) on its tone's solid fill, like a contained button (#235): MUI draws it on `main`.
+  MuiBadge: {
+    styleOverrides: {
+      badge: ({ theme, ownerState }) =>
+        (TONES as readonly string[]).includes(ownerState.color ?? '') ? { backgroundColor: theme.vars.palette[ownerState.color as Tone].solid } : {},
+    },
   },
 
   MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
@@ -213,7 +227,7 @@ export const components: Components<T> = {
     styleOverrides: {
       tooltip: ({ theme }) => ({
         ...theme.typography.caption,
-        backgroundColor: theme.vars.palette.neutral.main,
+        backgroundColor: theme.vars.palette.neutral.solid,
         color: theme.vars.palette.neutral.contrastText,
         padding: '4px 8px',
         borderRadius: 6,
