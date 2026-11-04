@@ -84,6 +84,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   color={severity === 'error' ? 'error' : 'primary'}
                   sx={{ pointerEvents: 'auto' }}
                   onClick={() => {
+                    // One action per message: the button stays while the message fades out, and a second tap or Enter then would undo
+                    // twice, the second refused by the server and said as a failed undo (#243). One cut short by an error is leaving too.
+                    if (current.closing) return
                     current.action!.run()
                     close()
                   }}

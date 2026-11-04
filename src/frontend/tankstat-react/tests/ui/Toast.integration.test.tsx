@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Button from '@mui/material/Button'
 import { expect, it, vi } from 'vitest'
@@ -43,6 +43,30 @@ it('Undo runs the undo and the message goes', async () => {
 
   expect(undo).toHaveBeenCalledOnce()
   await waitFor(() => expect(screen.queryByText('Moved to the trash.')).not.toBeInTheDocument())
+})
+
+it('Undo tapped twice while the message goes runs the undo once (#243)', async () => {
+  const undo = vi.fn(async () => undefined)
+  show(undo)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Trash' }))
+  // Two clicks with nothing awaited between them: a double tap (user-event waits between its clicks). The button stays while it fades out.
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+  expect(undo).toHaveBeenCalledOnce()
+})
+
+it('Enter twice on Undo runs the undo once (#243)', async () => {
+  const ui = userEvent.setup()
+  const undo = vi.fn(async () => undefined)
+  show(undo)
+
+  await ui.click(screen.getByRole('button', { name: 'Trash' }))
+  ;(await screen.findByRole('button', { name: 'Undo' })).focus()
+  await ui.keyboard('{Enter}{Enter}')
+
+  expect(undo).toHaveBeenCalledOnce()
 })
 
 it('lets a tap on the message through to the page, only Undo takes one (#239)', async () => {
