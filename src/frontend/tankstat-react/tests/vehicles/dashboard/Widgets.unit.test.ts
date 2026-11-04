@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addTile, chartKey, defaultSize, FIGURES, flow, LAYOUT_PRESETS, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
+import { addTile, chartKey, defaultSize, FIGURES, flow, LAYOUT_PRESETS, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, replaceTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
 import { DEFAULT_PERIOD } from '../../../src/dashboard/trendPeriod.ts'
 
 const chart = (id: string) => ({ id, title: `Chart ${id}` })
@@ -166,5 +166,12 @@ describe('the tile menu', () => {
     expect(places(resizeTile(start, 'thisMonth', { w: -1, h: -1 }))).toContain('thisMonth@0,0 1x3') // no smaller than its value with every currency needs: three rows (this one was stored lower)
     expect(places(resizeTile([tile('odometer', 3, 0, 1, 3)], 'odometer', { w: 1 }))).toEqual(['odometer@2,0 2x3']) // widened at the right edge: moved left
     expect(pinTile(start, 'odometer', true).find((t) => t.id === 'odometer')?.pinned).toBe(true)
+  })
+
+  it('puts a chart of one\'s own in a ready-made chart\'s place: the same place, size and pin, nothing else moved (#247)', () => {
+    const tiles = [tile('odometer', 0, 0, 1, 3), tile(presetKey('consumptionTrend'), 2, 4, 2, 8, true), tile(presetKey('distance'), 0, 12)]
+    expect(places(replaceTile(tiles, presetKey('consumptionTrend'), chartKey('c9')))).toEqual(['odometer@0,0 1x3', 'chart:c9@2,4 2x8 pinned', 'preset:distance@0,12 2x8'])
+    expect(replaceTile([{ ...tile('spendingTrend', 0, 0, 1, 4), period: DEFAULT_PERIOD.spendingTrend }], 'spendingTrend', chartKey('c9'))[0]).not.toHaveProperty('period')
+    expect(places(replaceTile(tiles, presetKey('fuelPrice'), chartKey('c9')))).toEqual(places(tiles))
   })
 })
