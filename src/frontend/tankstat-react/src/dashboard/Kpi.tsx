@@ -2,39 +2,111 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFormat } from '../i18n/format.ts'
+import { FULL, type Fit, type Measured, nextFit, offered } from './kpiFit.ts'
 import { useTilePadding } from './tileChrome.ts'
 
+export interface KpiProps {
+  rows: number
+  label: string
+  chip?: ReactNode
+  value: ReactNode
+  /** The value may go one type step smaller when it wraps (#259: *Spent this month* in several currencies). */
+  shrink?: boolean
+  hint?: string
+  change?: ReactNode
+  sparkline?: ReactNode
+  /**
+   * What the card shows, in words, beyond its label and note (its value, its comparison's figures): a change of it fits the card afresh
+   * from its full form (#259). The size, the rows, the label and the note do so by themselves.
+   */
+  fitKey?: string
+}
+
 /**
- * A key figure's card, showing what its tile's rows hold (#229, the rows per figure in `widgets.ts` `FIGURE_ROWS`): two rows the label
- * and the value, packed closer (84 px); three the comparison line too, or the note where there is none (132 px); four or more everything,
- * spaced as always (180 px), so an arrangement of four-row figures looks as it did. The label stays the card's first paragraph; a trend
- * figure's period chip (#230) sits beside it, in the label row under the edit strip, never in it.
+ * A key figure's card, showing what its tile's rows hold (#229): two rows the label and the value, packed closer (84 px); three the
+ * comparison line too, or the note where there is none (132 px); four or more everything, spaced as always (180 px), so an arrangement of
+ * four-row figures looks as it did. The label stays the card's first paragraph; a trend figure's period chip (#230) sits beside it, in the
+ * label row under the edit strip, never in it.
+ *
+ * What does not fit the card's height is never cut (#259): the card measures itself (`kpiFit.ts`, one step a render in a layout effect, so
+ * nothing is painted half way) and leaves out from the bottom what has no room, then puts the label and the value on one line each. It
+ * starts from the full form again whenever its size, rows or words change; a card whose height follows its content (a preview) never
+ * overflows, so it shows everything, its value smaller only where it wraps.
  */
-export function Kpi({ rows, label, chip, value, hint, change, sparkline }: { rows: number; label: string; chip?: ReactNode; value: ReactNode; hint?: string; change?: ReactNode; sparkline?: ReactNode }) {
+export function Kpi({ fitKey = '', ...props }: KpiProps) {
+  const card = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState('')
+  const key = `${props.rows}|${size}|${props.label}|${props.hint ?? ''}|${fitKey}`
+  const [state, setState] = useState({ key, fit: FULL })
+  // A change of what is measured fits it afresh from the full form (derived state: set while rendering, so the old form is never painted).
+  if (state.key !== key) setState({ key, fit: FULL })
+  const fit = state.key === key ? state.fit : FULL
+  const offers = offered(props.rows, { sparkline: !!props.sparkline, hint: !!props.hint, change: !!props.change, shrink: !!props.shrink, short: false })
+
+  // Measured once a form is shown: at the start, after each step and after starting again (each step turns a flag on, so it ends).
+  useLayoutEffect(() => {
+    if (!card.current) return
+    const next = nextFit(fit, measure(card.current), offers)
+    if (next !== fit) setState({ key, fit: next })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `state` stands for the form shown; `offers` and `key` are of the same render
+  }, [state])
+  useEffect(() => {
+    const element = card.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      const next = `${Math.round(entry.contentRect.width)}x${Math.round(entry.contentRect.height)}`
+      setSize((last) => (last === next ? last : next))
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  return <KpiCard {...props} fit={fit} cardRef={card} />
+}
+
+/** What a card measures in the form it shows (`kpiFit.ts`): jsdom measures 0 and no line height, so there nothing overflows or wraps. */
+function measure(card: HTMLElement): Measured {
+  const value = card.querySelector<HTMLElement>('[data-kpi="value"]')
+  const label = card.querySelector<HTMLElement>('[data-kpi="label"]')
+  const line = value ? parseFloat(getComputedStyle(value).lineHeight) : NaN
+  return {
+    overflows: card.scrollHeight > card.clientHeight + 1,
+    valueWraps: !!value && line > 0 && value.getBoundingClientRect().height > line * 1.5,
+    valueTooWide: !!value && value.scrollWidth > value.clientWidth + 1,
+    labelCut: !!label && label.scrollWidth > label.clientWidth + 1,
+  }
+}
+
+/** One line, the rest cut off at its end: the one-line form's label (with an ellipsis) and value (the card's edge, a safety net only). */
+const ONE_LINE = { whiteSpace: 'nowrap', overflow: 'hidden' } as const
+
+/** A key figure's card in a given form (`Fit`): what `Kpi` draws once it has measured, and what the tests draw in each form. */
+export function KpiCard({ rows, label, chip, value, hint, change, sparkline, shrink, fit = FULL, cardRef }: Omit<KpiProps, 'fitKey'> & { fit?: Fit; cardRef?: Ref<HTMLDivElement> }) {
   const full = rows >= 4
   const third = rows >= 3
+  const offers = offered(rows, { sparkline: !!sparkline, hint: !!hint, change: !!change, shrink: !!shrink, short: false })
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
   return (
-    <Card sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
-        <Typography variant="body2" sx={{ color: 'text.secondary', minWidth: 0 }}>
+        <Typography data-kpi="label" variant="body2" sx={{ color: 'text.secondary', minWidth: 0, ...(fit.oneLine && { ...ONE_LINE, textOverflow: 'ellipsis' }) }}>
           {label}
         </Typography>
         {chip}
       </Box>
-      <Typography variant="h3" component="p" sx={{ my: full ? 0.5 : 0 }}>
+      <Typography data-kpi="value" variant={fit.smaller ? 'h4' : 'h3'} component="p" sx={{ my: full ? 0.5 : 0, ...(fit.oneLine && ONE_LINE) }}>
         {value}
       </Typography>
-      {hint && (full || (third && !change)) && (
+      {offers.hint && fit.drop < 2 && (
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
           {hint}
         </Typography>
       )}
-      {third && change}
-      {full && sparkline}
+      {offers.change && fit.drop < 3 && change}
+      {offers.sparkline && fit.drop < 1 && sparkline}
     </Card>
   )
 }
