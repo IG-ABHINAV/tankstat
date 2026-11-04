@@ -41,8 +41,6 @@ test('customizes the vehicle\'s dashboard by the tiles\' menus: a figure moved e
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('radio', { name: 'Everyone who sees this vehicle' })).toBeChecked()
   await expectSoundLayout(page)
-  // Not over a button: Save dashboard takes Customize's place, and a hovered primary button falls short of the contrast (#235).
-  await page.mouse.move(0, 0)
   expect(await violations(page)).toEqual([])
   await menu(page, 'Odometer', 'Move earlier')
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Odometer moved to position 2 of 9.')

@@ -1,5 +1,5 @@
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, pageLoaded, signIn } from './support/app.ts'
+import { addVehicle, graphql, openVehicle, pageLoaded, signIn } from './support/app.ts'
 import { violations } from './support/axe.ts'
 
 // axe in a real browser: what jsdom cannot judge (the colour contrast of the real styles, what is hidden after layout). The jsdom scans
@@ -41,8 +41,6 @@ test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', 
   expect(await violations(page)).toEqual([])
   await page.getByRole('button', { name: 'Customize' }).click()
   await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
-  // Not over a button: Save dashboard takes Customize's place, and a hovered primary button falls short of the contrast (#235).
-  await page.mouse.move(0, 0)
   expect(await violations(page)).toEqual([])
   await page.getByRole('button', { name: 'Add widget' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add widget' })
@@ -53,6 +51,38 @@ test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', 
   await expect(dialog.getByLabel('Title')).toBeVisible()
   expect(await violations(page, '[role="dialog"]')).toEqual([])
 })
+
+// The solid fills (#235): a primary button under the pointer, and a red confirmation at rest and under it, in both schemes; a hover is
+// a pointer's, so on a desktop only. Each scan waits for the fill to be the hover's (MUI's 250 ms transition), as it is drawn.
+for (const scheme of ['dark', 'light'] as const) {
+  test(`a hovered primary button and a red confirmation have no axe violations, ${scheme}`, async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a hover is a pointer\'s')
+    if (scheme === 'light') await page.addInitScript(() => localStorage.setItem('tankstat.colorMode', 'light'))
+    const vehicle = await addVehicle(page)
+    await page.goto('/')
+    await pageLoaded(page)
+    // The add vehicle dialog's submit is a contained primary button (the toolbar's own is a soft one).
+    await page.getByRole('button', { name: 'Add vehicle' }).first().click()
+    const dialog = page.getByRole('dialog', { name: 'Add vehicle' })
+    await dialog.getByLabel('Name').fill('Hovered')
+    const add = dialog.getByRole('button', { name: 'Add vehicle' })
+    await add.hover()
+    await expect(add).toHaveCSS('background-color', 'rgb(56, 89, 199)') // the primary's solid hover, #3859c7
+    expect(await violations(page, '[role="dialog"]')).toEqual([])
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toBeHidden()
+
+    await openVehicle(page, vehicle.id, 'details')
+    await page.getByRole('region', { name: 'Delete this vehicle' }).getByRole('button', { name: 'Move to trash' }).click()
+    const confirm = page.getByRole('alertdialog', { name: `Move ${vehicle.name} to the trash?` }).getByRole('button', { name: 'Move to trash' })
+    await page.mouse.move(0, 0)
+    await expect(confirm).toHaveCSS('background-color', 'rgb(202, 63, 68)') // the red's solid fill, #ca3f44
+    expect(await violations(page, '[role="alertdialog"]')).toEqual([])
+    await confirm.hover()
+    await expect(confirm).toHaveCSS('background-color', 'rgb(183, 58, 62)') // and its hover, #b73a3e
+    expect(await violations(page, '[role="alertdialog"]')).toEqual([])
+  })
+}
 
 test('a trend tile\'s period popover has no axe violations (#230)', async ({ page }) => {
   const vehicle = await addVehicle(page)

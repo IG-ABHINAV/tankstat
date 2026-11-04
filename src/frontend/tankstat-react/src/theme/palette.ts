@@ -1,15 +1,21 @@
 import type { ColorSystemOptions, SimplePaletteColorOptions } from '@mui/material/styles'
-import { HUES, SAND, SAND_A, step, type HueSteps, type Scheme } from './scales.ts'
+import { HUES, SAND, SAND_A, SOLID, step, type HueSteps, type Scheme } from './scales.ts'
 
-/** A status colour from its Radix steps: solid 9 (10 on hover), soft a3/a4 surfaces, readable step-11 text. */
-const tone = (h: HueSteps, scheme: Scheme, contrastText: string): SimplePaletteColorOptions => ({
+/**
+ * A status colour from its Radix steps: `main` step 9 (focus rings, checked controls, borders: 3:1 against the surface is what they need),
+ * soft a3/a4 surfaces, readable step-11 text, and `solid`/`solidHover`, the fill under `contrastText` (a contained button, a badge, a
+ * solid chip), chosen for 4.5:1 with that text (`SOLID`, #235); without one, steps 9 and 10. `dark` is the hover, as MUI reads it.
+ */
+const tone = (h: HueSteps, scheme: Scheme, contrastText: string, solid?: { rest: string; hover: string }): SimplePaletteColorOptions => ({
   main: h[9],
-  dark: h[10],
+  dark: solid?.hover ?? h[10],
   light: scheme === 'dark' ? h[11] : h[8], // MUI's "light" is the lighter shade in either scheme
   contrastText,
   soft: h.a3,
   softHover: h.a4,
   softText: h[11],
+  solid: solid?.rest ?? h[9],
+  solidHover: solid?.hover ?? h[10],
 })
 
 /** The palette of one scheme: today's dim dark (sand on indigo), and a dim light one built from the same scales. */
@@ -25,16 +31,18 @@ export function colorScheme(scheme: Scheme): ColorSystemOptions {
     soft: step(grayA, 3),
     softHover: step(grayA, 4),
     softText: ink,
+    solid: ink, // ink under step-1 text: far above 4.5:1 in either scheme
+    solidHover: step(gray, 11),
   }
   return {
     palette: {
-      primary: tone(HUES.indigo[scheme], scheme, '#ffffff'),
+      primary: tone(HUES.indigo[scheme], scheme, '#ffffff', SOLID.indigo),
       secondary: neutral,
       neutral,
-      error: tone(HUES.red[scheme], scheme, '#ffffff'),
+      error: tone(HUES.red[scheme], scheme, '#ffffff', SOLID.red),
       warning: tone(HUES.amber[scheme], scheme, '#21201c'), // amber is light enough for dark text in both schemes
-      success: tone(HUES.green[scheme], scheme, '#ffffff'),
-      info: tone(HUES.blue[scheme], scheme, '#ffffff'),
+      success: tone(HUES.green[scheme], scheme, '#ffffff', SOLID.green),
+      info: tone(HUES.blue[scheme], scheme, '#ffffff', SOLID.blue),
       background: scheme === 'dark' ? { default: step(gray, 1), paper: step(gray, 2) } : { default: step(gray, 3), paper: step(gray, 1) },
       text: { primary: ink, secondary: step(gray, 11), disabled: step(grayA, 8) },
       divider: step(grayA, 6),
