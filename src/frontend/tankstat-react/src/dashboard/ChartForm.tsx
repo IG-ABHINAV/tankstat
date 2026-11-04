@@ -31,7 +31,9 @@ const sameRecipe = (a: ChartRecipe, b: ChartRecipe) => JSON.stringify(toConfig(n
  * data; saved with `SaveChart`. It edits a saved chart (`chart`), starts a blank one (`start` with `NEW_RECIPE`), or starts from a
  * ready-made chart (`ready`): then its fields are folded under *Customize this chart* and, as long as nothing was changed, the submit
  * adds the ready-made chart as it is (`onAddReady`) instead of saving a copy; changed, it is saved as the user's own and `onSaved` gets
- * its id. On everyone's dashboard a new chart must be shared (`shareLocked`): a private one would be dropped from it.
+ * its id. A copy that must differ from where it started (`mustChange`, #247: a ready-made chart already on the dashboard, customized
+ * from its tile or from Add widget) has its fields open and its submit off until something differs. On everyone's dashboard a new chart
+ * must be shared (`shareLocked`): a private one would be dropped from it.
  */
 export function ChartForm({
   vehicle,
@@ -39,6 +41,7 @@ export function ChartForm({
   chart,
   start,
   ready = false,
+  mustChange = false,
   shareLocked = false,
   previewFirst = false,
   submitLabel,
@@ -51,6 +54,8 @@ export function ChartForm({
   chart?: EditableChart
   start?: { title: string; recipe: ChartRecipe }
   ready?: boolean
+  /** Saved only once something differs from `start` (#247). */
+  mustChange?: boolean
   shareLocked?: boolean
   previewFirst?: boolean
   submitLabel?: string
@@ -74,12 +79,12 @@ export function ChartForm({
   const previewId = useId()
   const fieldsId = useId()
 
-  const changed = !ready || title.trim() !== initialTitle || shared !== initialShared || !sameRecipe(recipe, initialRecipe)
+  const changed = !(ready || mustChange) || title.trim() !== initialTitle || shared !== initialShared || !sameRecipe(recipe, initialRecipe)
   const valid = isReady(recipe)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (!valid) return
+    if (!valid || (mustChange && !changed)) return
     if (!changed) {
       onAddReady?.()
       return
@@ -149,10 +154,16 @@ export function ChartForm({
         {failure !== undefined && <ErrorMessage error={failure} />}
         <DialogButtons>
           <DialogCancel />
-          <Button type="submit" disabled={loading || !valid}>
+          <Button type="submit" disabled={loading || !valid || (mustChange && !changed)}>
             {ready && !changed ? t('dashboard.widget.add') : (submitLabel ?? t('charts.save'))}
           </Button>
         </DialogButtons>
+        {/* Plain text: a disabled button takes no focus, so a description linked to it would never be read. */}
+        {mustChange && !changed && (
+          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'right' }}>
+            {t('charts.mustChange')}
+          </Typography>
+        )}
       </Stack>
     </Form>
   )

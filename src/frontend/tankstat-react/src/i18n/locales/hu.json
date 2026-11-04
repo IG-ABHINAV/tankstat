@@ -1618,7 +1618,11 @@
       "MOVING_AVERAGE": "Mozgóátlag (3 időszak)",
       "LINEAR": "Lineáris trend"
     },
-    "secondNone": "Nincs"
+    "secondNone": "Nincs",
+    "dialogCustomize": "Grafikon testreszabása",
+    "dialogCustomizeDescription": "A(z) {{title}} kész grafikon. Mentve saját grafikonod lesz, és átveszi ennek a csempének a helyét és méretét; a kész grafikon a Csempe hozzáadása alatt megmarad.",
+    "saveAsMine": "Mentés saját grafikonként",
+    "mustChange": "Változtass valamit, hogy saját grafikonként menthesd."
   },
   "photos": {
     "waitUpload": "A mentés megvárja, amíg a fotók feltöltődnek.",

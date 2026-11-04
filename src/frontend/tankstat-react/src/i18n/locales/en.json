@@ -1618,7 +1618,11 @@
       "MOVING_AVERAGE": "Moving average (3 periods)",
       "LINEAR": "Linear trend"
     },
-    "secondNone": "None"
+    "secondNone": "None",
+    "dialogCustomize": "Customize chart",
+    "dialogCustomizeDescription": "{{title}} is a ready-made chart. Saved, it becomes a chart of your own and takes this tile's place and size; the ready-made one stays in Add widget.",
+    "saveAsMine": "Save as my chart",
+    "mustChange": "Change something to save it as your own chart."
   },
   "photos": {
     "waitUpload": "Saving waits until the photos are uploaded.",
