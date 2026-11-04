@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChartTable } from '../../../src/dashboard/ChartTable.tsx'
 import { ChartView } from '../../../src/dashboard/ChartView.tsx'
 import type { ChartData, ChartRecipe, Series } from '../../../src/dashboard/chartFormat.ts'
@@ -62,6 +62,47 @@ it('says so instead of drawing an empty chart', () => {
 
   expect(screen.getByRole('status')).toHaveTextContent('No data for this period yet.')
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
+})
+
+describe('measuring the figure', () => {
+  // jsdom lays nothing out: a ResizeObserver that records what it is asked to watch shows the mechanism, not the labels it decides.
+  let observed: Element[]
+  beforeEach(() => {
+    observed = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(element: Element) {
+          observed.push(element)
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const empty: Loose = { unit: 'CURRENCY', series: [{ role: 'VALUE', slope: null, kind: 'total', currency: 'HUF', points: [{ key: '2026-08', value: 0 }] }] }
+  const chart = (data: Loose) => (
+    <ThemeRoot instant>
+      <ChartView data={typed(data)} recipe={recipe('BAR')} units={units} title="Monthly costs" />
+    </ThemeRoot>
+  )
+
+  it('measures the figure of a chart drawn at once', () => {
+    render(chart(money))
+
+    expect(observed).toContain(screen.getByRole('img', { name: 'Monthly costs: chart' }).closest('figure'))
+  })
+
+  it('measures the figure once data comes into a chart that first had none, so its axis names only the periods that fit (#237)', () => {
+    const { rerender } = render(chart(empty))
+    expect(screen.getByRole('status')).toHaveTextContent('No data for this period yet.')
+
+    rerender(chart(money))
+
+    expect(observed).toContain(screen.getByRole('img', { name: 'Monthly costs: chart' }).closest('figure'))
+  })
 })
 
 const tableOf = (data: Loose) => {
