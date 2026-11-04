@@ -13,7 +13,17 @@ export interface CurrencySpend {
  * any currency (a vehicle without costs).
  */
 export function spentText(spending: readonly CurrencySpend[], month: 'thisMonth' | 'lastMonth', format: ReturnType<typeof useFormat>): string | null {
+  const parts = spentParts(spending, month, format)
+  return parts && joinSpent(parts)
+}
+
+/** The amounts of `spentParts` in one line, main currency first, as `spentText` writes them. */
+export const joinSpent = (parts: { main: string; others: string[] }) => [parts.main, ...parts.others].join(' · ')
+
+/** The same amounts apart, the main currency's and the others' (#259: a key figure too narrow for them all shows the main one and "+1"). */
+export function spentParts(spending: readonly CurrencySpend[], month: 'thisMonth' | 'lastMonth', format: ReturnType<typeof useFormat>): { main: string; others: string[] } | null {
   if (spending.length === 0) return null
   const spent = spending.filter((s) => s[month] !== 0)
-  return (spent.length > 0 ? spent : spending.slice(0, 1)).map((s) => format.money(s[month], s.currency)).join(' · ')
+  const [main, ...others] = (spent.length > 0 ? spent : spending.slice(0, 1)).map((s) => format.money(s[month], s.currency))
+  return { main, others }
 }

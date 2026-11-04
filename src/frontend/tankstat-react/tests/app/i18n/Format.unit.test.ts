@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { sampleDate, useFormat } from '../../../src/i18n/format.ts'
 import { currentFormats, setFormats } from '../../../src/i18n/formatStore.ts'
+import { i18n } from '../../../src/i18n/index.ts'
 
 it('shows a size on disk in the unit that suits it, never as 1,000 of a smaller one', () => {
   const { bytes } = renderHook(() => useFormat()).result.current
@@ -48,4 +49,33 @@ it('takes only the formats it knows, so a format from a newer server writes date
   expect(currentFormats()).toEqual({ time: null, date: null, defaultTime: null, defaultDate: null })
   expect(format().date('2026-10-03')).toBe('Oct 3, 2026')
   expect(sampleDate('en', currentFormats().defaultDate)).toBe('Oct 13, 2026') // the language menu's Default still has its example
+})
+
+it('splits a consumption and a cost per distance at their number, the unit after it, joined back exactly as written whole (#259)', async () => {
+  const units = [
+    { distance: 'KILOMETERS', volume: 'LITERS' },
+    { distance: 'MILES', volume: 'US_GALLONS' },
+    { distance: 'MILES', volume: 'IMPERIAL_GALLONS' },
+  ] as const
+  const seen: Record<string, string[]> = {}
+  try {
+    for (const language of ['en', 'hu']) {
+      await act(() => i18n.changeLanguage(language))
+      const format = renderHook(() => useFormat()).result.current
+      for (const u of units) {
+        const parts = format.consumptionParts(6.83, u)
+        expect(`${parts.value} ${parts.unit}`).toBe(format.consumption(6.83, u))
+        ;(seen[language] ??= []).push(`${parts.value}|${parts.unit}`)
+      }
+      const cost = format.costPerDistanceParts(4293, 'HUF', 'KILOMETERS')
+      expect(`${cost.value} ${cost.unit}`).toBe(format.costPerDistance(4293, 'HUF', 'KILOMETERS'))
+      seen[language].push(`${cost.value}|${cost.unit}`.replace(/\s/g, ' '))
+    }
+  } finally {
+    await act(() => i18n.changeLanguage('en'))
+  }
+  expect(seen).toEqual({
+    en: ['6.83|L/100 km', '14.6|mpg (US)', '14.6|mpg (imp.)', 'HUF 4,293|/ 100 km'],
+    hu: ['6,83|l/100 km', '14,6|mérföld/gallon (US)', '14,6|mérföld/gallon (imp.)', '4293 Ft|/ 100 km'],
+  })
 })

@@ -9,6 +9,9 @@ import { server } from '../../support/server.ts'
 import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeTile, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
 import { dateValue, findDateField, typeDate } from '../../support/dates.ts'
 
+/** A key figure's value read whole: its unit is written apart in small type (#259), so the words span two elements of one paragraph. */
+const whole = (text: string) => (_: string, element: Element | null) => element?.tagName === 'P' && element.textContent?.replace(/\s+/g, ' ').trim() === text
+
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => {
   server.resetHandlers()
@@ -83,7 +86,7 @@ it('shows the key figures', async () => {
 
   expect(screen.getByText(/52,000/)).toBeInTheDocument()
   expect(screen.getByText(/Last month: .*40,000/)).toBeInTheDocument()
-  expect(screen.getByText('6.25 L/100 km')).toBeInTheDocument()
+  expect(screen.getByText(whole('6.25 L/100 km'))).toBeInTheDocument()
   expect(screen.getByText(/123,456 km/)).toBeInTheDocument()
   expect(screen.getByText('Sep 17, 2026')).toBeInTheDocument()
   expect(screen.getByText('5 fill-ups, 2 expenses')).toBeInTheDocument()
@@ -340,7 +343,7 @@ it('shows what a figure\'s rows hold: label and value at two, the comparison or 
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
   expect(await within(region).findByText('12,000 km')).toBeInTheDocument() // two rows: the value
-  expect(within(region).getByText('6.5 L/100 km')).toBeInTheDocument()
+  expect(within(region).getByText(whole('6.5 L/100 km'))).toBeInTheDocument()
   expect(within(region).queryByText('last 10 full fill-ups')).not.toBeInTheDocument() // but not the note
   expect(within(region).getByText('5 fill-ups, 2 expenses')).toBeInTheDocument() // three rows: the note
   expect(within(region).getByText(/Last month: .*40,000/)).toBeInTheDocument()
@@ -351,7 +354,7 @@ it('shows what a figure\'s rows hold: label and value at two, the comparison or 
   expect(figureLabels()).toEqual(['Odometer', 'Average consumption', 'Spent this month', 'Last fill-up', 'Distance driven', 'Spending'])
 })
 
-it('makes a figure shorter down to what its content needs, and saves the rows (#229)', async () => {
+it('makes a figure shorter down to two rows, its label and value, and saves the rows (#229, #259)', async () => {
   const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
   await screen.findByRole('heading', { name: 'Monthly costs' })
   await ui.click(screen.getByRole('button', { name: 'Customize' }))
@@ -366,16 +369,18 @@ it('makes a figure shorter down to what its content needs, and saves the rows (#
   await ui.keyboard('{Escape}')
   await tileMenu(ui, 'Spent this month', 'Shorter')
   expect(said()).toHaveTextContent('Spent this month is now 1 wide and 3 tall.')
+  await tileMenu(ui, 'Spent this month', 'Shorter')
+  expect(said()).toHaveTextContent('Spent this month is now 1 wide and 2 tall.') // its card fits several currencies to two rows (#259)
   await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   await ui.click(screen.getByRole('button', { name: 'Options for Spent this month' }))
-  expect(screen.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true') // its value lists every currency: three rows
+  expect(screen.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
   await ui.keyboard('{Escape}')
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; h: number }[] } }).input.tiles
   expect(tiles.find((t) => t.id === 'odometer')).toMatchObject({ h: 2 })
-  expect(tiles.find((t) => t.id === 'thisMonth')).toMatchObject({ h: 3 })
+  expect(tiles.find((t) => t.id === 'thisMonth')).toMatchObject({ h: 2 })
   expect(tiles.find((t) => t.id === 'consumption')).toMatchObject({ h: 4 })
 })
 
@@ -434,15 +439,15 @@ it('with sign-in off, everyone is the same visitor: the vehicle\'s dashboard onl
 it('words the trend figures with an arrow and a change, never by colour alone', async () => {
   setup(fakeVehicle(), [], undefined, {
     signedIn: true,
-    arranged: (s) => (s.dashboard.shared = layout({ tiles: [fakeTile('spendingTrend', 0, 0, 1, 3), fakeTile('costPerDistance', 1, 0, 1, 3), fakeTile('consumptionTrend', 2, 0, 1, 3), fakeTile('distanceTrend', 3, 0, 1, 3)] })),
+    arranged: (s) => (s.dashboard.shared = layout({ tiles: [fakeTile('spendingTrend', 0, 0, 1, 3), fakeTile('costPerDistance', 1, 0, 1, 4), fakeTile('consumptionTrend', 2, 0, 1, 4), fakeTile('distanceTrend', 3, 0, 1, 3)] })),
   })
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
   expect(await within(region).findByText('HUF 560,000')).toBeInTheDocument()
   expect(within(region).getByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument()
-  expect(within(region).getByText('HUF 4,480 / 100 km')).toBeInTheDocument()
+  expect(within(region).getByText(whole('HUF 4,480 / 100 km'))).toBeInTheDocument()
   expect(within(region).getByText('HUF 480 / 100 km (12%) more than the 12 months before')).toBeInTheDocument()
-  expect(within(region).getByText('6.5 L/100 km')).toBeInTheDocument()
+  expect(within(region).getByText(whole('6.5 L/100 km'))).toBeInTheDocument()
   expect(within(region).getByText('last 10 fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument()
   expect(within(region).getByText('12,500 km')).toBeInTheDocument()
@@ -504,7 +509,7 @@ it('words a consumption trend with few fill-ups before, and a cost per distance 
   })
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
-  expect(await within(region).findByText('7.5 L/100 km')).toBeInTheDocument() // the latest mean shows as soon as there is one
+  expect(await within(region).findByText(whole('7.5 L/100 km'))).toBeInTheDocument() // the latest mean shows as soon as there is one
   expect(within(region).getByText('last 4 fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('needs 3 earlier fill-ups to compare with')).toBeInTheDocument()
   expect(await within(region).findByText('nothing driven in this period')).toBeInTheDocument() // the recent window is the empty one
