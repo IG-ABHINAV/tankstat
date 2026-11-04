@@ -73,8 +73,16 @@ test('trashes a refuelling and takes it back with Undo', async ({ page }) => {
   await page.getByRole('button', { name: 'Delete the refuelling of Jan 15, 2026' }).click()
   await page.getByRole('alertdialog', { name: 'Move this refuelling to the trash?' }).getByRole('button', { name: 'Move to trash' }).click()
   await expect(row(page, '41 L')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Undo' }).click()
+  // A double tap on Undo puts it back once (#243): a second restore would be refused and say the undo failed.
+  const restores: string[] = []
+  page.on('request', (request) => {
+    if (request.url().endsWith('/graphql') && /restoreRefueling/.test(request.postData() ?? '')) restores.push(request.url())
+  })
+  const undo = page.getByRole('button', { name: 'Undo' })
+  await undo.dblclick()
   await expect(row(page, '41 L')).toBeVisible()
+  await expect(undo).toBeHidden()
+  expect(restores).toHaveLength(1)
 })
 
 test('lets a tap on a toast through to the page under it, only its Undo takes one', async ({ page }) => {
