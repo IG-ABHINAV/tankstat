@@ -14,9 +14,9 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
 export type TrendData = VehicleTrendQuery['vehicleTrend']
 
 /**
- * The figure drawn from an answer: also the popover's and the Add widget dialog's preview of a period being chosen. Until there is one
- * (`data` null) the same card waits with its label and chip, or says why it has none (`error`): one card either way, so its chip stays the
- * same element, and a popover opened from it keeps its anchor when the answer comes.
+ * The figure drawn from an answer: also the popover's and the Add widget dialog's preview of a period being chosen (the dialog's with its
+ * own `chip`; a dashboard tile's chip is on its edit strip, #260). Until there is one (`data` null) the same card waits with its label, or
+ * says why it has none (`error`): one card either way, so it is not drawn again when the answer comes.
  */
 export function TrendFigure({ figure, period: p, data, error, rows, units, label, chip, periodWords }: { figure: TrendFigureId; period: TrendPeriod; data: TrendData | null | undefined; error?: unknown; rows: number; units: Units; label: string; chip?: ReactNode; periodWords?: string }) {
   const { t } = useTranslation()

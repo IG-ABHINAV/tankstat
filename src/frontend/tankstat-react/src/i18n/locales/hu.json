@@ -1446,13 +1446,8 @@
       "preview": "A csempe ezt mutatja majd",
       "apply": "Alkalmaz",
       "saveTo": {
-        "own": "Az Alkalmaz a saját elrendezésedbe menti.",
-        "shared": "Az Alkalmaz a jármű irányítópultjába menti, mindenkinek, aki látja.",
-        "newOwn": "Az Alkalmaz egy saját elrendezésbe menti, abból, amit most látsz.",
         "editing": "A szerkesztett elrendezéssel marad, amíg el nem mented."
       },
-      "needsServer": "Az időszak módosításához a szerver kell, ami most nem érhető el.",
-      "saved": "Időszak mentve.",
       "changedSaid": "{{name}} mostantól: {{period}}."
     },
     "customize": {
