@@ -444,10 +444,10 @@ test('sets a trend figure\'s period from its chip, and one while arranging, each
 
 const figureHeights = async (page: Page, vehicleId: string) => Object.fromEntries((await stored(page, vehicleId)).shared!.tiles.filter((t) => !t.id.includes(':')).map((t) => [t.id, t.h]))
 
-test('makes figures shorter: each shows what its rows hold, down to what it needs, and nothing is cut', async ({ page }) => {
+test('makes figures shorter: each shows what its rows hold, down to two rows, and nothing is cut', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
-  // Spent this month in two currencies: its value wraps in a desktop column, which is why it stops at three rows.
+  // Spent this month in two currencies: its value wraps in a desktop column, and is written one step smaller (#259).
   await logRefueling(page, vehicle.id, { date: today() })
   await addExpense(page, vehicle.id, { date: today(), amount: 40, currency: 'EUR' })
   await openVehicle(page, vehicle.id)
@@ -469,7 +469,7 @@ test('makes figures shorter: each shows what its rows hold, down to what it need
   await menu(page, 'Spent this month', 'Shorter')
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Spent this month is now 1 wide and 3 tall.')
   await page.getByRole('button', { name: 'Options for Spent this month' }).click()
-  await expect(page.getByRole('menuitem', { name: 'Shorter' })).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByRole('menuitem', { name: 'Shorter' })).not.toHaveAttribute('aria-disabled', 'true') // every figure goes down to two (#259)
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toBeHidden()
   // While arranging, the rows are taller by the handle's room: a two-row figure keeps its content whole.
@@ -486,6 +486,74 @@ test('makes figures shorter: each shows what its rows hold, down to what it need
   await expect(tile(page, 'thisMonth').getByText(/^Last month:/)).toBeVisible()
   await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toHaveCount(0)
   await expect(tile(page, 'lastFillUp').getByText('1 fill-ups, 1 expenses')).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await expectSoundLayout(page)
+})
+
+// ---- every figure down to two rows (#259) ------------------------------------------------------------------------------------
+
+const spentTile = (page: Page) => tile(page, 'thisMonth')
+/** The focus on `target` by the keyboard, so it is focus-visible and its tooltip opens (MUI opens one on a keyboard's focus only). */
+const keyboardFocus = async (page: Page, target: Locator) => {
+  await target.focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(target).toBeFocused()
+}
+/** The figures whose words wrap in a one-column desktop tile, side by side at `rows`, through GraphQL. */
+const lowFigures = (rows: number): Stored => ['thisMonth', 'consumptionTrend', 'costPerDistance', 'odometer'].map((id, x) => ({ id, x, y: 0, w: 1, h: rows, pinned: false }))
+
+test('fits every figure to two and three rows in English and Hungarian: the label and value on one line, what has no room left out, nothing cut (#259)', async ({ page, isMobile }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  // Two dozen full fill-ups 20 days apart for the consumption and the cost per distance, and spending this month in five currencies, so
+  // the amounts are too wide for one line even smaller, on a phone too, whatever the fonts.
+  for (let i = 0; i < 24; i++) await logRefueling(page, vehicle.id, { date: daysAgo(i * 20), volume: 38 + (i % 5) * 1.5, totalCost: 22000 + (i % 7) * 1300, odometer: 50000 - i * 600 })
+  for (const [currency, amount] of [['EUR', 40], ['USD', 50], ['GBP', 30], ['CHF', 20]] as const) await addExpense(page, vehicle.id, { date: today(), amount, currency })
+
+  await arrange(page, vehicle.id, lowFigures(2))
+  await openVehicle(page, vehicle.id)
+  // Two rows: the main currency and "+1", the others in its tooltip and its name.
+  const more = spentTile(page).getByRole('button', { name: /^and 4 more: / }) // the others in the server's order (most spent first)
+  await expect(more).toHaveText('+4')
+  for (const amount of [/€40\.00/, /\$50\.00/, /£30\.00/, /CHF\s20\.00/]) await expect(more).toHaveAccessibleName(amount)
+  await keyboardFocus(page, more)
+  await expect(page.getByRole('tooltip')).toHaveText(/^(?=.*€40\.00)(?=.*\$50\.00)(?=.*£30\.00)(?=.*CHF.20\.00)/)
+  await page.keyboard.press('Escape')
+  const consumptionLabel = tile(page, 'consumptionTrend').locator('[data-kpi="label"]')
+  await expect(consumptionLabel).toHaveText('Consumption change')
+  if (isMobile) await expect(consumptionLabel).not.toHaveAttribute('tabindex') // a phone's tile has room for it beside its chip
+  else {
+    // A desktop column: the label beside its chip is cut, a tab stop showing it whole.
+    await expect(consumptionLabel).toHaveAttribute('tabindex', '0')
+    await keyboardFocus(page, consumptionLabel)
+    await expect(page.getByRole('tooltip')).toHaveText('Consumption change')
+  }
+  // Its unit small beside the amount, on one line.
+  await expect(tile(page, 'costPerDistance').locator('[data-kpi="value"]')).toHaveText(/^HUF\s[\d,]+ \/ 100 km$/)
+  await expect(tile(page, 'costPerDistance').locator('[data-kpi="value"] > span')).toHaveText('/ 100 km')
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await expectSoundLayout(page) // the "+1" 44 px to a finger on a phone
+
+  // While arranging, the tiles keep their rows (taller by the strip's room): still nothing cut.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await expect(page.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  // Three rows in Hungarian: a comparison with no room is left out, its row empty; on a phone it fits.
+  await arrange(page, vehicle.id, lowFigures(3))
+  await page.addInitScript(() => localStorage.setItem('tankstat.language', 'hu'))
+  await page.reload()
+  await pageLoaded(page)
+  await expect(spentTile(page).locator('[data-kpi="label"]')).toHaveText('Költés ebben a hónapban')
+  const comparison = tile(page, 'consumptionTrend').getByText(/üzemanyagot használ/)
+  if (isMobile) await expect(comparison).toBeVisible()
+  else {
+    await expect(tile(page, 'consumptionTrend').locator('[data-kpi="value"]')).toHaveText(/l\/100 km$/)
+    await expect(comparison).toHaveCount(0)
+    await expect(tile(page, 'consumptionTrend').getByText('utolsó 10 tankolás', { exact: true })).toHaveCount(0) // the note does not take its row
+  }
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page)
 })
