@@ -2,8 +2,10 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
 import { axe } from 'vitest-axe'
-import { Change, KpiCard, MoreCount } from '../../../src/dashboard/Kpi.tsx'
+import type { ChangeWords } from '../../../src/dashboard/changeWords.ts'
+import { KpiCard, MoreCount } from '../../../src/dashboard/Kpi.tsx'
 import { FULL, type Fit } from '../../../src/dashboard/kpiFit.ts'
+import { TileStripContext } from '../../../src/dashboard/tileChrome.ts'
 import { renderWithApollo } from '../../support/mocks.tsx'
 
 // A key figure's card in each form the fit can end on (#259): jsdom lays nothing out, so `Kpi` itself always shows the full form here,
@@ -39,11 +41,14 @@ it('shows the main currency and "+1" in the short form, the others in its toolti
   expect(await screen.findByRole('tooltip')).toHaveTextContent('€40.00')
   expect((await axe(container, { rules: { 'color-contrast': { enabled: false } } })).violations).toEqual([])
 
-  rerender(spent(form({ smaller: true })))
+  rerender(spent(form({ step: 1 })))
   expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   expect(screen.getByText('HUF 22,000 · €40.00')).toHaveClass('MuiTypography-h4') // one type step smaller
   rerender(spent(FULL))
   expect(screen.getByText('HUF 22,000 · €40.00')).toHaveClass('MuiTypography-h3')
+  // The size steps (#260) are the headings down to h6 and then 14 px on it (jsdom computes no sizes: the browser's tests read them).
+  rerender(spent(form({ oneLine: true, step: 3 })))
+  expect(screen.getByText('HUF 22,000 · €40.00')).toHaveClass('MuiTypography-h6')
 })
 
 it('makes a cut label a tab stop whose tooltip shows it whole, and leaves a label that fits out of the tab order', async () => {
@@ -62,23 +67,56 @@ it('makes a cut label a tab stop whose tooltip shows it whole, and leaves a labe
   expect(screen.getByText('Költség távolságra, változás')).not.toHaveAttribute('tabindex')
 })
 
-it('leaves out at three rows a comparison with no room, and the note does not take its row', () => {
-  const card = (fit: Fit) => (
-    <KpiCard
-      rows={3}
-      label="Consumption change"
-      value="6.83"
-      hint="last 10 fill-ups"
-      change={<Change recent={6.5} earlier={7} fuel than="the 10 fill-ups before" meaning="worseUp" none="-" />}
-      fit={fit}
-    />
-  )
-  const { container, rerender } = renderWithApollo(card(FULL))
-  expect(within(container).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument()
+const less: ChangeWords = { sentence: 'uses 7% less fuel than the 10 fill-ups before', icon: 'down', tone: 'good' }
+const trend = (rows: number, fit: Fit, change: ChangeWords = less) => (
+  <KpiCard rows={rows} label="Consumption change" value="6.83" hint="last 10 fill-ups" change={change} fit={fit} />
+)
+
+it('shows a comparison with no row of its own as its arrow alone before the value, the sentence its name and tooltip (#260)', async () => {
+  const ui = userEvent.setup()
+  const { container, rerender } = renderWithApollo(trend(2, FULL)) // two rows: no row for the sentence
+
+  const arrow = screen.getByRole('button', { name: 'uses 7% less fuel than the 10 fill-ups before' })
+  expect(arrow.closest('[data-kpi="value-row"]')).toContainElement(screen.getByText('6.83')) // in the value's row, before it
+  expect(arrow.compareDocumentPosition(screen.getByText('6.83')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(arrow.querySelector('[data-tone]')).toHaveAttribute('data-tone', 'good') // its tone as the line's, never alone: the arrow points down
+  expect(within(container).queryByText('uses 7% less fuel than the 10 fill-ups before')).not.toBeInTheDocument() // no line
+  await ui.tab()
+  expect(arrow).toHaveFocus()
+  expect(await screen.findByRole('tooltip')).toHaveTextContent('uses 7% less fuel than the 10 fill-ups before')
+  expect((await axe(container, { rules: { 'color-contrast': { enabled: false } } })).violations).toEqual([])
+
+  // Nothing to compare with yet: a grey dash, the same way.
+  rerender(trend(2, FULL, { sentence: 'needs 3 earlier fill-ups to compare with', icon: 'same', tone: 'same' }))
+  expect(screen.getByRole('button', { name: 'needs 3 earlier fill-ups to compare with' }).querySelector('[data-tone]')).toHaveAttribute('data-tone', 'same')
+})
+
+it('says the period with the arrow outside Customize, in its name and under the sentence in its tooltip, and not while arranging (#260)', async () => {
+  const ui = userEvent.setup()
+  const card = <KpiCard rows={2} label="Spending" value="HUF 463,600" change={{ sentence: 'HUF 335,400 (262%) more than the 12 months before', icon: 'up', tone: 'bad' }} period="12 full months" fit={FULL} />
+  const { rerender } = renderWithApollo(card)
+  const arrow = screen.getByRole('button', { name: 'HUF 335,400 (262%) more than the 12 months before (12 full months)' })
+  expect(arrow.querySelector('[data-tone]')).toHaveAttribute('data-tone', 'bad')
+  await ui.tab()
+  const tooltip = await screen.findByRole('tooltip')
+  expect(tooltip).toHaveTextContent('HUF 335,400 (262%) more than the 12 months before')
+  expect(within(tooltip).getByText('12 full months')).toBeInTheDocument() // on a line of its own
+  await ui.keyboard('{Escape}')
+
+  // While arranging the period is on the tile's strip (its chip): the arrow says the sentence alone.
+  rerender(<TileStripContext.Provider value={{ lead: null, actions: null }}>{card}</TileStripContext.Provider>)
+  expect(screen.getByRole('button', { name: 'HUF 335,400 (262%) more than the 12 months before' })).toBeInTheDocument()
+})
+
+it('turns a comparison line with no room at three rows into its arrow, and the note does not take its row', () => {
+  const { container, rerender } = renderWithApollo(trend(3, FULL))
+  expect(within(container).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument() // the line, with room
+  expect(screen.queryByRole('button')).not.toBeInTheDocument()
   expect(within(container).queryByText('last 10 fill-ups')).not.toBeInTheDocument() // three rows: the comparison, not the note (#229)
 
-  rerender(card(form({ drop: 3 })))
+  rerender(trend(3, form({ drop: 3 })))
   expect(within(container).queryByText('uses 7% less fuel than the 10 fill-ups before')).not.toBeInTheDocument()
-  expect(within(container).queryByText('last 10 fill-ups')).not.toBeInTheDocument() // its row stays empty (#259, N2)
+  expect(screen.getByRole('button', { name: 'uses 7% less fuel than the 10 fill-ups before' })).toBeInTheDocument()
+  expect(within(container).queryByText('last 10 fill-ups')).not.toBeInTheDocument() // its row stays empty (#259 N2, kept in #260)
   expect(within(container).getByText('6.83')).toBeInTheDocument()
 })

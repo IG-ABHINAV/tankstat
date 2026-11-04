@@ -10,15 +10,14 @@ import { Form } from '../forms/Form.tsx'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { MEDIA } from '../theme/media.ts'
-import { OutsideTile } from './tileChrome.ts'
 import { samePeriod, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
 import { TrendFigure } from './TrendFigure.tsx'
 import { TrendPeriodForm } from './TrendPeriodForm.tsx'
 import { useTrendPreview } from './useTrendPreview.ts'
 
-/** What the tile's chip can do with a period: where Apply puts it (worded), whether it can now, and the saving itself. */
+/** What the tile's chip can do with a period while the dashboard is arranged (#260): where Apply puts it (worded), whether it can, and the change itself. */
 export interface PeriodControl {
-  /** Where Apply puts the period, or why it cannot now (the server is out of reach). */
+  /** Where Apply puts the period: the arrangement being edited, kept by Save dashboard. */
   hint: string
   canApply: boolean
   apply: (period: TrendPeriod) => Promise<void>
@@ -26,8 +25,8 @@ export interface PeriodControl {
 
 /**
  * A trend tile's period, chosen in a popover from its chip (#230): the form, the figure as the tile will show it (the server's answer for
- * the period being chosen), where Apply saves it, Cancel and Apply. Enter applies (the form never goes to the browser: a sent form
- * would load the page again); it closes once the period is saved.
+ * the period being chosen), where Apply puts it, Cancel and Apply. Enter applies (the form never goes to the browser: a sent form
+ * would load the page again); it closes once the period is applied.
  */
 export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, control, onClose }: { anchor: HTMLElement | null; figure: TrendFigureId; vehicleId: string; units: { distance: DistanceUnit; volume: VolumeUnit }; period: TrendPeriod; control: PeriodControl; onClose: () => void }) {
   const { t } = useTranslation()
@@ -59,8 +58,9 @@ export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, c
       open={anchor !== null}
       anchorEl={anchor}
       onClose={busy ? undefined : onClose}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      // From the chip's left edge: the chip sits at the left of its tile's edit strip (#260), so the popover opens under its own tile.
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       slotProps={{ backdrop: { invisible: !phone }, paper: { role: 'dialog', 'aria-labelledby': `${id}-title`, sx: { width: { xs: 'calc(100vw - 32px)', sm: 400 }, maxWidth: 'calc(100vw - 32px)', p: 2 } } }}
     >
       <Form
@@ -75,12 +75,8 @@ export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, c
           </Typography>
           <TrendPeriodForm figure={figure} value={draft} onChange={setDraft} preview={preview} />
           <Box role="status" aria-live="polite" aria-label={t('dashboard.period.preview')} sx={{ minHeight: 132 }}>
-            {/* Opened from a tile's strip while arranging: the preview is a card of its own, not the tile's (#262). */}
-            {preview.data && (
-              <OutsideTile>
-                <TrendFigure figure={figure} period={draft} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />
-              </OutsideTile>
-            )}
+            {/* `TrendTile` opens it outside the tile's strip (`OutsideTile`): the preview is a card of its own, not the tile's (#262). */}
+            {preview.data && <TrendFigure figure={figure} period={draft} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />}
           </Box>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {control.hint}

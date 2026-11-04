@@ -202,8 +202,9 @@ const HANDLE_SX = { alignSelf: 'stretch', display: 'flex', alignItems: 'center',
 /**
  * The strip across the top of a tile while the dashboard is edited: over the card's top edge (the tile is positioned, the card starts
  * under it), the tile's header (#262). Left to right: the tile's name (a chart's heading, the card's own title not drawn meanwhile), what
- * the content puts in its lead slot (a trend figure's period chip), the grip, the pin when the tile is pinned, the content's actions (a
- * chart's table, edit and delete buttons) and the menu for everyone. The name and the grip are the handle for a pointer.
+ * the content puts in its lead slot (a trend figure's period chip, #260, outside the grip, so pressing it never starts a drag), the grip,
+ * the pin when the tile is pinned, the content's actions (a chart's table, edit and delete buttons) and the menu for everyone. The name and
+ * the grip are the handle for a pointer.
  */
 function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, actions: actionsSlot }, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; slots: StripSlots; onAction: (action: TileAction) => void }) {
   const { t } = useTranslation()
@@ -242,8 +243,9 @@ function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, ac
       {/* What it holds takes the slot's width (a chip's own 60% would be of the slot): the period stays readable beside the name. `&&` so
           the rule outranks the chip's own class whichever was inserted first (a trend figure added while arranging comes after the strip). */}
       <Box ref={leadSlot} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', '&:empty': { display: 'none' }, '&& > *': { maxWidth: '100%' }, ml: 1 }} />
-      {/* The grip is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself. */}
-      <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '1 1 auto', minWidth: 24, justifyContent: 'center' }}>
+      {/* The grip is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself; 44 px wide at least (#260), so a
+          chip beside it in a narrow tile is cut (its ellipsis) before the grip is. */}
+      <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '1 1 auto', minWidth: 44, justifyContent: 'center' }}>
         <GripHorizontal size={18} aria-hidden />
       </Box>
       {tile.pinned && (

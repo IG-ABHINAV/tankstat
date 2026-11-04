@@ -102,6 +102,7 @@ test('a trend tile\'s period popover has no axe violations (#230)', async ({ pag
   })
   await page.goto(`/vehicles/${vehicle.id}`)
   await pageLoaded(page)
+  await page.getByRole('button', { name: 'Customize' }).click() // the chip is on the tile's strip while arranging (#260)
   await page.getByRole('button', { name: 'Spending period: 12 full months. Change it' }).click()
   const popover = page.getByRole('dialog', { name: 'Period of Spending' })
   await expect(popover.getByTestId('trend-timeline')).toBeVisible()

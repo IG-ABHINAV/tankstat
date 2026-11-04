@@ -1382,7 +1382,8 @@
         },
         "sameDaysYearEarlier": "the same days a year earlier",
         "lastYearToDate": "last year to this day"
-      }
+      },
+      "arrowName": "{{sentence}} ({{period}})"
     },
     "period": {
       "thisYear": "This year",
@@ -1445,13 +1446,8 @@
       "preview": "The tile will show",
       "apply": "Apply",
       "saveTo": {
-        "own": "Apply saves it into your own arrangement of this dashboard.",
-        "shared": "Apply saves it into the vehicle’s dashboard, for everyone who sees it.",
-        "newOwn": "Apply saves it into an arrangement of your own, made from what you see.",
         "editing": "Kept with the arrangement you are editing until you save it."
       },
-      "needsServer": "Changing the period needs the server, which is out of reach right now.",
-      "saved": "Period saved.",
       "changedSaid": "{{name}} now shows {{period}}."
     },
     "customize": {

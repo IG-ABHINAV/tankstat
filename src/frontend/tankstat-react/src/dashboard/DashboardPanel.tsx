@@ -201,30 +201,16 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     update((e) => ({ tiles: addTile(e.tiles, id, undefined, period), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
 
   /**
-   * What a trend tile's chip does with a period (#230). While the dashboard is arranged, it changes the tile being edited (saved with the
-   * rest). Otherwise Apply saves it at once into the dashboard shown, by the rule Customize starts from (`ownScope`): one's own, else the
-   * vehicle's when one may change it, else a new one of one's own made from what is shown; it needs the server for that. A vehicle the
-   * server does not have yet (added on this device) has no dashboard to save into: its chips only name their period.
+   * What a trend tile's chip does with a period (#230): it is shown only while the dashboard is arranged (#260, on the tile's strip), and
+   * Apply changes the tile being edited, saved with the rest by Save dashboard. Outside Customize there is no chip, so no control.
    */
   const periodControl = (tile: Tile): PeriodControl | undefined => {
-    if (!isTrendFigure(tile.id) || !dashboard) return undefined
+    if (!isTrendFigure(tile.id) || !dashboard || !edit) return undefined
     const id = tile.id
-    if (edit)
-      return {
-        hint: t('dashboard.period.saveTo.editing'),
-        canApply: true,
-        apply: async (period) => update((e) => ({ tiles: setTilePeriod(e.tiles, id, period), status: t('dashboard.period.changedSaid', { name: titleOf(tile), period: periodText(id, period) }) })),
-      }
-    const where = ownScope === 'shared' ? 'shared' : personal && !signInOff ? 'own' : 'newOwn'
     return {
-      hint: reachable ? t(`dashboard.period.saveTo.${where}`) : t('dashboard.period.needsServer'),
-      canApply: reachable && !busy,
-      apply: async (period) => {
-        const base = editingOf(ownScope)
-        await save({ variables: { input: { vehicleId: vehicle.id, personal: ownScope === 'personal', ...toLayout(setTilePeriod(base.tiles, id, period), base.hidden) } } })
-        await refetch()
-        toast(t('dashboard.period.saved'))
-      },
+      hint: t('dashboard.period.saveTo.editing'),
+      canApply: true,
+      apply: async (period) => update((e) => ({ tiles: setTilePeriod(e.tiles, id, period), status: t('dashboard.period.changedSaid', { name: titleOf(tile), period: periodText(id, period) }) })),
     }
   }
   const applyPreset = (id: LayoutPresetId) =>
