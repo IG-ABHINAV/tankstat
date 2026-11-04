@@ -2,6 +2,23 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.7 (2026-11-04)
+
+A bugfix release for customizing the dashboard.
+
+### Fixed
+
+- **Tiles were much taller while customizing** (#262: #267). Every row grew by 24 px in *Customize*, so a tile grew with its rows instead of by the edit strip: an 8-row chart was 192 px taller and its chart drawn larger, so the dashboard looked different while it was arranged. Now every tile keeps its size. The strip across its top is its header: it names the tile and holds what was at its top (a trend figure's period chip, a chart's table, edit and delete buttons), and the card starts right under it, a chart keeping its *Shared* and owner line.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. `0.19` and `latest` move to this release.
+
+### For developers
+
+- The edit strip is the tile's header: `tileChrome.ts` `TileStripContext` gives a tile's content the strip's `lead` slot (after the name: the period chip, portaled by `TrendTile`) and its `actions` slot (before the menu: a chart's buttons, portaled by `ChartCard` with `fill`), replacing `TileInsetContext` and #266's `TileStripSlotContext`. `TileCell` holds the slots as state and memoizes the value, so a dragged tile's content still does not render on its moves; `OutsideTile` is what a dialog or popover opened from a tile shows. The rows are `ROW_HEIGHT` in both modes (`EDIT_ROW_EXTRA` is gone) and `TILE_INSET` is the strip's 40 px; `Kpi` draws no label row while arranging and fits itself afresh on entering and leaving Customize.
+- A real-browser test checks every tile's height the same in view mode and Customize at both sizes (a 2-row value still full size, the chart's picture within 40 px), the strip's name, chip and table button; the drags take the grip (`grip`), since the tile's name is a drag handle too.
+
 ## 0.19.6 (2026-11-04)
 
 A bugfix release for the dashboard's trend figures.
