@@ -28,8 +28,10 @@ type Breakpoint = keyof typeof COLS
 /** The breakpoint of a width, as the library picks it: the widest whose least width is reached. */
 const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
 
-/** What the tile menu offers: the keyboard's and a screen reader's way to do what dragging does. */
-/** What a tile's menu does; `customize` (a ready-made chart's only, #247) opens a dialog, so it comes once the menu has gone. */
+/**
+ * What the tile menu offers: the keyboard's and a screen reader's way to do what dragging does; `customize` (a ready-made chart's only,
+ * #247) opens a dialog, so it comes once the menu has gone.
+ */
 export type TileAction = 'earlier' | 'later' | 'wider' | 'narrower' | 'taller' | 'shorter' | 'pin' | 'unpin' | 'remove' | 'customize'
 
 const CLASS = { handle: 'tk-tile-handle' }
@@ -212,7 +214,20 @@ function EditStrip({ tile, name, index, count, cols, onAction }: { tile: Tile; n
         </Box>
       )}
       {/* 44 px for a finger, centred on the strip (it reaches a little past the card's top edge). */}
-      <IconAction size="large" variant="ghost" tone="primary" label={t('dashboard.edit.options', { name })} aria-haspopup="menu" aria-controls={anchor ? menuId : undefined} aria-expanded={anchor ? true : undefined} onClick={(e) => setAnchor(e.currentTarget)}>
+      <IconAction
+        size="large"
+        variant="ghost"
+        tone="primary"
+        label={t('dashboard.edit.options', { name })}
+        aria-haspopup="menu"
+        aria-controls={anchor ? menuId : undefined}
+        aria-expanded={anchor ? true : undefined}
+        onClick={(e) => {
+          // Opened again before the last closing was over: what was chosen then is dropped, or the next closing would do it.
+          setOpening(null)
+          setAnchor(e.currentTarget)
+        }}
+      >
         <EllipsisVertical size={18} aria-hidden />
       </IconAction>
       <Menu
