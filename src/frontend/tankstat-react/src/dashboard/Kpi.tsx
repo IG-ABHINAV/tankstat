@@ -4,12 +4,12 @@ import Card from '@mui/material/Card'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
-import { type ReactNode, type Ref, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeWords, Tone } from './changeWords.ts'
 import { COARSE } from '../theme/components.ts'
 import { FULL, type Fit, type Measured, nextFit, offered, VALUE_STEPS } from './kpiFit.ts'
-import { TileInsetContext, useTilePadding } from './tileChrome.ts'
+import { useTilePadding, useTileStrip } from './tileChrome.ts'
 
 export interface KpiProps {
   rows: number
@@ -38,7 +38,8 @@ export interface KpiProps {
  * comparison line too, or the note where there is none (132 px); four or more everything, spaced as always (180 px), so an arrangement of
  * four-row figures looks as it did. A trend figure's comparison without a row of its own (two rows, or a line that does not fit) is its arrow
  * alone before the value, the sentence in its tooltip (#260). The label stays the card's first paragraph, alone in its row on a dashboard
- * tile (a trend figure's period chip is on the tile's edit strip while arranging, #260); a preview's chip (Add widget) sits beside it.
+ * tile; a preview's chip (Add widget) sits beside it. While the dashboard is arranged the tile's strip is its header (#262): it names the
+ * figure (the card draws no label row) and holds a trend figure's period chip (#260, `TrendTile`), and the card starts under it.
  *
  * What does not fit the card's height is never cut (#259): the card measures itself (`kpiFit.ts`, one step a render in a layout effect, so
  * nothing is painted half way) and leaves out from the bottom what has no room, then puts the label and the value on one line each. It
@@ -49,7 +50,9 @@ export interface KpiProps {
 export function Kpi({ fitKey = '', ...props }: KpiProps) {
   const card = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState('')
-  const key = `${props.rows}|${size}|${props.label}|${props.hint ?? ''}|${fitKey}`
+  // Arranging moves the label into the tile's strip and the card under it (#262): the tile keeps its size, so that fits it afresh too.
+  const arranged = useTileStrip() !== null
+  const key = `${props.rows}|${size}|${props.label}|${props.hint ?? ''}|${arranged}|${fitKey}`
   const [state, setState] = useState({ key, fit: FULL })
   // A change of what is measured fits it afresh from the full form (derived state: set while rendering, so the old form is never painted).
   if (state.key !== key) setState({ key, fit: FULL })
@@ -112,12 +115,16 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
   const asLine = offers.change === 'line' && fit.drop < 3
   const step = VALUE_STEPS[fit.step]
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
+  // While arranging, the strip is the tile's header (#262): it names the figure, so the card draws no label row.
+  const strip = useTileStrip()
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
-        <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
-        {chip}
-      </Box>
+      {!strip && (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
+          <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
+          {chip}
+        </Box>
+      )}
       {/* The value's row: the comparison's arrow alone before it (#260), a sibling, so the value's clipping never cuts the arrow's touch area. */}
       <Box data-kpi="value-row" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, my: full ? 0.5 : 0 }}>
         {change && !asLine && <ChangeArrow words={change} period={period} />}
@@ -236,7 +243,7 @@ export function ChangeLine({ words }: { words: ChangeWords }) {
  */
 export function ChangeArrow({ words, period }: { words: ChangeWords; period?: string }) {
   const { t } = useTranslation()
-  const said = useContext(TileInsetContext) ? undefined : period
+  const said = useTileStrip() ? undefined : period
   const title = said ? (
     <>
       {words.sentence}

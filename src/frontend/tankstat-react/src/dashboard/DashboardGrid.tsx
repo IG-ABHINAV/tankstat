@@ -8,8 +8,8 @@ import { cloneElement, useCallback, useId, useMemo, useState, type ReactNode } f
 import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
-import { TILE_INSET, TILE_STRIP, TileInsetContext, TileStripSlotContext } from './tileChrome.ts'
-import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, MIN_FIGURE_ROWS, minSize, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
+import { TILE_STRIP, TileStripContext, type TileStrip } from './tileChrome.ts'
+import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, minSize, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
@@ -18,12 +18,6 @@ const FALLBACK_WIDTH = 1280
 /** The gaps between the tiles and around the grid: constants, since the library's tiles re-render when theirs change identity. */
 const MARGIN: [number, number] = [GAP, GAP]
 const PADDING: [number, number] = [0, 0]
-/**
- * The room the edit strip takes, paid for by a taller row while editing (#233, #228): the strip lies over a tile and the card under it
- * starts `TILE_INSET` px down, so the lowest figure there is (`MIN_FIGURE_ROWS`, two rows) gains just that and keeps its label and value;
- * a taller tile gains more.
- */
-const EDIT_ROW_EXTRA = TILE_INSET / MIN_FIGURE_ROWS
 type Breakpoint = keyof typeof COLS
 /** The breakpoint of a width, as the library picks it: the widest whose least width is reached. */
 const breakpointOf = (width: number): Breakpoint => (width >= BREAKPOINTS.lg ? 'lg' : width >= BREAKPOINTS.sm ? 'sm' : 'xs')
@@ -40,9 +34,10 @@ const CLASS = { handle: 'tk-tile-handle' }
  * The dashboard as a grid of tiles (react-grid-layout, #211): the tiles placed and sized as stored, packed by column, the columns fewer on
  * a tablet or a phone (the tiles flowed in reading order). In edit mode a strip lies across the top of every tile (#228): its grip is the
  * drag handle, its menu moves, sizes, pins or removes the tile, which is how it is done with a keyboard or a screen reader (the library has
- * neither); the card under it starts lower (`TileInsetContext`) and the rows are taller by what that takes from the lowest figure
- * (`EDIT_ROW_EXTRA`), so a two-row figure keeps its label and value; the corner resizes it. The library's stylesheet is written here in `sx`, since the app has no stylesheet of its own, and its transitions are off
- * under reduced motion.
+ * neither); the corner resizes it. The strip is the tile's header (#262): the rows are as tall as in view mode, so nothing changes size
+ * when the dashboard is arranged; the strip names the tile and carries what it covers (a trend figure's period chip, a chart's buttons:
+ * `TileStripContext`), and the card under it starts right below it. The library's stylesheet is written here in `sx`, since the app has no
+ * stylesheet of its own, and its transitions are off under reduced motion.
  */
 export function DashboardGrid({
   tiles,
@@ -109,26 +104,21 @@ export function DashboardGrid({
     [fromGrid, onTilesChange],
   )
 
-  // Each tile's place on its strip (`TileStripSlotContext`), by tile, set by the strip's own callback ref, so the element follows a strip
-  // drawn again (a dragged tile's new element); the state changes only when the element does.
-  const [slots, setSlots] = useState<Record<string, HTMLElement | null>>({})
-  const onSlot = useCallback((id: string, element: HTMLElement | null) => setSlots((all) => (all[id] === element ? all : { ...all, [id]: element })), [])
-
   // The tiles' elements, in `ordered`'s order, kept across the grid's own renders (a drag's moves): while a tile is dragged only its own
   // element is new (`moving`). They are made again whenever the page renders, since its `render`, `name` and `onAction` are new then.
   const cells = useMemo(
     () =>
       ordered.map((tile, i) => (
         <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {editing && <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} onSlot={onSlot} onAction={(action) => onAction?.(tile, action)} />}
-          <TileInsetContext.Provider value={editing}>
-            <TileStripSlotContext.Provider value={editing ? (slots[tile.id] ?? null) : null}>
-              <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{render(tile)}</Box>
-            </TileStripSlotContext.Provider>
-          </TileInsetContext.Provider>
+          <TileCell
+            editing={editing}
+            strip={(slots) => <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} slots={slots} onAction={(action) => onAction?.(tile, action)} />}
+          >
+            {render(tile)}
+          </TileCell>
         </Box>
       )),
-    [ordered, editing, cols, name, render, onAction, slots, onSlot],
+    [ordered, editing, cols, name, render, onAction],
   )
 
   const styles = {
@@ -157,7 +147,7 @@ export function DashboardGrid({
           layouts={layouts}
           breakpoints={BREAKPOINTS}
           cols={COLS}
-          rowHeight={editing ? ROW_HEIGHT + EDIT_ROW_EXTRA : ROW_HEIGHT}
+          rowHeight={ROW_HEIGHT}
           margin={MARGIN}
           containerPadding={PADDING}
           compactor={verticalCompactor}
@@ -180,20 +170,52 @@ export function DashboardGrid({
   )
 }
 
+/** Where the strip's two slots are, as it mounts them (callback refs). */
+interface StripSlots {
+  lead: (element: HTMLElement | null) => void
+  actions: (element: HTMLElement | null) => void
+}
+
+/**
+ * A tile's strip and content: while editing, the strip's slots are handed to the content (`TileStripContext`), which portals into them.
+ * The slots are state, not refs: the strip is the content's sibling, so the content renders once more when they are there. The context's
+ * value keeps its identity while they stay, since a tile being dragged renders on every move (#227) and its content must not.
+ */
+function TileCell({ editing, strip, children }: { editing: boolean; strip: (slots: StripSlots) => ReactNode; children: ReactNode }) {
+  const [lead, setLead] = useState<HTMLElement | null>(null)
+  const [actions, setActions] = useState<HTMLElement | null>(null)
+  const value = useMemo<TileStrip | null>(() => (editing ? { lead, actions } : null), [editing, lead, actions])
+  const slots = useMemo<StripSlots>(() => ({ lead: setLead, actions: setActions }), [])
+  return (
+    <>
+      {editing && strip(slots)}
+      <TileStripContext.Provider value={value}>
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{children}</Box>
+      </TileStripContext.Provider>
+    </>
+  )
+}
+
+/** The handle's look: a pointer drags the tile by it (the tile's name and the grip), never by a button. */
+const HANDLE_SX = { alignSelf: 'stretch', display: 'flex', alignItems: 'center', minWidth: 0 } as const
+
 /**
  * The strip across the top of a tile while the dashboard is edited: over the card's top edge (the tile is positioned, the card starts
- * under it), its grip the handle for a pointer, its menu for everyone, the pin shown when the tile is pinned; on its left the tile's own
- * slot (`TileStripSlotContext`: a trend figure's period chip, #260), outside the grip, so pressing it never starts a drag.
+ * under it), the tile's header (#262). Left to right: the tile's name (a chart's heading, the card's own title not drawn meanwhile), what
+ * the content puts in its lead slot (a trend figure's period chip, #260, outside the grip, so pressing it never starts a drag), the grip,
+ * the pin when the tile is pinned, the content's actions (a chart's table, edit and delete buttons) and the menu for everyone. The name and
+ * the grip are the handle for a pointer.
  */
-function EditStrip({ tile, name, index, count, cols, onSlot, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; onSlot: (id: string, element: HTMLElement | null) => void; onAction: (action: TileAction) => void }) {
+function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, actions: actionsSlot }, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; slots: StripSlots; onAction: (action: TileAction) => void }) {
   const { t } = useTranslation()
-  const slotRef = useCallback((element: HTMLElement | null) => onSlot(tile.id, element), [onSlot, tile.id])
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   /** An action that opens a dialog, done once the menu is gone (`LogFab`): the menu's leaving would take the focus back from it. */
   const [opening, setOpening] = useState<TileAction | null>(null)
   const menuId = useId()
   const min = minSize(tile.id)
-  const ready = widgetOf(tile.id)?.kind === 'ready'
+  const kind = widgetOf(tile.id)?.kind
+  const ready = kind === 'ready'
+  const chart = kind === 'ready' || kind === 'saved'
   const choose = (action: TileAction) => {
     setAnchor(null)
     if (action === 'customize') setOpening(action)
@@ -212,11 +234,19 @@ function EditStrip({ tile, name, index, count, cols, onSlot, onAction }: { tile:
   ]
   return (
     <Box sx={(theme) => ({ position: 'absolute', top: 0, left: 0, right: 0, height: TILE_STRIP, zIndex: 2, display: 'flex', alignItems: 'center', gap: 0.5, pr: 0.5, borderRadius: '12px 12px 0 0', bgcolor: theme.vars.palette.primary.soft, color: theme.vars.palette.primary.softText })}>
-      <Box ref={slotRef} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '60%', pl: 1, '&:empty': { display: 'none' } }} />
-      {/* The handle is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself; 44 px wide at least, so a chip
-          beside it in a narrow tile is cut (its ellipsis) before the grip is. */}
-      <Box className={CLASS.handle} aria-hidden sx={{ flex: 1, minWidth: 44, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <GripHorizontal size={18} />
+      {/* The name: cut with an ellipsis (with the chip beside it sharing the shrinking; the buttons never give way). A chart's is its heading while arranging. */}
+      <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '0 1 auto', pl: 1.5 }}>
+        <Typography component={chart ? 'h2' : 'span'} variant="subtitle2" noWrap sx={{ color: 'text.primary', minWidth: 0 }}>
+          {name}
+        </Typography>
+      </Box>
+      {/* What it holds takes the slot's width (a chip's own 60% would be of the slot): the period stays readable beside the name. `&&` so
+          the rule outranks the chip's own class whichever was inserted first (a trend figure added while arranging comes after the strip). */}
+      <Box ref={leadSlot} sx={{ display: 'flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', '&:empty': { display: 'none' }, '&& > *': { maxWidth: '100%' }, ml: 1 }} />
+      {/* The grip is for a pointer: a keyboard or a screen reader uses the menu, so it says nothing itself; 44 px wide at least (#260), so a
+          chip beside it in a narrow tile is cut (its ellipsis) before the grip is. */}
+      <Box className={CLASS.handle} sx={{ ...HANDLE_SX, flex: '1 1 auto', minWidth: 44, justifyContent: 'center' }}>
+        <GripHorizontal size={18} aria-hidden />
       </Box>
       {tile.pinned && (
         <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 0.5 }} title={t('dashboard.edit.pinned')}>
@@ -224,6 +254,7 @@ function EditStrip({ tile, name, index, count, cols, onSlot, onAction }: { tile:
           <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{t('dashboard.edit.pinned')}</span>
         </Box>
       )}
+      <Box ref={actionsSlot} sx={{ display: 'flex', alignItems: 'center', flex: 'none', gap: 0.5, '&:empty': { display: 'none' } }} />
       {/* 44 px for a finger, centred on the strip (it reaches a little past the card's top edge). */}
       <IconAction
         size="large"

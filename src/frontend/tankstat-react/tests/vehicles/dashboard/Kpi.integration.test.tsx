@@ -5,7 +5,7 @@ import { axe } from 'vitest-axe'
 import type { ChangeWords } from '../../../src/dashboard/changeWords.ts'
 import { KpiCard, MoreCount } from '../../../src/dashboard/Kpi.tsx'
 import { FULL, type Fit } from '../../../src/dashboard/kpiFit.ts'
-import { TileInsetContext } from '../../../src/dashboard/tileChrome.ts'
+import { TileStripContext } from '../../../src/dashboard/tileChrome.ts'
 import { renderWithApollo } from '../../support/mocks.tsx'
 
 // A key figure's card in each form the fit can end on (#259): jsdom lays nothing out, so `Kpi` itself always shows the full form here,
@@ -104,7 +104,7 @@ it('says the period with the arrow outside Customize, in its name and under the 
   await ui.keyboard('{Escape}')
 
   // While arranging the period is on the tile's strip (its chip): the arrow says the sentence alone.
-  rerender(<TileInsetContext.Provider value>{card}</TileInsetContext.Provider>)
+  rerender(<TileStripContext.Provider value={{ lead: null, actions: null }}>{card}</TileStripContext.Provider>)
   expect(screen.getByRole('button', { name: 'HUF 335,400 (262%) more than the 12 months before' })).toBeInTheDocument()
 })
 

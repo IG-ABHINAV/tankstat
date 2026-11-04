@@ -1,12 +1,12 @@
 import { useQuery } from '@apollo/client/react'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
-import { useContext, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { VehicleTrendDocument, type DistanceUnit, type VolumeUnit } from '../gql/generated.ts'
 import { COARSE } from '../theme/components.ts'
-import { TileInsetContext, TileStripSlotContext } from './tileChrome.ts'
+import { OutsideTile, useTileStrip } from './tileChrome.ts'
 import { periodOf, toInput, TREND_FIGURE, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
 import { TrendFigure } from './TrendFigure.tsx'
 import { TrendPeriodPopover, type PeriodControl } from './TrendPeriodPopover.tsx'
@@ -17,7 +17,8 @@ type Units = { distance: DistanceUnit; volume: VolumeUnit }
 /**
  * A trend figure over its tile's period (#230): its own `vehicleTrend` answer, its value, and the comparison worded from the period and the
  * answer. Without a period of its own, its figure's default, which reads as the figure always did. The period's chip is shown only while the
- * dashboard is arranged (#260), on the tile's edit strip (`TileStripSlotContext`), a button that opens the period's popover; outside
+ * dashboard is arranged (#260), on the tile's edit strip after its name (`TileStripContext`'s lead slot, #262), a button that opens the
+ * period's popover; outside
  * Customize the card has no chip, and its arrow says the period instead.
  */
 export function TrendTile({ figure, vehicleId, period, rows, units, control }: { figure: TrendFigureId; vehicleId: string; period: TrendPeriod | null | undefined; rows: number; units: Units; control?: PeriodControl }) {
@@ -28,14 +29,15 @@ export function TrendTile({ figure, vehicleId, period, rows, units, control }: {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const label = t(`dashboard.kpi.${figure}`)
   const words = periodText(figure, p)
-  // Null outside Customize (and `control` undefined), so the chip is only ever on a strip being shown.
-  const slot = useContext(TileStripSlotContext)
+  // The strip's lead slot, after the tile's name (#262); null outside Customize (and `control` undefined), so the chip is only ever on a
+  // strip being shown.
+  const slot = useTileStrip()?.lead
   const chip = control && slot && createPortal(<PeriodChip words={words} name={t('dashboard.period.chipName', { figure: label, period: words })} open={anchor !== null} onClick={(e) => setAnchor(e.currentTarget)} />, slot)
-  // The popover's preview is no tile under a strip (`TileInsetContext` off): it keeps a card's own padding, not the strip's inset.
+  // The popover's preview is no tile under a strip (`OutsideTile`): it keeps its label and a card's own padding, not the strip's inset.
   const popover = control && anchor && (
-    <TileInsetContext.Provider value={false}>
+    <OutsideTile>
       <TrendPeriodPopover anchor={anchor} figure={figure} vehicleId={vehicleId} units={units} period={p} control={control} onClose={() => setAnchor(null)} />
-    </TileInsetContext.Provider>
+    </OutsideTile>
   )
   return (
     <>

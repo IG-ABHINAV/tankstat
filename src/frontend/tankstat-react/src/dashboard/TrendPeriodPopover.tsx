@@ -75,6 +75,7 @@ export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, c
           </Typography>
           <TrendPeriodForm figure={figure} value={draft} onChange={setDraft} preview={preview} />
           <Box role="status" aria-live="polite" aria-label={t('dashboard.period.preview')} sx={{ minHeight: 132 }}>
+            {/* `TrendTile` opens it outside the tile's strip (`OutsideTile`): the preview is a card of its own, not the tile's (#262). */}
             {preview.data && <TrendFigure figure={figure} period={draft} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />}
           </Box>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
