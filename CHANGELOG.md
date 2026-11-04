@@ -2,6 +2,25 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.19.5 (2026-11-04)
+
+A bugfix release for the dashboard.
+
+### Fixed
+
+- **Some key figures could not be made shorter** (#259: #263). *Spent this month* stopped at 3 rows, *Consumption change* and *Cost per distance change* at 4, even where everything they show would fit in fewer: each had a fixed minimum, the worst case of a one-column desktop tile, applied at every width. Every key figure now goes down to 2 rows, and the card fits what it shows to its height by measuring it. In order: a wrapping value of *Spent this month* goes one size smaller; then what the rows cannot hold is left out from the bottom (the sparkline, the note, the comparison); then the label and the value keep one line each, a label too long for it cut with "…" and given a tooltip (hover, focus or tap); last, *Spent this month* shows its main currency and "+N" for the others, named in a tooltip. On a phone a tile usually shows everything. *Average consumption*, *Consumption change* and *Cost per distance change* write their unit smaller beside the number. Stored arrangements stay as they are.
+- **A ready-made chart on the dashboard could not be changed in place** (#247: #257). A chart that a preset puts on the dashboard (Standard, Spending, Usage) could only be changed by removing its tile, adding the chart again through *Add widget* and dragging the copy back. While customizing, its tile's menu now starts with *Customize as my chart…*: the chart's own recipe opens, *Save as my chart* stays off until something differs (*Change something to save it as your own chart.*), and the saved copy takes the tile's place, size and pin. On *Everyone*'s dashboard the copy is shared. *Add widget* now lists every ready-made chart; one already on the dashboard is marked *On the dashboard* and can only be added as a customized copy, at the bottom.
+
+### Upgrading
+
+- Nothing to do: no migration and no setting changed. `0.19` and `latest` move to this release.
+
+### For developers
+
+- `Kpi` measures the form it shows in a layout effect and walks `kpiFit.ts`'s pure `nextFit` until the card fits, starting again when its rows, size (`ResizeObserver`), label, note or `fitKey` change; a new figure's `fitKey` must carry every word it shows beyond its label and note. `minSize` is 2 rows for every figure (`MIN_FIGURE_ROWS`); `FIGURE_ROWS` keeps only the default rows.
+- `widgets.ts` `replaceTile` gives a tile another widget in the same place, size and pin; `ChartForm`'s `mustChange` keeps the submit off until the chart differs; one `ChartBuilderDialog` at the dashboard panel's level customizes a ready-made tile, its result put in with `replaceTile`.
+- The real-browser tests cover both at both sizes: figures at two and three rows in English and Hungarian (five currencies, the "+4" and its tooltip, a cut label, nothing cut viewed or arranged), and a ready-made chart customized from its tile, read back through GraphQL after a reload. The README's three dashboard screenshots were retaken.
+
 ## 0.19.4 (2026-11-04)
 
 A bugfix release for the toasts.
