@@ -274,8 +274,10 @@ it('customizes the vehicle\'s dashboard in place: a figure moved earlier, a read
   await ui.click(screen.getByRole('button', { name: 'Add widget' }))
   const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
   const offered = within(within(dialog).getByRole('list', { name: 'What to add' })).getAllByRole('button').map((b) => b.textContent)
-  expect(offered).toEqual(expect.arrayContaining(['Consumption', 'My chart', 'Blank chart']))
-  expect(offered).toHaveLength(4 + 1 + 5 + 1 + 1) // the trend figures, the chart taken off, the ready-made charts Standard leaves out, the saved one, a blank chart
+  expect(offered).toEqual(expect.arrayContaining(['Consumption', 'My chart', 'Blank chart', 'Monthly costsOn the dashboard']))
+  // The trend figures, every ready-made chart (#247: the four still on it too, marked; Consumption, taken off, not), the saved one, a blank chart.
+  expect(offered).toHaveLength(4 + 10 + 1 + 1)
+  expect(offered.filter((o) => o?.endsWith('On the dashboard'))).toHaveLength(4)
   await ui.keyboard('{Escape}')
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
@@ -544,7 +546,7 @@ it('adds a ready-made chart as it is from Add widget, or customizes it into a ch
   // Customized: the builder's fields start from its recipe and title; once anything differs it is saved as one's own and added.
   await ui.click(screen.getByRole('button', { name: 'Add widget' }))
   dialog = await screen.findByRole('dialog', { name: 'Add widget' })
-  expect(within(dialog).queryByRole('button', { name: 'Monthly costs' })).not.toBeInTheDocument() // on the dashboard now
+  expect(within(dialog).getByRole('button', { name: /^Monthly costs\s*On the dashboard$/ })).toBeInTheDocument() // on the dashboard now: marked so (#247)
   await ui.click(within(dialog).getByRole('button', { name: 'Consumption' }))
   await ui.click(within(dialog).getByRole('button', { name: 'Customize this chart' }))
   expect(within(dialog).getByLabelText('Title')).toHaveValue('Consumption')
@@ -919,6 +921,30 @@ it("customizes a ready-made chart from its tile on one's own dashboard into a pr
   await waitFor(() => expect(said()).toHaveTextContent('Fuel price is now your own chart, in the same place.'))
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Fuel price' })))
   expect(within(await cardOf('Fuel price')).getByRole('button', { name: 'Edit the chart Fuel price' })).toBeInTheDocument()
+})
+
+it('offers a ready-made chart already on the dashboard in Add widget too, to customize only: saved once it differs, added beside it (#247)', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await usagePreset(ui)
+  await ui.click(screen.getByRole('button', { name: 'Add widget' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
+  expect(within(dialog).getByRole('heading', { name: 'Spent this month' })).toBeInTheDocument() // it opens on something to add as it is
+  await ui.click(within(dialog).getByRole('button', { name: /^Consumption trend\s*On the dashboard$/ }))
+
+  expect(within(dialog).getByText(/so here it can only be customized/)).toBeInTheDocument()
+  expect(within(dialog).queryByRole('button', { name: 'Add to the dashboard' })).not.toBeInTheDocument()
+  expect(within(dialog).queryByRole('button', { name: 'Customize this chart' })).not.toBeInTheDocument() // its fields are open
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Consumption trend')
+  expect(within(dialog).getByRole('button', { name: 'Save and add' })).toBeDisabled()
+  expect(within(dialog).getByText('Change something to save it as your own chart.')).toBeInTheDocument()
+  await pick(ui, 'Trend line', 'Moving average (3 periods)')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save and add' }))
+
+  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
+  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: null, title: 'Consumption trend', shared: true, config: { trend: 'MOVING_AVERAGE' } } })
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  // The copy at the bottom, the ready-made one where it was.
+  await waitFor(async () => expect(await chartTitles()).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month', 'Consumption trend']))
 })
 
 const a11ySetup = () => setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })])

@@ -1540,8 +1540,10 @@
         "readyHint": "Kész grafikon: add hozzá ahogy van, vagy szabd testre saját grafikonként; az eredeti megmarad.",
         "saved": "Egy saját grafikonod, amely nincs az irányítópulton.",
         "shared": "{{name}} által megosztott grafikon, amely nincs az irányítópulton.",
-        "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja."
-      }
+        "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja.",
+        "readyOnDashboard": "Már az irányítópulton van, ezért itt csak testre szabható: saját grafikonként mentve alulra kerül, a kész grafikon mellé."
+      },
+      "onDashboard": "Az irányítópulton"
     }
   },
   "charts": {

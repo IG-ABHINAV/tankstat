@@ -402,7 +402,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             canShare={canShare}
             everyone={edit.scope === 'shared'}
             figures={FIGURES.filter((f) => !onDashboard.has(f))}
-            ready={READY_CHARTS.filter((c) => !onDashboard.has(presetKey(c.id)))}
+            ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: onDashboard.has(presetKey(c.id)) }))}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
             onAdd={(id, period) => add(id, undefined, period)}
             onChartSaved={async (id, title) => {

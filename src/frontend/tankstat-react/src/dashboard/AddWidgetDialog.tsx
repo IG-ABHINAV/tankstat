@@ -34,8 +34,14 @@ type Summary = NonNullable<NonNullable<VehicleDashboardQuery['vehicle']>['summar
 type SavedChart = VehicleDashboardQuery['vehicleCharts'][number]
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
 
+/** A ready-made chart the dialog offers, and whether it is on the dashboard already (#247: then it can only be customized here). */
+export interface ReadyOffer {
+  chart: ReadyChart
+  onDashboard: boolean
+}
+
 /** What the dialog can start from: a key figure, a ready-made chart, one of the user's saved charts, or a blank chart. */
-type Choice = { kind: 'figure'; id: FigureId } | { kind: 'ready'; chart: ReadyChart } | { kind: 'saved'; chart: SavedChart } | { kind: 'blank' }
+type Choice = { kind: 'figure'; id: FigureId } | ({ kind: 'ready' } & ReadyOffer) | { kind: 'saved'; chart: SavedChart } | { kind: 'blank' }
 
 /**
  * A trend figure's pane (#230): the tile as it will be added, over the period chosen below it (the same form as the tile's chip, which
@@ -87,9 +93,10 @@ function chartGlyph(recipe: Pick<ChartRecipe, 'kind' | 'secondMetric'>): ReactNo
 
 /**
  * The one way to put something on the dashboard being arranged (#228): the starting points on the left (the key figures and ready-made
- * charts not on it, the user's saved charts off it, and a blank chart), the picked one on the right with its preview on the vehicle's
- * data. A figure or a saved chart is added as it is; a ready-made chart as it is too, or customized first and then saved as the user's
- * own chart and added (`ChartForm`); a blank chart is composed and saved. On a phone the two sides are two steps.
+ * charts (#247: also those on it, marked so), the user's saved charts off it, and a blank chart), the picked one on the right with its
+ * preview on the vehicle's data. A figure or a saved chart is added as it is; a ready-made chart as it is too, or customized first and
+ * then saved as the user's own chart and added (`ChartForm`); one already on the dashboard only customized, saved once something
+ * differs (`mustChange`), and added beside it; a blank chart is composed and saved. On a phone the two sides are two steps.
  */
 export function AddWidgetDialog({
   open,
@@ -112,7 +119,8 @@ export function AddWidgetDialog({
   /** Everyone's dashboard is being arranged: a chart made here must be shared, or it would be dropped from it. */
   everyone: boolean
   figures: readonly FigureId[]
-  ready: readonly ReadyChart[]
+  /** Every ready-made chart, in their order, each saying whether it is on the dashboard. */
+  ready: readonly ReadyOffer[]
   saved: readonly SavedChart[]
   /** A widget added, by its tile id; a trend figure with the period chosen for it (#230). */
   onAdd: (id: string, period?: TrendPeriod | null) => void
@@ -124,7 +132,9 @@ export function AddWidgetDialog({
   const phone = useMediaQuery(MEDIA.narrow)
   const [picked, setPicked] = useState<Choice | null>(null)
   const [step, setStep] = useState<'list' | 'item'>('list')
-  const first: Choice = figures.length > 0 ? { kind: 'figure', id: figures[0] } : ready.length > 0 ? { kind: 'ready', chart: ready[0] } : saved.length > 0 ? { kind: 'saved', chart: saved[0] } : { kind: 'blank' }
+  // What the dialog opens on: something that can be added as it is, a ready-made chart already on the dashboard never.
+  const readyOff = ready.find((r) => !r.onDashboard)
+  const first: Choice = figures.length > 0 ? { kind: 'figure', id: figures[0] } : readyOff ? { kind: 'ready', ...readyOff } : saved.length > 0 ? { kind: 'saved', chart: saved[0] } : { kind: 'blank' }
   const current = picked ?? first
   const pick = (next: Choice) => {
     setPicked(next)
@@ -141,11 +151,11 @@ export function AddWidgetDialog({
   }
   const keyOf = (p: Choice) => `${p.kind}:${p.kind === 'blank' ? '' : p.kind === 'figure' ? p.id : p.chart.id}`
 
-  const item = (p: Choice, label: string, glyph: ReactNode, last = false) => (
+  const item = (p: Choice, label: string, glyph: ReactNode, last = false, note?: string) => (
     <ListItem key={keyOf(p)} disablePadding sx={last ? { borderTop: 1, borderColor: 'divider', mt: 1, pt: 1 } : undefined}>
       <ListItemButton selected={keyOf(p) === keyOf(current)} aria-current={keyOf(p) === keyOf(current) ? 'true' : undefined} onClick={() => pick(p)} sx={{ borderRadius: '10px', mx: 1 }}>
         <ListItemIcon sx={{ minWidth: 36, color: 'primary.light' }}>{glyph}</ListItemIcon>
-        <ListItemText primary={label} />
+        <ListItemText primary={label} secondary={note} />
       </ListItemButton>
     </ListItem>
   )
@@ -154,7 +164,7 @@ export function AddWidgetDialog({
       {figures.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.figures')}</ListSubheader>}
       {figures.map((f) => item({ kind: 'figure', id: f }, t(`dashboard.kpi.${f}`), isTrendFigure(f) ? <TrendingUp size={18} aria-hidden /> : <Hash size={18} aria-hidden />))}
       {ready.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.ready')}</ListSubheader>}
-      {ready.map((c) => item({ kind: 'ready', chart: c }, t(`dashboard.presets.${c.id}`), chartGlyph(c.recipe)))}
+      {ready.map((r) => item({ kind: 'ready', ...r }, t(`dashboard.presets.${r.chart.id}`), chartGlyph(r.chart.recipe), false, r.onDashboard ? t('dashboard.widget.onDashboard') : undefined))}
       {saved.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.yours')}</ListSubheader>}
       {saved.map((c) => item({ kind: 'saved', chart: c }, c.title, chartGlyph(c)))}
       {item({ kind: 'blank' }, t('dashboard.widget.blank'), <Plus size={18} aria-hidden />, true)}
@@ -215,6 +225,27 @@ export function AddWidgetDialog({
         )
       case 'ready': {
         const title = t(`dashboard.presets.${current.chart.id}`)
+        if (current.onDashboard)
+          return (
+            <>
+              {heading(title, `${t(`dashboard.widget.describe.ready.${current.chart.id}`)} ${t('dashboard.widget.describe.readyOnDashboard')}`)}
+              <ChartForm
+                key={current.chart.id}
+                vehicle={vehicle}
+                canShare={canShare}
+                start={{ title, recipe: current.chart.recipe }}
+                mustChange
+                shareLocked={everyone}
+                previewFirst
+                submitLabel={t('dashboard.widget.saveAndAdd')}
+                onSaved={async (id, saved) => {
+                  await onChartSaved(id, saved)
+                  toast(t('toast.saved'))
+                  close()
+                }}
+              />
+            </>
+          )
         return (
           <>
             {heading(title, `${t(`dashboard.widget.describe.ready.${current.chart.id}`)} ${t('dashboard.widget.describe.readyHint')}`)}
