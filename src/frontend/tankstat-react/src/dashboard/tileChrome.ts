@@ -3,7 +3,7 @@ import { createContext, createElement, useContext, type ReactNode } from 'react'
 /**
  * The strip across the top of a tile while the dashboard is edited (#228): its height, and the top padding a card takes to start under it.
  * The strip is the tile's header (#262: the tile is as tall as in view mode), so the card starts right under it: a two-row figure (84 px)
- * keeps its value and its bottom padding under 40 px of strip, with nothing to spare.
+ * keeps its value (30 px) and its bottom padding (12 px) under 40 px of strip, with 2 px to spare.
  */
 export const TILE_STRIP = 40
 export const TILE_INSET = TILE_STRIP
