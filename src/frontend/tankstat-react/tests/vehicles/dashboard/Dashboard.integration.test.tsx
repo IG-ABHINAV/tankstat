@@ -459,10 +459,10 @@ it('words the trend figures with an arrow and a change, never by colour alone', 
   expect(toneOf('1,500 km (14%) more than last year to this day')).toBe('neutral')
 })
 
-it('shows a trend figure over its tile\'s own period: the chip names it, the words follow it, the server is asked for it (#230)', async () => {
+it('shows a trend figure over its tile\'s own period: the words follow it, the chip names it while arranging, the server is asked for it (#230, #260)', async () => {
   const weeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' }
   const since = { kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' }
-  const { state } = setup(fakeVehicle(), [], undefined, {
+  const { state, ui } = setup(fakeVehicle(), [], undefined, {
     signedIn: true,
     arranged: (s) => {
       s.dashboard.shared = layout({ tiles: [{ ...fakeTile('spendingTrend', 0, 0, 1, 4), period: weeks }, { ...fakeTile('consumptionTrend', 1, 0, 1, 4), period: since }, fakeTile('distanceTrend', 2, 0, 1, 4)] })
@@ -475,11 +475,14 @@ it('shows a trend figure over its tile\'s own period: the chip names it, the wor
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
   expect(await within(region).findByText('HUF 20,000 (20%) more than the same 8 weeks a year earlier')).toBeInTheDocument()
-  expect(within(region).getByText('Last 8 weeks · vs a year earlier')).toBeInTheDocument() // the chip; a year earlier is not spending's own comparison
   expect(await within(region).findByText('uses 6% less fuel than the 200 days before (6 fill-ups against 9)')).toBeInTheDocument() // a window by dates names the fill-ups
   expect(within(region).getByText('6 fill-ups in the period')).toBeInTheDocument()
-  expect(within(region).getByText(/^Since /)).toBeInTheDocument()
   expect(await within(region).findByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument() // no period of its own: its default
+  expect(within(region).queryByText('This year')).not.toBeInTheDocument() // outside Customize no chip (#260)
+  // While arranging, each chip names its tile's period on the tile's strip.
+  await customize(ui)
+  expect(await within(region).findByText('Last 8 weeks · vs a year earlier')).toBeInTheDocument() // a year earlier is not spending's own comparison
+  expect(within(region).getByText(/^Since /)).toBeInTheDocument()
   expect(within(region).getByText('This year')).toBeInTheDocument()
   expect(state.trendRequests).toEqual(
     expect.arrayContaining([

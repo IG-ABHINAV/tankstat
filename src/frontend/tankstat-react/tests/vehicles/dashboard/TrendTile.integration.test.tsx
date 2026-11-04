@@ -1,10 +1,9 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'vitest-axe'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
-import { connectivity } from '../../../src/offline/connectivity.ts'
-import { answered, server } from '../../support/server.ts'
+import { server } from '../../support/server.ts'
 import { fakeDashboardBackend, fakeLogBackend, fakeTile, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout, type FakePeriod, type FakeTrend } from '../../support/mocks.tsx'
 import { findDateField, typeDate } from '../../support/dates.ts'
 
@@ -42,6 +41,11 @@ function setup({ viewport = 'desktop', arranged }: { viewport?: 'desktop' | 'pho
 }
 
 const chip = (period: string) => screen.findByRole('button', { name: `Spending period: ${period}. Change it` })
+/** Customize: the chips are shown only while the dashboard is arranged, on the tiles' strips (#260). */
+async function customize(ui: ReturnType<typeof userEvent.setup>) {
+  await ui.click(await screen.findByRole('button', { name: 'Customize' }))
+  await screen.findByRole('button', { name: 'Save dashboard' })
+}
 async function openPeriod(ui: ReturnType<typeof userEvent.setup>, period = '12 full months') {
   await ui.click(await chip(period))
   return screen.findByRole('dialog', { name: 'Period of Spending' })
@@ -56,58 +60,45 @@ async function lastEightWeeksAYearEarlier(ui: ReturnType<typeof userEvent.setup>
 const saved = (state: State) => (state.calls.SaveDashboardLayout!.at(-1) as { input: { personal: boolean; tiles: { id: string; period?: unknown }[] } }).input
 const eightWeeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' }
 
-it('sets a trend figure\'s period from its chip: the sentence and the timeline follow, Apply saves it into the vehicle\'s dashboard (#230)', async () => {
+it('shows the chip only while arranging, on the tile\'s strip; the sentence and the timeline follow, Apply keeps it, Save dashboard saves it (#230, #260)', async () => {
   const { ui, state } = setup()
   // Apply submits the popover's form: the app's to handle, never the browser's (a sent form loads the page again; jsdom only says so).
   const sent: boolean[] = []
   const onSubmit = (e: Event) => sent.push(e.defaultPrevented)
   document.addEventListener('submit', onSubmit)
   expect(await screen.findByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Spending period: / })).not.toBeInTheDocument() // outside Customize no chip: the arrow says the period
+
+  await customize(ui)
+  const onStrip = await chip('12 full months')
+  expect(onStrip.closest('[data-tile="spendingTrend"]')).not.toBeNull()
+  expect(within(onStrip.closest('[data-tile="spendingTrend"]')!.querySelector('.MuiCard-root')!).queryByRole('button', { name: /period/ })).not.toBeInTheDocument() // on the strip, not in the card
   const dialog = await openPeriod(ui)
   expect(within(dialog).getByRole('tab', { name: 'Quick', selected: true })).toBeInTheDocument() // the default is a quick pick
-  expect(within(dialog).getByText('Apply saves it into the vehicle’s dashboard, for everyone who sees it.')).toBeInTheDocument()
+  expect(within(dialog).getByText('Kept with the arrangement you are editing until you save it.')).toBeInTheDocument()
 
   await lastEightWeeksAYearEarlier(ui, dialog)
   expect(await within(dialog).findByText('HUF 20,000 (20%) more than the same 8 weeks a year earlier')).toBeInTheDocument() // the server's answer for the draft
   expect(within(dialog).getByTestId('trend-timeline')).toHaveAttribute('aria-hidden', 'true')
   expect(within(dialog).getByRole('switch', { name: 'Whole weeks, Monday to Sunday' })).not.toBeChecked() // off by default: the window ends today
   await ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
-
-  expect(await screen.findByText('Period saved.')).toBeInTheDocument()
+  expect(await screen.findByRole('status', { name: 'Last change to the arrangement' })).toHaveTextContent(/^Spending now shows Last 8 weeks/)
+  expect(state.calls.SaveDashboardLayout).toBeUndefined() // kept with the arrangement: nothing saves at once (#260)
   document.removeEventListener('submit', onSubmit)
   expect(sent).toEqual([true])
+
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   const input = saved(state)
   expect(input.personal).toBe(false)
   expect(input.tiles).toEqual([{ id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false, period: eightWeeks }, { id: 'odometer', x: 1, y: 0, w: 1, h: 3, pinned: false }])
-  expect(await chip('Last 8 weeks · vs a year earlier')).toBeInTheDocument() // read back after the refetch
-  expect(screen.getByText('HUF 20,000 (20%) more than the same 8 weeks a year earlier')).toBeInTheDocument()
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-})
-
-it('saves into one\'s own arrangement when there is one, and makes one from what a viewer sees', async () => {
-  const own = setup({ arranged: (s) => (s.dashboard.personal = layout([fakeTile('odometer', 0, 0, 1, 3), fakeTile('spendingTrend', 1, 0, 1, 4)])) })
-  let dialog = await openPeriod(own.ui)
-  expect(within(dialog).getByText('Apply saves it into your own arrangement of this dashboard.')).toBeInTheDocument()
-  await own.ui.click(within(dialog).getByRole('radio', { name: '6 full months' }))
-  await own.ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
-  await waitFor(() => expect(own.state.calls.SaveDashboardLayout).toHaveLength(1))
-  expect(saved(own.state)).toMatchObject({ personal: true, tiles: [{ id: 'odometer' }, { id: 'spendingTrend', period: { kind: 'LAST', unit: 'MONTHS', count: 6, whole: true, against: 'BEFORE' } }] })
-  expect(await chip('6 full months')).toBeInTheDocument()
-  own.state.calls = {}
-  document.body.innerHTML = ''
-
-  const viewer = setup({ arranged: (s) => (s.dashboard.canChangeShared = false) })
-  dialog = await openPeriod(viewer.ui)
-  expect(within(dialog).getByText('Apply saves it into an arrangement of your own, made from what you see.')).toBeInTheDocument()
-  await lastEightWeeksAYearEarlier(viewer.ui, dialog)
-  await viewer.ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
-  await waitFor(() => expect(viewer.state.calls.SaveDashboardLayout).toHaveLength(1))
-  expect(saved(viewer.state)).toMatchObject({ personal: true, tiles: [{ id: 'spendingTrend', period: eightWeeks }, { id: 'odometer' }] }) // the vehicle's tiles, as shown
-  expect(viewer.state.dashboard.shared!.tiles[0]).not.toHaveProperty('period', eightWeeks) // the vehicle's stays as it was
+  expect(await screen.findByText('HUF 20,000 (20%) more than the same 8 weeks a year earlier')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Spending period: / })).not.toBeInTheDocument() // arranged no more: no chip
 })
 
 it('sets a period since a day, checks the number, and offers whole periods only for weeks, months and years', async () => {
   const { ui, state } = setup()
+  await customize(ui)
   const dialog = await openPeriod(ui)
   await ui.click(within(dialog).getByRole('tab', { name: 'Last' }))
   const count = within(dialog).getByRole('spinbutton', { name: 'Number' })
@@ -124,6 +115,8 @@ it('sets a period since a day, checks the number, and offers whole periods only 
   await typeDate(ui, await findDateField('First day', dialog), '2026-03-15')
   expect(await within(dialog).findByText('HUF 20,000 (20%) more than the 57 days before')).toBeInTheDocument() // the earlier window's days
   await ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(saved(state).tiles[0].period).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })
 })
@@ -157,22 +150,9 @@ it('keeps a period with the tiles being arranged until the dashboard is saved, a
   expect(tiles.find((t) => t.id === 'distanceTrend')?.period).toEqual({ kind: 'LAST', unit: 'MONTHS', count: 12, since: null, whole: true, against: 'YEAR_EARLIER' }) // a quick pick sets the window, the comparison stays distance's own
 })
 
-it('cannot apply a period while the server is out of reach, and says so', async () => {
-  const { ui, state } = setup()
-  expect(await screen.findByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument()
-  await answered()
-  act(() => connectivity.failed())
-  const dialog = await openPeriod(ui)
-
-  expect(within(dialog).getByText('Changing the period needs the server, which is out of reach right now.')).toBeInTheDocument()
-  expect(within(dialog).getByRole('button', { name: 'Apply' })).toBeDisabled()
-  await ui.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  expect(state.calls.SaveDashboardLayout).toBeUndefined()
-})
-
 it('opens on a phone, and the popover has no accessibility violations', { timeout: 30_000 }, async () => {
   const { ui } = setup({ viewport: 'phone' })
+  await customize(ui)
   const dialog = await openPeriod(ui)
   await ui.click(within(dialog).getByRole('tab', { name: 'Last' }))
   expect(await within(dialog).findByText(/more than the 8 weeks before/)).toBeInTheDocument()
