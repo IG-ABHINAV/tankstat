@@ -34,23 +34,27 @@ export function ChartBuilderDialog({
   /** Once the dialog is gone (to put the focus somewhere when what opened it is gone too). */
   onClosed?: () => void
   vehicle: { id: string; units: { distance: DistanceUnit; volume: VolumeUnit } }
-  chart?: EditableChart
-  /** The ready-made chart a copy starts from (its title and recipe). */
-  copyOf?: { title: string; recipe: ChartRecipe }
   /** Sharing with everyone who sees the vehicle needs Edit access to its logs. */
   canShare: boolean
   /** On everyone's dashboard a chart made there must be shared, or it would be dropped from it. */
   shareLocked?: boolean
   /** Saved: the chart's id and title. */
   onSaved: (id: string, title: string) => void | Promise<unknown>
-}) {
+} & (
+  | { chart: EditableChart; copyOf?: never }
+  | {
+      chart?: never
+      /** The ready-made chart a copy starts from (its title and recipe). */
+      copyOf: { title: string; recipe: ChartRecipe }
+    }
+)) {
   const { t } = useTranslation()
   const { toast } = useToast()
   const [open, setOpen] = useDialogState({ open: openProp, onOpenChange })
 
   return (
     <>
-      {trigger && <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />}
+      <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />
       <DialogFrame
         open={open}
         onClose={() => setOpen(false)}

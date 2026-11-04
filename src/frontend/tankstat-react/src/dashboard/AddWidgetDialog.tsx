@@ -225,40 +225,22 @@ export function AddWidgetDialog({
         )
       case 'ready': {
         const title = t(`dashboard.presets.${current.chart.id}`)
-        if (current.onDashboard)
-          return (
-            <>
-              {heading(title, `${t(`dashboard.widget.describe.ready.${current.chart.id}`)} ${t('dashboard.widget.describe.readyOnDashboard')}`)}
-              <ChartForm
-                key={current.chart.id}
-                vehicle={vehicle}
-                canShare={canShare}
-                start={{ title, recipe: current.chart.recipe }}
-                mustChange
-                shareLocked={everyone}
-                previewFirst
-                submitLabel={t('dashboard.widget.saveAndAdd')}
-                onSaved={async (id, saved) => {
-                  await onChartSaved(id, saved)
-                  toast(t('toast.saved'))
-                  close()
-                }}
-              />
-            </>
-          )
+        // One already on the dashboard (#247) is only customized: saved once something differs, never added as it is.
+        const { onDashboard } = current
         return (
           <>
-            {heading(title, `${t(`dashboard.widget.describe.ready.${current.chart.id}`)} ${t('dashboard.widget.describe.readyHint')}`)}
+            {heading(title, `${t(`dashboard.widget.describe.ready.${current.chart.id}`)} ${t(onDashboard ? 'dashboard.widget.describe.readyOnDashboard' : 'dashboard.widget.describe.readyHint')}`)}
             <ChartForm
               key={current.chart.id}
               vehicle={vehicle}
               canShare={canShare}
               start={{ title, recipe: current.chart.recipe }}
-              ready
+              ready={!onDashboard}
+              mustChange={onDashboard}
               shareLocked={everyone}
               previewFirst
               submitLabel={t('dashboard.widget.saveAndAdd')}
-              onAddReady={() => added(presetKey(current.chart.id))}
+              onAddReady={onDashboard ? undefined : () => added(presetKey(current.chart.id))}
               onSaved={async (id, saved) => {
                 await onChartSaved(id, saved)
                 toast(t('toast.saved'))
