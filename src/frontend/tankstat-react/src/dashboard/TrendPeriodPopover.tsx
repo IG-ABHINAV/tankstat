@@ -58,8 +58,9 @@ export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, c
       open={anchor !== null}
       anchorEl={anchor}
       onClose={busy ? undefined : onClose}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      // From the chip's left edge: the chip sits at the left of its tile's edit strip (#260), so the popover opens under its own tile.
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       slotProps={{ backdrop: { invisible: !phone }, paper: { role: 'dialog', 'aria-labelledby': `${id}-title`, sx: { width: { xs: 'calc(100vw - 32px)', sm: 400 }, maxWidth: 'calc(100vw - 32px)', p: 2 } } }}
     >
       <Form
