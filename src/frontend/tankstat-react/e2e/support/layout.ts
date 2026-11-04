@@ -5,7 +5,7 @@ import { expect, type Page } from '@playwright/test'
  * - the document is wider than the viewport (the page scrolls sideways);
  * - a value of a label/value list (`dd`) ends past its panel;
  * - a value's help button covers the value;
- * - a dialog's frame scrolls as a whole, not only its content (#249);
+ * - a dialog's frame scrolls as a whole (down or sideways), not only its content (#249);
  * - on a touch screen (`(pointer: coarse)`), a control smaller than 44 px (frontend rules, "Touch targets"): buttons, tabs and icon
  *   links 44 × 44, a text link 44 px tall. Exempt are a link inline in a sentence (its parent has text of its own, WCAG 2.5.8) and
  *   whatever is out of sight (the skip link until it is focused); a stretched link (an absolutely positioned `::after`) counts by the
@@ -37,12 +37,16 @@ export async function layoutProblems(page: Page): Promise<string[]> {
 
     // A dialog scrolls in its content, never as a whole (#249): something laid out against its frame (an absolutely positioned hidden
     // input whose containing block is the frame) stretches the frame past its title and content, so it scrolls too, with a second
-    // scrollbar and blank space under the content. A popover's paper is its own scroll container and is not checked.
+    // scrollbar and blank space under the content. The frame's `overflow-y: auto` makes it scroll sideways too, so both are checked. A
+    // popover's paper is its own scroll container and is not checked.
     for (const paper of document.querySelectorAll<HTMLElement>('.MuiDialog-paper')) {
-      if (!paper.checkVisibility({ visibilityProperty: true }) || paper.scrollHeight <= paper.clientHeight + 1) continue
+      const down = paper.scrollHeight > paper.clientHeight + 1
+      const across = paper.scrollWidth > paper.clientWidth + 1
+      if (!paper.checkVisibility({ visibilityProperty: true }) || (!down && !across)) continue
       const title = paper.getAttribute('aria-labelledby')
       const name = (title && document.getElementById(title)?.textContent?.trim()) || paper.getAttribute('aria-label') || 'dialog'
-      problems.push(`dialog "${name}": its frame scrolls ${paper.scrollHeight}/${paper.clientHeight}`)
+      if (down) problems.push(`dialog "${name}": its frame scrolls ${paper.scrollHeight}/${paper.clientHeight}`)
+      if (across) problems.push(`dialog "${name}": its frame scrolls sideways ${paper.scrollWidth}/${paper.clientWidth}`)
     }
 
     if (!matchMedia('(pointer: coarse)').matches) return problems
