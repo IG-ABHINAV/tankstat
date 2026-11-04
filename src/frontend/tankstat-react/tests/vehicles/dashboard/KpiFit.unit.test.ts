@@ -3,36 +3,39 @@ import { FULL, type Fit, type Measured, nextFit, offered, settle } from '../../.
 
 /**
  * A key figure's card as the browser lays it out, from the heights measured on the published build (#259's triage, a one-column desktop
- * tile is 207 px of content, a phone's 356): the room inside the card by its rows, a label line 20 px, a value line 30 px (26 one step
- * smaller), the note 16, the comparison 16 a line, the sparkline 34, the value's margin 8 at four rows.
+ * tile is 207 px of content, a phone's 356): the room inside the card by its rows, a label line 20 px, a value line by its size step (30,
+ * 26, 24, 22, 20 px, `VALUE_STEPS`), the note 16, the comparison 16 a line, the sparkline 34, the value's margin 8 at four rows.
  */
 interface Card {
   rows: number
   /** Lines the label takes when it may wrap. */
   label: number
-  /** Lines the value takes in its own size, and one type step smaller. */
+  /** Lines the value takes where it may wrap, in its own size, and by size step from there (the last one given holds for the rest). */
   value: number
-  smaller?: number
+  lines?: number[]
   note?: boolean
   /** Lines the comparison takes. */
   change?: number
   sparkline?: boolean
-  /** The one-line value is wider than its line, in its own size and smaller (the short form always fits). */
-  tooWide?: { own: boolean; smaller: boolean }
+  /** The one-line value is wider than its line, by size step (the last one given holds for the rest); `shortTooWide` the same for the short form. */
+  tooWide?: boolean[]
+  shortTooWide?: boolean[]
   shrink?: boolean
   short?: boolean
 }
 const ROOM: Record<number, number> = { 2: 84 - 24, 3: 132 - 32, 4: 180 - 32 }
+const LINE = [30, 26, 24, 22, 20]
+const byStep = <T,>(values: T[], step: number) => values[Math.min(step, values.length - 1)]
 
 const offersOf = (c: Card) => offered(c.rows, { sparkline: !!c.sparkline, hint: !!c.note, change: !!c.change, shrink: !!c.shrink, short: !!c.short })
 
 function measureOf(c: Card) {
   const offers = offersOf(c)
   return (fit: Fit): Measured => {
-    const valueLines = fit.oneLine ? 1 : fit.smaller ? (c.smaller ?? c.value) : c.value
+    const valueLines = fit.oneLine ? 1 : byStep(c.lines ?? [c.value], fit.step)
     const height =
       (fit.oneLine ? 1 : c.label) * 20 +
-      valueLines * (fit.smaller ? 26 : 30) +
+      valueLines * LINE[fit.step] +
       (c.rows >= 4 ? 8 : 0) +
       (offers.hint && fit.drop < 2 ? 16 : 0) +
       (offers.change === 'line' && fit.drop < 3 ? (c.change ?? 0) * 16 : 0) +
@@ -40,7 +43,7 @@ function measureOf(c: Card) {
     return {
       overflows: height > ROOM[c.rows],
       valueWraps: !fit.oneLine && valueLines > 1,
-      valueTooWide: fit.oneLine && !fit.short && !!c.tooWide && (fit.smaller ? c.tooWide.smaller : c.tooWide.own),
+      valueTooWide: fit.oneLine && byStep((fit.short ? c.shortTooWide : c.tooWide) ?? [false], fit.step),
       labelCut: fit.oneLine && c.label > 1,
     }
   }
@@ -55,20 +58,32 @@ describe('a key figure fitted to its card (#259)', () => {
     expect(fitOf({ rows: 4, label: 1, value: 1, note: true, change: 2 })).toEqual(FULL) // and at four rows on a desktop, in English
   })
 
-  it('writes a wrapped value one step smaller at every height, and at two rows puts the main currency and "+1" when even that is too wide', () => {
-    const spent = { label: 1, value: 2, smaller: 1, shrink: true, short: true, note: true, sparkline: true } // two currencies, a desktop column
-    expect(fitOf({ ...spent, rows: 4 })).toEqual(form({ smaller: true }))
-    expect(fitOf({ ...spent, rows: 3 })).toEqual(form({ smaller: true }))
-    expect(fitOf({ ...spent, rows: 2 })).toEqual(form({ smaller: true })) // smaller, it fits its line
-    // Too wide even smaller: the one-line form with the short value, in the figure's own size again.
-    expect(fitOf({ ...spent, rows: 2, smaller: 2, tooWide: { own: true, smaller: true } })).toEqual(form({ oneLine: true, short: true }))
+  it('writes a wrapped value one step smaller at every height, and in one line steps down to 14 px before the main currency and "+N"', () => {
+    const spent = { label: 1, value: 2, lines: [2, 1], shrink: true, short: true, note: true, sparkline: true } // two currencies, a desktop column
+    expect(fitOf({ ...spent, rows: 4 })).toEqual(form({ step: 1 }))
+    expect(fitOf({ ...spent, rows: 3 })).toEqual(form({ step: 1 }))
+    expect(fitOf({ ...spent, rows: 2 })).toEqual(form({ step: 1 })) // smaller, it fits its line
+    // Too wide at every size: the steps first (#260), then the short value in the figure's own size again.
+    expect(fitOf({ ...spent, rows: 2, lines: [2], tooWide: [true] })).toEqual(form({ oneLine: true, short: true }))
+    // Too wide up to 18 px: it stops at the first size that fits, the amounts all shown.
+    expect(fitOf({ ...spent, rows: 2, lines: [2], tooWide: [true, true, false] })).toEqual(form({ oneLine: true, step: 2 }))
     // At three rows a value too wide even smaller may wrap again: there is room for it.
-    expect(fitOf({ ...spent, rows: 3, smaller: 2 })).toEqual(form({ smaller: true }))
-    // The short value too wide in the figure's own size (a narrow desktop column): one step smaller again, so its "+1" is not cut.
-    const narrow = (fit: Fit): Measured => ({ overflows: !fit.oneLine, valueWraps: !fit.oneLine, valueTooWide: fit.oneLine && (!fit.short || !fit.smaller), labelCut: false })
-    expect(settle(narrow, offersOf({ ...spent, rows: 2 }))).toEqual(form({ oneLine: true, short: true, smaller: true }))
-    // A value with no short form (a single amount too long) stays on its line, cut at the card's edge only as the last resort.
-    expect(fitOf({ ...spent, rows: 2, smaller: 2, short: false, tooWide: { own: true, smaller: true } })).toEqual(form({ smaller: true, oneLine: true }))
+    expect(fitOf({ ...spent, rows: 3, lines: [2] })).toEqual(form({ step: 1 }))
+    // The short value too wide in the figure's own size (a narrow desktop column): it steps down too, so its "+N" is never cut.
+    expect(fitOf({ ...spent, rows: 2, lines: [2], tooWide: [true], shortTooWide: [true, false] })).toEqual(form({ oneLine: true, short: true, step: 1 }))
+    // A value with no short form too wide even at 14 px stays at 14 px on its line, cut at the card's edge only as the last resort.
+    expect(fitOf({ ...spent, rows: 2, lines: [2], short: false, tooWide: [true] })).toEqual(form({ step: 4, oneLine: true }))
+  })
+
+  it('steps any figure\'s value down until its row fits, the arrow before it included (#260)', () => {
+    // Cost per distance change at two rows in a narrow desktop column: "HUF 4,293 / 100 km" and the arrow wrap, on one line too wide.
+    const cost = { rows: 2, label: 1, value: 2, change: 2, tooWide: [true, false] }
+    expect(fitOf(cost)).toEqual(form({ oneLine: true, step: 1 }))
+    expect(fitOf({ ...cost, tooWide: [true, true, false] })).toEqual(form({ oneLine: true, step: 2 })) // "HUF 14,293 / 100 km"
+    expect(fitOf({ ...cost, tooWide: [true] })).toEqual(form({ oneLine: true, step: 4 })) // too wide even at 14 px: stays there
+    // A plain figure the same way (Odometer with a long reading); one that fits keeps its size.
+    expect(fitOf({ rows: 2, label: 1, value: 2, tooWide: [true, true, true, false] })).toEqual(form({ oneLine: true, step: 3 }))
+    expect(fitOf({ rows: 2, label: 1, value: 1 })).toEqual(FULL)
   })
 
   it('puts a label that wraps beside its chip on one line at two rows, and says it is cut', () => {
@@ -100,7 +115,7 @@ describe('a key figure fitted to its card (#259)', () => {
   })
 
   it('ends: the form to show is handed back as it is', () => {
-    const done = form({ smaller: true })
+    const done = form({ step: 1 })
     expect(nextFit(done, { overflows: false, valueWraps: true, valueTooWide: false, labelCut: false }, offered(3, { sparkline: false, hint: false, change: false, shrink: true, short: false }))).toBe(done)
   })
 

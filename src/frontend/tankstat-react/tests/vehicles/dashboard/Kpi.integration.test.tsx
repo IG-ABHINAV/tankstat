@@ -40,11 +40,14 @@ it('shows the main currency and "+1" in the short form, the others in its toolti
   expect(await screen.findByRole('tooltip')).toHaveTextContent('€40.00')
   expect((await axe(container, { rules: { 'color-contrast': { enabled: false } } })).violations).toEqual([])
 
-  rerender(spent(form({ smaller: true })))
+  rerender(spent(form({ step: 1 })))
   expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   expect(screen.getByText('HUF 22,000 · €40.00')).toHaveClass('MuiTypography-h4') // one type step smaller
   rerender(spent(FULL))
   expect(screen.getByText('HUF 22,000 · €40.00')).toHaveClass('MuiTypography-h3')
+  // The size steps (#260) are the headings down to h6 and then 14 px on it (jsdom computes no sizes: the browser's tests read them).
+  rerender(spent(form({ oneLine: true, step: 3 })))
+  expect(screen.getByText('HUF 22,000 · €40.00')).toHaveClass('MuiTypography-h6')
 })
 
 it('makes a cut label a tab stop whose tooltip shows it whole, and leaves a label that fits out of the tab order', async () => {

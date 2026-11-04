@@ -6,8 +6,11 @@
 
 /** The form a card shows. Each step of `nextFit` turns one of these on, so the steps always end. */
 export interface Fit {
-  /** The value one type step smaller (h3 → h4), for a value that wraps (*Spent this month* in several currencies), at every height. */
-  smaller: boolean
+  /**
+   * The value's size, a step of `VALUE_STEPS` (#260): one step smaller for a value that wraps where the figure allows it (*Spent this
+   * month* in several currencies, at every height), and in the one-line form one step at a time while its line is too wide, down to 14 px.
+   */
+  step: number
   /** What is left out from the bottom: 0 nothing, 1 the sparkline, 2 the note too, 3 the comparison's line too, which then is its arrow alone (#260). */
   drop: 0 | 1 | 2 | 3
   /** The label and the value on one line each, the label cut with an ellipsis when it does not fit. */
@@ -19,7 +22,17 @@ export interface Fit {
 }
 
 /** The form a card starts from, and starts from again whenever what it shows or its size changes. */
-export const FULL: Fit = { smaller: false, drop: 0, oneLine: false, short: false, labelCut: false }
+export const FULL: Fit = { step: 0, drop: 0, oneLine: false, short: false, labelCut: false }
+
+/** The value's sizes, step by step (#260): the headings h3 to h6, then 14 px, past which a value too wide is cut at the card's edge. */
+export const VALUE_STEPS = [
+  { variant: 'h3', px: 24 },
+  { variant: 'h4', px: 20 },
+  { variant: 'h5', px: 18 },
+  { variant: 'h6', px: 16 },
+  { variant: 'h6', px: 14 },
+] as const
+const LAST_STEP = VALUE_STEPS.length - 1
 
 /**
  * What a card's rows offer of what it has (#229): the sparkline at four rows, the note at four, or at three without a comparison; a trend
@@ -57,19 +70,21 @@ export interface Measured {
  * The next form to try after measuring `fit`, or `fit` itself when it is the one to show. In order: the value one step smaller when it wraps
  * and may (whether the card overflows or not: a wrapped value is always written smaller); then, while the content is taller than the card,
  * left out from the bottom what the rows offer, the sparkline, the note, the comparison's line (which becomes its arrow alone before the value,
- * #260; its row stays empty: the note never comes into its place, #259's N2); then the one-line form; in it, the short value when the line is too wide (in the figure's own size
- * again, one step smaller only when even the short value is too wide in it, so its "+1" is never cut at the card's edge); last, whether the
- * one-line label is cut.
+ * #260; its row stays empty: the note never comes into its place, #259's N2); then the one-line form; in it, while the value is wider than
+ * its line, one size step down at a time to 14 px (every figure, #260), then, still too wide, the short value in the figure's own size
+ * again (the main currency and "+N", #259) and the steps once more; last, whether the one-line label is cut.
  */
 export function nextFit(fit: Fit, measured: Measured, offers: Offered): Fit {
-  if (offers.shrink && !fit.smaller && !fit.oneLine && measured.valueWraps) return { ...fit, smaller: true }
+  if (offers.shrink && fit.step === 0 && !fit.oneLine && measured.valueWraps) return { ...fit, step: 1 }
   if (measured.overflows) {
     const levels = [offers.sparkline, offers.hint, offers.change === 'line']
     for (let level = fit.drop; level < levels.length; level++) if (levels[level]) return { ...fit, drop: (level + 1) as Fit['drop'] }
     if (!fit.oneLine) return { ...fit, oneLine: true }
   }
-  if (fit.oneLine && offers.short && !fit.short && measured.valueTooWide) return { ...fit, short: true, smaller: false }
-  if (fit.oneLine && fit.short && offers.shrink && !fit.smaller && measured.valueTooWide) return { ...fit, smaller: true }
+  if (fit.oneLine && measured.valueTooWide) {
+    if (fit.step < LAST_STEP) return { ...fit, step: fit.step + 1 }
+    if (offers.short && !fit.short) return { ...fit, short: true, step: 0 }
+  }
   if (fit.oneLine && measured.labelCut !== fit.labelCut) return { ...fit, labelCut: measured.labelCut }
   return fit
 }
@@ -80,7 +95,7 @@ export function nextFit(fit: Fit, measured: Measured, offers: Offered): Fit {
  */
 export function settle(measure: (fit: Fit) => Measured, offers: Offered, start: Fit = FULL): Fit {
   let fit = start
-  for (let step = 0; step < 12; step++) {
+  for (let step = 0; step < 24; step++) {
     const next = nextFit(fit, measure(fit), offers)
     if (next === fit) return fit
     fit = next

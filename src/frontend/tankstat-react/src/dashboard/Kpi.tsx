@@ -8,7 +8,7 @@ import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef, useState 
 import { useTranslation } from 'react-i18next'
 import type { ChangeWords, Tone } from './changeWords.ts'
 import { COARSE } from '../theme/components.ts'
-import { FULL, type Fit, type Measured, nextFit, offered } from './kpiFit.ts'
+import { FULL, type Fit, type Measured, nextFit, offered, VALUE_STEPS } from './kpiFit.ts'
 import { useTilePadding } from './tileChrome.ts'
 
 export interface KpiProps {
@@ -16,7 +16,7 @@ export interface KpiProps {
   label: string
   chip?: ReactNode
   value: ReactNode
-  /** The value may go one type step smaller when it wraps (#259: *Spent this month* in several currencies). */
+  /** The value may go one type step smaller when it wraps (#259: *Spent this month* in several currencies), at every height. */
   shrink?: boolean
   /** The value's short form, for the one-line form when even that line is too wide (the main currency and "+1", `MoreCount`). */
   short?: ReactNode
@@ -41,7 +41,8 @@ export interface KpiProps {
  * What does not fit the card's height is never cut (#259): the card measures itself (`kpiFit.ts`, one step a render in a layout effect, so
  * nothing is painted half way) and leaves out from the bottom what has no room, then puts the label and the value on one line each. It
  * starts from the full form again whenever its size, rows or words change; a card whose height follows its content (a preview) never
- * overflows, so it shows everything, its value smaller only where it wraps.
+ * overflows, so it shows everything, its value smaller only where it wraps. In the one-line form a value too wide for its line steps down
+ * the type scale to 14 px (#260, `VALUE_STEPS`); only past that is it cut at the card's edge.
  */
 export function Kpi({ fitKey = '', ...props }: KpiProps) {
   const card = useRef<HTMLDivElement>(null)
@@ -116,7 +117,12 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, sparkli
       <Box data-kpi="value-row" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, my: full ? 0.5 : 0 }}>
         {change && (offers.change === 'arrow' || fit.drop >= 3) && <ChangeArrow words={change} />}
         {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
-        <Typography data-kpi="value" variant={fit.smaller ? 'h4' : 'h3'} component="p" sx={{ minWidth: 0, ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}>
+        <Typography
+          data-kpi="value"
+          variant={VALUE_STEPS[fit.step].variant}
+          component="p"
+          sx={{ minWidth: 0, ...(fit.step === VALUE_STEPS.length - 1 && { fontSize: VALUE_STEPS[fit.step].px, lineHeight: '20px' }), ...(fit.oneLine && (fit.short && short ? { whiteSpace: 'nowrap' } : ONE_LINE)) }}
+        >
           {fit.short && short ? short : value}
         </Typography>
       </Box>
@@ -185,7 +191,8 @@ export function ValueWithUnit({ value, unit }: { value: string; unit: string }) 
   return (
     <>
       {value}{' '}
-      <Box component="span" sx={{ typography: 'body2', fontWeight: 600, color: 'text.secondary' }}>
+      {/* Never bigger than the number (#260: the value steps down to 14 px, the size the unit has). */}
+      <Box component="span" sx={{ typography: 'body2', fontSize: 'min(0.875rem, 1em)', fontWeight: 600, color: 'text.secondary' }}>
         {unit}
       </Box>
     </>
