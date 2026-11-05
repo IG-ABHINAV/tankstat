@@ -947,7 +947,7 @@
       "rangeTooLong": "The period can be at most {{max}} years.",
       "titleRequired": "The chart needs a title.",
       "titleTooLong": "The title can be at most {{max}} characters.",
-      "limit": "You can have at most {{max}} charts for a vehicle.",
+      "limit": "You can have at most {{max}} saved widgets for a vehicle.",
       "needEditToShare": "You need edit access to the vehicle's logs to share a chart.",
       "notYours": "Only the creator can change this chart.",
       "notFound": "This chart does not exist."

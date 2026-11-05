@@ -447,6 +447,9 @@ const recurringExpenses: Resolver = async (_rows, variables, kept) => {
 const vehicleDashboard: Resolver = async (_rows, variables) =>
   addedVehicle(variables.id) ? { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null, dashboard: null }, vehicleCharts: [] } : undefined
 
+/** A vehicle added here has no saved widgets (#273) until the server has it. */
+const vehicleWidgets: Resolver = async (_rows, variables) => (addedVehicle(variables.vehicleId) ? { vehicleWidgets: [] } : undefined)
+
 const chartData: Resolver = async (_rows, variables) =>
   addedVehicle(variables.vehicleId) ? { vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } } : undefined
 
@@ -522,6 +525,7 @@ const RESOLVERS: Record<string, Resolver> = {
   ChartData: chartData,
   VehicleTrend: vehicleTrend,
   VehicleFigure: vehicleFigure,
+  VehicleWidgets: vehicleWidgets,
 }
 
 /** The device's own answer to a query, or undefined when it has none (not one of these queries, or not downloaded). */

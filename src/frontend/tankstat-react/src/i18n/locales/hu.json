@@ -947,7 +947,7 @@
       "rangeTooLong": "Az időszak legfeljebb {{max}} év lehet.",
       "titleRequired": "A grafikonhoz cím kell.",
       "titleTooLong": "A cím legfeljebb {{max}} karakter lehet.",
-      "limit": "Egy járműhöz legfeljebb {{max}} grafikonod lehet.",
+      "limit": "Egy járműhöz legfeljebb {{max}} mentett elemed lehet.",
       "needEditToShare": "A grafikon megosztásához szerkesztési jog kell a jármű naplójához.",
       "notYours": "Ezt a grafikont csak a létrehozója módosíthatja.",
       "notFound": "Ez a grafikon nem létezik."

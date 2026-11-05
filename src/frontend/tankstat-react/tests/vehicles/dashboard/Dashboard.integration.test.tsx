@@ -849,7 +849,7 @@ it('shows the rule from the server when saving fails, and keeps the dialog open'
 
   await ui.click(within(dialog).getByRole('button', { name: 'Save and add' }))
 
-  expect(await within(dialog).findByRole('alert')).toHaveTextContent('You can have at most 30 charts for a vehicle.')
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('You can have at most 30 saved widgets for a vehicle.')
   expect(screen.getByRole('dialog', { name: 'Add widget' })).toBeInTheDocument()
 })
 
