@@ -23,7 +23,7 @@ import { ChartCard } from './ChartCard.tsx'
 import { ChartForm } from './ChartForm.tsx'
 import { NEW_RECIPE, recipeOf, type ChartRecipe } from './chartFormat.ts'
 import type { SavedChart } from './DashboardPanel.tsx'
-import { TEMPLATE_MEASURE, templateRecipe } from './figureRecipe.ts'
+import { figureRows, TEMPLATE_MEASURE, templateRecipe } from './figureRecipe.ts'
 import { FigureView, KeyFigure } from './KeyFigure.tsx'
 import { useFigureTitle } from './useFigureTitle.ts'
 import { usePeriodText } from './usePeriodText.ts'
@@ -216,16 +216,19 @@ export function AddWidgetDialog({
           </>
         )
       }
-      case 'saved':
+      case 'saved': {
+        // A saved key figure (#273) at the rows it is added at (`figureRows`, as `addTile` sizes it).
+        const figure = current.chart.figure
+        const rows = figure ? figureRows(figure) : 0
         return (
           <>
             {heading(current.chart.title, current.chart.isShared ? t('dashboard.widget.describe.shared', { name: current.chart.createdBy?.displayName ?? '' }) : t('dashboard.widget.describe.saved'))}
             {current.chart.chart ? (
               <ChartCard vehicleId={vehicle.id} title={current.chart.title} recipe={recipeOf(current.chart.chart)} units={vehicle.units} headingLevel={2} />
-            ) : current.chart.figure ? (
-              // A saved key figure (#273), as its tile will show it.
-              <Box sx={{ width: 'min(100%, 18rem)', height: 4 * ROW_HEIGHT + 3 * GAP }}>
-                <KeyFigure recipe={current.chart.figure} label={figureTitle(current.chart.figure, current.chart.title)} vehicleId={vehicle.id} rows={4} units={vehicle.units} />
+            ) : figure ? (
+              // As its tile will show it.
+              <Box sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
+                <KeyFigure recipe={figure} label={figureTitle(figure, current.chart.title)} vehicleId={vehicle.id} rows={rows} units={vehicle.units} />
               </Box>
             ) : null}
             <DialogButtons>
@@ -237,6 +240,7 @@ export function AddWidgetDialog({
             </DialogButtons>
           </>
         )
+      }
       case 'ready': {
         const title = t(`dashboard.presets.${current.chart.id}`)
         // One already on the dashboard (#247) is only customized: saved once something differs, never added as it is.
