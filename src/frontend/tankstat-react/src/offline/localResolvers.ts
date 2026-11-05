@@ -1,4 +1,4 @@
-import type { ExpenseSortField, RefuelingSortField, SortDirection, VehicleSortField } from '../gql/generated.ts'
+import type { ChartUnit, ExpenseSortField, FigureMeasure, RefuelingSortField, SortDirection, VehicleSortField } from '../gql/generated.ts'
 import { keptPhotosOf, type Change } from './changes.ts'
 import { connectivity } from './connectivity.ts'
 import type { LogKind, LogRow, PullCursor, RowStore, VehicleRow } from './deviceStorage.ts'
@@ -458,6 +458,48 @@ const vehicleTrend: Resolver = async (_rows, variables) => {
   return { vehicleTrend: { __typename: 'TrendFigureData', recent: empty(), earlier: empty(), currencies: [], consumption: null, distance: null } }
 }
 
+/** The chart unit of a key figure's measure (`StatsCalculator.UnitOf`): the odometer's a distance, the last fill-up's none. */
+const FIGURE_UNIT: Record<FigureMeasure, ChartUnit | null> = {
+  TOTAL_SPEND: 'CURRENCY',
+  FUEL_COST: 'CURRENCY',
+  EXPENSE_COST: 'CURRENCY',
+  FUEL_VOLUME: 'VOLUME',
+  DISTANCE: 'DISTANCE',
+  AVERAGE_CONSUMPTION: 'CONSUMPTION',
+  AVERAGE_PRICE_PER_UNIT: 'PRICE_PER_VOLUME',
+  AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT: 'PRICE_PER_VOLUME',
+  FILL_UPS: 'COUNT',
+  COST_PER_DISTANCE: 'COST_PER_DISTANCE',
+  FUEL_COST_PER_DISTANCE: 'COST_PER_DISTANCE',
+  ODOMETER: 'DISTANCE',
+  LAST_FILL_UP: null,
+}
+
+/**
+ * Nor a key figure over a period (#272): two windows of today with nothing in them (no earlier one without a comparison), no values, the
+ * measure's unit. A point in time is what the device holds: the odometer the highest reading of the logs kept here, the last fill-up their
+ * latest refuelling's date and the counts.
+ */
+const vehicleFigure: Resolver = async (rows, variables) => {
+  if (!addedVehicle(variables.vehicleId)) return undefined
+  const measure = variables.measure as FigureMeasure
+  const figure = { __typename: 'FigureData', recent: null, earlier: null, unit: FIGURE_UNIT[measure] ?? null, currencies: [], value: null, lastFillUp: null }
+  if (measure === 'ODOMETER' || measure === 'LAST_FILL_UP') {
+    const refuelings = (await downloaded(rows, 'refuelings', variables.vehicleId)) ?? []
+    const expenses = (await downloaded(rows, 'expenses', variables.vehicleId)) ?? []
+    if (measure === 'LAST_FILL_UP') {
+      const date = refuelings.map((r) => String(r.date)).sort().at(-1) ?? null
+      return { vehicleFigure: { ...figure, lastFillUp: { __typename: 'LastFillUpFigure', date, fillUps: refuelings.length, expenses: expenses.length } } }
+    }
+    const readings = [...refuelings, ...expenses].map((r) => num(r.odometer)).filter((v): v is number => v !== null)
+    return { vehicleFigure: { ...figure, value: readings.length > 0 ? { __typename: 'ValueChange', recent: Math.max(...readings), earlier: null } : null } }
+  }
+  const today = todayIso()
+  const empty = () => ({ __typename: 'TrendWindow', start: today, end: today, fillUps: 0 })
+  const against = (variables.period as { against?: string | null } | null | undefined)?.against
+  return { vehicleFigure: { ...figure, recent: empty(), earlier: against === 'NONE' ? null : empty() } }
+}
+
 const RESOLVERS: Record<string, Resolver> = {
   Refuelings: list('refuelings', 'refuelings', 'refuelingCount'),
   Expenses: list('expenses', 'expenses', 'expenseCount'),
@@ -475,6 +517,7 @@ const RESOLVERS: Record<string, Resolver> = {
   VehicleDashboard: vehicleDashboard,
   ChartData: chartData,
   VehicleTrend: vehicleTrend,
+  VehicleFigure: vehicleFigure,
 }
 
 /** The device's own answer to a query, or undefined when it has none (not one of these queries, or not downloaded). */

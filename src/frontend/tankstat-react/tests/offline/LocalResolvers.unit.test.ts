@@ -460,6 +460,27 @@ describe('answering offline, the device\'s own data', () => {
     expect(await answerLocally(rows, 'VehicleTrend', { vehicleId: 'v1' })).toBeUndefined()
   })
 
+  it('a vehicle added here has no key figure over a period yet, and its odometer and last fill-up from the logs kept here (#272)', async () => {
+    const rows = await device()
+    await enqueue({ id: 'golf', entity: 'vehicles', action: 'add', vehicleId: 'golf', targetId: 'golf', input: { id: 'golf', name: 'Golf', fuelType: 'PETROL' } })
+    const figure = (measure: string, period?: Record<string, unknown>) => answerLocally(rows, 'VehicleFigure', { vehicleId: 'golf', measure, period })
+    const empty = { __typename: 'TrendWindow', start: todayIso(), end: todayIso(), fillUps: 0 }
+    const nothing = { __typename: 'FigureData', currencies: [], value: null, lastFillUp: null }
+
+    expect(await figure('TOTAL_SPEND', { kind: 'THIS_MONTH' })).toEqual({ vehicleFigure: { ...nothing, recent: empty, earlier: empty, unit: 'CURRENCY' } })
+    expect(await figure('AVERAGE_CONSUMPTION', { kind: 'LAST', unit: 'FILL_UPS', count: 10, against: 'NONE' })).toEqual({ vehicleFigure: { ...nothing, recent: empty, earlier: null, unit: 'CONSUMPTION' } })
+    // No logs kept here yet: no reading, no fill-up.
+    expect(await figure('ODOMETER')).toEqual({ vehicleFigure: { ...nothing, recent: null, earlier: null, unit: 'DISTANCE' } })
+    expect(await figure('LAST_FILL_UP')).toEqual({ vehicleFigure: { ...nothing, recent: null, earlier: null, unit: null, lastFillUp: { __typename: 'LastFillUpFigure', date: null, fillUps: 0, expenses: 0 } } })
+
+    await enqueue({ id: 'r1', entity: 'refuelings', action: 'add', vehicleId: 'golf', targetId: 'r1', input: { id: 'r1', vehicleId: 'golf', date: '2026-10-02', volume: 40, totalCost: 24000, currency: 'HUF', odometer: 12000, isFullTank: true } })
+    await enqueue({ id: 'r2', entity: 'refuelings', action: 'add', vehicleId: 'golf', targetId: 'r2', input: { id: 'r2', vehicleId: 'golf', date: '2026-10-20', volume: 30, totalCost: 18000, currency: 'HUF', odometer: 12600, isFullTank: true } })
+    await enqueue({ id: 'x1', entity: 'expenses', action: 'add', vehicleId: 'golf', targetId: 'x1', input: { id: 'x1', vehicleId: 'golf', date: '2026-10-25', title: 'Wash', amount: 3000, currency: 'HUF', odometer: 12700 } })
+    expect(await figure('ODOMETER')).toMatchObject({ vehicleFigure: { value: { __typename: 'ValueChange', recent: 12700, earlier: null } } }) // the highest reading, the expense's too
+    expect(await figure('LAST_FILL_UP')).toMatchObject({ vehicleFigure: { lastFillUp: { date: '2026-10-20', fillUps: 2, expenses: 1 } } })
+    expect(await answerLocally(rows, 'VehicleFigure', { vehicleId: 'v1', measure: 'ODOMETER' })).toBeUndefined() // the server's
+  })
+
   it('a search on the home list finds the vehicles added here by name or licence plate', async () => {
     const rows = await device()
     const base = { myVehicles: [{ __typename: 'Vehicle', id: 'v1', name: 'Octavia' }], myVehicleCount: 1, vehicleTotal: 3 }
