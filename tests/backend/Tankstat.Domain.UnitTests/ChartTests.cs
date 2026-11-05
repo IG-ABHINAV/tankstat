@@ -177,5 +177,10 @@ public class ChartTests
         Assert.Equal("chart.invalid", Key(() => chart.Update("B", null, Spent, false, at)));
         figure.Update("B", null, new FigureRecipe(FigureMeasure.Odometer), true, at);
         Assert.Equal(("B", new FigureRecipe(FigureMeasure.Odometer), true), (figure.Title, figure.Figure, figure.IsShared));
+
+        // A refused recipe changes nothing: the title and sharing are kept too.
+        Assert.Equal("trend.invalid", Key(() => figure.Update("C", null, new FigureRecipe(FigureMeasure.Odometer, TrendPeriod.TwelveWholeMonths), false, at)));
+        Assert.Equal("chart.categoryNeedsExpenses", Key(() => chart.Update("C", Config(grouping: ChartGrouping.Category), null, true, at)));
+        Assert.Equal(("B", true, "A", false), (figure.Title, figure.IsShared, chart.Title, chart.IsShared));
     }
 }

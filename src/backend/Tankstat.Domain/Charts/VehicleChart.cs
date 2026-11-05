@@ -89,12 +89,15 @@ public sealed class VehicleChart
             _ => false,
         };
         if (!fits) throw new DomainException("chart.invalid", "This chart is not valid.");
+        // Checked before anything changes, so a refused recipe leaves the widget as it was.
+        // A figure's period on the UTC date, as a tile's period is checked (DashboardLayout.Apply) and the statistics' "today".
+        config = config?.Validated();
+        var recipe = config is null ? figure!.Validated(DateOnly.FromDateTime(now.UtcDateTime)) : null;
 
         Title = trimmed;
         IsShared = shared;
         if (config is not null)
         {
-            config = config.Validated();
             Metric = config.Metric;
             Grouping = config.Grouping;
             Kind = config.Kind;
@@ -108,10 +111,8 @@ public sealed class VehicleChart
             SecondMetric = config.SecondMetric;
             SecondKind = config.SecondKind;
         }
-        else
+        else if (recipe is not null)
         {
-            // The UTC date, as a tile's period is checked (DashboardLayout.Apply) and the statistics' "today".
-            var recipe = figure!.Validated(DateOnly.FromDateTime(now.UtcDateTime));
             Measure = recipe.Measure;
             Period = recipe.Period;
             Sparkline = recipe.Sparkline;
