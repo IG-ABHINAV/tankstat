@@ -12,7 +12,7 @@ import { useFormat } from '../i18n/format.ts'
 import { COARSE } from '../theme/components.ts'
 import { useChangeWords, type ChangeOf } from './changeWords.ts'
 import { NEW_RECIPE, toConfig } from './chartFormat.ts'
-import { MEANING, periodFigureOf, type FigureRecipe } from './figureRecipe.ts'
+import { isPointInTime, MEANING, periodFigureOf, type FigureRecipe } from './figureRecipe.ts'
 import { Kpi, ValueWithUnit } from './Kpi.tsx'
 import { LazySparkline } from './LazySparkline.tsx'
 import { OutsideTile, useTileStrip } from './tileChrome.ts'
@@ -56,8 +56,8 @@ export function FigureView({ recipe, data, error, rows, units, label, chip, peri
   const wordsOf = useChangeWords()
   const none = t('dashboard.kpi.none')
   const p = recipe.period
-  // The answer and its period are what the card shows in words: a new one fits it afresh (#259).
-  const fitKey = JSON.stringify([p, data ?? null, !!error])
+  // The answer and its period are what the card shows in words, and the sparkline its own query brings later: a new one fits it afresh (#259).
+  const fitKey = JSON.stringify([p, data ?? null, !!error, !!sparkline])
   if (!data)
     return (
       <Kpi
@@ -167,18 +167,10 @@ export function KeyFigure({ recipe, label, vehicleId, rows, units, control }: { 
     </OutsideTile>
   )
   const main = data?.vehicleFigure.currencies[0]?.currency
+  const sparkline = useFigureSparkline(vehicleId, recipe, main)
   return (
     <>
-      <FigureView
-        recipe={recipe}
-        data={data?.vehicleFigure}
-        error={error}
-        rows={rows}
-        units={units}
-        label={label}
-        periodWords={words}
-        sparkline={recipe.sparkline && recipe.measure !== 'ODOMETER' && recipe.measure !== 'LAST_FILL_UP' ? <FigureSparkline vehicleId={vehicleId} measure={recipe.measure as ChartMetric} currency={main} /> : undefined}
-      />
+      <FigureView recipe={recipe} data={data?.vehicleFigure} error={error} rows={rows} units={units} label={label} periodWords={words} sparkline={sparkline} />
       {chip}
       {popover}
     </>
@@ -188,17 +180,22 @@ export function KeyFigure({ recipe, label, vehicleId, rows, units, control }: { 
 /**
  * A key figure's sparkline (#274): its measure by month over the last six months, the current one included (`LAST6_MONTHS`), as the
  * dashboard's charts ask for it; for money the main currency's series, and none until there is one, as *Spent this month*'s always was.
+ * Undefined until there is a line to draw, so the card is fitted with it once it comes (`FigureView`'s `fitKey`) and never offers a
+ * sparkline it does not have.
  */
-function FigureSparkline({ vehicleId, measure, currency }: { vehicleId: string; measure: ChartMetric; currency: string | null | undefined }) {
-  const byCurrency = BY_CURRENCY.includes(KIND[measure])
+function useFigureSparkline(vehicleId: string, recipe: FigureRecipe, currency: string | null | undefined): ReactNode {
+  const wanted = recipe.sparkline && !isPointInTime(recipe.measure)
+  const metric = recipe.measure as ChartMetric // every measure but the points in time is a chart metric (#272)
+  const byCurrency = BY_CURRENCY.includes(KIND[recipe.measure])
   const { data } = useQuery(ChartDataDocument, {
-    variables: { vehicleId, config: toConfig({ ...NEW_RECIPE, metric: measure, grouping: 'MONTH', kind: 'LINE', range: 'LAST6_MONTHS' }) },
+    variables: { vehicleId, config: toConfig({ ...NEW_RECIPE, metric, grouping: 'MONTH', kind: 'LINE', range: 'LAST6_MONTHS' }) },
     fetchPolicy: 'cache-and-network',
-    skip: byCurrency && !currency,
+    skip: !wanted || (byCurrency && !currency),
   })
+  if (!wanted) return undefined
   const series = data?.vehicleChartData.series.filter((s) => s.role === 'VALUE')
   const line = byCurrency ? series?.find((s) => s.currency === currency) : series?.[0]
-  if (!line || line.points.length === 0) return null
+  if (!line || line.points.length === 0) return undefined
   return <LazySparkline points={line.points.map((pt) => ({ month: pt.key, amount: pt.value ?? 0 }))} currency={byCurrency ? currency : null} />
 }
 
