@@ -321,8 +321,8 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     if (!saved) return tile.recipe ? t('dashboard.widget.badge.arrangement') : null
     return saved.isShared && !saved.canEdit ? t('dashboard.widget.badge.sharedBy', { name: saved.createdBy?.displayName ?? '' }) : t('dashboard.widget.badge.saved')
   }
-  /** The pencil's name: Customize for someone else's saved widget (copied as one's own), Edit for every other. */
-  const editNameOf = (tile: Tile) => t(savedOf(tile)?.canEdit === false ? 'dashboard.customizeWidget' : 'dashboard.editWidget', { title: titleOf(tile) })
+  /** What the pencil does: Customize someone else's saved widget (copied as one's own), Edit every other. */
+  const editKindOf = (tile: Tile): 'edit' | 'customize' => (savedOf(tile)?.canEdit === false ? 'customize' : 'edit')
   const onDashboard = new Set(edit?.tiles.map((x) => x.id))
   // The templates some tile was made from (#274, #275): Add widget offers the other figures, and marks the ready-made charts on it.
   const made = new Set(edit?.tiles.map(templateOfTile))
@@ -469,7 +469,8 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
                 // The focus back on the pencil of the tile in its place (a copy or a saved widget's may have replaced it).
                 const id = edit.editing?.focus ?? edit.editing?.tile
                 update(() => ({ editing: null }))
-                if (id) panel.current?.querySelector<HTMLElement>(`[data-tile="${CSS.escape(id)}"] [data-action="edit"]`)?.focus()
+                // Its pencil, or its menu where a narrow tile has the pencil in it (#275).
+                if (id) panel.current?.querySelector<HTMLElement>(`[data-tile="${CSS.escape(id)}"] [data-action="edit"], [data-tile="${CSS.escape(id)}"] [aria-haspopup="menu"]`)?.focus()
               }}
               onSave={(draft, choice) => saveEdit(edit.editing!.tile, draft, choice)}
             />
@@ -483,7 +484,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
           editing={edit !== null}
           render={render}
           name={titleOf}
-          editName={editNameOf}
+          editKind={editKindOf}
           badge={badgeOf}
           savedFigure={savedFigure}
           onTilesChange={(next) => update(() => ({ tiles: next }))}

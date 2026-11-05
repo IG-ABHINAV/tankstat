@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -94,21 +94,29 @@ describe('DashboardGrid while a tile is dragged or resized (#227, #240)', () => 
 })
 
 describe("a tile's menu", () => {
-  it('gives every tile its pencil and its bin beside the menu, the pencil named by the page and the bin taking it off (#275)', async () => {
+  it('gives a tile its pencil and its bin beside the menu, a narrow one both in its menu, and the tag under the strip (#275)', async () => {
     const ui = userEvent.setup()
     const onAction = vi.fn()
-    themed(<DashboardGrid tiles={[tile('preset:monthlyCosts', 0, 0), tile('chart:c1', 2, 0), tile('odometer', 0, 8, 1, 3)]} editing render={show} name={name} editName={(t) => `Edit ${t.id}`} badge={(t) => (t.id === 'chart:c1' ? 'Saved' : null)} onAction={onAction} />)
+    themed(<DashboardGrid tiles={[tile('preset:monthlyCosts', 0, 0), tile('chart:c1', 2, 0), tile('odometer', 0, 8, 1, 3)]} editing render={show} name={name} editKind={(t) => (t.id === 'chart:c1' ? 'customize' : 'edit')} badge={(t) => (t.id === 'chart:c1' ? 'Saved' : null)} onAction={onAction} />)
 
-    await ui.click(screen.getByRole('button', { name: 'Edit chart:c1' }))
-    await ui.click(screen.getByRole('button', { name: 'Remove odometer from this dashboard' }))
-    expect(onAction.mock.calls.map(([t, a]) => `${t.id} ${a}`)).toEqual(['chart:c1 edit', 'odometer remove'])
-    // The tag under the strip (#275, the user's choice C) on the tile that has one, none on the others; no Customize in the menu any more.
+    await ui.click(screen.getByRole('button', { name: 'Customize chart:c1' }))
+    await ui.click(screen.getByRole('button', { name: 'Remove preset:monthlyCosts from this dashboard' }))
+    // One column of the four (the user's choice): no pencil or bin, its menu starts with Edit…, done once the menu has gone.
+    expect(screen.queryByRole('button', { name: 'Edit odometer' })).not.toBeInTheDocument()
+    await ui.click(screen.getByRole('button', { name: 'Options for odometer' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items[0]).toHaveTextContent('Edit…')
+    await ui.click(items[0])
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(onAction.mock.calls.map(([t, a]) => `${t.id} ${a}`)).toEqual(['chart:c1 edit', 'preset:monthlyCosts remove', 'odometer edit']))
+    // The tag under the strip (#275, the user's choice C) on the tile that has one, none on the others; no Customize as my chart any more.
     expect(document.querySelector('[data-tile="chart:c1"] [data-badge]')).toHaveTextContent('Saved')
     expect(document.querySelectorAll('[data-badge]')).toHaveLength(1)
     await ui.click(screen.getByRole('button', { name: 'Options for preset:monthlyCosts' }))
     expect(await screen.findByRole('menuitem', { name: 'Remove' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: /Customize/ })).not.toBeInTheDocument()
   })
+
 
 })
 
@@ -146,7 +154,7 @@ describe('DashboardGrid while customizing: the strip is the tile\'s header (#262
     expect(within(chart).getAllByRole('button').map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual([
       'preset:monthlyCosts chip',
       'preset:monthlyCosts table',
-      'preset:monthlyCosts', // the pencil, named by the page (its name here, given no editName)
+      'Edit preset:monthlyCosts',
       'Remove preset:monthlyCosts from this dashboard',
       'Options for preset:monthlyCosts',
     ])

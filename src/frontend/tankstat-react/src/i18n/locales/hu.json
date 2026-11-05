@@ -1499,7 +1499,9 @@
       "changed": "{{name}} módosítva.",
       "addedSaved": "{{name}} hozzáadva, és a saját elemeid közé mentve.",
       "deleted": "{{name}} törölve.",
-      "copied": "{{name}} mostantól a sajátod, ugyanott."
+      "copied": "{{name}} mostantól a sajátod, ugyanott.",
+      "editItem": "Szerkesztés…",
+      "customizeItem": "Testreszabás…"
     },
     "sectionLabel": "Irányítópult",
     "layoutPresets": {

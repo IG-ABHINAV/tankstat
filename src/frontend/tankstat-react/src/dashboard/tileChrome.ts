@@ -11,7 +11,7 @@ export const TILE_INSET = TILE_STRIP
  * The badge's line under the strip while customizing (#275, the user's choice C: *In this arrangement*, *Saved*, *Saved · shared by …*):
  * the card starts under it too, so while customizing it fits what is left by measuring (`Kpi`), a two-row figure its value alone.
  */
-export const TILE_BADGE = 22
+export const TILE_BADGE = 16
 
 /**
  * Where a tile's content puts what the edit strip carries while the dashboard is arranged (#262): `lead` after the tile's name (a trend

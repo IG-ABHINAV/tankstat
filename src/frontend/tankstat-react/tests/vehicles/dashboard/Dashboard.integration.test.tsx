@@ -214,7 +214,11 @@ it('lists the saved widgets, marks shared ones, and while customizing gives ever
   await customize(ui)
   expect(screen.getByRole('button', { name: 'Edit Fuel by month' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Customize Team chart' })).toBeInTheDocument() // someone else's: copied as one's own
-  expect(screen.getByRole('button', { name: 'Edit Odometer' })).toBeInTheDocument() // every widget, a figure too
+  // Every widget, a figure too; a one-column tile of four has them in its menu (the user's choice).
+  await ui.click(screen.getByRole('button', { name: 'Options for Odometer' }))
+  expect(await screen.findByRole('menuitem', { name: 'Edit…' })).toBeInTheDocument()
+  await ui.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   expect(screen.getByRole('button', { name: 'Remove Team chart from this dashboard' })).toBeInTheDocument()
   // The badges under the strips (#275, the user's choice C).
   const badge = (title: string) => screen.getByRole('heading', { name: title }).closest('[data-tile]')!.querySelector('[data-badge]')
@@ -1069,7 +1073,8 @@ it('edits one\'s own saved widget from its recipe: everywhere at once, or only o
   // Everywhere: the saved widget itself, at once, keeping its sharing.
   await waitFor(() => expect(state.calls.SaveVehicleWidget).toHaveLength(1))
   expect(savedWidget(state)).toMatchObject({ id: 'c1', title: 'New name', shared: true, chart: { range: 'CUSTOM', from: '2025-01-01', to: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true } })
-  expect(await screen.findByRole('heading', { name: 'New name' })).toBeInTheDocument()
+  // Drawn again once the widgets are fetched again: waited for until it holds, not the first element found.
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'New name' })).toBeInTheDocument())
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit New name' })))
 
   // Only on this dashboard: a copy in this arrangement takes its place; nothing saved until Save dashboard.
@@ -1213,7 +1218,7 @@ it("has no accessibility violations: the edit dialog, opened from a tile's penci
   const { ui } = a11ySetup()
   await screen.findByRole('heading', { name: 'Shared one' })
   await customize(ui)
-  await ui.click(screen.getByRole('button', { name: 'Edit Spent this month' }))
+  await tileMenu(ui, 'Spent this month', 'Edit…') // a one-column tile: its pencil is in its menu
   await screen.findByRole('dialog', { name: 'Edit widget' })
   await check(document.body)
 })

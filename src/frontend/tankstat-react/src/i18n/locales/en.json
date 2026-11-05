@@ -1499,7 +1499,9 @@
       "changed": "{{name}} changed.",
       "addedSaved": "{{name}} added, and saved to your widgets.",
       "deleted": "{{name}} deleted.",
-      "copied": "{{name}} is now your own, in the same place."
+      "copied": "{{name}} is now your own, in the same place.",
+      "editItem": "Edit…",
+      "customizeItem": "Customize…"
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {

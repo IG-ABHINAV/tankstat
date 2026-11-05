@@ -1,4 +1,5 @@
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
@@ -46,13 +47,13 @@ export function DashboardGrid({
   onTilesChange,
   onAction,
   savedFigure,
-  editName,
+  editKind,
   badge,
 }: {
   tiles: readonly Tile[]
   editing: boolean
-  /** The pencil's name for a tile (#275: "Edit …", or "Customize …" for someone else's saved widget). */
-  editName?: (tile: Tile) => string
+  /** What a tile's pencil does (#275): `customize` someone else's saved widget (copied as one's own), `edit` every other. */
+  editKind?: (tile: Tile) => 'edit' | 'customize'
   /** A tile's badge while customizing (#275: where it lives), under its strip. */
   badge?: (tile: Tile) => string | null
   /** The recipe of each saved widget that is a key figure (#273), for its sizes and its strip. */
@@ -118,19 +119,19 @@ export function DashboardGrid({
     () =>
       ordered.map((tile, i) => (
         // `data-template`: the template a tile was made from (#274's figures, #275's `preset:<id>` charts), which a `tile:` id no longer says once saved.
-        <Box key={tile.id} data-tile={tile.id} data-template={templateOfTile(tile) ?? undefined} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box key={tile.id} data-tile={tile.id} data-template={templateOfTile(tile) ?? savedFigure?.(tile.id.replace(/^chart:/, ''))?.template ?? undefined} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <TileCell
             editing={editing}
             badge={editing ? (badge?.(tile) ?? null) : null}
             strip={(slots) => (
-              <EditStrip tile={tile} name={name(tile)} editName={editName?.(tile) ?? name(tile)} index={i} count={ordered.length} cols={cols} slots={slots} savedFigure={savedFigure} onAction={(action) => onAction?.(tile, action)} />
+              <EditStrip tile={tile} name={name(tile)} editKind={editKind?.(tile) ?? 'edit'} index={i} count={ordered.length} cols={cols} slots={slots} savedFigure={savedFigure} onAction={(action) => onAction?.(tile, action)} />
             )}
           >
             {render(tile)}
           </TileCell>
         </Box>
       )),
-    [ordered, editing, cols, name, render, onAction, savedFigure, editName, badge],
+    [ordered, editing, cols, name, render, onAction, savedFigure, editKind, badge],
   )
 
   const styles = {
@@ -206,7 +207,7 @@ function TileCell({ editing, badge, strip, children }: { editing: boolean; badge
       {badge && (
         <Box
           data-badge
-          sx={(theme) => ({ position: 'absolute', top: TILE_STRIP + 4, left: 12, zIndex: 1, maxWidth: 'calc(100% - 24px)', px: 0.75, borderRadius: '6px', bgcolor: theme.vars.palette.warning.soft, color: theme.vars.palette.warning.softText, typography: 'caption', fontWeight: 600, lineHeight: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}
+          sx={(theme) => ({ position: 'absolute', top: TILE_STRIP + 1, left: 12, zIndex: 1, maxWidth: 'calc(100% - 24px)', px: 0.75, borderRadius: '6px', bgcolor: theme.vars.palette.warning.soft, color: theme.vars.palette.warning.softText, fontSize: '0.6875rem', fontWeight: 600, lineHeight: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}
         >
           {badge}
         </Box>
@@ -228,16 +229,21 @@ const HANDLE_SX = { alignSelf: 'stretch', display: 'flex', alignItems: 'center',
  * the pin when the tile is pinned, the content's actions (a chart's table, edit and delete buttons) and the menu for everyone. The name and
  * the grip are the handle for a pointer.
  */
-function EditStrip({ tile, name, editName, index, count, cols, slots: { lead: leadSlot, actions: actionsSlot }, savedFigure, onAction }: { tile: Tile; name: string; editName: string; index: number; count: number; cols: number; slots: StripSlots; savedFigure?: SavedFigures; onAction: (action: TileAction) => void }) {
+function EditStrip({ tile, name, editKind, index, count, cols, slots: { lead: leadSlot, actions: actionsSlot }, savedFigure, onAction }: { tile: Tile; name: string; editKind: 'edit' | 'customize'; index: number; count: number; cols: number; slots: StripSlots; savedFigure?: SavedFigures; onAction: (action: TileAction) => void }) {
   const { t } = useTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  /** An action that opens a dialog (the menu's Edit…), done once the menu is gone (`LogFab`): the menu's leaving would take the focus back from it. */
+  const [opening, setOpening] = useState<TileAction | null>(null)
   const menuId = useId()
   const min = minSize(tile, savedFigure)
   const widget = widgetOf(tile, savedFigure)
   const chart = widget?.kind === 'chart' || (widget?.kind === 'saved' && !widget.figure)
+  // A one-column tile of the four-column grid has no room for the pencil and the bin (#275, the user's choice): its menu has them.
+  const narrow = cols === COLUMNS && tile.w === 1
   const choose = (action: TileAction) => {
     setAnchor(null)
-    onAction(action)
+    if (action === 'edit') setOpening(action)
+    else onAction(action)
   }
   const items: { action: TileAction; label: string; disabled?: boolean }[] = [
     { action: 'earlier', label: t('dashboard.edit.earlier'), disabled: index === 0 },
@@ -274,12 +280,16 @@ function EditStrip({ tile, name, editName, index, count, cols, slots: { lead: le
       )}
       <Box ref={actionsSlot} sx={{ display: 'flex', alignItems: 'center', flex: 'none', gap: 0.5, '&:empty': { display: 'none' } }} />
       {/* Every widget's pencil and bin (#275): the builder for it, and off this dashboard (a saved widget stays in Your widgets). */}
-      <IconAction size="large" variant="ghost" tone="primary" label={editName} data-action="edit" onClick={() => onAction('edit')}>
-        <Pencil size={16} aria-hidden />
-      </IconAction>
-      <IconAction size="large" variant="ghost" tone="primary" label={t('dashboard.removeWidget', { title: name })} data-action="remove" onClick={() => onAction('remove')}>
-        <Trash2 size={16} aria-hidden />
-      </IconAction>
+      {!narrow && (
+        <>
+          <IconAction size="large" variant="ghost" tone="primary" label={t(editKind === 'customize' ? 'dashboard.customizeWidget' : 'dashboard.editWidget', { title: name })} data-action="edit" onClick={() => onAction('edit')}>
+            <Pencil size={16} aria-hidden />
+          </IconAction>
+          <IconAction size="large" variant="ghost" tone="primary" label={t('dashboard.removeWidget', { title: name })} data-action="remove" onClick={() => onAction('remove')}>
+            <Trash2 size={16} aria-hidden />
+          </IconAction>
+        </>
+      )}
       {/* 44 px for a finger, centred on the strip (it reaches a little past the card's top edge). */}
       <IconAction
         size="large"
@@ -289,7 +299,11 @@ function EditStrip({ tile, name, editName, index, count, cols, slots: { lead: le
         aria-haspopup="menu"
         aria-controls={anchor ? menuId : undefined}
         aria-expanded={anchor ? true : undefined}
-        onClick={(e) => setAnchor(e.currentTarget)}
+        onClick={(e) => {
+          // Opened again before the last closing was over: what was chosen then is dropped, or the next closing would do it.
+          setOpening(null)
+          setAnchor(e.currentTarget)
+        }}
       >
         <EllipsisVertical size={18} aria-hidden />
       </IconAction>
@@ -298,7 +312,18 @@ function EditStrip({ tile, name, editName, index, count, cols, slots: { lead: le
         anchorEl={anchor}
         open={anchor !== null}
         onClose={() => setAnchor(null)}
+        slotProps={{
+          transition: {
+            onExited: () => {
+              if (opening) onAction(opening)
+              setOpening(null)
+            },
+          },
+        }}
       >
+        {/* A narrow tile's pencil (#275), first, the arranging under it. */}
+        {narrow && <MenuItem onClick={() => choose('edit')}>{t(editKind === 'customize' ? 'dashboard.edit.customizeItem' : 'dashboard.edit.editItem')}</MenuItem>}
+        {narrow && <Divider />}
         {items.map((it) => (
           <MenuItem key={it.action} disabled={it.disabled} onClick={() => choose(it.action)}>
             {it.label}
