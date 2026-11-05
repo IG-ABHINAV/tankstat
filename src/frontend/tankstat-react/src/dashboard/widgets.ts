@@ -328,9 +328,10 @@ export interface StoredTile {
 /**
  * The arrangement's version this app knows (#273), sent with every save: the server refuses a save without it or with an older one
  * (`dashboard.updateApp`), so an app never drops tiles it does not know. Raised with the server's `DashboardLayoutValues.LayoutVersion`
- * whenever tiles an older app would lose start being saved: 2 since #274, which saves every key figure as a `tile:` with its recipe.
+ * whenever tiles an older app would lose start being saved: 2 since #274, which saves every key figure as a `tile:` with its recipe; 3
+ * since #275, which saves the ready-made charts as `tile:` recipes with their template and no title (#274's app would drop the template).
  */
-export const LAYOUT_VERSION = 2
+export const LAYOUT_VERSION = 3
 
 /**
  * What the server stores for a dashboard as it is arranged on screen: a tile with a recipe of its own (every figure's, #274) as a `tile:`,

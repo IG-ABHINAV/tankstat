@@ -72,9 +72,9 @@ describe('resolveLayout', () => {
         tile(chartKey('a'), 1, 0),
       ],
       hidden: [chartKey('b')],
-      layoutVersion: LAYOUT_VERSION, // the version every save sends (#273), 2 since tiles are saved with their recipes (#274)
+      layoutVersion: LAYOUT_VERSION, // the version every save sends (#273), 3 since the ready-made charts are saved with their templates (#275)
     })
-    expect(LAYOUT_VERSION).toBe(2)
+    expect(LAYOUT_VERSION).toBe(3)
     expect(LAYOUT_PRESETS.standard.tiles.map((t) => `${t.id}@${t.x},${t.y}`)).toEqual([
       'thisMonth@0,0', 'consumption@1,0', 'odometer@2,0', 'lastFillUp@3,0',
       'preset:monthlyCosts@0,4', 'preset:consumption@2,4', 'preset:fuelPrice@0,12', 'preset:categories@2,12', 'preset:distance@0,20',

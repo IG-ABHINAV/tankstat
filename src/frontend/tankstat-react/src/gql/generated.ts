@@ -610,6 +610,7 @@ export type SystemSettingChangeInput = {
 export type TileRecipeInput = {
   chart?: ChartConfigInput | null | undefined;
   figure?: FigureRecipeInput | null | undefined;
+  template?: string | null | undefined;
   title?: string | null | undefined;
   widget: WidgetKind;
 };

@@ -117,6 +117,7 @@ public class DashboardLayoutTests
     [InlineData(null)] // an app from before #273
     [InlineData(0)]
     [InlineData(1)] // #273's app, which drops the tile: tiles #274 saves
+    [InlineData(2)] // #274's app, which would save a ready-made chart's tile without its template (#275)
     public void ASaveFromAnOlderApp_IsRefused_ItAsksToBeReloaded(int? version) =>
         Assert.Equal("dashboard.updateApp", Key(() => DashboardLayoutValues.RequireVersion(version)));
 

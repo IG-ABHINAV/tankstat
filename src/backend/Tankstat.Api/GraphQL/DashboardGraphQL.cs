@@ -78,10 +78,11 @@ public sealed record FigureRecipeInput(FigureMeasure Measure, TrendPeriodInput? 
 }
 
 /// <summary>A <c>tile:</c> tile's own recipe (#273): a chart's <paramref name="Chart"/> or a key figure's <paramref name="Figure"/>, the one its kind names.</summary>
-/// <param name="Title">A chart's title (required); a key figure's may be left out for its default title.</param>
-public sealed record TileRecipeInput(WidgetKind Widget, string? Title, ChartConfigInput? Chart = null, FigureRecipeInput? Figure = null)
+/// <param name="Title">A chart's title (required unless it has a template); a key figure's may be left out for its default title.</param>
+/// <param name="Template">A chart's ready-made chart it was made from (#275), which words its default title; a chart with one may leave its title out.</param>
+public sealed record TileRecipeInput(WidgetKind Widget, string? Title, ChartConfigInput? Chart = null, FigureRecipeInput? Figure = null, string? Template = null)
 {
-    public TileRecipe ToDomain() => new(Widget, Title, Chart?.ToDomain(), Figure?.ToDomain());
+    public TileRecipe ToDomain() => new(Widget, Title, Chart?.ToDomain(), Figure?.ToDomain(), Template);
 }
 
 /// <summary>A saved widget to create or change (#273): a chart's <paramref name="Chart"/> or a key figure's <paramref name="Figure"/>, exactly one.</summary>
