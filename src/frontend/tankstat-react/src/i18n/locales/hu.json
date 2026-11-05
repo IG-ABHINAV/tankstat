@@ -1310,8 +1310,6 @@
     "by": "{{name}} által",
     "tableButton": "{{title}} táblázatként",
     "tableDescription": "A grafikon mögötti számok; a képernyőolvasó ezt olvassa.",
-    "editChart": "A(z) {{title}} grafikon szerkesztése",
-    "deleteChart": "A(z) {{title}} grafikon törlése",
     "deleteTitle": "Törlöd ezt az elemet?",
     "deleteDescription": "A(z) „{{title}}” minden irányítópultról eltűnik, mindenkinél, akivel meg van osztva. Maguk az adatok nem változnak.",
     "deleteConfirm": "Elem törlése",
@@ -1494,9 +1492,6 @@
       "unpinnedSaid": "{{name}} rögzítése feloldva.",
       "removed": "{{name}} levéve.",
       "added": "{{name}} hozzáadva.",
-      "customize": "Testreszabás saját grafikonként…",
-      "customized": "{{name}} mostantól saját grafikonod, ugyanott.",
-      "customizedRenamed": "{{name}} mostantól saját grafikonod, {{title}} néven, ugyanott.",
       "changed": "{{name}} módosítva.",
       "addedSaved": "{{name}} hozzáadva, és a saját elemeid közé mentve.",
       "deleted": "{{name}} törölve.",
@@ -1519,10 +1514,7 @@
         "yours": "Saját elemeid",
         "scratch": "A semmiből"
       },
-      "blank": "Üres grafikon",
       "add": "Hozzáadás az irányítópulthoz",
-      "saveAndAdd": "Mentés és hozzáadás",
-      "customize": "Grafikon testreszabása",
       "back": "Vissza a listához",
       "describe": {
         "figures": {
@@ -1547,11 +1539,7 @@
           "distanceYearEarlier": "Megtett út havonta az utolsó 12 hónapban, ugyanazokkal a hónapokkal egy évvel korábbról.",
           "distanceAndConsumption": "A megtett út oszlopokként, az átlagfogyasztás vonalként, havonta az utolsó 12 hónapban."
         },
-        "readyHint": "Kész grafikon: add hozzá ahogy van, vagy szabd testre saját grafikonként; az eredeti megmarad.",
-        "saved": "Egy saját grafikonod, amely nincs az irányítópulton.",
-        "shared": "{{name}} által megosztott grafikon, amely nincs az irányítópulton.",
-        "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja.",
-        "readyOnDashboard": "Már az irányítópulton van, ezért itt csak testre szabható: saját grafikonként mentve alulra kerül, a kész grafikon mellé."
+        "saved": "Egy saját grafikonod, amely nincs az irányítópulton."
       },
       "onDashboard": "Az irányítópulton",
       "kind": "Fajta",
@@ -1600,12 +1588,8 @@
     }
   },
   "charts": {
-    "dialogEdit": "Grafikon szerkesztése",
-    "dialogDescription": "Válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra. Az előnézet a saját adataidat mutatja.",
-    "save": "Grafikon mentése",
     "preview": "Előnézet",
     "fields": {
-      "title": "Cím",
       "metric": "Mit mérjünk",
       "grouping": "Csoportosítás",
       "kind": "Grafikon típusa",
@@ -1618,7 +1602,6 @@
       "compareYearEarlier": "Összevetés az egy évvel korábbival",
       "secondMetric": "Második adatsor",
       "secondKind": "A második adatsor megjelenítése",
-      "shared": "Megosztás mindenkivel, aki látja ezt a járművet",
       "also": "Továbbá"
     },
     "hints": {
@@ -1627,10 +1610,8 @@
       "runningTotal": "Minden időszak az addigi összeget mutatja.",
       "compareYearEarlier": "Halványabb vonalként hozzáadja ugyanezeket az időszakokat egy évvel korábbról.",
       "secondMetric": "Ugyanabban a grafikonban, saját léptékben látszik; a trend beállításai az elsőre vonatkoznak.",
-      "shared": "Mások látják ezt a grafikont, de csak te módosíthatod.",
       "donut": "A fánkdiagramhoz összegezhető adat kell (költség, mennyiség, távolság, tankolások száma).",
       "category": "A kategória szerinti csoportosítás csak a költségekhez érhető el.",
-      "sharedForEveryone": "Mindenki irányítópultján a grafikonnak megosztottnak kell lennie mindenkivel, aki látja a járművet.",
       "overTime": "Csak időbeli grafikonhoz: havi, negyedéves vagy éves bontásban, nem fánkhoz.",
       "runningTotalNeedsTotals": "A göngyölített összeghez összeadható mérték kell: költség, mennyiség, út vagy tankolások.",
       "stackNeedsTotalSpend": "Csak az időbeli összes költés bontható üzemanyagra és költségekre.",
@@ -1676,11 +1657,7 @@
       "MOVING_AVERAGE": "Mozgóátlag (3 időszak)",
       "LINEAR": "Lineáris trend"
     },
-    "secondNone": "Nincs",
-    "dialogCustomize": "Grafikon testreszabása",
-    "dialogCustomizeDescription": "A(z) {{title}} kész grafikon. Mentve saját grafikonod lesz, és átveszi ennek a csempének a helyét és méretét; a kész grafikon a Csempe hozzáadása alatt megmarad.",
-    "saveAsMine": "Mentés saját grafikonként",
-    "mustChange": "Változtass valamit, hogy saját grafikonként menthesd."
+    "secondNone": "Nincs"
   },
   "photos": {
     "waitUpload": "A mentés megvárja, amíg a fotók feltöltődnek.",

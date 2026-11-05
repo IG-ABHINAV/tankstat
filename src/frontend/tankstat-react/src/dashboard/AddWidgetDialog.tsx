@@ -25,8 +25,8 @@ import type { SavedChart } from './DashboardPanel.tsx'
 import { FIGURES, figureRows, type FigureId } from './figureRecipe.ts'
 import { KeyFigure } from './KeyFigure.tsx'
 import { isTrendFigure } from './trendPeriod.ts'
-import { useFigureTitle } from './useFigureTitle.ts'
-import { draftProblem, figureDraft, isReadyAsIs, readyDraft, recipeOfDraft, scratchDraft, type WidgetDraft } from './widgetDraft.ts'
+import { useDraftDefaultTitle, useFigureTitle } from './useFigureTitle.ts'
+import { draftProblem, figureDraft, readyDraft, recipeOfDraft, scratchDraft, type WidgetDraft } from './widgetDraft.ts'
 import { CheckRow, WidgetForm } from './WidgetForm.tsx'
 import { GAP, presetKey, READY_CHARTS, ROW_HEIGHT, type ReadyChart, type TileRecipe } from './widgets.ts'
 
@@ -84,6 +84,7 @@ export function AddWidgetDialog({
 }) {
   const { t } = useTranslation()
   const figureTitle = useFigureTitle()
+  const draftDefaultTitle = useDraftDefaultTitle()
   const phone = useMediaQuery(MEDIA.narrow)
   const first: Choice = { kind: 'figure', id: FIGURES[0] }
   const [picked, setPicked] = useState<Choice>(first)
@@ -164,7 +165,7 @@ export function AddWidgetDialog({
     if (!draft || draftProblem(draft) || busy) return
     const recipe = recipeOfDraft(draft)
     // A saved widget is named when it is saved (#273): its own title, else its default as the builder shows it.
-    const title = draft.title.trim() || (draft.kind === 'FIGURE' ? figureTitle(draft.figure, null) : isReadyAsIs(draft) && draft.template ? t(`dashboard.presets.${draft.template}`) : '')
+    const title = draft.title.trim() || draftDefaultTitle(draft)
     setBusy(true)
     setFailure(undefined)
     try {
@@ -193,6 +194,8 @@ export function AddWidgetDialog({
           ) : w.chart ? (
             <ChartCard vehicleId={vehicle.id} title={w.title} recipe={recipeOf(w.chart)} units={vehicle.units} headingLevel={2} />
           ) : null}
+          {/* A delete that failed is said here too, where its button is. */}
+          {failure !== undefined && <ErrorMessage error={failure} />}
           <DialogButtons>
             {w.canDelete && (
               <Button type="button" variant="ghost" color="error" onClick={() => setDeleting(w)} sx={{ mr: 'auto' }}>
@@ -285,7 +288,18 @@ export function AddWidgetDialog({
         onConfirm={() => {
           const w = deleting
           setDeleting(null)
-          if (w) void onDelete(w).catch(setFailure)
+          if (!w) return
+          setFailure(undefined)
+          void onDelete(w).then(
+            () => {
+              // The pane showed the widget just deleted: back to the list, the first template picked and filled in (a saved widget has no draft).
+              if (picked.kind !== 'saved' || picked.widget.id !== w.id) return
+              setPicked(first)
+              setDraft(draftOfChoice(first))
+              setStep('list')
+            },
+            setFailure,
+          )
         }}
       />
     </>

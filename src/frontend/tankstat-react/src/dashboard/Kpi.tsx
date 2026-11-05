@@ -119,7 +119,7 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
   // Under a badge too (#275, the user's choice C), a two-row figure keeps a value's line meanwhile: the value at its smallest size and a
   // smaller bottom padding (the fit steps a value down only when it is too wide, never for its height).
   const badgedLow = !third && !!strip && strip.inset > TILE_STRIP
-  const step = VALUE_STEPS[badgedLow ? Math.max(fit.step, VALUE_STEPS.length - 1) : fit.step]
+  const step = VALUE_STEPS[badgedLow ? VALUE_STEPS.length - 1 : fit.step]
   const pb = badgedLow ? 0.5 : third ? 2 : 1.5
   return (
     <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, pb, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>

@@ -816,6 +816,23 @@ it('adds a template and saves it to one\'s widgets too: a saved widget, a tile p
   expect(state.calls.SaveVehicleWidget).toHaveLength(1)
 })
 
+it('sizes a key figure saved to one\'s widgets as it is added as a key figure, not as a chart (#275)', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await screen.findByText(/Compose your own charts/)
+  await customize(ui)
+  await ui.click(screen.getByRole('radio', { name: 'Just me' }))
+  await ui.click(screen.getByRole('button', { name: 'Add widget' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
+  await ui.click(within(dialog).getByRole('button', { name: 'Spending Key figure' }))
+  await saveAndAdd(ui, dialog)
+  expect(await screen.findByText('Spending added, and saved to your widgets.')).toBeInTheDocument()
+
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  // The widgets were fetched after the tile was added, so its size came from the recipe just saved: a figure's column and four rows.
+  expect(savedTiles(state).find((t) => t.id === 'chart:c400')).toMatchObject({ w: 1, h: 4 })
+})
+
 it('deletes one of your widgets from its row or its pane after a confirmation, only by its own right (#275)', async () => {
   const mine = fakeChart({ id: 'c1', title: 'Mine', isShared: true })
   const bobs = fakeChart({ id: 'c2', title: 'Bob\'s', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })
@@ -839,6 +856,9 @@ it('deletes one of your widgets from its row or its pane after a confirmation, o
 
   await waitFor(() => expect(state.calls.DeleteChart).toEqual([{ id: 'c1' }]))
   await waitFor(() => expect(within(screen.getByRole('dialog', { name: 'Add widget' })).queryByRole('button', { name: /^Mine/ })).not.toBeInTheDocument())
+  // The pane that showed it goes back to the first template, filled in, never left empty.
+  expect(within(dialog).getByRole('heading', { level: 3, name: 'Spent this month' })).toBeInTheDocument()
+  expect(within(dialog).getByRole('button', { name: 'Add to the dashboard' })).toBeEnabled()
   // Said in the status line, behind the dialog still open (MUI hides the page from the accessibility tree meanwhile).
   expect(screen.getByRole('status', { name: 'Last change to the arrangement', hidden: true })).toHaveTextContent('Mine deleted.')
 })
@@ -1087,6 +1107,8 @@ it('edits one\'s own saved widget from its recipe: everywhere at once, or only o
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(savedTiles(state)).toEqual([expect.objectContaining({ id: expect.stringMatching(/^tile:/), recipe: expect.objectContaining({ widget: 'CHART', title: 'New name', chart: expect.objectContaining({ kind: 'BAR' }) }) })])
+  // The saved widget the copy replaced is taken off, as the bin does: not mentioned, it would come back at the bottom on the next load.
+  expect((state.calls.SaveDashboardLayout![0] as { input: { hidden: string[] } }).input.hidden).toEqual(['chart:c1'])
 })
 
 it('shows the rule from the server when saving fails, and keeps the dialog open', async () => {

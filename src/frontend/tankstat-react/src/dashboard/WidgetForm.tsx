@@ -18,7 +18,7 @@ import { OutsideTile } from './tileChrome.ts'
 import type { TrendPeriod } from './trendPeriod.ts'
 import { TrendPeriodForm } from './TrendPeriodForm.tsx'
 import { useFigurePreview } from './useFigurePreview.ts'
-import { useFigureTitle, useMeasureName } from './useFigureTitle.ts'
+import { useDraftDefaultTitle, useMeasureName } from './useFigureTitle.ts'
 import { FIGURE_MEASURES, isReadyAsIs, switchKind, withMeasure, type WidgetDraft } from './widgetDraft.ts'
 import { GAP, ROW_HEIGHT } from './widgets.ts'
 
@@ -53,13 +53,13 @@ function FigurePeriod({ vehicle, figure, onChange }: { vehicle: Vehicle; figure:
  */
 export function WidgetForm({ vehicle, draft, onChange, chooseKind }: { vehicle: Vehicle; draft: WidgetDraft; onChange: (draft: WidgetDraft) => void; chooseKind: boolean }) {
   const { t } = useTranslation()
-  const figureTitle = useFigureTitle()
+  const draftDefaultTitle = useDraftDefaultTitle()
   const measureName = useMeasureName()
   const previewId = useId()
   const figure = draft.figure
   const point = isPointInTime(figure.measure)
   const readyAsIs = draft.kind === 'CHART' && isReadyAsIs(draft)
-  const defaultTitle = draft.kind === 'FIGURE' ? figureTitle(figure, null) : readyAsIs && draft.template ? t(`dashboard.presets.${draft.template}`) : ''
+  const defaultTitle = draftDefaultTitle(draft)
   const shownTitle = draft.title.trim() || defaultTitle
   const set = (patch: Partial<WidgetDraft>) => onChange({ ...draft, ...patch })
   const setFigure = (patch: Partial<FigureRecipe>) => set({ figure: { ...figure, ...patch } })

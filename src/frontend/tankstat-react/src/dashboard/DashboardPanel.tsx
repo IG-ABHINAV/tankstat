@@ -30,13 +30,13 @@ import { uuidV4 } from '../offline/uuid.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { WidgetEditDialog, type EditChoice, type EditMode } from './WidgetEditDialog.tsx'
-import { draftOf, isReadyAsIs, recipeOfDraft, type WidgetDraft } from './widgetDraft.ts'
+import { draftOf, recipeOfDraft, type WidgetDraft } from './widgetDraft.ts'
 import { ChartCard } from './ChartCard.tsx'
 import { recipeOf } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
-import { canonicalRecipe, periodFigureOf } from './figureRecipe.ts'
+import { canonicalRecipe, periodFigureOf, type FigureRecipe } from './figureRecipe.ts'
 import { KeyFigure } from './KeyFigure.tsx'
-import { useFigureTitle } from './useFigureTitle.ts'
+import { useDraftDefaultTitle, useFigureTitle } from './useFigureTitle.ts'
 import {
   addTile,
   chartKey,
@@ -124,6 +124,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const [edit, setEdit] = useState<Editing | null>(null)
   const periodText = usePeriodText()
   const figureTitle = useFigureTitle()
+  const draftDefaultTitle = useDraftDefaultTitle()
   const panel = useRef<HTMLElement>(null)
   // The saved widgets (#273) in the app's shape, and the recipe of each key figure among them, kept while the answer is (the grid's layouts follow it).
   const answered = data?.vehicleWidgets
@@ -205,10 +206,13 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       }
     })
   }
-  /** A saved widget added at the bottom (`chart:<id>`), out of the ones taken off; `name` for one just saved, which the list may not hold yet. */
-  const addSaved = (id: string, name?: string, said?: 'added' | 'addedSaved') =>
+  /**
+   * A saved widget added at the bottom (`chart:<id>`), out of the ones taken off; `name` and `figure` (its recipe when a key figure, null for a
+   * chart) for one just saved, which this render's list does not hold yet: without it a key figure would be sized as a chart.
+   */
+  const addSaved = (id: string, name?: string, said?: 'added' | 'addedSaved', figure?: FigureRecipe | null) =>
     update((e) => ({
-      tiles: addTile(e.tiles, chartKey(id), undefined, null, savedFigure),
+      tiles: addTile(e.tiles, chartKey(id), undefined, null, figure === undefined ? savedFigure : (x) => (x === id ? figure : savedFigure(x))),
       hidden: e.hidden.filter((c) => c.id !== id),
       status: t(`dashboard.edit.${said ?? 'added'}`, { name: name || titleOf({ id: chartKey(id) } as Tile) }),
     }))
@@ -222,7 +226,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       const id = result.data?.saveVehicleWidget.id
       if (!id) return
       await refetch()
-      addSaved(id, title, 'addedSaved')
+      addSaved(id, title, 'addedSaved', recipe.widget === 'FIGURE' ? (recipe.figure ?? null) : null)
       return
     }
     const tile: Tile = { id: tileKey(uuidV4()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe }
@@ -276,7 +280,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     return recipe ? { tile: tile.id, open: true, mode: 'arrangement', start: draftOf(recipe), notes: [t('dashboard.widget.inArrangement')] } : null
   }
   /** A saved widget's name for its title when it is saved: the draft's own, else its default as the builder shows it. */
-  const titleOfDraft = (d: WidgetDraft) => d.title.trim() || (d.kind === 'FIGURE' ? figureTitle(d.figure, null) : isReadyAsIs(d) && d.template ? t(`dashboard.presets.${d.template}`) : '')
+  const titleOfDraft = (d: WidgetDraft) => d.title.trim() || draftDefaultTitle(d)
   /**
    * What a save in the edit dialog does (#275). In the arrangement: the tile's recipe changed in place, or, saved to one's widgets too, a
    * saved widget the tile then points at. One's own saved widget: only here (a copy in the arrangement takes the tile's place) or
@@ -292,8 +296,20 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       await refetch()
       return result.data?.saveVehicleWidget.id
     }
+    // A saved widget whose tile another takes (a copy here, one's own copy of someone else's) goes to `hidden`, as the bin's Remove puts
+    // it: a saved widget the arrangement does not mention comes back at the bottom once it is loaded again (`resolveLayout`).
+    const replaced = savedOf({ id: from })
     const placed = (to: string, recipeOf: TileRecipe | null, said: 'changed' | 'copied') =>
-      update((e) => (e.tiles.some((x) => x.id === from) ? { tiles: replaceTile(e.tiles, from, to, recipeOf), status: t(`dashboard.edit.${said}`, { name }), editing: e.editing && { ...e.editing, focus: to } } : {}))
+      update((e) =>
+        e.tiles.some((x) => x.id === from)
+          ? {
+              tiles: replaceTile(e.tiles, from, to, recipeOf),
+              hidden: replaced && to !== from && !e.hidden.some((h) => h.id === replaced.id) ? [...e.hidden, replaced] : e.hidden,
+              status: t(`dashboard.edit.${said}`, { name }),
+              editing: e.editing && { ...e.editing, focus: to },
+            }
+          : {},
+      )
     switch (choice.kind) {
       case 'arrangement': {
         if (!choice.saveToo) return placed(from, recipe, 'changed')
