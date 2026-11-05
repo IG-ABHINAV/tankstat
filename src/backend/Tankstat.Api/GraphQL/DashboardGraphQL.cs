@@ -201,7 +201,10 @@ public sealed record TrendPeriodInput(TrendWindowKind Kind, TrendUnit? Unit, int
 public sealed record DashboardInfo(DashboardLayoutInfo? Shared, DashboardLayoutInfo? Personal, bool CanChangeShared);
 
 /// <param name="Personal">The user's own arrangement (View access is enough), else the vehicle's (Edit access to its logs).</param>
-public sealed record SaveDashboardLayoutInput(Guid VehicleId, bool Personal, IReadOnlyList<DashboardTileInput> Tiles, IReadOnlyList<string> Hidden);
+/// <param name="LayoutVersion">The arrangement's version the app knows (#273); left out (an older app) or older than the server's, the save is
+/// refused with <c>dashboard.updateApp</c>, so an app never drops tiles it does not know. Optional, so an older app gets that sentence and
+/// not a validation error.</param>
+public sealed record SaveDashboardLayoutInput(Guid VehicleId, bool Personal, IReadOnlyList<DashboardTileInput> Tiles, IReadOnlyList<string> Hidden, int? LayoutVersion = null);
 
 [ExtendObjectType(OperationTypeNames.Query)]
 public sealed class DashboardQueries
@@ -259,6 +262,7 @@ public sealed class DashboardMutations
     /// <summary>Saves the vehicle's dashboard or the user's own arrangement of it, replacing the one there was.</summary>
     public async Task<bool> SaveDashboardLayout(SaveDashboardLayoutInput input, [Service] DashboardService dashboards, CancellationToken ct)
     {
+        DashboardLayoutValues.RequireVersion(input.LayoutVersion);
         await dashboards.SaveAsync(input.VehicleId, input.Personal, new DashboardLayoutValues(input.Tiles.Select(t => t.ToDomain()).ToList(), input.Hidden), ct);
         return true;
     }

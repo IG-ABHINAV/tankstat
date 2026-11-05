@@ -112,4 +112,17 @@ public class DashboardLayoutTests
         Assert.Equal("trend.sinceRange", Key(() => VehicleDashboardLayout.Create(Guid.NewGuid(), values, new DateTimeOffset(2026, 11, 3, 23, 30, 0, TimeSpan.Zero))));
         Assert.Equal(since, VehicleDashboardLayout.Create(Guid.NewGuid(), values, new DateTimeOffset(2026, 11, 4, 0, 30, 0, TimeSpan.Zero)).Tiles[0].Period);
     }
+
+    [Theory]
+    [InlineData(null)] // an app from before #273
+    [InlineData(0)]
+    public void ASaveFromAnOlderApp_IsRefused_ItAsksToBeReloaded(int? version) =>
+        Assert.Equal("dashboard.updateApp", Key(() => DashboardLayoutValues.RequireVersion(version)));
+
+    [Fact]
+    public void ASaveFromThisVersionOrANewer_IsTaken()
+    {
+        DashboardLayoutValues.RequireVersion(DashboardLayoutValues.LayoutVersion);
+        DashboardLayoutValues.RequireVersion(DashboardLayoutValues.LayoutVersion + 1);
+    }
 }

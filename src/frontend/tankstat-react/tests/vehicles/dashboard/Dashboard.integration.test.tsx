@@ -336,6 +336,7 @@ it('customizes the vehicle\'s dashboard in place: a figure moved earlier, a read
         at('preset:distance', 0, 20, 2, 8),
       ],
       hidden: ['chart:c1'],
+      layoutVersion: 1, // every save says the arrangement it knows (#273)
     },
   })
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save dashboard' })).not.toBeInTheDocument())
@@ -439,7 +440,7 @@ it('adds back what was taken off, starts afresh from a preset, and arranges one\
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(state.calls.SaveDashboardLayout![0]).toEqual({
-    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), at('lastFillUp', 0, 19, 1, 3)], hidden: [] }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
+    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), at('lastFillUp', 0, 19, 1, 3)], hidden: [], layoutVersion: 1 }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
   })
 
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save dashboard' })).not.toBeInTheDocument())

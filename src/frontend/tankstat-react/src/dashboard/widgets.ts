@@ -252,13 +252,21 @@ export function resolveLayout<S extends { id: string }>(stored: Layout | null, s
 /** A tile as the server takes it: its period only when it has one of its own (a trend figure's, not its default), in GraphQL's shape. */
 export type StoredTile = Omit<Tile, 'period'> & { period?: ReturnType<typeof toInput> }
 
+/**
+ * The arrangement's version this app knows (#273), sent with every save: the server refuses a save without it or with an older one
+ * (`dashboard.updateApp`), so an app never drops tiles it does not know. Raised with the server's `DashboardLayoutValues.LayoutVersion`
+ * when tiles an older app would lose start being saved (#275's `tile:` tiles).
+ */
+export const LAYOUT_VERSION = 1
+
 /** What the server stores for a dashboard as it is arranged on screen. */
-export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }[]): { tiles: StoredTile[]; hidden: string[] } => ({
+export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }[]): { tiles: StoredTile[]; hidden: string[]; layoutVersion: number } => ({
   tiles: tiles.map((t) => {
     const period = isTrendFigure(t.id) ? stored(t.id, t.period) : null
     return { id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned, ...(period ? { period: toInput(period) } : {}) }
   }),
   hidden: hidden.map((c) => chartKey(c.id)),
+  layoutVersion: LAYOUT_VERSION,
 })
 
 // ---- what the tile menu does (the keyboard's and a screen reader's way to arrange) --------------------------------

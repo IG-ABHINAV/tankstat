@@ -153,3 +153,6 @@ export async function picture(page: Page, name = 'picture.png') {
   })
   return { name, mimeType: 'image/png', buffer: Buffer.from(dataUrl.split(',')[1], 'base64') }
 }
+
+/** The dashboard layout version a save sends (#273), as the web app's `LAYOUT_VERSION` (src/dashboard/widgets.ts): the server refuses a save without it. */
+export const LAYOUT_VERSION = 1

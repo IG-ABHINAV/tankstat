@@ -1,5 +1,5 @@
 import { expect, test } from './support/test.ts'
-import { addVehicle, createUser, graphql, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
+import { addVehicle, createUser, graphql, LAYOUT_VERSION, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 
 // axe in a real browser: what jsdom cannot judge (the colour contrast of the real styles, what is hidden after layout). The jsdom scans
@@ -98,7 +98,7 @@ for (const scheme of ['dark', 'light'] as const) {
 test('a trend tile\'s period popover has no axe violations (#230)', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await graphql(page, 'mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }', {
-    i: { vehicleId: vehicle.id, personal: false, tiles: [{ id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false }], hidden: [] },
+    i: { vehicleId: vehicle.id, personal: false, tiles: [{ id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false }], hidden: [], layoutVersion: LAYOUT_VERSION }, // refused without (#273)
   })
   await page.goto(`/vehicles/${vehicle.id}`)
   await pageLoaded(page)

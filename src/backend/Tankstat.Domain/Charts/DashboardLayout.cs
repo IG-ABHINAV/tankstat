@@ -26,6 +26,20 @@ public sealed partial record DashboardLayoutValues(IReadOnlyList<DashboardTile> 
     public const string TilePrefix = "tile:";
 
     /// <summary>
+    /// The arrangement's version an app must send with a save (#273): one that sends none, or an older one, does not know every tile there
+    /// may be and would drop the ones it does not know, so its save is refused (<see cref="RequireVersion"/>) and it asks to be reloaded.
+    /// Raised when tiles an older app would lose start being saved (#275's <c>tile:</c> tiles), together with the web app's own.
+    /// </summary>
+    public const int LayoutVersion = 1;
+
+    /// <summary>Refuses a save from an app older than <see cref="LayoutVersion"/> with <c>dashboard.updateApp</c>.</summary>
+    public static void RequireVersion(int? version)
+    {
+        if (version is not { } v || v < LayoutVersion)
+            throw new DomainException("dashboard.updateApp", "This version of the app can no longer save dashboards. Reload the page to update it.");
+    }
+
+    /// <summary>
     /// Every tile and entry in shape and within bounds, duplicates dropped (the first wins), at most <see cref="MaxItems"/> per list. The
     /// shapes (#273): a <c>tile:&lt;guid&gt;</c> with its own recipe (<see cref="TileRecipe.Validated"/>, its period inside it), and every other
     /// id without one: a saved widget <c>chart:&lt;guid&gt;</c>, a <c>preset:</c> chart, or an old key figure id with or without its period. A

@@ -1267,6 +1267,7 @@ input SaveDashboardLayoutInput {
   personal: Boolean!
   tiles: [DashboardTileInput!]!
   hidden: [String!]!
+  layoutVersion: Int
 }
 
 input SaveWidgetInput {
