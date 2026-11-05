@@ -5,17 +5,16 @@ import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
-import { IconAction } from '../components/IconAction.tsx'
 import { Segmented } from '../components/Segmented.tsx'
 import { LabeledSelect } from '../components/UnitSelect.tsx'
 import { UserChip } from '../components/UserAvatar.tsx'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import {
   DeleteChartDocument,
+  SaveVehicleWidgetDocument,
   ResetDashboardLayoutDocument,
   SaveDashboardLayoutDocument,
   SessionDocument,
@@ -30,24 +29,22 @@ import { useConnectivity } from '../offline/useConnectivity.ts'
 import { uuidV4 } from '../offline/uuid.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
-import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
+import { WidgetEditDialog, type EditChoice, type EditMode } from './WidgetEditDialog.tsx'
+import { draftOf, recipeOfDraft, type WidgetDraft } from './widgetDraft.ts'
 import { ChartCard } from './ChartCard.tsx'
 import { recipeOf } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
-import { canonicalRecipe, FIGURES, periodFigureOf, type FigureId } from './figureRecipe.ts'
+import { canonicalRecipe, periodFigureOf, type FigureRecipe } from './figureRecipe.ts'
 import { KeyFigure } from './KeyFigure.tsx'
-import { useFigureTitle } from './useFigureTitle.ts'
+import { useDraftDefaultTitle, useFigureTitle } from './useFigureTitle.ts'
 import {
   addTile,
   chartKey,
   FIGURE_GRID,
-  figureTile,
   inReadingOrder,
   LAYOUT_PRESETS,
   moveTile,
   pinTile,
-  presetKey,
-  READY_CHARTS,
   removeTile,
   replaceTile,
   resizeTile,
@@ -61,8 +58,9 @@ import {
   type LayoutPresetId,
   type SavedFigures,
   type Tile,
+  type TileRecipe,
+  widgetInput,
 } from './widgets.ts'
-import type { TrendPeriod } from './trendPeriod.ts'
 import type { PeriodControl } from './TrendPeriodPopover.tsx'
 import { usePeriodText } from './usePeriodText.ts'
 
@@ -79,10 +77,10 @@ interface Editing {
   /** The Add widget dialog is open. */
   adding: boolean
   /**
-   * The ready-made chart (its tile's id) being customized into a chart of one's own from its tile's menu (#247), while its dialog is shown;
-   * once saved, the tile that replaced it, whose menu button takes the focus when the dialog is gone.
+   * The widget being edited from its tile's pencil (#275), while its dialog is shown: its tile, what the pencil edits and where it starts;
+   * once saved, the tile in its place, whose pencil takes the focus when the dialog is gone.
    */
-  customizing: { tile: string; open: boolean; focus?: string } | null
+  editing: { tile: string; open: boolean; mode: EditMode; start: WidgetDraft; notes: string[]; focus?: string } | null
   status: string
 }
 
@@ -119,14 +117,15 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   // With sign-in off everyone is the same anonymous user: an arrangement of one's own would be everyone's.
   const signInOff = useQuery(SessionDocument, { fetchPolicy: 'cache-only' }).data?.session.mode === 'NONE'
   const [remove] = useMutation(DeleteChartDocument)
+  const [saveWidget] = useMutation(SaveVehicleWidgetDocument)
   const [reset, resetting] = useMutation(ResetDashboardLayoutDocument)
   const [save, saving] = useMutation(SaveDashboardLayoutDocument)
   const [actionError, setActionError] = useState<unknown>()
   const [edit, setEdit] = useState<Editing | null>(null)
   const periodText = usePeriodText()
   const figureTitle = useFigureTitle()
+  const draftDefaultTitle = useDraftDefaultTitle()
   const panel = useRef<HTMLElement>(null)
-  const canShare = vehicle.logAccess === 'EDIT' || vehicle.logAccess === 'DELETE'
   // The saved widgets (#273) in the app's shape, and the recipe of each key figure among them, kept while the answer is (the grid's layouts follow it).
   const answered = data?.vehicleWidgets
   const charts: SavedChart[] = useMemo(() => (answered ?? []).map((w) => ({ ...w, figure: w.figure ? canonicalRecipe(w.figure) : null })), [answered])
@@ -148,8 +147,8 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const titleOf = (tile: Tile) => {
     const widget = widgetOf(tile, savedFigure)
     if (widget?.kind === 'figure') return figureTitle(widget.figure, widget.title)
-    if (widget?.kind === 'chart') return widget.title
-    if (widget?.kind === 'ready') return t(`dashboard.presets.${widget.chart.id}`)
+    // A chart's own title, else its ready-made chart's, in the viewer's language (#275).
+    if (widget?.kind === 'chart') return widget.title || (widget.template ? t(`dashboard.presets.${widget.template}`) : '')
     return charts.find((c) => c.id === widget?.id)?.title ?? tile.id
   }
 
@@ -172,7 +171,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const editingOf = (scope: Scope): Editing => {
     const start = scope === 'shared' ? shared : (personal ?? shared)
     const resolved = resolveLayout(start, chartsFor(scope))
-    return { scope, tiles: resolved.tiles, hidden: resolved.hidden, adding: false, customizing: null, status: '' }
+    return { scope, tiles: resolved.tiles, hidden: resolved.hidden, adding: false, editing: null, status: '' }
   }
   const update = (change: (e: Editing) => Partial<Editing>) => setEdit((e) => (e ? { ...e, ...change(e) } : e))
 
@@ -202,18 +201,42 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
           const saved = charts.find((c) => chartKey(c.id) === tile.id)
           return { tiles: removeTile(e.tiles, tile.id), hidden: saved ? [...e.hidden, saved] : e.hidden, status: t('dashboard.edit.removed', { name }) }
         }
-        case 'customize':
-          return { customizing: { tile: tile.id, open: true } }
+        case 'edit':
+          return { editing: pencilOf(tile, e) }
       }
     })
   }
-  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. */
-  const add = (id: string, name?: string) =>
-    update((e) => ({ tiles: addTile(e.tiles, id, undefined, null, savedFigure), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
-  /** A built-in figure added (#274): a tile of its own, its template's recipe over the period chosen for it (none: its default). */
-  const addFigure = (template: FigureId, period: TrendPeriod | null = null) => {
-    const tile: Tile = { id: tileKey(uuidV4()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe: figureTile(template, period) }
-    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, tile.recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
+  /**
+   * A saved widget added at the bottom (`chart:<id>`), out of the ones taken off; `name` and `figure` (its recipe when a key figure, null for a
+   * chart) for one just saved, which this render's list does not hold yet: without it a key figure would be sized as a chart.
+   */
+  const addSaved = (id: string, name?: string, said?: 'added' | 'addedSaved', figure?: FigureRecipe | null) =>
+    update((e) => ({
+      tiles: addTile(e.tiles, chartKey(id), undefined, null, figure === undefined ? savedFigure : (x) => (x === id ? figure : savedFigure(x))),
+      hidden: e.hidden.filter((c) => c.id !== id),
+      status: t(`dashboard.edit.${said ?? 'added'}`, { name: name || titleOf({ id: chartKey(id) } as Tile) }),
+    }))
+  /**
+   * A widget made in the builder (#275): a tile of its own in the arrangement, kept by Save dashboard; with *Also save to my widgets* a saved
+   * widget at once (shared on Everyone's dashboard, private on one's own: the owner's choice) and a tile pointing at it.
+   */
+  const addMade = async (recipe: TileRecipe, saveToo: boolean, title: string) => {
+    if (saveToo) {
+      const result = await saveWidget({ variables: { input: { vehicleId: vehicle.id, title, shared: edit?.scope === 'shared', ...widgetInput(recipe) } } })
+      const id = result.data?.saveVehicleWidget.id
+      if (!id) return
+      await refetch()
+      addSaved(id, title, 'addedSaved', recipe.widget === 'FIGURE' ? (recipe.figure ?? null) : null)
+      return
+    }
+    const tile: Tile = { id: tileKey(uuidV4()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe }
+    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
+  }
+  /** A saved widget deleted for good from *Your widgets* (#275): from every dashboard it is on, at once. */
+  const deleteSaved = async (w: SavedChart) => {
+    await remove({ variables: { id: w.id } })
+    await refetch()
+    update((e) => ({ tiles: removeTile(e.tiles, chartKey(w.id)), hidden: e.hidden.filter((h) => h.id !== w.id), status: t('dashboard.edit.deleted', { name: w.figure ? figureTitle(w.figure, w.title) : w.title }) }))
   }
 
   /**
@@ -237,20 +260,88 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       const resolved = resolveLayout(LAYOUT_PRESETS[id], chartsFor(e.scope))
       return { tiles: resolved.tiles, hidden: resolved.hidden, status: t('dashboard.customize.started', { name: t(`dashboard.layoutPresets.${id}`) }) }
     })
+  /** The saved widget a tile points at, if any. */
+  const savedOf = (tile: Pick<Tile, 'id'>) => charts.find((c) => chartKey(c.id) === tile.id)
   /**
-   * A ready-made chart customized from its tile (#247) was saved as a chart of one's own: it takes the tile's place, size and pin, once the
-   * charts hold it (a tile whose chart is not among them is drawn as nothing), and its menu button takes the focus when the dialog is gone.
-   * A dialog dismissed while the chart was being saved leaves the tile as it is: the chart stays saved (among one's own in Add widget).
+   * What a tile's pencil edits (#275): one's own saved widget, someone else's (copied as one's own in its place), else the tile's own recipe
+   * in the arrangement; where it starts, and what the dialog says about where it is (the other arrangement the user sees, when it holds the
+   * same saved widget; that others may have a shared one).
    */
-  const customized = async (from: string, id: string, title: string) => {
-    await refetch()
-    const name = titleOf({ id: from } as Tile)
-    const status = title === name ? t('dashboard.edit.customized', { name }) : t('dashboard.edit.customizedRenamed', { name, title })
-    update((e) => (e.customizing?.tile === from ? { tiles: replaceTile(e.tiles, from, chartKey(id)), status, customizing: { ...e.customizing, focus: chartKey(id) } } : {}))
+  const pencilOf = (tile: Tile, e: Editing): Editing['editing'] => {
+    const saved = savedOf(tile)
+    if (saved) {
+      const start = draftOf({ widget: saved.widget, title: saved.title, chart: saved.chart ? recipeOf(saved.chart) : null, figure: saved.figure })
+      if (!saved.canEdit) return { tile: tile.id, open: true, mode: 'copy', start, notes: [t('dashboard.widget.copyNote')] }
+      const other = e.scope === 'shared' ? personal : shared
+      const elsewhere = other?.tiles.some((x) => x.id === tile.id) ? [t(e.scope === 'shared' ? 'dashboard.widget.alsoOnOwn' : 'dashboard.widget.alsoOnShared')] : []
+      return { tile: tile.id, open: true, mode: 'own', start, notes: [...elsewhere, ...(saved.isShared ? [t('dashboard.widget.othersMayHave')] : [])] }
+    }
+    const recipe = tile.recipe
+    return recipe ? { tile: tile.id, open: true, mode: 'arrangement', start: draftOf(recipe), notes: [t('dashboard.widget.inArrangement')] } : null
   }
-  const customizing = edit?.customizing ? widgetOf({ id: edit.customizing.tile }) : null
+  /** A saved widget's name for its title when it is saved: the draft's own, else its default as the builder shows it. */
+  const titleOfDraft = (d: WidgetDraft) => d.title.trim() || draftDefaultTitle(d)
+  /**
+   * What a save in the edit dialog does (#275). In the arrangement: the tile's recipe changed in place, or, saved to one's widgets too, a
+   * saved widget the tile then points at. One's own saved widget: only here (a copy in the arrangement takes the tile's place) or
+   * everywhere (the saved widget itself, at once, keeping its sharing). Someone else's: saved as one's own (shared on Everyone's), in its
+   * place. Everything but a saved widget's change waits for Save dashboard, as the rest of the arrangement does.
+   */
+  const saveEdit = async (from: string, draft: WidgetDraft, choice: EditChoice) => {
+    const recipe = recipeOfDraft(draft)
+    const before = edit?.tiles.find((x) => x.id === from)
+    const name = before ? titleOf(before) : titleOfDraft(draft)
+    const saveNew = async (shared: boolean) => {
+      const result = await saveWidget({ variables: { input: { vehicleId: vehicle.id, title: titleOfDraft(draft), shared, ...widgetInput(recipe) } } })
+      await refetch()
+      return result.data?.saveVehicleWidget.id
+    }
+    // A saved widget whose tile another takes (a copy here, one's own copy of someone else's) goes to `hidden`, as the bin's Remove puts
+    // it: a saved widget the arrangement does not mention comes back at the bottom once it is loaded again (`resolveLayout`).
+    const replaced = savedOf({ id: from })
+    const placed = (to: string, recipeOf: TileRecipe | null, said: 'changed' | 'copied') =>
+      update((e) =>
+        e.tiles.some((x) => x.id === from)
+          ? {
+              tiles: replaceTile(e.tiles, from, to, recipeOf),
+              hidden: replaced && to !== from && !e.hidden.some((h) => h.id === replaced.id) ? [...e.hidden, replaced] : e.hidden,
+              status: t(`dashboard.edit.${said}`, { name }),
+              editing: e.editing && { ...e.editing, focus: to },
+            }
+          : {},
+      )
+    switch (choice.kind) {
+      case 'arrangement': {
+        if (!choice.saveToo) return placed(from, recipe, 'changed')
+        const id = await saveNew(edit?.scope === 'shared')
+        if (id) placed(chartKey(id), null, 'changed')
+        return
+      }
+      case 'here':
+        return placed(tileKey(uuidV4()), recipe, 'changed')
+      case 'everywhere': {
+        const saved = savedOf({ id: from })
+        if (!saved) return
+        await saveWidget({ variables: { input: { id: saved.id, vehicleId: vehicle.id, title: titleOfDraft(draft), shared: saved.isShared, ...widgetInput(recipe) } } })
+        await refetch()
+        return placed(from, null, 'changed')
+      }
+      case 'copy': {
+        const id = await saveNew(edit?.scope === 'shared')
+        if (id) placed(chartKey(id), null, 'copied')
+      }
+    }
+  }
+  /** A tile's badge while customizing (#275): in the arrangement, saved, or saved and shared by someone else. */
+  const badgeOf = (tile: Tile) => {
+    const saved = savedOf(tile)
+    if (!saved) return tile.recipe ? t('dashboard.widget.badge.arrangement') : null
+    return saved.isShared && !saved.canEdit ? t('dashboard.widget.badge.sharedBy', { name: saved.createdBy?.displayName ?? '' }) : t('dashboard.widget.badge.saved')
+  }
+  /** What the pencil does: Customize someone else's saved widget (copied as one's own), Edit every other. */
+  const editKindOf = (tile: Tile): 'edit' | 'customize' => (savedOf(tile)?.canEdit === false ? 'customize' : 'edit')
   const onDashboard = new Set(edit?.tiles.map((x) => x.id))
-  // The built-in figures some tile was made from (#274): Add widget offers the others.
+  // The templates some tile was made from (#274, #275): Add widget offers the other figures, and marks the ready-made charts on it.
   const made = new Set(edit?.tiles.map(templateOfTile))
   const scopes: Scope[] = [...(dashboard?.canChangeShared ? (['shared'] as const) : []), ...(!signInOff ? (['personal'] as const) : [])]
   const stored = edit ? (edit.scope === 'shared' ? shared : personal) : null
@@ -270,40 +361,6 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
         fill
         headingLevel={2}
         meta={c.createdBy && c.isShared ? <UserChip user={c.createdBy} /> : undefined}
-        actions={
-          // Changing or deleting a chart is part of arranging the dashboard (#228), offered while it is customized, each button by its own
-          // right (#210): the creator changes a chart, Delete access to the logs removes a shared one too.
-          (c.canEdit || c.canDelete) && edit ? (
-            <Stack direction="row" sx={{ gap: 1 }}>
-              {c.canEdit && (
-                <ChartBuilderDialog
-                  vehicle={vehicle}
-                  canShare={canShare}
-                  chart={{ id: c.id, title: c.title, isShared: c.isShared, recipe: r }}
-                  onSaved={() => refetch()}
-                  trigger={
-                    <IconAction size="large" tone="primary" label={t('dashboard.editChart', { title: c.title })}>
-                      <Pencil size={16} aria-hidden />
-                    </IconAction>
-                  }
-                />
-              )}
-              {c.canDelete && (
-                <ConfirmDialog
-                  trigger={
-                    <IconAction size="large" tone="error" label={t('dashboard.deleteChart', { title: c.title })}>
-                      <Trash2 size={16} aria-hidden />
-                    </IconAction>
-                  }
-                  title={t('dashboard.deleteTitle')}
-                  description={t('dashboard.deleteDescription', { title: c.title })}
-                  confirmLabel={t('dashboard.deleteConfirm')}
-                  onConfirm={() => void act(() => remove({ variables: { id: c.id } }), () => update((e) => ({ tiles: removeTile(e.tiles, chartKey(c.id)), hidden: e.hidden.filter((h) => h.id !== c.id) })))}
-                />
-              )}
-            </Stack>
-          ) : undefined
-        }
       />
     )
   }
@@ -311,8 +368,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     const widget = widgetOf(tile, savedFigure)
     if (widget?.kind === 'figure') return <KeyFigure recipe={widget.figure} label={titleOf(tile)} vehicleId={vehicle.id} control={periodControl(tile)} rows={tile.h} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
-    if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
-    if (widget?.kind === 'chart') return <ChartCard vehicleId={vehicle.id} title={widget.title} recipe={widget.chart} units={vehicle.units} fill headingLevel={2} />
+    if (widget?.kind === 'chart') return <ChartCard vehicleId={vehicle.id} title={titleOf(tile)} recipe={widget.chart} units={vehicle.units} fill headingLevel={2} />
     const saved = charts.find((c) => c.id === widget?.id)
     // A saved key figure (#273) is drawn like a tile's own; changing its recipe is the builder's (#275).
     if (saved?.figure) return <KeyFigure recipe={saved.figure} label={figureTitle(saved.figure, saved.title)} vehicleId={vehicle.id} rows={tile.h} units={vehicle.units} />
@@ -411,39 +467,46 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             open={edit.adding}
             onClose={() => update(() => ({ adding: false }))}
             vehicle={vehicle}
-            canShare={canShare}
-            everyone={edit.scope === 'shared'}
-            figures={FIGURES.filter((f) => !made.has(f))}
-            ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: onDashboard.has(presetKey(c.id)) }))}
+            made={made}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
-            onAdd={(id) => add(id)}
-            onAddFigure={addFigure}
-            onChartSaved={async (id, title) => {
-              await refetch()
-              add(chartKey(id), title)
-            }}
+            onAdd={addMade}
+            onAddSaved={(w) => addSaved(w.id)}
+            onDelete={deleteSaved}
           />
-          {customizing?.kind === 'ready' && edit.customizing && (
-            <ChartBuilderDialog
+          {edit.editing && (
+            <WidgetEditDialog
+              key={edit.editing.tile}
               vehicle={vehicle}
-              canShare={canShare}
-              shareLocked={edit.scope === 'shared'}
-              copyOf={{ title: t(`dashboard.presets.${customizing.chart.id}`), recipe: customizing.chart.recipe }}
-              open={edit.customizing.open}
-              onOpenChange={(open) => update((e) => ({ customizing: e.customizing && { ...e.customizing, open } }))}
+              mode={edit.editing.mode}
+              start={edit.editing.start}
+              notes={edit.editing.notes}
+              open={edit.editing.open}
+              onOpenChange={(open) => update((e) => ({ editing: e.editing && { ...e.editing, open } }))}
               onClosed={() => {
-                const id = edit.customizing?.focus
-                update(() => ({ customizing: null }))
-                if (id) panel.current?.querySelector<HTMLElement>(`[data-tile="${CSS.escape(id)}"] [aria-haspopup="menu"]`)?.focus()
+                // The focus back on the pencil of the tile in its place (a copy or a saved widget's may have replaced it).
+                const id = edit.editing?.focus ?? edit.editing?.tile
+                update(() => ({ editing: null }))
+                // Its pencil, or its menu where a narrow tile has the pencil in it (#275).
+                if (id) panel.current?.querySelector<HTMLElement>(`[data-tile="${CSS.escape(id)}"] [data-action="edit"], [data-tile="${CSS.escape(id)}"] [aria-haspopup="menu"]`)?.focus()
               }}
-              onSaved={(id, title) => customized(edit.customizing!.tile, id, title)}
+              onSave={(draft, choice) => saveEdit(edit.editing!.tile, draft, choice)}
             />
           )}
         </>
       )}
       {actionError !== undefined && <ErrorMessage error={actionError} />}
       {tiles.length > 0 ? (
-        <DashboardGrid tiles={tiles} editing={edit !== null} render={render} name={titleOf} savedFigure={savedFigure} onTilesChange={(next) => update(() => ({ tiles: next }))} onAction={onAction} />
+        <DashboardGrid
+          tiles={tiles}
+          editing={edit !== null}
+          render={render}
+          name={titleOf}
+          editKind={editKindOf}
+          badge={badgeOf}
+          savedFigure={savedFigure}
+          onTilesChange={(next) => update(() => ({ tiles: next }))}
+          onAction={onAction}
+        />
       ) : (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('dashboard.customize.noCharts')}

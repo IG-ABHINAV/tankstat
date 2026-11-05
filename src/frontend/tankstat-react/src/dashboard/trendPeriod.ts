@@ -46,14 +46,17 @@ export const DEFAULT_PERIOD: Record<PeriodFigureId, TrendPeriod> = {
   distanceTrend: THIS_YEAR,
 }
 
-/** Each figure's quick picks: whole months for the money (this month too for *Spent this month*), fill-ups for consumption, the year so far or 12 whole months for distance. */
+/**
+ * Each figure's quick picks: this month (#275: the builder offers it for every figure by dates) and whole months for the money, fill-ups for
+ * consumption, this month, the year so far or 12 whole months for distance.
+ */
 export const QUICK_PICKS: Record<PeriodFigureId, readonly TrendPeriod[]> = {
   thisMonth: [THIS_MONTH, ...[3, 6, 12].map((n) => last('MONTHS', n, true))],
   consumption: [5, 10, 20].map((n) => last('FILL_UPS', n)),
-  spendingTrend: [3, 6, 12].map((n) => last('MONTHS', n, true)),
-  costPerDistance: [3, 6, 12].map((n) => last('MONTHS', n, true)),
+  spendingTrend: [THIS_MONTH, ...[3, 6, 12].map((n) => last('MONTHS', n, true))],
+  costPerDistance: [THIS_MONTH, ...[3, 6, 12].map((n) => last('MONTHS', n, true))],
   consumptionTrend: [5, 10, 20].map((n) => last('FILL_UPS', n)),
-  distanceTrend: [THIS_YEAR, last('MONTHS', 12, true)],
+  distanceTrend: [THIS_MONTH, THIS_YEAR, last('MONTHS', 12, true)],
 }
 
 /** A period in the app's shape, whatever it came from: the fields one by one, the left-out ones as the server reads them. */

@@ -991,7 +991,7 @@ export interface FakeTile {
   /** An old trend figure id's own period (#230), as the input sends it; none for its default. */
   period?: FakePeriod | null
   /** A `tile:`'s own recipe (#273), as `TileRecipeInput` sends it. */
-  recipe?: { widget: string; title?: string | null; chart?: Record<string, unknown> | null; figure?: { measure: string; period?: FakePeriod | null; sparkline?: boolean | null; template?: string | null } | null } | null
+  recipe?: { widget: string; title?: string | null; template?: string | null; chart?: Record<string, unknown> | null; figure?: { measure: string; period?: FakePeriod | null; sparkline?: boolean | null; template?: string | null } | null } | null
 }
 
 /** A trend figure's period, as `TrendPeriodInput` sends it. */
@@ -1208,6 +1208,7 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
           __typename: 'TileRecipe',
           widget: r.widget,
           title: r.title ?? null,
+          template: r.template ?? null,
           chart: r.chart ? { __typename: 'ChartConfig', ...CONFIG_DEFAULTS, ...r.chart } : null,
           figure: r.figure ? typedRecipe({ measure: r.figure.measure, period: r.figure.period ?? null, sparkline: r.figure.sparkline ?? false, template: r.figure.template ?? null }) : null,
         } : null
@@ -1242,29 +1243,37 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
       state.chartRequests.push(variables as never)
       return HttpResponse.json({ data: { vehicleChartData: answer(variables.config as Record<string, unknown>) } })
     }),
-    graphql.mutation('SaveChart', ({ variables }) => {
-      record('SaveChart', variables)
+    graphql.mutation('SaveVehicleWidget', ({ variables }) => {
+      record('SaveVehicleWidget', variables)
       if (state.failWith) return HttpResponse.json(gqlError(state.failWith.message, 'VALIDATION_FAILED', state.failWith.key, state.failWith.args))
-      const { id, title, shared, config } = variables.input as { id: string | null; title: string; shared: boolean; config: Record<string, unknown> }
+      const { id, title, shared, chart, figure } = variables.input as { id: string | null; title: string; shared: boolean; chart: Record<string, unknown> | null; figure: FakeChart['figure'] }
+      const before = id ? state.charts.find((c) => c.id === id) : undefined
+      const config = chart ?? {}
       const entry = fakeChart({
+        ...before,
         id: id ?? `c${state.nextId++}`,
         title,
         isShared: shared,
-        metric: String(config.metric),
-        grouping: String(config.grouping),
-        kind: String(config.kind),
-        range: String(config.range),
-        stacked: Boolean(config.stacked),
-        rangeFrom: (config.from as string) ?? null,
-        rangeTo: (config.to as string) ?? null,
-        trend: String(config.trend ?? 'NONE'),
-        runningTotal: Boolean(config.runningTotal),
-        compareYearEarlier: Boolean(config.compareYearEarlier),
-        secondMetric: (config.secondMetric as string) ?? null,
-        secondKind: (config.secondKind as string) ?? null,
+        ...(figure
+          ? { figure: { measure: figure.measure, period: figure.period ?? null, sparkline: figure.sparkline ?? false, template: figure.template ?? null } }
+          : {
+              figure: null,
+              metric: String(config.metric),
+              grouping: String(config.grouping),
+              kind: String(config.kind),
+              range: String(config.range),
+              stacked: Boolean(config.stacked),
+              rangeFrom: (config.from as string) ?? null,
+              rangeTo: (config.to as string) ?? null,
+              trend: String(config.trend ?? 'NONE'),
+              runningTotal: Boolean(config.runningTotal),
+              compareYearEarlier: Boolean(config.compareYearEarlier),
+              secondMetric: (config.secondMetric as string) ?? null,
+              secondKind: (config.secondKind as string) ?? null,
+            }),
       })
       state.charts = id ? state.charts.map((c) => (c.id === id ? entry : c)) : [...state.charts, entry]
-      return HttpResponse.json({ data: { saveVehicleChart: { id: entry.id } } })
+      return HttpResponse.json({ data: { saveVehicleWidget: { id: entry.id } } })
     }),
     graphql.mutation('DeleteChart', ({ variables }) => {
       record('DeleteChart', variables)

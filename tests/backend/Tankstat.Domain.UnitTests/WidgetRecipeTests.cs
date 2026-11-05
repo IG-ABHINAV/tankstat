@@ -74,6 +74,19 @@ public class WidgetRecipeTests
     }
 
     [Fact]
+    public void AChartsRecipe_MayLeaveItsTitleToItsTemplate_TheReadyMadeChartItCameFrom_AFigureKeepsItsTemplateInItsOwnRecipe()
+    {
+        string Refused(TileRecipe recipe) => Key(() => Checked(Tile(TileId, recipe)));
+
+        // #275: a ready-made chart's tile is a chart recipe with its template, its title the template's, in the viewer's language.
+        var kept = Checked(Tile(TileId, new TileRecipe(WidgetKind.Chart, null, Bars, Template: "monthlyCosts"))).Tiles.Single().Recipe;
+        Assert.Equal(new TileRecipe(WidgetKind.Chart, null, Bars, null, "monthlyCosts"), kept);
+        Assert.Equal("chart.titleRequired", Refused(new TileRecipe(WidgetKind.Chart, " ", Bars))); // neither a title nor a template
+        Assert.Equal("dashboard.itemInvalid", Refused(new TileRecipe(WidgetKind.Chart, null, Bars, Template: "Monthly costs"))); // out of a figure id's shape
+        Assert.Equal("dashboard.itemInvalid", Refused(new TileRecipe(WidgetKind.Figure, null, Figure: Spent, Template: "thisMonth"))); // a figure's lives in its recipe
+    }
+
+    [Fact]
     public void AFigureRecipe_IsCheckedOnItsOwnToo_ATemplateOutOfShapeIsChartInvalid()
     {
         Assert.Equal(Spent, Spent.Validated(Today));

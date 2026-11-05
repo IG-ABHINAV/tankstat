@@ -184,9 +184,12 @@ export function KeyFigure({ recipe, label, vehicleId, rows, units, control }: { 
  * sparkline it does not have.
  */
 function useFigureSparkline(vehicleId: string, recipe: FigureRecipe, currency: string | null | undefined): ReactNode {
+  const { t } = useTranslation()
   const wanted = recipe.sparkline && !isPointInTime(recipe.measure)
   const metric = recipe.measure as ChartMetric // every measure but the points in time is a chart metric (#272)
   const byCurrency = BY_CURRENCY.includes(KIND[recipe.measure])
+  // Named by its measure (#275: the builder offers a sparkline on any); total spend as the card's always was.
+  const label = metric === 'TOTAL_SPEND' ? undefined : t('dashboard.kpi.sparkline', { measure: t(`charts.metrics.${metric}`) })
   const { data } = useQuery(ChartDataDocument, {
     variables: { vehicleId, config: toConfig({ ...NEW_RECIPE, metric, grouping: 'MONTH', kind: 'LINE', range: 'LAST6_MONTHS' }) },
     fetchPolicy: 'cache-and-network',
@@ -196,7 +199,7 @@ function useFigureSparkline(vehicleId: string, recipe: FigureRecipe, currency: s
   const series = data?.vehicleChartData.series.filter((s) => s.role === 'VALUE')
   const line = byCurrency ? series?.find((s) => s.currency === currency) : series?.[0]
   if (!line || line.points.length === 0) return undefined
-  return <LazySparkline points={line.points.map((pt) => ({ month: pt.key, amount: pt.value ?? 0 }))} currency={byCurrency ? currency : null} />
+  return <LazySparkline points={line.points.map((pt) => ({ month: pt.key, amount: pt.value ?? 0 }))} currency={byCurrency ? currency : null} label={label} />
 }
 
 /**

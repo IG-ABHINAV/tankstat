@@ -35,28 +35,31 @@ public sealed record FigureRecipe(FigureMeasure Measure, TrendPeriod? Period = n
 /// <see cref="ChartConfig"/> or a figure's <see cref="FigureRecipe"/>, exactly the one its kind names. Whoever may change the arrangement may
 /// change it; a saved widget (<c>chart:&lt;guid&gt;</c>) is a <see cref="VehicleChart"/> row instead.
 /// </summary>
-/// <param name="Title">A chart's title, required; a figure's may be empty (the web app's default title, from its template).</param>
-public sealed record TileRecipe(WidgetKind Widget, string? Title, ChartConfig? Chart = null, FigureRecipe? Figure = null)
+/// <param name="Title">A chart's title, required unless it has a template; a figure's may be empty (the web app's default title, from its
+/// template).</param>
+/// <param name="Template">A chart's ready-made chart it was made from (#275: <c>monthlyCosts</c>, in a figure id's shape), which words its
+/// default title in the viewer's language; a figure keeps its template in its own recipe.</param>
+public sealed record TileRecipe(WidgetKind Widget, string? Title, ChartConfig? Chart = null, FigureRecipe? Figure = null, string? Template = null)
 {
     /// <summary>
     /// The recipe as it may be stored, checked on <paramref name="today"/>: exactly the recipe its kind names (<c>dashboard.itemInvalid</c>
-    /// otherwise, as for any entry out of shape, a figure's template too), the title as a saved chart's (<c>chart.titleRequired</c> for a
-    /// chart without one, <c>chart.titleTooLong</c>), a chart by <see cref="ChartConfig.Validated"/> and a figure by
-    /// <see cref="FigureRecipe.Validated"/>, with their keys.
+    /// otherwise, as for any entry out of shape, a template too, and a <see cref="Template"/> on a figure), the title as a saved chart's
+    /// (<c>chart.titleRequired</c> for a chart without one or a template, <c>chart.titleTooLong</c>), a chart by
+    /// <see cref="ChartConfig.Validated"/> and a figure by <see cref="FigureRecipe.Validated"/>, with their keys.
     /// </summary>
     public TileRecipe Validated(DateOnly today)
     {
         var shaped = Widget switch
         {
-            WidgetKind.Chart => Chart is not null && Figure is null,
-            WidgetKind.Figure => Figure is not null && Chart is null && (Figure.Template is null || DashboardLayoutValues.IsFigureId(Figure.Template)),
+            WidgetKind.Chart => Chart is not null && Figure is null && (Template is null || DashboardLayoutValues.IsFigureId(Template)),
+            WidgetKind.Figure => Figure is not null && Chart is null && Template is null && (Figure.Template is null || DashboardLayoutValues.IsFigureId(Figure.Template)),
             _ => false,
         };
         if (!shaped) throw new DomainException("dashboard.itemInvalid", "An entry of the dashboard is not valid.");
         var title = Title?.Trim() ?? "";
         if (title.Length > VehicleChart.MaxTitleLength)
             throw new DomainException("chart.titleTooLong", $"The title can be at most {VehicleChart.MaxTitleLength} characters.", new { Max = VehicleChart.MaxTitleLength });
-        if (Widget == WidgetKind.Chart && title.Length == 0) throw new DomainException("chart.titleRequired", "The chart needs a title.");
-        return new(Widget, title.Length == 0 ? null : title, Chart?.Validated(), Figure?.Validated(today));
+        if (Widget == WidgetKind.Chart && title.Length == 0 && Template is null) throw new DomainException("chart.titleRequired", "The chart needs a title.");
+        return new(Widget, title.Length == 0 ? null : title, Chart?.Validated(), Figure?.Validated(today), Template);
     }
 }

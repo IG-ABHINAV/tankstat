@@ -884,6 +884,7 @@ type TileRecipe {
   title: String
   chart: ChartConfig
   figure: FigureRecipe
+  template: String
 }
 
 type TrendFigureData {
@@ -1319,6 +1320,7 @@ input TileRecipeInput {
   title: String
   chart: ChartConfigInput
   figure: FigureRecipeInput
+  template: String
 }
 
 input TrendPeriodInput {

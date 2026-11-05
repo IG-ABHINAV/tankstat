@@ -1301,7 +1301,8 @@
       "moreCurrencies": "and {{number}} more: {{list}}",
       "moreCount": "+{{number}}",
       "fillUpCount_one": "{{count}} fill-up",
-      "fillUpCount_other": "{{count}} fill-ups"
+      "fillUpCount_other": "{{count}} fill-ups",
+      "sparkline": "{{measure}} in the last six months"
     },
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",
@@ -1309,11 +1310,9 @@
     "by": "by {{name}}",
     "tableButton": "{{title}} as a table",
     "tableDescription": "The numbers behind the chart, which is what a screen reader reads.",
-    "editChart": "Edit the chart {{title}}",
-    "deleteChart": "Delete the chart {{title}}",
-    "deleteTitle": "Delete this chart?",
-    "deleteDescription": "“{{title}}” is removed for everyone it is shared with. The data itself is not affected.",
-    "deleteConfirm": "Delete chart",
+    "deleteTitle": "Delete this widget?",
+    "deleteDescription": "“{{title}}” goes from every dashboard it is on, also for everyone it is shared with. The data itself is not affected.",
+    "deleteConfirm": "Delete widget",
     "chartLabel": "{{title}}: chart",
     "ownScales": "Each currency is drawn on a scale of its own; the amounts are in the tooltip and the table.",
     "trendSentence": "{{series}}: the trend line goes from {{from}} to {{to}}.",
@@ -1445,7 +1444,7 @@
       "fillUpsHint": "From the oldest of them to today.",
       "sinceDate": "First day",
       "against": "Compared with",
-      "againstNone": "No comparison",
+      "againstNone": "Nothing",
       "againstBefore": "The period before",
       "againstYearEarlier": "The same dates a year earlier",
       "preview": "The tile will show",
@@ -1493,9 +1492,12 @@
       "unpinnedSaid": "{{name}} unpinned.",
       "removed": "{{name}} taken off.",
       "added": "{{name}} added.",
-      "customize": "Customize as my chart…",
-      "customized": "{{name}} is now your own chart, in the same place.",
-      "customizedRenamed": "{{name}} is now your own chart, {{title}}, in the same place."
+      "changed": "{{name}} changed.",
+      "addedSaved": "{{name}} added, and saved to your widgets.",
+      "deleted": "{{name}} deleted.",
+      "copied": "{{name}} is now your own, in the same place.",
+      "editItem": "Edit…",
+      "customizeItem": "Customize…"
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {
@@ -1505,17 +1507,14 @@
     },
     "widget": {
       "title": "Add widget",
-      "description": "What is not on the dashboard yet, and a chart of your own from scratch. Whatever you pick is added at the bottom.",
+      "description": "A key figure or a chart: start from one of these, from one of yours, or from scratch.",
       "listLabel": "What to add",
       "groups": {
-        "figures": "Key figures",
-        "ready": "Ready-made charts",
-        "yours": "Your charts"
+        "start": "Start from",
+        "yours": "Your widgets",
+        "scratch": "From scratch"
       },
-      "blank": "Blank chart",
       "add": "Add to the dashboard",
-      "saveAndAdd": "Save and add",
-      "customize": "Customize this chart",
       "back": "Back to the list",
       "describe": {
         "figures": {
@@ -1540,25 +1539,57 @@
           "distanceYearEarlier": "Distance by month, last 12 months, with the same months a year earlier.",
           "distanceAndConsumption": "Distance as bars with the average consumption as a line, by month, last 12 months."
         },
-        "readyHint": "Ready-made: add it as it is, or customize it as a chart of your own; the original stays available.",
-        "saved": "A chart of your own, off the dashboard.",
-        "shared": "A chart shared by {{name}}, off the dashboard.",
-        "blank": "A chart of your own, from scratch: what to measure, how to group it, the chart type and the period. The preview shows your data as you choose.",
-        "readyOnDashboard": "It is on the dashboard already, so here it can only be customized: saved as a chart of your own, it is added at the bottom, beside the ready-made one."
+        "saved": "A chart of your own, off the dashboard."
       },
-      "onDashboard": "On the dashboard"
+      "onDashboard": "On the dashboard",
+      "kind": "Kind",
+      "kindFigure": "Key figure",
+      "kindChart": "Chart",
+      "kindOnDashboard": "{{kind}} · On the dashboard",
+      "yoursFigure": "A key figure of your own",
+      "yoursChart": "A chart of your own",
+      "yoursShared": "Shared by {{name}}",
+      "scratch": "From scratch",
+      "scratchNote": "A key figure or a chart, set up freely",
+      "fieldTitle": "Title",
+      "titleDefault": "Left empty: “{{title}}”",
+      "measure": "What it shows",
+      "period": "Period",
+      "sparkline": "Show the last six months as a sparkline",
+      "saveToo": "Also save to my widgets",
+      "editTitle": "Edit widget",
+      "customizeTitle": "Customize widget",
+      "inArrangement": "In this arrangement only.",
+      "alsoOnShared": "Also on Everyone's dashboard.",
+      "alsoOnOwn": "Also on your own dashboard.",
+      "othersMayHave": "Others may have it on their dashboards too.",
+      "onlyHere": "Only on this dashboard",
+      "everywhere": "Change it everywhere",
+      "copyNote": "Saved as your own, it takes this tile's place in this arrangement.",
+      "saveAsMine": "Save as my own",
+      "save": "Save",
+      "preview": "Preview, on your data",
+      "badge": {
+        "arrangement": "In this arrangement",
+        "saved": "Saved",
+        "sharedBy": "Saved · shared by {{name}}"
+      }
     },
     "figure": {
       "title": "{{measure}} · {{period}}"
+    },
+    "editWidget": "Edit {{title}}",
+    "customizeWidget": "Customize {{title}}",
+    "removeWidget": "Remove {{title}} from this dashboard",
+    "deleteWidget": "Delete {{title}}",
+    "measures": {
+      "ODOMETER": "Odometer (the latest reading)",
+      "LAST_FILL_UP": "Last fill-up"
     }
   },
   "charts": {
-    "dialogEdit": "Edit chart",
-    "dialogDescription": "Choose what to measure, how to group it and for which period. The preview shows your data.",
-    "save": "Save chart",
     "preview": "Preview",
     "fields": {
-      "title": "Title",
       "metric": "What to measure",
       "grouping": "Group by",
       "kind": "Chart type",
@@ -1571,7 +1602,6 @@
       "compareYearEarlier": "Compare with a year earlier",
       "secondMetric": "Second measure",
       "secondKind": "Second measure drawn as",
-      "shared": "Share with everyone who can see this vehicle",
       "also": "Also"
     },
     "hints": {
@@ -1580,10 +1610,8 @@
       "runningTotal": "Each period shows the sum so far.",
       "compareYearEarlier": "Adds the same periods a year earlier as a fainter line.",
       "secondMetric": "Drawn in the same chart on a scale of its own; the trend options are for the first measure.",
-      "shared": "Others can see this chart but only you can change it.",
       "donut": "Donuts need a total (costs, volume, distance, fill-ups).",
       "category": "Grouping by category is only for expense costs.",
-      "sharedForEveryone": "On everyone’s dashboard a chart has to be shared with everyone who can see the vehicle.",
       "overTime": "Only for a chart over time: by month, quarter or year, not a donut.",
       "runningTotalNeedsTotals": "A running total needs what adds up: costs, volume, distance or fill-ups.",
       "stackNeedsTotalSpend": "Only total spend over time splits into fuel and expenses.",
@@ -1629,11 +1657,7 @@
       "MOVING_AVERAGE": "Moving average (3 periods)",
       "LINEAR": "Linear trend"
     },
-    "secondNone": "None",
-    "dialogCustomize": "Customize chart",
-    "dialogCustomizeDescription": "{{title}} is a ready-made chart. Saved, it becomes a chart of your own and takes this tile's place and size; the ready-made one stays in Add widget.",
-    "saveAsMine": "Save as my chart",
-    "mustChange": "Change something to save it as your own chart."
+    "secondNone": "None"
   },
   "photos": {
     "waitUpload": "Saving waits until the photos are uploaded.",

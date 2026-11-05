@@ -155,4 +155,4 @@ export async function picture(page: Page, name = 'picture.png') {
 }
 
 /** The dashboard layout version a save sends (#273), as the web app's `LAYOUT_VERSION` (src/dashboard/widgets.ts): the server refuses a save without it. */
-export const LAYOUT_VERSION = 2
+export const LAYOUT_VERSION = 3

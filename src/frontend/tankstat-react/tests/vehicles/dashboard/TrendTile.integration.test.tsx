@@ -61,7 +61,7 @@ type SavedTile = { id: string; recipe?: { figure?: { template?: string | null; p
 const saved = (state: State) => (state.calls.SaveDashboardLayout!.at(-1) as { input: { personal: boolean; tiles: SavedTile[] } }).input
 /** A saved figure tile's period, by the built-in figure it was made from (#274: its recipe holds it). */
 const periodOf = (tiles: SavedTile[], template: string) => tiles.find((t) => t.recipe?.figure?.template === template)?.recipe?.figure?.period
-const figureRecipe = (measure: string, template: string, period: unknown) => ({ widget: 'FIGURE', title: null, chart: null, figure: { measure, period, sparkline: false, template } })
+const figureRecipe = (measure: string, template: string, period: unknown) => ({ widget: 'FIGURE', title: null, chart: null, figure: { measure, period, sparkline: false, template }, template: null })
 const eightWeeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' }
 
 it('shows the chip only while arranging, on the tile\'s strip; the sentence and the timeline follow, Apply keeps it, Save dashboard saves it (#230, #260)', async () => {
@@ -144,14 +144,14 @@ it('keeps a period with the tiles being arranged until the dashboard is saved, a
   expect(state.calls.SaveDashboardLayout).toBeUndefined()
   expect(await chip('6 full months')).toBeInTheDocument()
 
-  // The Add widget dialog's figure pane has the same controls (#230, the owner's choice).
+  // The Add widget dialog's builder has the same period form (#230, #275), its figure starting at its default.
   await ui.click(screen.getByRole('button', { name: 'Add widget' }))
   const add = await screen.findByRole('dialog', { name: 'Add widget' })
-  await ui.click(within(add).getByRole('button', { name: 'Distance driven' }))
+  await ui.click(within(add).getByRole('button', { name: 'Distance driven Key figure' }))
   expect(within(add).getByRole('tab', { name: 'Quick', selected: true })).toBeInTheDocument()
-  expect(await within(add).findByText('This year', { selector: '.MuiChip-label' })).toBeInTheDocument() // its preview starts at its default
+  expect(within(add).getByRole('radio', { name: 'This year' })).toBeChecked()
   await ui.click(within(add).getByRole('radio', { name: '12 full months' }))
-  expect(await within(add).findByText('12 full months', { selector: '.MuiChip-label' })).toBeInTheDocument() // the preview follows
+  expect(within(add).getByRole('radio', { name: '12 full months' })).toBeChecked()
   await ui.click(within(add).getByRole('button', { name: 'Add to the dashboard' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))

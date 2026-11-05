@@ -1,6 +1,6 @@
 import { type Locator, type Page } from '@playwright/test'
-import { expect, test } from './support/test.ts'
-import { addExpense, addVehicle, graphql, LAYOUT_VERSION, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
+import { expect, newContext, test } from './support/test.ts'
+import { addExpense, addVehicle, createUser, graphql, LAYOUT_VERSION, logRefueling, openVehicle, pageLoaded, settled, signIn, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
@@ -25,19 +25,21 @@ const menu = async (page: Page, name: string, entry: string) => {
   await expect(page.getByRole('menu')).toBeHidden()
 }
 type Stored = { id: string; x: number; y: number; w: number; h: number; pinned: boolean }[]
-type Read = (Stored[number] & { recipe: { figure: { template: string | null } | null } | null })[]
+type Read = (Stored[number] & { recipe: { template: string | null; figure: { template: string | null } | null } | null })[]
 /**
  * The dashboard as stored, each figure tile by the built-in figure it was made from (#274: saved as a `tile:` of its own with its recipe),
  * every other tile by its id.
  */
 const stored = async (page: Page, vehicleId: string) => {
-  const tiles = 'tiles { id x y w h pinned recipe { figure { template } } }'
+  const tiles = 'tiles { id x y w h pinned recipe { template figure { template } } }'
   const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: Read } | null; personal: { tiles: Read } | null } } }>(
     page,
     `query($id: UUID!) { vehicle(id: $id) { dashboard { shared { ${tiles} } personal { ${tiles} } } } }`,
     { id: vehicleId },
   )
-  const byTemplate = (layout: { tiles: Read } | null) => layout && { tiles: layout.tiles.map(({ recipe, ...t }) => ({ ...t, id: recipe?.figure?.template ?? t.id })) }
+  // A figure tile by its built-in figure, a ready-made chart's by its `preset:` id (#275), as before they were saved as tiles of their own.
+  const byTemplate = (layout: { tiles: Read } | null) =>
+    layout && { tiles: layout.tiles.map(({ recipe, ...t }) => ({ ...t, id: recipe?.figure?.template ?? (recipe?.template ? `preset:${recipe.template}` : t.id) })) }
   return { shared: byTemplate(data.vehicle.dashboard.shared), personal: byTemplate(data.vehicle.dashboard.personal) }
 }
 
@@ -219,7 +221,7 @@ test('arranges a dashboard of one\'s own, then goes back to the vehicle\'s', asy
   await expect.poll(() => chartTitles(page)).toEqual(['Monthly costs', 'Consumption', 'Fuel price', 'Expenses by category', 'Distance per month'])
 })
 
-test('starts from the Usage preset, then adds a figure as it is and a ready-made chart customized into one\'s own through Add widget', async ({ page, isMobile }) => {
+test('starts from the Usage preset, then adds a template as it is and a ready-made chart saved to one\'s widgets through Add widget (#275)', async ({ page, isMobile }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id)
@@ -236,45 +238,45 @@ test('starts from the Usage preset, then adds a figure as it is and a ready-made
   expect(await figureLabels(page)).toEqual(['Odometer', 'Distance driven', 'Average consumption', 'Consumption change'])
   await expectSoundLayout(page)
 
-  // Add widget (#228): a figure as it is, then a ready-made chart customized into a chart of one's own; both land at the bottom.
+  // Add widget (#275): a template as it is, then a ready-made chart named and saved to one's widgets; both land at the bottom.
   await page.getByRole('button', { name: 'Customize' }).click()
   await page.getByRole('button', { name: 'Add widget' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add widget' })
-  // A trend figure's pane holds its period under its preview (#230): inside the dialog at either size.
-  await dialog.getByRole('button', { name: 'Spending' }).click()
+  // A trend figure's template opens the builder with its period (#230): inside the dialog at either size.
+  await dialog.getByRole('button', { name: /^Spending Key figure/ }).click()
   await expect(dialog.getByTestId('trend-timeline')).toBeVisible()
   await expectSoundLayout(page)
   if (isMobile) await dialog.getByRole('button', { name: 'Back to the list' }).click() // a phone shows the list and the pane one after the other
-  await dialog.getByRole('button', { name: 'Last fill-up' }).click()
+  await dialog.getByRole('button', { name: /^Last fill-up Key figure/ }).click()
   await expectSoundLayout(page)
   await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Last fill-up added.')
 
   await page.getByRole('button', { name: 'Add widget' }).click()
-  await dialog.getByRole('button', { name: 'Monthly costs' }).click()
-  await dialog.getByRole('button', { name: 'Customize this chart' }).click()
-  await expect(dialog.getByLabel('Title')).toHaveValue('Monthly costs')
+  await dialog.getByRole('button', { name: /^Monthly costs Chart/ }).click()
+  await expect(dialog.getByText('Left empty: “Monthly costs”')).toBeVisible()
   await dialog.getByLabel('Title').fill('My costs')
+  await dialog.getByRole('checkbox', { name: 'Also save to my widgets' }).check()
   await expectSoundLayout(page)
-  await dialog.getByRole('button', { name: 'Save and add' }).click()
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('My costs added.')
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('My costs added, and saved to your widgets.')
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
   await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month', 'My costs'])
   expect(await figureLabels(page)).toEqual(['Odometer', 'Distance driven', 'Average consumption', 'Consumption change', 'Last fill-up'])
-  // Outside Customize a tile shows only its content: no Copy, no Edit, the table a button away (on a chart with something to list).
-  await expect(page.getByRole('button', { name: /^Copy |^Edit the chart|^Delete the chart/ })).toHaveCount(0)
+  // Outside Customize a tile shows only its content: no pencil, no bin, the table a button away (on a chart with something to list).
+  await expect(page.getByRole('button', { name: /^(Edit|Customize|Remove) / })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'My costs as a table' })).toBeVisible()
-  // The ready-made chart stays available, the saved copy is on the dashboard.
+  // The ready-made chart stays available, the saved one is on the dashboard (not among Your widgets).
   await page.getByRole('button', { name: 'Customize' }).click()
   await page.getByRole('button', { name: 'Add widget' }).click()
-  await expect(dialog.getByRole('button', { name: 'Monthly costs' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'My costs' })).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: /^Monthly costs Chart/ })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /^My costs/ })).toHaveCount(0)
 })
 
-test("customizes a preset's ready-made chart from its tile's menu into one's own, in the tile's place and size, kept after a reload (#247)", async ({ page }) => {
+test("edits a preset's ready-made chart in place with its tile's pencil, in the tile's place and size, kept after a reload (#275, #247)", async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id)
@@ -288,20 +290,20 @@ test("customizes a preset's ready-made chart from its tile's menu into one's own
   const before = (await stored(page, vehicle.id)).shared!.tiles.find((x) => x.id === 'preset:consumptionTrend')!
 
   await page.getByRole('button', { name: 'Customize' }).click()
-  await menu(page, 'Consumption trend', 'Customize as my chart…')
-  const dialog = page.getByRole('dialog', { name: 'Customize chart' })
-  await expect(dialog.getByLabel('Title')).toHaveValue('Consumption trend')
-  // Nothing differs yet, so it cannot be saved; the dialog scrolls in its content only, at either size (#249).
-  await expect(dialog.getByRole('button', { name: 'Save as my chart' })).toBeDisabled()
-  await expect(dialog.getByText('Change something to save it as your own chart.')).toBeVisible()
+  await expect(tile(page, 'preset:consumptionTrend').locator('[data-badge]')).toHaveText('In this arrangement')
+  await page.getByRole('button', { name: 'Edit Consumption trend' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Edit widget' })
+  await expect(dialog.getByText('In this arrangement only.')).toBeVisible()
+  // The dialog scrolls in its content only, at either size (#249).
   await expectSoundLayout(page)
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
   // A toggle's radio is visually hidden inside its segment, so the segment (its label) is what is clicked.
   await dialog.getByRole('radiogroup', { name: 'Group by' }).getByRole('radio', { name: 'Year' }).locator('xpath=..').click()
   await dialog.getByLabel('Title').fill('Consumption by year')
-  await dialog.getByRole('button', { name: 'Save as my chart' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Consumption trend is now your own chart, Consumption by year, in the same place.')
-  await expect(page.getByRole('button', { name: 'Options for Consumption by year' })).toBeFocused()
+  await expect(page.getByRole('status', { name: 'Last change to the arrangement' })).toHaveText('Consumption trend changed.')
+  await expect(page.getByRole('button', { name: 'Edit Consumption by year' })).toBeFocused()
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
 
@@ -309,9 +311,9 @@ test("customizes a preset's ready-made chart from its tile's menu into one's own
   await pageLoaded(page)
   await expect.poll(() => chartTitles(page)).toEqual(['Distance, this year and last', 'Consumption by year', 'Distance and consumption', 'Distance per month'])
   const tiles = (await stored(page, vehicle.id)).shared!.tiles
-  expect(tiles.map((x) => x.id)).not.toContain('preset:consumptionTrend')
-  const copy = tiles.find((x) => x.id.startsWith('chart:'))!
-  expect({ x: copy.x, y: copy.y, w: copy.w, h: copy.h }).toEqual({ x: before.x, y: before.y, w: before.w, h: before.h })
+  expect(tiles.map((x) => x.id)).not.toContain('preset:consumptionTrend') // no longer the ready-made one: a tile of its own
+  const edited = tiles.find((x) => x.id.startsWith('tile:'))!
+  expect({ x: edited.x, y: edited.y, w: edited.w, h: edited.h }).toEqual({ x: before.x, y: before.y, w: before.w, h: before.h })
 })
 
 // ---- a dragged tile follows the pointer (#227) ------------------------------------------------------------------
@@ -520,6 +522,16 @@ const keyboardFocus = async (page: Page, target: Locator) => {
   await page.keyboard.press('Tab')
   await expect(target).toBeFocused()
 }
+/**
+ * A tooltip opened by the keyboard closed again, and gone before the next one opens: Escape, then the focus off its button, since a figure
+ * drawn again (its answer refetched, `cache-and-network`) with the focus still on the arrow opens it again (MUI unmounts it a little
+ * later, reduced motion too).
+ */
+const closeTooltip = async (page: Page, target: Locator) => {
+  await page.keyboard.press('Escape')
+  await target.evaluate((el) => (el as HTMLElement).blur())
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+}
 /** The figures whose words wrap in a one-column desktop tile, side by side at `rows`, through GraphQL. */
 const lowFigures = (rows: number): Stored => ['thisMonth', 'consumptionTrend', 'costPerDistance', 'odometer'].map((id, x) => ({ id, x, y: 0, w: 1, h: rows, pinned: false }))
 
@@ -541,8 +553,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await expect(spentArrow).toHaveAccessibleName(/\(This month\)$/)
   await keyboardFocus(page, spentArrow)
   await expect(page.getByRole('tooltip')).toContainText('This month')
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('tooltip')).toHaveCount(0) // gone before the next one opens: MUI unmounts it a little later, reduced motion too
+  await closeTooltip(page, spentArrow)
   // Outside Customize the label has the row to itself (no chip, #260): whole, no tab stop, in a desktop column too.
   const consumptionLabel = tile(page, 'consumptionTrend').locator('[data-kpi="label"]')
   await expect(consumptionLabel).toHaveText('Consumption change')
@@ -556,8 +567,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await keyboardFocus(page, consumptionArrow)
   await expect(page.getByRole('tooltip')).toContainText('the 10 fill-ups before')
   await expect(page.getByRole('tooltip')).toContainText('Last 10 fill-ups')
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await closeTooltip(page, consumptionArrow)
   await expect(tile(page, 'costPerDistance').locator('[data-kpi="value-row"] > button')).toHaveAccessibleName(/than the 12 months before \(12 full months\)$/)
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page) // the arrows 44 px to a finger on a phone
@@ -656,8 +666,10 @@ test('keeps every tile as tall while arranging as in view mode, the strip naming
   await expect.poll(async () => Object.fromEntries(Object.entries(await tileHeights(page)).map(([id, h]) => [id, h.tile]))).toEqual(Object.fromEntries(Object.entries(view).map(([id, h]) => [id, h.tile])))
   const arranged = await tileHeights(page)
   expect(Math.abs(arranged['preset:monthlyCosts'].picture! - view['preset:monthlyCosts'].picture!)).toBeLessThanOrEqual(40)
-  // A 2-row figure's value fits under the strip as it is, not in a smaller or one-line form (2 px to spare at 84 px).
-  await expect(tile(page, 'odometer').locator('[data-kpi="value"]')).toHaveClass(/MuiTypography-h3/)
+  // Under the strip the tag says where the widget lives (#275, the user's choice C): a 2-row figure's value then takes its one-line form,
+  // still whole (the clipping check below).
+  await expect(tile(page, 'odometer').locator('[data-badge]')).toHaveText('In this arrangement')
+  await expect(tile(page, 'odometer').locator('[data-kpi="value"]')).toBeVisible()
   // The period readable beside the name, not squeezed to a third of the strip.
   expect((await tile(page, 'distanceTrend').getByRole('button', { name: /period: This year/ }).boundingBox())!.width).toBeGreaterThan(48)
 
@@ -698,23 +710,29 @@ test('keeps every tile as tall while arranging as in view mode, the strip naming
 
 // ---- every key figure a recipe (#274) ------------------------------------------------------------------------------------
 
-/** Each figure tile's built-in figure and its card's text, in reading order, once every figure has its answer. */
+/** Each figure tile's built-in figure and its card's text, in reading order, once every figure has its answer (a ready-made chart's `preset:` template left out). */
 const figureTexts = async (page: Page) => {
   await expect(region(page).getByText('Loading…')).toHaveCount(0)
-  return region(page).locator('[data-template]').evaluateAll((tiles) => tiles.map((t) => `${(t as HTMLElement).dataset.template}: ${(t as HTMLElement).innerText.replace(/\s+/g, ' ').trim()}`))
+  return region(page).locator('[data-template]:not([data-template^="preset:"])').evaluateAll((tiles) => tiles.map((t) => `${(t as HTMLElement).dataset.template}: ${(t as HTMLElement).innerText.replace(/\s+/g, ' ').trim()}`))
 }
 
-test('reads a dashboard arranged with old figure ids as recipes, the same before and after a save, which stores them as tiles of their own (#274)', async ({ page }) => {
+test('reads a dashboard arranged with old figure and ready-made chart ids as recipes, the same before and after a save, which stores them as tiles of their own (#274, #275)', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
   await logRefueling(page, vehicle.id, { date: today(), odometer: 1500 })
   const ids = ['thisMonth', 'consumption', 'odometer', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend']
-  await arrange(page, vehicle.id, ids.map((id, i) => ({ id, x: i % 4, y: Math.floor(i / 4) * 4, w: 1, h: 4, pinned: false })))
+  const charts = ['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'distance', 'spendSoFar', 'costPerDistance', 'consumptionTrend', 'distanceYearEarlier', 'distanceAndConsumption']
+  await arrange(page, vehicle.id, [
+    ...ids.map((id, i) => ({ id, x: i % 4, y: Math.floor(i / 4) * 4, w: 1, h: 4, pinned: false })),
+    ...charts.map((c, i) => ({ id: `preset:${c}`, x: (i % 2) * 2, y: 8 + Math.floor(i / 2) * 8, w: 2, h: 8, pinned: false })),
+  ])
   await openVehicle(page, vehicle.id)
 
   const before = await figureTexts(page)
   expect(before.map((t) => t.split(':')[0])).toEqual(ids)
+  const chartsBefore = await chartTitles(page)
+  expect(chartsBefore).toHaveLength(10)
   expect(before[0]).toMatch(/^thisMonth: Spent this month HUF/)
   expect(before[2]).toMatch(/^odometer: Odometer 1,500 km/)
   await page.getByRole('button', { name: 'Customize' }).click()
@@ -723,16 +741,18 @@ test('reads a dashboard arranged with old figure ids as recipes, the same before
   await page.reload()
   await pageLoaded(page)
   await expect.poll(() => figureTexts(page)).toEqual(before)
+  expect(await chartTitles(page)).toEqual(chartsBefore)
 
-  // Stored as tiles of their own, each with its recipe and the built-in figure it came from.
-  const read = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown; recipe: { widget: string; figure: { template: string } } }[] } } } }>(
+  // Stored as tiles of their own, each with its recipe and the built-in figure or ready-made chart it came from (a chart's without a title).
+  const read = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown; recipe: { widget: string; title: string | null; template: string | null; figure: { template: string } | null } }[] } } } }>(
     page,
-    'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind } recipe { widget figure { template } } } } } } }',
+    'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind } recipe { widget title template figure { template } } } } } } }',
     { id: vehicle.id },
   )
   const tiles = read.vehicle.dashboard.shared.tiles
-  expect(tiles.every((t) => /^tile:[0-9a-f-]{36}$/.test(t.id) && t.period === null && t.recipe.widget === 'FIGURE')).toBe(true)
-  expect(tiles.map((t) => t.recipe.figure.template)).toEqual(ids)
+  expect(tiles.every((t) => /^tile:[0-9a-f-]{36}$/.test(t.id) && t.period === null)).toBe(true)
+  expect(tiles.map((t) => t.recipe.figure?.template ?? t.recipe.template)).toEqual([...ids, ...charts])
+  expect(tiles.filter((t) => t.recipe.widget === 'CHART').every((t) => t.recipe.title === null)).toBe(true)
 
   // In Hungarian, the default titles come from the templates, in the viewer's language.
   await page.addInitScript(() => localStorage.setItem('tankstat.language', 'hu'))
@@ -742,4 +762,201 @@ test('reads a dashboard arranged with old figure ids as recipes, the same before
   await expect.poll(async () => (await page.locator('[data-template] [data-kpi="label"]').allTextContents()).slice(0, 4)).toEqual(['Költés ebben a hónapban', 'Átlagos fogyasztás', 'Kilométeróra', 'Utolsó tankolás'])
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page)
+})
+
+// ---- one builder for every widget (#275) ----------------------------------------------------------------------------------
+
+/** A tile's pencil: its button, or its menu's Edit… where a one-column tile of four has the pencil in its menu (the user's choice). */
+const editTile = async (page: Page, name: string) => {
+  const pencil = page.getByRole('button', { name: `Edit ${name}`, exact: true })
+  if (await pencil.count()) await pencil.click()
+  else await menu(page, name, 'Edit…')
+}
+const said = (page: Page) => page.getByRole('status', { name: 'Last change to the arrangement' })
+
+test('builds a key figure from scratch and adds a template already on the dashboard again, both kept after a reload (#275)', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: daysAgo(5), odometer: 1500 })
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add widget' })
+  await dialog.getByRole('button', { name: /^From scratch/ }).click()
+  await dialog.getByRole('combobox', { name: 'What it shows' }).click()
+  await page.getByRole('option', { name: 'Fuel volume' }).click()
+  await dialog.getByRole('tab', { name: 'Last' }).click()
+  await dialog.getByRole('spinbutton', { name: 'Number' }).fill('30')
+  await dialog.getByRole('combobox', { name: 'Unit' }).click()
+  await page.getByRole('option', { name: 'Days' }).click()
+  await expect(dialog.getByText('Left empty: “Fuel volume · Last 30 days”')).toBeVisible()
+  await expect(dialog.getByRole('combobox', { name: 'Compared with' })).toHaveText('The period before')
+  await expectSoundLayout(page)
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(said(page)).toHaveText('Fuel volume · Last 30 days added.')
+
+  // A template on the dashboard is marked so and still added, as a second tile (the owner's choice).
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await dialog.getByRole('button', { name: /^Spent this month Key figure · On the dashboard/ }).click()
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await page.reload()
+  await pageLoaded(page)
+  await expect.poll(async () => (await figureLabels(page)).filter((l) => l === 'Spent this month')).toHaveLength(2)
+  expect(await figureLabels(page)).toContain('Fuel volume · Last 30 days')
+  const templates = (await stored(page, vehicle.id)).shared!.tiles.map((t) => t.id)
+  expect(templates.filter((t) => t === 'thisMonth')).toHaveLength(2)
+  await expectSoundLayout(page)
+})
+
+test('saves a widget to my widgets, adds it on Just me from Your widgets, edits it only here and then everywhere, and deletes it there (#275)', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: daysAgo(5), odometer: 1500 })
+  await openVehicle(page, vehicle.id)
+  await expect(page.getByRole('heading', { name: 'Monthly costs' })).toBeVisible()
+
+  // Saved on Everyone's dashboard: shared.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add widget' })
+  await dialog.getByRole('button', { name: /^Distance driven Key figure/ }).click()
+  await dialog.getByRole('checkbox', { name: 'Also save to my widgets' }).check()
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(said(page)).toHaveText('Distance driven added, and saved to your widgets.')
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  // On one's own dashboard: taken off with the bin (Remove), it is in Your widgets, added back from there.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.locator('label', { hasText: 'Just me' }).click()
+  await expect(page.getByRole('radio', { name: 'Just me' })).toBeChecked()
+  await expect(tile(page, 'distanceTrend').locator('[data-badge]')).toHaveText('Saved')
+  await menu(page, 'Distance driven', 'Remove')
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await dialog.getByRole('button', { name: /^Distance driven A key figure of your own/ }).click()
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
+  await expect(dialog).toBeHidden()
+
+  // Only on this dashboard: a copy in the arrangement takes its place.
+  await editTile(page, 'Distance driven')
+  const edit = page.getByRole('dialog', { name: 'Edit widget' })
+  await expect(edit.getByText("Also on Everyone's dashboard.")).toBeVisible()
+  await expect(edit.getByText('Others may have it on their dashboards too.')).toBeVisible()
+  await expectSoundLayout(page)
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+  await edit.getByRole('radio', { name: '12 full months' }).locator('xpath=..').click()
+  await edit.getByRole('button', { name: 'Only on this dashboard' }).click()
+  await expect(edit).toBeHidden()
+  await expect(tile(page, 'distanceTrend').locator('[data-badge]')).toHaveText('In this arrangement')
+
+  // Everywhere: the saved widget itself, renamed at once.
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await dialog.getByRole('button', { name: /^Distance driven A key figure of your own/ }).click()
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
+  await expect(dialog).toBeHidden()
+  const saved = page.locator('[data-template="distanceTrend"]').filter({ has: page.locator('[data-badge]', { hasText: /^Saved$/ }) })
+  await expect(saved).toHaveCount(1)
+  // Its pencil, or its menu's Edit… on a one-column tile of four.
+  const pencil = saved.locator('[data-action="edit"]')
+  if (await pencil.count()) await pencil.click()
+  else {
+    await saved.getByRole('button', { name: /^Options for / }).click()
+    await page.getByRole('menuitem', { name: 'Edit…' }).click()
+  }
+  await edit.getByLabel('Title').fill('Kilometres')
+  await edit.getByRole('button', { name: 'Change it everywhere' }).click()
+  await expect(edit).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Options for Kilometres' })).toBeVisible() // named by the strip while customizing
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  // The bin takes it off this dashboard only; in Your widgets it is deleted for good, after a confirmation.
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await menu(page, 'Kilometres', 'Remove')
+  await page.getByRole('button', { name: 'Add widget' }).click()
+  await expect(dialog.getByRole('button', { name: /^Kilometres A key figure of your own/ })).toBeVisible()
+  await expectSoundLayout(page)
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+  await dialog.getByRole('button', { name: 'Delete Kilometres' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Delete this widget?' })
+  await confirm.getByRole('button', { name: 'Delete widget' }).click()
+  await expect(dialog.getByRole('button', { name: /^Kilometres/ })).toHaveCount(0)
+})
+
+test("customizes someone else's saved widget as one's own, in its place, the original kept off after a reload (#275)", async ({ page, browser }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: daysAgo(5), odometer: 1500 })
+  // The owner's saved key figure, shared, on the vehicle's dashboard; a friend the logs are shared with (Edit: sharing takes Edit or Delete).
+  const { saveVehicleWidget: widget } = await graphql<{ saveVehicleWidget: { id: string } }>(
+    page,
+    'mutation($i: SaveWidgetInput!) { saveVehicleWidget(input: $i) { id } }',
+    { i: { vehicleId: vehicle.id, title: 'Team distance', shared: true, figure: { measure: 'DISTANCE', period: { kind: 'THIS_YEAR', against: 'YEAR_EARLIER' } } } },
+  )
+  const original = `chart:${widget.id}`
+  await arrange(page, vehicle.id, [{ id: original, x: 0, y: 0, w: 2, h: 4, pinned: false }])
+  const friend = await createUser()
+  await graphql(page, 'mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }', { i: { vehicleId: vehicle.id, userId: friend.id, level: 'EDIT' } })
+
+  const theirs = await newContext(browser)
+  const them = await theirs.newPage()
+  try {
+    await signIn(them, friend)
+    await openVehicle(them, vehicle.id)
+    await expect(tile(them, original).locator('[data-kpi="value"]')).toHaveText(/km$/)
+
+    // On their own dashboard (Just me): the owner's widget is theirs to customize, not to change.
+    await them.getByRole('button', { name: 'Customize' }).click()
+    await expect(them.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+    await them.locator('label', { hasText: 'Just me' }).click()
+    await expect(them.getByRole('radio', { name: 'Just me' })).toBeChecked()
+    await expect(tile(them, original).locator('[data-badge]')).toHaveText(/^Saved · shared by /)
+    // Its pencil, or its menu's Customize… on a narrow tile.
+    const pencil = them.getByRole('button', { name: 'Customize Team distance', exact: true })
+    if (await pencil.count()) await pencil.click()
+    else await menu(them, 'Team distance', 'Customize…')
+    const dialog = them.getByRole('dialog', { name: 'Customize widget' })
+    await expect(dialog.getByText("Saved as your own, it takes this tile's place in this arrangement.")).toBeVisible()
+    await expectSoundLayout(them)
+    expect(await violations(them, '[role="dialog"]')).toEqual([])
+    // Unchanged too: saved as their own widget (private on Just me), it takes the tile's place.
+    await dialog.getByRole('button', { name: 'Save as my own' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(them.locator('[data-badge]', { hasText: /^Saved$/ })).toHaveCount(1)
+    await expect(tile(them, original)).toHaveCount(0)
+    await them.getByRole('button', { name: 'Save dashboard' }).click()
+    await expect(them.getByText('Saved.')).toBeVisible()
+
+    // Their own arrangement points at their own copy, and holds the owner's widget among the taken off, so it does not come back at the bottom.
+    const read = await graphql<{ vehicle: { dashboard: { personal: { tiles: { id: string }[]; hidden: string[] } } }; vehicleWidgets: { id: string; isShared: boolean; canEdit: boolean; figure: { measure: string } | null }[] }>(
+      them,
+      'query($id: UUID!) { vehicle(id: $id) { dashboard { personal { tiles { id } hidden } } } vehicleWidgets(vehicleId: $id) { id isShared canEdit figure { measure } } }',
+      { id: vehicle.id },
+    )
+    const personal = read.vehicle.dashboard.personal
+    expect(personal.tiles).toHaveLength(1)
+    expect(personal.tiles[0].id).toMatch(/^chart:/)
+    expect(personal.tiles[0].id).not.toBe(original)
+    expect(personal.hidden).toContain(original)
+    const copy = read.vehicleWidgets.find((w) => `chart:${w.id}` === personal.tiles[0].id)
+    expect(copy).toMatchObject({ isShared: false, canEdit: true, figure: { measure: 'DISTANCE' } })
+    await them.reload()
+    await pageLoaded(them)
+    await expect(them.locator('[data-tile]')).toHaveCount(1)
+    await expect(tile(them, original)).toHaveCount(0)
+  } finally {
+    await theirs.close()
+  }
 })

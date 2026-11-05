@@ -29,9 +29,10 @@ public sealed partial record DashboardLayoutValues(IReadOnlyList<DashboardTile> 
     /// The arrangement's version an app must send with a save (#273): one that sends none, or an older one, does not know every tile there
     /// may be and would drop the ones it does not know, so its save is refused (<see cref="RequireVersion"/>) and it asks to be reloaded.
     /// Raised whenever tiles an older app would lose start being saved, together with the web app's own: 2 since #274, which saves every key
-    /// figure as a <c>tile:</c> with its recipe (an app of #273 drops those).
+    /// figure as a <c>tile:</c> with its recipe (an app of #273 drops those); 3 since #275, which saves the ready-made charts as <c>tile:</c>
+    /// recipes with their <see cref="TileRecipe.Template"/> and no title (an app of #274 would save them without it, and be refused).
     /// </summary>
-    public const int LayoutVersion = 2;
+    public const int LayoutVersion = 3;
 
     /// <summary>Refuses a save from an app older than <see cref="LayoutVersion"/> with <c>dashboard.updateApp</c>.</summary>
     public static void RequireVersion(int? version)

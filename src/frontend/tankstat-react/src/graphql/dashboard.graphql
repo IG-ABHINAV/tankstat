@@ -104,6 +104,8 @@ fragment DashboardLayoutFields on DashboardLayoutInfo {
     recipe {
       widget
       title
+      # A chart's ready-made chart (#275), which words its default title.
+      template
       chart {
         ...ChartConfigFields
       }
@@ -200,6 +202,13 @@ fragment FigureRecipeFields on FigureRecipe {
   template
 }
 
+# A saved widget of either kind (#273), made or changed by the builder (#275): a chart's config or a key figure's recipe.
+mutation SaveVehicleWidget($input: SaveWidgetInput!) {
+  saveVehicleWidget(input: $input) {
+    id
+  }
+}
+
 mutation SaveDashboardLayout($input: SaveDashboardLayoutInput!) {
   saveDashboardLayout(input: $input)
 }
@@ -225,12 +234,6 @@ query ChartData($vehicleId: UUID!, $config: ChartConfigInput!) {
         value
       }
     }
-  }
-}
-
-mutation SaveChart($input: SaveChartInput!) {
-  saveVehicleChart(input: $input) {
-    id
   }
 }
 

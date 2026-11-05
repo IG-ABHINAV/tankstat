@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import type { ChangeWords, Tone } from './changeWords.ts'
 import { COARSE } from '../theme/components.ts'
 import { FULL, type Fit, type Measured, nextFit, offered, VALUE_STEPS } from './kpiFit.ts'
-import { useTilePadding, useTileStrip } from './tileChrome.ts'
+import { TILE_STRIP, useTilePadding, useTileStrip } from './tileChrome.ts'
 
 export interface KpiProps {
   rows: number
@@ -113,12 +113,16 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
   const offers = offersOf({ rows, sparkline, hint, change, shrink, short })
   // The comparison as its line where the rows offer it and it has room, else as its arrow alone before the value (#260).
   const asLine = offers.change === 'line' && fit.drop < 3
-  const step = VALUE_STEPS[fit.step]
   const pt = useTilePadding(third ? 2 : 1.5) // under the edit strip while the dashboard is arranged
   // While arranging, the strip is the tile's header (#262): it names the figure, so the card draws no label row.
   const strip = useTileStrip()
+  // Under a badge too (#275, the user's choice C), a two-row figure keeps a value's line meanwhile: the value at its smallest size and a
+  // smaller bottom padding (the fit steps a value down only when it is too wide, never for its height).
+  const badgedLow = !third && !!strip && strip.inset > TILE_STRIP
+  const step = VALUE_STEPS[badgedLow ? VALUE_STEPS.length - 1 : fit.step]
+  const pb = badgedLow ? 0.5 : third ? 2 : 1.5
   return (
-    <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <Card ref={cardRef} sx={{ px: 2, py: third ? 2 : 1.5, pt, pb, height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
       {!strip && (
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
           <CutLabel label={label} oneLine={fit.oneLine} cut={fit.labelCut} />
@@ -127,7 +131,8 @@ export function KpiCard({ rows, label, chip, value, short, hint, change, period,
       )}
       {/* The value's row: the comparison's arrow alone before it (#260), a sibling, so the value's clipping never cuts the arrow's touch area. */}
       <Box data-kpi="value-row" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, my: full ? 0.5 : 0 }}>
-        {change && !asLine && <ChangeArrow words={change} period={period} />}
+        {/* Under a badge at two rows (#275, the user's choice C) the value's line holds the value alone: no arrow meanwhile. */}
+        {change && !asLine && !badgedLow && <ChangeArrow words={change} period={period} />}
         {/* The short form keeps its line whole (its "+1" reaches past it on a touch screen); only a long value is cut at the card's edge. */}
         <Typography
           data-kpi="value"
