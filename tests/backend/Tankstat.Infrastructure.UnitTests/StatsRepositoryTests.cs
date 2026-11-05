@@ -67,6 +67,29 @@ public class StatsRepositoryTests
     }
 
     [Fact]
+    public async Task ASavedKeyFigure_RoundTrips_ItsChartColumnsNull_AndCountsWithTheCharts()
+    {
+        await using var db = new TestDatabase();
+        var car = await AddVehicle(db);
+        var repo = db.Get<IVehicleChartRepository>();
+        var alice = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
+        var recipe = new FigureRecipe(FigureMeasure.AverageConsumption, new TrendPeriod(TrendWindowKind.Last, TrendUnit.FillUps, 5, Against: TrendComparison.YearEarlier), Sparkline: true, Template: "consumptionTrend");
+        await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Bars", new ChartConfig(ChartMetric.TotalSpend, ChartGrouping.Month, ChartKind.Bar, ChartRange.All, false), false, now), default);
+        await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Consumption", null, recipe, true, now.AddMinutes(1)), default);
+        await repo.AddAsync(VehicleChart.Create(car.Id, alice, "Odometer", null, new FigureRecipe(FigureMeasure.Odometer), false, now.AddMinutes(2)), default);
+
+        var listed = await repo.ListVisibleAsync(car.Id, alice, default);
+
+        Assert.Equal([WidgetKind.Chart, WidgetKind.Figure, WidgetKind.Figure], listed.Select(c => c.Widget));
+        Assert.Equal(recipe, listed[1].Figure);
+        Assert.Equal((null, null, null, null, null), (listed[1].Metric, listed[1].Grouping, listed[1].Kind, listed[1].Range, listed[1].Config));
+        Assert.Equal(new FigureRecipe(FigureMeasure.Odometer), listed[2].Figure); // no period stored for a point in time
+        Assert.Null(listed[0].Figure);
+        Assert.Equal(3, await repo.CountByUserAsync(car.Id, alice, default));
+    }
+
+    [Fact]
     public async Task Charts_AreStoredPerVehicle_VisibleToTheirCreatorAndWhenShared_AndRemovedWithTheVehicle()
     {
         await using var db = new TestDatabase();

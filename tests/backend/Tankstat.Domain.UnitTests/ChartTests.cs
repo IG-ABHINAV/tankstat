@@ -143,4 +143,39 @@ public class ChartTests
         Assert.Equal(("B", ChartMetric.FuelVolume, ChartKind.Line, true), (chart.Title, chart.Metric, chart.Kind, chart.IsShared));
         Assert.Equal((ChartTrend.None, true, false), (chart.Trend, chart.RunningTotal, chart.CompareYearEarlier));
     }
+
+    private static readonly FigureRecipe Spent = new(FigureMeasure.TotalSpend, new TrendPeriod(TrendWindowKind.ThisMonth), Sparkline: true, Template: "thisMonth");
+
+    [Fact]
+    public void ASavedKeyFigure_KeepsItsRecipe_WithNoChartColumns_AndAChartNoFigure()
+    {
+        var figure = VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), " Spent ", null, Spent, shared: true, DateTimeOffset.UtcNow);
+        var chart = VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), "Bars", Config(), false, DateTimeOffset.UtcNow);
+
+        Assert.Equal((WidgetKind.Figure, "Spent", Spent, null), (figure.Widget, figure.Title, figure.Figure, figure.Config));
+        Assert.Equal((null, null, null, null), (figure.Metric, figure.Grouping, figure.Kind, figure.Range));
+        Assert.Equal((WidgetKind.Chart, (FigureRecipe?)null, (FigureMeasure?)null), (chart.Widget, chart.Figure, chart.Measure));
+    }
+
+    [Fact]
+    public void ASavedWidget_IsExactlyOneKind_CheckedWithItsKeys_AndStaysItsKind()
+    {
+        var at = new DateTimeOffset(2026, 11, 3, 23, 30, 0, TimeSpan.FromHours(-5)); // the UTC day is the 4th
+        VehicleChart Make(ChartConfig? config, FigureRecipe? figure) => VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), "A", config, figure, false, at);
+
+        Assert.Equal("chart.invalid", Key(() => Make(null, null)));
+        Assert.Equal("chart.invalid", Key(() => Make(Config(), Spent)));
+        Assert.Equal("chart.invalid", Key(() => Make(null, Spent with { Template = "This-Month" })));
+        Assert.Equal("trend.invalid", Key(() => Make(null, new FigureRecipe(FigureMeasure.Odometer, TrendPeriod.TwelveWholeMonths))));
+        Assert.Equal("trend.sinceRange", Key(() => Make(null, Spent with { Period = new TrendPeriod(TrendWindowKind.Since, Since: new DateOnly(2026, 11, 5)) })));
+        Assert.NotNull(Make(null, Spent with { Period = new TrendPeriod(TrendWindowKind.Since, Since: new DateOnly(2026, 11, 4)) }).Period); // checked on the UTC day
+        Assert.Equal("chart.titleRequired", Key(() => VehicleChart.Create(Guid.NewGuid(), Guid.NewGuid(), " ", null, Spent, false, at)));
+
+        var figure = Make(null, Spent);
+        var chart = Make(Config(), null);
+        Assert.Equal("chart.invalid", Key(() => figure.Update("B", Config(), null, false, at)));
+        Assert.Equal("chart.invalid", Key(() => chart.Update("B", null, Spent, false, at)));
+        figure.Update("B", null, new FigureRecipe(FigureMeasure.Odometer), true, at);
+        Assert.Equal(("B", new FigureRecipe(FigureMeasure.Odometer), true), (figure.Title, figure.Figure, figure.IsShared));
+    }
 }

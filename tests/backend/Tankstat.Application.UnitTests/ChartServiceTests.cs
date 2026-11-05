@@ -201,4 +201,61 @@ public class ChartServiceTests
 
         Assert.Equal(("chart.categoryNeedsExpenses", "chart.limit"), (invalid.Key, limit.Key));
     }
+
+    // ---- saved key figures (#273) ---------------------------------------------------------------------------
+
+    private static readonly FigureRecipe Spent = new(FigureMeasure.TotalSpend, new TrendPeriod(TrendWindowKind.ThisMonth));
+
+    [Fact]
+    public async Task ASavedKeyFigure_IsCreatedAndChanged_ButListedAmongTheChartsNever()
+    {
+        var s = await Setup();
+        var chart = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Bars", Config(), false), default);
+        var figure = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Spent", null, false, Spent), default);
+
+        var updated = await s.W.ChartService.UpdateAsync(figure.Id, new ChartInput("Odometer", null, true, new FigureRecipe(FigureMeasure.Odometer)), default);
+        var wrongKind = await Assert.ThrowsAsync<DomainException>(() => s.W.ChartService.UpdateAsync(figure.Id, new ChartInput("x", Config(), true), default));
+
+        Assert.Equal(("Odometer", FigureMeasure.Odometer, true), (updated.Title, updated.Measure, updated.IsShared));
+        Assert.Equal("chart.invalid", wrongKind.Key);
+        Assert.Equal([chart.Id], (await s.W.ChartService.ListAsync(s.Car.Id, default)).Select(c => c.Id)); // an older app's list
+        Assert.Equal([chart.Id, figure.Id], (await s.W.ChartService.ListWidgetsAsync(s.Car.Id, default)).Select(c => c.Id));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheLimit_CountsSavedChartsAndKeyFiguresTogether(bool lastIsAFigure)
+    {
+        var s = await Setup();
+        for (var i = 0; i < 20; i++) await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput($"c{i}", Config(), false), default);
+        for (var i = 0; i < 10; i++) await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput($"f{i}", null, false, Spent), default);
+
+        var limit = await Assert.ThrowsAsync<DomainException>(() => s.W.ChartService.CreateAsync(s.Car.Id,
+            lastIsAFigure ? new ChartInput("one too many", null, false, Spent) : new ChartInput("one too many", Config(), false), default));
+
+        Assert.Equal("chart.limit", limit.Key);
+    }
+
+    [Fact]
+    public async Task ASavedKeyFigure_HasAChartsRights_SharingNeedsEdit_OnlyItsCreatorChangesIt()
+    {
+        var s = await Setup();
+        s.W.Grants.Items.Add(AccessGrant.Create(s.Alice.Id, s.Bob.Id, AccessLevel.View));
+        var alices = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Alice's", null, true, Spent), default);
+        s.W.Current.SignInAs(s.Bob);
+
+        var share = await Assert.ThrowsAsync<ForbiddenException>(() => s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Public", null, true, Spent), default));
+        var change = await Assert.ThrowsAsync<ForbiddenException>(() => s.W.ChartService.UpdateAsync(alices.Id, new ChartInput("Bob's now", null, true, Spent), default));
+        var delete = await Assert.ThrowsAsync<ForbiddenException>(() => s.W.ChartService.DeleteAsync(alices.Id, default));
+        var own = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Bob's", null, false, Spent), default);
+
+        Assert.Equal(("chart.needEditToShare", "chart.notYours", "chart.notYours"), (share.Key, change.Key, delete.Key));
+        Assert.False(ChartService.MayChange(alices, s.W.Current.Principal!));
+        Assert.True(ChartService.MayChange(own, s.W.Current.Principal!));
+        s.W.Current.SignInAs(s.Alice); // the owner: Delete access removes someone else's, never changes it
+        Assert.Equal("chart.notFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.W.ChartService.DeleteAsync(own.Id, default))).Key); // Bob's private one is not hers to see
+        await s.W.ChartService.DeleteAsync(alices.Id, default);
+        Assert.Equal([own.Id], s.W.Charts.Items.Select(c => c.Id));
+    }
 }

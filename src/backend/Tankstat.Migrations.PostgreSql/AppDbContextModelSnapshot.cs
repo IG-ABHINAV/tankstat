@@ -141,7 +141,6 @@ namespace Tankstat.Migrations.PostgreSql
                         .HasColumnType("uuid");
 
                     b.Property<string>("Grouping")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
@@ -149,17 +148,22 @@ namespace Tankstat.Migrations.PostgreSql
                         .HasColumnType("boolean");
 
                     b.Property<string>("Kind")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Measure")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)");
 
                     b.Property<string>("Metric")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("Period")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
                     b.Property<string>("Range")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
@@ -180,8 +184,15 @@ namespace Tankstat.Migrations.PostgreSql
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<bool>("Sparkline")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Template")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -197,6 +208,13 @@ namespace Tankstat.Migrations.PostgreSql
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Widget")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Chart");
 
                     b.HasKey("Id");
 

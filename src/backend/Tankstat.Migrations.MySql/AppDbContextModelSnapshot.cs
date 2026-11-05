@@ -138,7 +138,6 @@ namespace Tankstat.Migrations.MySql
                         .HasColumnType("char(36)");
 
                     b.Property<string>("Grouping")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
 
@@ -146,17 +145,22 @@ namespace Tankstat.Migrations.MySql
                         .HasColumnType("tinyint(1)");
 
                     b.Property<string>("Kind")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
+
+                    b.Property<string>("Measure")
+                        .HasMaxLength(48)
+                        .HasColumnType("varchar(48)");
 
                     b.Property<string>("Metric")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
 
+                    b.Property<string>("Period")
+                        .HasMaxLength(400)
+                        .HasColumnType("varchar(400)");
+
                     b.Property<string>("Range")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
 
@@ -177,8 +181,15 @@ namespace Tankstat.Migrations.MySql
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
 
+                    b.Property<bool>("Sparkline")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Template")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -194,6 +205,13 @@ namespace Tankstat.Migrations.MySql
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("char(36)");
+
+                    b.Property<string>("Widget")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)")
+                        .HasDefaultValue("Chart");
 
                     b.HasKey("Id");
 

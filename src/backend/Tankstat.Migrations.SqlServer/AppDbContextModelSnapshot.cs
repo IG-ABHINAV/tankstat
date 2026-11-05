@@ -141,7 +141,6 @@ namespace Tankstat.Migrations.SqlServer
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Grouping")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
@@ -149,17 +148,22 @@ namespace Tankstat.Migrations.SqlServer
                         .HasColumnType("bit");
 
                     b.Property<string>("Kind")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Measure")
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)");
 
                     b.Property<string>("Metric")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("Period")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
                     b.Property<string>("Range")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
@@ -180,8 +184,15 @@ namespace Tankstat.Migrations.SqlServer
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<bool>("Sparkline")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("bit");
+
+                    b.Property<string>("Template")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -197,6 +208,13 @@ namespace Tankstat.Migrations.SqlServer
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Widget")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Chart");
 
                     b.HasKey("Id");
 
