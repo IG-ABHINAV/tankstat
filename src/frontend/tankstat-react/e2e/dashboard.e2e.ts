@@ -15,7 +15,8 @@ const region = (page: Page) => page.getByRole('region', { name: 'Dashboard' })
 /** The charts' titles in the order the tiles come (the grid draws them in reading order). */
 const chartTitles = (page: Page) => region(page).getByRole('heading', { level: 2 }).allTextContents()
 const figureLabels = (page: Page) => region(page).locator('.MuiCard-root > div:first-child > p:first-child').allTextContents()
-const tile = (page: Page, id: string) => page.locator(`[data-tile="${id}"]`)
+/** A tile by its id, or a figure by the built-in figure it was made from (#274: a saved figure's id is a `tile:` of its own). */
+const tile = (page: Page, id: string) => page.locator(`[data-tile="${id}"], [data-template="${id}"]`)
 /** A tile's grip while arranging: the strip's second handle, after the tile's name, which is a handle too (#262). */
 const grip = (tile: Locator) => tile.locator('.tk-tile-handle').last()
 const menu = async (page: Page, name: string, entry: string) => {
@@ -24,13 +25,20 @@ const menu = async (page: Page, name: string, entry: string) => {
   await expect(page.getByRole('menu')).toBeHidden()
 }
 type Stored = { id: string; x: number; y: number; w: number; h: number; pinned: boolean }[]
+type Read = (Stored[number] & { recipe: { figure: { template: string | null } | null } | null })[]
+/**
+ * The dashboard as stored, each figure tile by the built-in figure it was made from (#274: saved as a `tile:` of its own with its recipe),
+ * every other tile by its id.
+ */
 const stored = async (page: Page, vehicleId: string) => {
-  const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: Stored } | null; personal: { tiles: Stored } | null } } }>(
+  const tiles = 'tiles { id x y w h pinned recipe { figure { template } } }'
+  const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: Read } | null; personal: { tiles: Read } | null } } }>(
     page,
-    'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id x y w h pinned } } personal { tiles { id x y w h pinned } } } } }',
+    `query($id: UUID!) { vehicle(id: $id) { dashboard { shared { ${tiles} } personal { ${tiles} } } } }`,
     { id: vehicleId },
   )
-  return data.vehicle.dashboard
+  const byTemplate = (layout: { tiles: Read } | null) => layout && { tiles: layout.tiles.map(({ recipe, ...t }) => ({ ...t, id: recipe?.figure?.template ?? t.id })) }
+  return { shared: byTemplate(data.vehicle.dashboard.shared), personal: byTemplate(data.vehicle.dashboard.personal) }
 }
 
 test('customizes the vehicle\'s dashboard by the tiles\' menus: a figure moved earlier and pinned, a chart taken off and one widened, kept after a reload', async ({ page, isMobile }) => {
@@ -435,12 +443,13 @@ test('sets trend figures\' periods from their chips on the edit strips, kept wit
   await expect(region(page).getByText('HUF 4,000 (20%) more than the same 8 weeks a year earlier')).toBeVisible()
   await expect(chips).toHaveCount(0)
   const periods = async () => {
-    const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown }[] } } } }>(
+    // A figure's period is in its recipe (#274), the tile by the built-in figure it was made from.
+    const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; recipe: { figure: { template: string | null; period: unknown } | null } | null }[] } } } }>(
       page,
-      'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind unit count since whole against } } } } } }',
+      'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id recipe { figure { template period { kind unit count since whole against } } } } } } } }',
       { id: vehicle.id },
     )
-    return Object.fromEntries(data.vehicle.dashboard.shared.tiles.map((t) => [t.id, t.period]))
+    return Object.fromEntries(data.vehicle.dashboard.shared.tiles.map((t) => [t.recipe?.figure?.template ?? t.id, t.recipe?.figure?.period]))
   }
   const read = await periods()
   expect(read.spendingTrend).toEqual({ kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' })
@@ -455,11 +464,12 @@ const figureHeights = async (page: Page, vehicleId: string) => Object.fromEntrie
 test('makes figures shorter: each shows what its rows hold, down to two rows, and nothing is cut', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
-  // Spent this month in two currencies: its value wraps in a desktop column, and is written one step smaller (#259).
+  // Spent this month in two currencies: the main one its value, the other its note at four rows (the owner's choice B, #274).
   await logRefueling(page, vehicle.id, { date: today() })
   await addExpense(page, vehicle.id, { date: today(), amount: 40, currency: 'EUR' })
   await openVehicle(page, vehicle.id)
   await expect(tile(page, 'thisMonth').getByText(/€40\.00/)).toBeVisible()
+  await expect(tile(page, 'thisMonth').locator('[data-kpi="value"]')).toHaveText(/^HUF\s[\d,]+$/)
   await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toBeVisible()
   await expect.poll(() => clippedFigures(page)).toEqual([])
 
@@ -489,9 +499,11 @@ test('makes figures shorter: each shows what its rows hold, down to two rows, an
   await pageLoaded(page)
   await expect(tile(page, 'odometer').getByText(/km$/)).toBeVisible()
   expect(await figureHeights(page, vehicle.id)).toEqual({ thisMonth: 3, consumption: 2, odometer: 2, lastFillUp: 4 })
-  // Two rows: the label and the value, no note. Three: the note, no sparkline. Four: everything.
+  // Two rows: the label and the value, no note. Three: the comparison (Spent this month's, against the month before, #274) or the note,
+  // no sparkline. Four: everything.
   await expect(tile(page, 'consumption').getByText('last 10 full fill-ups')).toBeHidden()
-  await expect(tile(page, 'thisMonth').getByText(/^Last month:/)).toBeVisible()
+  await expect(tile(page, 'thisMonth').getByText('nothing to compare with yet')).toBeVisible() // nothing spent last month
+  await expect(tile(page, 'thisMonth').getByText(/€40\.00/)).toBeHidden() // the note needs four rows beside a comparison
   await expect(tile(page, 'thisMonth').getByRole('img', { name: /^Spending in the last six months/ })).toHaveCount(0)
   await expect(tile(page, 'lastFillUp').getByText('1 fill-ups, 1 expenses')).toBeVisible()
   await expect.poll(() => clippedFigures(page)).toEqual([])
@@ -521,12 +533,14 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
 
   await arrange(page, vehicle.id, lowFigures(2))
   await openVehicle(page, vehicle.id)
-  // Two rows: the main currency and "+1", the others in its tooltip and its name.
-  const more = spentTile(page).getByRole('button', { name: /^and 6 more: / }) // the others in the server's order (most spent first)
-  await expect(more).toHaveText('+6')
-  for (const amount of [/€40\.00/, /\$50\.00/, /£30\.00/, /CHF\s20\.00/]) await expect(more).toHaveAccessibleName(amount)
-  await keyboardFocus(page, more)
-  await expect(page.getByRole('tooltip')).toHaveText(/^(?=.*€40\.00)(?=.*\$50\.00)(?=.*£30\.00)(?=.*CHF.20\.00)/)
+  // Two rows: the main currency alone (the others are its note, which two rows leave out: the owner's choice B, #274), and its comparison
+  // with the month before as its arrow alone, named by the sentence and the period.
+  await expect(spentTile(page).locator('[data-kpi="value"]')).toHaveText(/^HUF\s[\d,]+$/)
+  await expect(spentTile(page).getByRole('button', { name: /^and \d+ more/ })).toHaveCount(0)
+  const spentArrow = spentTile(page).locator('[data-kpi="value-row"] > button')
+  await expect(spentArrow).toHaveAccessibleName(/\(This month\)$/)
+  await keyboardFocus(page, spentArrow)
+  await expect(page.getByRole('tooltip')).toContainText('This month')
   await page.keyboard.press('Escape')
   await expect(page.getByRole('tooltip')).toHaveCount(0) // gone before the next one opens: MUI unmounts it a little later, reduced motion too
   // Outside Customize the label has the row to itself (no chip, #260): whole, no tab stop, in a desktop column too.
@@ -546,7 +560,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await expect(page.getByRole('tooltip')).toHaveCount(0)
   await expect(tile(page, 'costPerDistance').locator('[data-kpi="value-row"] > button')).toHaveAccessibleName(/than the 12 months before \(12 full months\)$/)
   await expect.poll(() => clippedFigures(page)).toEqual([])
-  await expectSoundLayout(page) // the "+1" and the arrows 44 px to a finger on a phone
+  await expectSoundLayout(page) // the arrows 44 px to a finger on a phone
 
   if (!isMobile) {
     // A one-column tile near the grid's narrowest four columns (four from a 900 px container; 904 here, since the browser's width has
@@ -680,4 +694,52 @@ test('keeps every tile as tall while arranging as in view mode, the strip naming
   await page.getByRole('button', { name: 'Cancel' }).click()
   await expect(chart.locator('.MuiCard-root').getByRole('heading', { level: 2, name: 'Monthly costs' })).toBeVisible()
   expect(Object.fromEntries(Object.entries(await tileHeights(page)).map(([id, h]) => [id, h.tile]))).toEqual(Object.fromEntries(Object.entries(view).map(([id, h]) => [id, h.tile])))
+})
+
+// ---- every key figure a recipe (#274) ------------------------------------------------------------------------------------
+
+/** Each figure tile's built-in figure and its card's text, in reading order, once every figure has its answer. */
+const figureTexts = async (page: Page) => {
+  await expect(region(page).getByText('Loading…')).toHaveCount(0)
+  return region(page).locator('[data-template]').evaluateAll((tiles) => tiles.map((t) => `${(t as HTMLElement).dataset.template}: ${(t as HTMLElement).innerText.replace(/\s+/g, ' ').trim()}`))
+}
+
+test('reads a dashboard arranged with old figure ids as recipes, the same before and after a save, which stores them as tiles of their own (#274)', async ({ page }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: today(), odometer: 1500 })
+  const ids = ['thisMonth', 'consumption', 'odometer', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend']
+  await arrange(page, vehicle.id, ids.map((id, i) => ({ id, x: i % 4, y: Math.floor(i / 4) * 4, w: 1, h: 4, pinned: false })))
+  await openVehicle(page, vehicle.id)
+
+  const before = await figureTexts(page)
+  expect(before.map((t) => t.split(':')[0])).toEqual(ids)
+  expect(before[0]).toMatch(/^thisMonth: Spent this month HUF/)
+  expect(before[2]).toMatch(/^odometer: Odometer 1,500 km/)
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+  await page.reload()
+  await pageLoaded(page)
+  await expect.poll(() => figureTexts(page)).toEqual(before)
+
+  // Stored as tiles of their own, each with its recipe and the built-in figure it came from.
+  const read = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown; recipe: { widget: string; figure: { template: string } } }[] } } } }>(
+    page,
+    'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind } recipe { widget figure { template } } } } } } }',
+    { id: vehicle.id },
+  )
+  const tiles = read.vehicle.dashboard.shared.tiles
+  expect(tiles.every((t) => /^tile:[0-9a-f-]{36}$/.test(t.id) && t.period === null && t.recipe.widget === 'FIGURE')).toBe(true)
+  expect(tiles.map((t) => t.recipe.figure.template)).toEqual(ids)
+
+  // In Hungarian, the default titles come from the templates, in the viewer's language.
+  await page.addInitScript(() => localStorage.setItem('tankstat.language', 'hu'))
+  await page.reload()
+  await pageLoaded(page)
+  // (The region is named in Hungarian now: the labels are read from the figure tiles.)
+  await expect.poll(async () => (await page.locator('[data-template] [data-kpi="label"]').allTextContents()).slice(0, 4)).toEqual(['Költés ebben a hónapban', 'Átlagos fogyasztás', 'Kilométeróra', 'Utolsó tankolás'])
+  await expect.poll(() => clippedFigures(page)).toEqual([])
+  await expectSoundLayout(page)
 })
