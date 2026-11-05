@@ -1,6 +1,7 @@
 import type { TileRecipeInput, WidgetKind } from '../gql/generated.ts'
+import { uuidV4 } from '../offline/uuid.ts'
 import { NEW_RECIPE, toConfig, type ChartRecipe } from './chartFormat.ts'
-import { canonicalRecipe, defaultPeriodOf, FIGURES, figureRows, isTemplate, templateRecipe, toRecipeInput, type FigureId, type FigureRecipe } from './figureRecipe.ts'
+import { canonicalRecipe, defaultPeriodOf, FIGURES, figureRows, isTemplate, templateOf, templateRecipe, toRecipeInput, type FigureId, type FigureRecipe } from './figureRecipe.ts'
 import { canonical, type TrendPeriod } from './trendPeriod.ts'
 
 export { FIGURES, type FigureId } from './figureRecipe.ts'
@@ -259,8 +260,8 @@ function withRecipe(t: Tile): Tile {
   return isTemplate(t.id) ? { ...t, recipe: figureTile(t.id, t.period), period: null } : { ...t, recipe: null }
 }
 
-/** The template of a figure tile's own recipe, for what Add widget still offers (#274). */
-const templateOfTile = (t: Tile) => (t.recipe?.widget === 'FIGURE' ? t.recipe.figure?.template : null)
+/** The template a figure tile's own recipe still is (`templateOf`), for what Add widget still offers (#274). */
+export const templateOfTile = (t: Pick<Tile, 'recipe'>): FigureId | null => (t.recipe?.widget === 'FIGURE' && t.recipe.figure ? templateOf(t.recipe.figure) : null)
 
 /**
  * The dashboard a stored arrangement gives, with nothing stored the Standard preset: today's dashboard. It merges the way a grid's columns
@@ -339,7 +340,8 @@ export const LAYOUT_VERSION = 2
 export const toLayout = (
   tiles: readonly Tile[],
   hidden: readonly { id: string }[],
-  newId: () => string = () => crypto.randomUUID(),
+  // Not `crypto.randomUUID()`: it only exists in secure contexts, and the app is also served over plain HTTP (`uuid.ts`).
+  newId: () => string = () => uuidV4(),
 ): { tiles: StoredTile[]; hidden: string[]; layoutVersion: number } => ({
   tiles: tiles.map((t) => {
     const base = { id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned }

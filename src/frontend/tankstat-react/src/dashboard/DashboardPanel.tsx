@@ -27,6 +27,7 @@ import {
 } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { useConnectivity } from '../offline/useConnectivity.ts'
+import { uuidV4 } from '../offline/uuid.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
@@ -52,6 +53,7 @@ import {
   resizeTile,
   resolveLayout,
   setTilePeriod,
+  templateOfTile,
   tileKey,
   toLayout,
   widgetOf,
@@ -210,7 +212,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     update((e) => ({ tiles: addTile(e.tiles, id, undefined, null, savedFigure), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
   /** A built-in figure added (#274): a tile of its own, its template's recipe over the period chosen for it (none: its default). */
   const addFigure = (template: FigureId, period: TrendPeriod | null = null) => {
-    const tile: Tile = { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe: figureTile(template, period) }
+    const tile: Tile = { id: tileKey(uuidV4()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe: figureTile(template, period) }
     update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, tile.recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
   }
 
@@ -249,7 +251,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const customizing = edit?.customizing ? widgetOf({ id: edit.customizing.tile }) : null
   const onDashboard = new Set(edit?.tiles.map((x) => x.id))
   // The built-in figures some tile was made from (#274): Add widget offers the others.
-  const made = new Set(edit?.tiles.map((x) => (x.recipe?.widget === 'FIGURE' ? x.recipe.figure?.template : null)))
+  const made = new Set(edit?.tiles.map(templateOfTile))
   const scopes: Scope[] = [...(dashboard?.canChangeShared ? (['shared'] as const) : []), ...(!signInOff ? (['personal'] as const) : [])]
   const stored = edit ? (edit.scope === 'shared' ? shared : personal) : null
 
