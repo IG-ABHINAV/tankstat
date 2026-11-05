@@ -1243,30 +1243,6 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
       state.chartRequests.push(variables as never)
       return HttpResponse.json({ data: { vehicleChartData: answer(variables.config as Record<string, unknown>) } })
     }),
-    graphql.mutation('SaveChart', ({ variables }) => {
-      record('SaveChart', variables)
-      if (state.failWith) return HttpResponse.json(gqlError(state.failWith.message, 'VALIDATION_FAILED', state.failWith.key, state.failWith.args))
-      const { id, title, shared, config } = variables.input as { id: string | null; title: string; shared: boolean; config: Record<string, unknown> }
-      const entry = fakeChart({
-        id: id ?? `c${state.nextId++}`,
-        title,
-        isShared: shared,
-        metric: String(config.metric),
-        grouping: String(config.grouping),
-        kind: String(config.kind),
-        range: String(config.range),
-        stacked: Boolean(config.stacked),
-        rangeFrom: (config.from as string) ?? null,
-        rangeTo: (config.to as string) ?? null,
-        trend: String(config.trend ?? 'NONE'),
-        runningTotal: Boolean(config.runningTotal),
-        compareYearEarlier: Boolean(config.compareYearEarlier),
-        secondMetric: (config.secondMetric as string) ?? null,
-        secondKind: (config.secondKind as string) ?? null,
-      })
-      state.charts = id ? state.charts.map((c) => (c.id === id ? entry : c)) : [...state.charts, entry]
-      return HttpResponse.json({ data: { saveVehicleChart: { id: entry.id } } })
-    }),
     graphql.mutation('SaveVehicleWidget', ({ variables }) => {
       record('SaveVehicleWidget', variables)
       if (state.failWith) return HttpResponse.json(gqlError(state.failWith.message, 'VALIDATION_FAILED', state.failWith.key, state.failWith.args))

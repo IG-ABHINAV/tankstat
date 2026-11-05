@@ -237,12 +237,6 @@ query ChartData($vehicleId: UUID!, $config: ChartConfigInput!) {
   }
 }
 
-mutation SaveChart($input: SaveChartInput!) {
-  saveVehicleChart(input: $input) {
-    id
-  }
-}
-
 mutation DeleteChart($id: UUID!) {
   deleteVehicleChart(id: $id)
 }

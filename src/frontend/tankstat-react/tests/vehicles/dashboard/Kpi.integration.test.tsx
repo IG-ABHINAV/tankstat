@@ -104,7 +104,7 @@ it('says the period with the arrow outside Customize, in its name and under the 
   await ui.keyboard('{Escape}')
 
   // While arranging the period is on the tile's strip (its chip): the arrow says the sentence alone.
-  rerender(<TileStripContext.Provider value={{ lead: null, actions: null }}>{card}</TileStripContext.Provider>)
+  rerender(<TileStripContext.Provider value={{ lead: null, actions: null, inset: 40 }}>{card}</TileStripContext.Provider>)
   expect(screen.getByRole('button', { name: 'HUF 335,400 (262%) more than the 12 months before' })).toBeInTheDocument()
 })
 

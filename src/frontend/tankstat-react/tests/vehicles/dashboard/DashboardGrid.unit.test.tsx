@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -94,27 +94,22 @@ describe('DashboardGrid while a tile is dragged or resized (#227, #240)', () => 
 })
 
 describe("a tile's menu", () => {
-  it("offers to customize only a ready-made chart, and does it once the menu has gone (#247)", async () => {
+  it('gives every tile its pencil and its bin beside the menu, the pencil named by the page and the bin taking it off (#275)', async () => {
     const ui = userEvent.setup()
     const onAction = vi.fn()
-    themed(<DashboardGrid tiles={[tile('preset:monthlyCosts', 0, 0), tile('chart:c1', 2, 0), tile('odometer', 0, 8, 1, 3)]} editing render={show} name={name} onAction={onAction} />)
+    themed(<DashboardGrid tiles={[tile('preset:monthlyCosts', 0, 0), tile('chart:c1', 2, 0), tile('odometer', 0, 8, 1, 3)]} editing render={show} name={name} editName={(t) => `Edit ${t.id}`} badge={(t) => (t.id === 'chart:c1' ? 'Saved' : null)} onAction={onAction} />)
 
-    for (const id of ['chart:c1', 'odometer']) {
-      await ui.click(screen.getByRole('button', { name: `Options for ${id}` }))
-      expect(await screen.findByRole('menuitem', { name: 'Remove' })).toBeInTheDocument()
-      expect(screen.queryByRole('menuitem', { name: 'Customize as my chart…' })).not.toBeInTheDocument()
-      await ui.keyboard('{Escape}')
-      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    }
-
+    await ui.click(screen.getByRole('button', { name: 'Edit chart:c1' }))
+    await ui.click(screen.getByRole('button', { name: 'Remove odometer from this dashboard' }))
+    expect(onAction.mock.calls.map(([t, a]) => `${t.id} ${a}`)).toEqual(['chart:c1 edit', 'odometer remove'])
+    // The tag under the strip (#275, the user's choice C) on the tile that has one, none on the others; no Customize in the menu any more.
+    expect(document.querySelector('[data-tile="chart:c1"] [data-badge]')).toHaveTextContent('Saved')
+    expect(document.querySelectorAll('[data-badge]')).toHaveLength(1)
     await ui.click(screen.getByRole('button', { name: 'Options for preset:monthlyCosts' }))
-    const items = await screen.findAllByRole('menuitem')
-    expect(items[0]).toHaveTextContent('Customize as my chart…') // first, the arranging under it
-    await ui.click(items[0])
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'preset:monthlyCosts' }), 'customize'))
-    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('menuitem', { name: 'Remove' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Customize/ })).not.toBeInTheDocument()
   })
+
 })
 
 describe('DashboardGrid while customizing: the strip is the tile\'s header (#262)', () => {
@@ -142,7 +137,7 @@ describe('DashboardGrid while customizing: the strip is the tile\'s header (#262
     expect((latest() as unknown as { rowHeight: number }).rowHeight).toBe(viewRows)
   })
 
-  it('names the tile in its strip, a chart as its heading, and puts the content\'s chip and buttons there in order', async () => {
+  it('names the tile in its strip, a chart as its heading, and puts the content\'s chip and buttons, the pencil and the bin there in order', async () => {
     themed(<DashboardGrid tiles={MIXED} editing render={content} name={name} />)
     const chart = document.querySelector<HTMLElement>('[data-tile="preset:monthlyCosts"]')!
     expect(await within(chart).findByRole('button', { name: 'preset:monthlyCosts chip' })).toBeInTheDocument()
@@ -151,6 +146,8 @@ describe('DashboardGrid while customizing: the strip is the tile\'s header (#262
     expect(within(chart).getAllByRole('button').map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual([
       'preset:monthlyCosts chip',
       'preset:monthlyCosts table',
+      'preset:monthlyCosts', // the pencil, named by the page (its name here, given no editName)
+      'Remove preset:monthlyCosts from this dashboard',
       'Options for preset:monthlyCosts',
     ])
     // A figure's name is text, not a heading; the content draws no header of its own while the strip is there.

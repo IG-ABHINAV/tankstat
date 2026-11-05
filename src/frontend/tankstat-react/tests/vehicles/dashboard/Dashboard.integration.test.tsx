@@ -197,30 +197,30 @@ it('says when there is no data to chart', async () => {
 
 // ---- saved charts ------------------------------------------------------------------------------------------
 
-it('lists the saved charts, marks shared ones, and offers Edit and Delete each by its own right, only while customizing', async () => {
+it('lists the saved widgets, marks shared ones, and while customizing gives every tile its pencil, Customize for someone else\'s, and its bin (#275)', async () => {
   const { ui } = setup(fakeVehicle(), [
     fakeChart({ id: 'c1', title: 'Fuel by month' }),
     fakeChart({ id: 'c2', title: 'Team chart', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') }),
-    // Someone else's shared chart seen with Delete access to the logs (#210): it can be removed, never changed.
-    fakeChart({ id: 'c3', title: 'Removable chart', isShared: true, canEdit: false, canDelete: true, createdBy: person('Bob') }),
   ])
 
   await screen.findByRole('heading', { name: 'Fuel by month' })
   const shared = within(await cardOf('Team chart'))
-  const removable = within(await cardOf('Removable chart'))
-
   expect(shared.getByText('Shared')).toBeInTheDocument()
   expect(shared.getByText('Bob')).toBeInTheDocument()
-  // Outside Customize a tile shows only its content: the table button, nothing that changes the chart.
-  expect(screen.queryByRole('button', { name: /^Edit the chart|^Delete the chart|^Copy / })).not.toBeInTheDocument()
+  // Outside Customize a tile shows only its content: the table button, nothing that changes it.
+  expect(screen.queryByRole('button', { name: /^(Edit|Customize|Remove) / })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Fuel by month as a table' })).toBeInTheDocument()
 
   await customize(ui)
-  expect(shared.queryByRole('button', { name: /^Edit the chart|^Delete the chart/ })).not.toBeInTheDocument()
-  expect(removable.queryByRole('button', { name: /^Edit the chart/ })).not.toBeInTheDocument()
-  expect(removable.getByRole('button', { name: 'Delete the chart Removable chart' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Edit the chart Fuel by month' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Delete the chart Fuel by month' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Edit Fuel by month' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Customize Team chart' })).toBeInTheDocument() // someone else's: copied as one's own
+  expect(screen.getByRole('button', { name: 'Edit Odometer' })).toBeInTheDocument() // every widget, a figure too
+  expect(screen.getByRole('button', { name: 'Remove Team chart from this dashboard' })).toBeInTheDocument()
+  // The badges under the strips (#275, the user's choice C).
+  const badge = (title: string) => screen.getByRole('heading', { name: title }).closest('[data-tile]')!.querySelector('[data-badge]')
+  expect(badge('Fuel by month')).toHaveTextContent('Saved')
+  expect(badge('Team chart')).toHaveTextContent('Saved · shared by Bob')
+  expect(badge('Monthly costs')).toHaveTextContent('In this arrangement')
 })
 
 it('invites the user to make charts when there are none', async () => {
@@ -229,17 +229,19 @@ it('invites the user to make charts when there are none', async () => {
   expect(await screen.findByText(/Compose your own charts/)).toBeInTheDocument()
 })
 
-it('deletes a chart after a confirmation, while customizing', async () => {
+it('takes a saved widget off this dashboard with its bin, never deleting it: it is still in Your widgets (#275)', async () => {
   const { ui, state } = setup()
   await screen.findByRole('heading', { name: 'My chart' })
   await customize(ui)
 
-  await ui.click(screen.getByRole('button', { name: 'Delete the chart My chart' }))
-  expect(state.calls.DeleteChart).toBeUndefined()
-  await ui.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete widget' }))
-
+  await ui.click(screen.getByRole('button', { name: 'Remove My chart from this dashboard' }))
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'My chart' })).not.toBeInTheDocument())
-  expect(state.calls.DeleteChart).toEqual([{ id: 'c1' }])
+  expect(said()).toHaveTextContent('My chart taken off.')
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(state.calls.DeleteChart).toBeUndefined()
+  await ui.click(screen.getByRole('button', { name: 'Add widget' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
+  expect(within(dialog).getByRole('button', { name: 'My chart A chart of your own' })).toBeInTheDocument()
 })
 
 it('makes a chart tile\'s strip its header while customizing: its one heading and its buttons there, the edit dialog\'s preview its own (#262)', async () => {
@@ -256,19 +258,19 @@ it('makes a chart tile\'s strip its header while customizing: its one heading an
     expect(titles[0].closest('.MuiCard-root')).toBeNull()
     return titles[0].closest('.tk-tile-handle')!.parentElement as HTMLElement
   })
-  // The table, edit and delete buttons in the strip, in its order, before the tile's menu; the card keeps the byline only.
+  // The table button, the pencil and the bin in the strip, in its order, before the tile's menu (#275); the card keeps the byline only.
   await within(strip).findByRole('button', { name: 'My chart as a table' })
   expect(within(strip).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual([
     'My chart as a table',
-    'Edit the chart My chart',
-    'Delete the chart My chart',
+    'Edit My chart',
+    'Remove My chart from this dashboard',
     'Options for My chart',
   ])
   expect(within(tile.querySelector<HTMLElement>('.MuiCard-root')!).queryAllByRole('button', { name: /My chart/ })).toEqual([])
 
   // The edit dialog, opened from the strip, draws its preview as a card of its own, with its own heading.
-  await ui.click(within(strip).getByRole('button', { name: 'Edit the chart My chart' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Edit chart' })
+  await ui.click(within(strip).getByRole('button', { name: 'Edit My chart' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit widget' })
   expect(within(dialog).getByRole('heading', { level: 2, name: 'My chart' }).closest('.MuiCard-root')).not.toBeNull()
   expect(within(tile).getAllByRole('heading', { level: 2, name: 'My chart', hidden: true })).toHaveLength(1)
 })
@@ -1036,15 +1038,23 @@ it('a widget saved on everyone\'s dashboard is shared, on one\'s own private; th
 })
 
 
-it('edits a saved chart, starting from its recipe', async () => {
+it('edits one\'s own saved widget from its recipe: everywhere at once, or only on this dashboard as a copy there, asked each time (#275)', async () => {
   const { ui, state } = setup(fakeVehicle(), [
-    fakeChart({ id: 'c1', title: 'Old', metric: 'FUEL_VOLUME', grouping: 'YEAR', kind: 'AREA', range: 'CUSTOM', rangeFrom: '2025-01-01', rangeTo: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true }),
-  ])
+    fakeChart({ id: 'c1', title: 'Old', metric: 'FUEL_VOLUME', grouping: 'YEAR', kind: 'AREA', range: 'CUSTOM', rangeFrom: '2025-01-01', rangeTo: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true, isShared: true }),
+  ], undefined, { signedIn: true, arranged: (s) => {
+    s.dashboard.shared = layout({ tiles: [fakeTile('chart:c1', 0, 0)] })
+    s.dashboard.personal = layout({ tiles: [fakeTile('chart:c1', 0, 0)] })
+  } })
   await screen.findByRole('heading', { name: 'Old' })
   await customize(ui)
+  expect(screen.getByRole('radio', { name: 'Just me' })).toBeChecked()
 
-  await ui.click(screen.getByRole('button', { name: 'Edit the chart Old' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Edit chart' })
+  await ui.click(screen.getByRole('button', { name: 'Edit Old' }))
+  let dialog = await screen.findByRole('dialog', { name: 'Edit widget' })
+  // Where else it is: the other arrangement the user sees holds it; shared, others may have it too.
+  expect(within(dialog).getByText("Also on Everyone's dashboard.")).toBeInTheDocument()
+  expect(within(dialog).getByText('Others may have it on their dashboards too.')).toBeInTheDocument()
+  expect(within(dialog).queryByRole('radio', { name: 'Key figure' })).not.toBeInTheDocument() // editing keeps its kind
   expect(within(dialog).getByLabelText('Title')).toHaveValue('Old')
   expect(screen.getByRole('combobox', { name: 'What to measure' })).toHaveTextContent('Fuel volume')
   expect(radio('Group by', 'Year')).toBeChecked()
@@ -1054,11 +1064,24 @@ it('edits a saved chart, starting from its recipe', async () => {
   expect(dateValue(await findDateField('From', dialog))).toBe('2025-01-01')
   await ui.clear(within(dialog).getByLabelText('Title'))
   await ui.type(within(dialog).getByLabelText('Title'), 'New name')
-  await ui.click(within(dialog).getByRole('button', { name: 'Save chart' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Change it everywhere' }))
 
-  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
-  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: 'c1', title: 'New name', config: { range: 'CUSTOM', from: '2025-01-01', to: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true } } })
+  // Everywhere: the saved widget itself, at once, keeping its sharing.
+  await waitFor(() => expect(state.calls.SaveVehicleWidget).toHaveLength(1))
+  expect(savedWidget(state)).toMatchObject({ id: 'c1', title: 'New name', shared: true, chart: { range: 'CUSTOM', from: '2025-01-01', to: '2025-12-31', trend: 'LINEAR', compareYearEarlier: true } })
   expect(await screen.findByRole('heading', { name: 'New name' })).toBeInTheDocument()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit New name' })))
+
+  // Only on this dashboard: a copy in this arrangement takes its place; nothing saved until Save dashboard.
+  await ui.click(screen.getByRole('button', { name: 'Edit New name' }))
+  dialog = await screen.findByRole('dialog', { name: 'Edit widget' })
+  await pick(ui, 'Chart type', 'Bars')
+  await ui.click(within(dialog).getByRole('button', { name: 'Only on this dashboard' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(state.calls.SaveVehicleWidget).toHaveLength(1)
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  expect(savedTiles(state)).toEqual([expect.objectContaining({ id: expect.stringMatching(/^tile:/), recipe: expect.objectContaining({ widget: 'CHART', title: 'New name', chart: expect.objectContaining({ kind: 'BAR' }) }) })])
 })
 
 it('shows the rule from the server when saving fails, and keeps the dialog open', async () => {
@@ -1093,100 +1116,60 @@ it('blocks a chart without a title', async () => {
 // 30 s the accessibility files give theirs, and a slow runner names the element rather than a timeout.
 // ---- a ready-made chart customized from its tile (#247) --------------------------------------------------------------------
 
-/** The Usage preset applied while customizing: its charts are ready-made tiles. */
-const usagePreset = async (ui: ReturnType<typeof userEvent.setup>) => {
+
+it('edits a ready-made tile in place with its pencil: changed in the arrangement, or saved to one\'s widgets and pointed at (#275, #247)', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
   await screen.findByRole('heading', { name: 'Monthly costs' })
   await customize(ui)
-  await choose(ui, 'Start from a preset', 'Usage')
-  await screen.findByRole('heading', { name: 'Consumption trend' })
-}
-const saveAsMine = () => within(screen.getByRole('dialog', { name: 'Customize chart' })).getByRole('button', { name: 'Save as my chart' })
 
-it("customizes a ready-made chart from its tile's menu into a chart of one's own, in the tile's place, size and pin (#247)", async () => {
-  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
-  await usagePreset(ui)
-  await tileMenu(ui, 'Consumption trend', 'Pin')
-
-  // Only a ready-made chart's menu offers it.
-  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-  await ui.click(screen.getByRole('button', { name: 'Options for Odometer' }))
-  expect(await screen.findByRole('menuitem', { name: 'Move later' })).toBeInTheDocument()
-  expect(screen.queryByRole('menuitem', { name: 'Customize as my chart…' })).not.toBeInTheDocument()
-  await ui.keyboard('{Escape}')
-
-  await tileMenu(ui, 'Consumption trend', 'Customize as my chart…')
-  const dialog = await screen.findByRole('dialog', { name: 'Customize chart' })
-  expect(dialog).toHaveAccessibleDescription(/Consumption trend is a ready-made chart\. Saved, it becomes a chart of your own and takes this tile's place and size/)
-  // Its fields open, from the ready-made chart's title and recipe.
-  expect(within(dialog).getByLabelText('Title')).toHaveValue('Consumption trend')
-  expect(screen.getByRole('combobox', { name: 'What to measure' })).toHaveTextContent('Average consumption')
-  expect(radio('Group by', 'Quarter')).toBeChecked()
-  expect(radio('Period', 'All time')).toBeChecked()
-  expect(radio('Trend line', 'Linear trend')).toBeChecked()
-  // Everyone's dashboard: shared, and it must be.
-  expect(within(dialog).getByRole('switch', { name: /Share with everyone/ })).toBeChecked()
-  expect(within(dialog).getByRole('switch', { name: /Share with everyone/ })).toBeDisabled()
-  // Nothing differs yet: Save is off and says why; a change turns it on, undoing it off again.
-  expect(saveAsMine()).toBeDisabled()
-  expect(within(dialog).getByText('Change something to save it as your own chart.')).toBeInTheDocument()
+  await ui.click(screen.getByRole('button', { name: 'Edit Consumption' }))
+  let dialog = await screen.findByRole('dialog', { name: 'Edit widget' })
+  expect(within(dialog).getByText('In this arrangement only.')).toBeInTheDocument()
+  expect(within(dialog).getByText('Left empty: “Consumption”')).toBeInTheDocument()
   await pick(ui, 'Group by', 'Year')
-  expect(saveAsMine()).toBeEnabled()
-  expect(within(dialog).queryByText('Change something to save it as your own chart.')).not.toBeInTheDocument()
-  await pick(ui, 'Group by', 'Quarter')
-  expect(saveAsMine()).toBeDisabled()
-  await pick(ui, 'Group by', 'Year')
-  await ui.clear(within(dialog).getByLabelText('Title'))
   await ui.type(within(dialog).getByLabelText('Title'), 'Consumption by year')
-  await ui.click(saveAsMine())
-
-  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
-  expect(state.calls.SaveChart![0]).toMatchObject({ input: { id: null, title: 'Consumption by year', shared: true, config: { metric: 'AVERAGE_CONSUMPTION', grouping: 'YEAR', range: 'ALL', trend: 'LINEAR' } } })
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  expect(said()).toHaveTextContent('Consumption trend is now your own chart, Consumption by year, in the same place.')
-  // The focus is on the new tile's menu button: the one that opened the dialog went with the ready-made tile.
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Consumption by year' })))
-  expect(await chartTitles()).toEqual(['Distance, this year and last', 'Consumption by year', 'Distance and consumption', 'Distance per month'])
-  expect(within(await cardOf('Consumption by year')).getByRole('button', { name: 'Edit the chart Consumption by year' })).toBeInTheDocument()
+  expect(said()).toHaveTextContent('Consumption changed.')
+  expect(await screen.findByRole('heading', { name: 'Consumption by year' })).toBeInTheDocument()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Consumption by year' })))
 
-  // The ready-made one is off the dashboard now, so Add widget offers it to add as it is again.
-  await ui.click(screen.getByRole('button', { name: 'Add widget' }))
-  const adding = await screen.findByRole('dialog', { name: 'Add widget' })
-  expect(within(adding).getByRole('button', { name: 'Consumption trend Chart' })).toBeInTheDocument()
-  await ui.keyboard('{Escape}')
+  await ui.click(screen.getByRole('button', { name: 'Edit Fuel price' }))
+  dialog = await screen.findByRole('dialog', { name: 'Edit widget' })
+  await ui.click(within(dialog).getByRole('checkbox', { name: 'Also save to my widgets' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(state.calls.SaveVehicleWidget).toHaveLength(1))
+  expect(savedWidget(state)).toMatchObject({ title: 'Fuel price', shared: true, chart: { metric: 'AVERAGE_PRICE_PER_UNIT' } }) // on Everyone's: shared
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
-  const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; pinned: boolean }[] } }).input.tiles
-  expect(tiles).toContainEqual(expect.objectContaining({ id: expect.stringMatching(/^chart:/), x: 2, y: 4, w: 2, h: 8, pinned: true }))
-  expect(tiles.map((x) => x.id)).not.toContain('preset:consumptionTrend')
+  const tiles = savedTiles(state)
+  // In the ready-made tiles' places: the changed one a tile of its own (no template now), the saved one pointing at it.
+  expect(tiles).toContainEqual(expect.objectContaining({ id: expect.stringMatching(/^tile:/), x: 2, y: 4, recipe: expect.objectContaining({ title: 'Consumption by year', template: null, chart: expect.objectContaining({ grouping: 'YEAR' }) }) }))
+  expect(tiles).toContainEqual(expect.objectContaining({ id: 'chart:c400', x: 0, y: 12, w: 2, h: 8 }))
 })
 
-it("customizes a ready-made chart from its tile on one's own dashboard into a private chart; Cancel leaves the tile and its focus (#247)", async () => {
-  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
-  await screen.findByRole('heading', { name: 'Monthly costs' })
+it('customizes someone else\'s saved widget into one\'s own in its place, unchanged too; Cancel leaves the tile and its focus (#275)', async () => {
+  const bobs = fakeChart({ id: 'c2', title: 'Team chart', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })
+  const { ui, state } = setup(fakeVehicle(), [bobs], undefined, { signedIn: true, arranged: (s) => (s.dashboard.personal = layout({ tiles: [fakeTile('chart:c2', 0, 0)] })) })
+  await screen.findByRole('heading', { name: 'Team chart' })
   await customize(ui)
-  await ui.click(screen.getByRole('radio', { name: 'Just me' }))
 
-  await tileMenu(ui, 'Fuel price', 'Customize as my chart…')
-  let dialog = await screen.findByRole('dialog', { name: 'Customize chart' })
+  await ui.click(screen.getByRole('button', { name: 'Customize Team chart' }))
+  let dialog = await screen.findByRole('dialog', { name: 'Customize widget' })
   await ui.click(within(dialog).getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Fuel price' })))
-  expect(state.calls.SaveChart).toBeUndefined()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Customize Team chart' })))
 
-  await tileMenu(ui, 'Fuel price', 'Customize as my chart…')
-  dialog = await screen.findByRole('dialog', { name: 'Customize chart' })
-  const share = within(dialog).getByRole('switch', { name: /Share with everyone/ })
-  expect(share).not.toBeChecked()
-  expect(share).toBeEnabled()
-  await pick(ui, 'Period', 'This year')
-  await ui.click(saveAsMine())
-  await waitFor(() => expect(state.calls.SaveChart).toHaveLength(1))
-  expect(state.calls.SaveChart![0]).toMatchObject({ input: { title: 'Fuel price', shared: false, config: { metric: 'AVERAGE_PRICE_PER_UNIT', range: 'THIS_YEAR' } } })
-  await waitFor(() => expect(said()).toHaveTextContent('Fuel price is now your own chart, in the same place.'))
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Options for Fuel price' })))
-  expect(within(await cardOf('Fuel price')).getByRole('button', { name: 'Edit the chart Fuel price' })).toBeInTheDocument()
+  await ui.click(screen.getByRole('button', { name: 'Customize Team chart' }))
+  dialog = await screen.findByRole('dialog', { name: 'Customize widget' })
+  expect(within(dialog).getByText("Saved as your own, it takes this tile's place in this arrangement.")).toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save as my own' })) // unchanged: copied as it is (no change needed)
+  await waitFor(() => expect(state.calls.SaveVehicleWidget).toHaveLength(1))
+  expect(savedWidget(state)).toMatchObject({ title: 'Team chart', shared: false }) // on one's own dashboard: private
+  await waitFor(() => expect(said()).toHaveTextContent('Team chart is now your own, in the same place.'))
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Team chart' })))
 })
 
 const a11ySetup = () => setup(fakeVehicle(), [fakeChart(), fakeChart({ id: 'c2', title: 'Shared one', isShared: true, canEdit: false, canDelete: false, createdBy: person('Bob') })])
@@ -1226,11 +1209,11 @@ it('has no accessibility violations: the Add widget dialog, its list, a key figu
   await check(document.body)
 })
 
-it("has no accessibility violations: a ready-made chart's Customize dialog, opened from its tile's menu (#247)", { timeout: 30_000 }, async () => {
+it("has no accessibility violations: the edit dialog, opened from a tile's pencil (#275)", { timeout: 30_000 }, async () => {
   const { ui } = a11ySetup()
   await screen.findByRole('heading', { name: 'Shared one' })
   await customize(ui)
-  await tileMenu(ui, 'Monthly costs', 'Customize as my chart…')
-  await screen.findByRole('dialog', { name: 'Customize chart' })
+  await ui.click(screen.getByRole('button', { name: 'Edit Spent this month' }))
+  await screen.findByRole('dialog', { name: 'Edit widget' })
   await check(document.body)
 })
