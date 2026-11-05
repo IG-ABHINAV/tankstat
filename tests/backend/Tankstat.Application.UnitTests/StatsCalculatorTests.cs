@@ -644,4 +644,129 @@ public class StatsCalculatorTests
         Assert.Equal(new ValueChange(500m, 0m), Trend(month, data, figure: TrendFigure.Distance).Distance); // September holds one reading and none before it: 0, as the charts count
         Assert.Null(Trend(month, Data([Fill("2026-10-20", 40, 20000, 11000)], readings: []), figure: TrendFigure.Distance).Distance);
     }
+
+    // ---- a key figure: any measure over a period, compared or not (#272) ---------------------------------------------
+
+    private static FigureData Figure(FigureMeasure measure, TrendPeriod? period, StatsData data, string today = "2026-11-03", string? main = "HUF") =>
+        StatsCalculator.Figure(data, measure, period, DateOnly.Parse(today), main);
+
+    private static readonly TrendPeriod October = new(TrendWindowKind.Last, TrendUnit.Months, 1, Whole: true); // against September, on 3 November
+
+    [Fact]
+    public void Figure_Totals_AddUpOverEachWindow_FuelExpensesVolumeAndFillUps()
+    {
+        var data = Data([Fill("2026-09-10", 30, 18000, 1000), Fill("2026-10-05", 40, 24000, 1500), Fill("2026-10-25", 35, 21000, 2000)],
+            [Cost("2026-09-20", 5000), Cost("2026-10-12", 7000)]);
+
+        Assert.Equal([new CurrencyChange("HUF", 52000m, 23000m)], Figure(FigureMeasure.TotalSpend, October, data).Currencies);
+        Assert.Equal([new CurrencyChange("HUF", 45000m, 18000m)], Figure(FigureMeasure.FuelCost, October, data).Currencies);
+        Assert.Equal([new CurrencyChange("HUF", 7000m, 5000m)], Figure(FigureMeasure.ExpenseCost, October, data).Currencies);
+        var volume = Figure(FigureMeasure.FuelVolume, October, data);
+        Assert.Equal((new ValueChange(75m, 30m), ChartUnit.Volume), (volume.Value, volume.Unit));
+        Assert.Equal(new ValueChange(2m, 1m), Figure(FigureMeasure.FillUps, October, data).Value);
+        Assert.Equal((new TrendWindow(DateOnly.Parse("2026-10-01"), DateOnly.Parse("2026-10-31"), 2), new TrendWindow(DateOnly.Parse("2026-09-01"), DateOnly.Parse("2026-09-30"), 1)),
+            (volume.Recent, volume.Earlier));
+    }
+
+    [Fact]
+    public void Figure_Money_IsPerCurrency_TheMainOneFirstAlsoWhenEmpty_ThenByWhatWasSpentLately()
+    {
+        var data = Data([Fill("2026-10-05", 40, 60, 1500, currency: "EUR"), Fill("2026-10-08", 40, 90, 1600, currency: "CHF")], [Cost("2026-09-20", 20, currency: "EUR")]);
+
+        Assert.Equal([new CurrencyChange("HUF", 0m, 0m), new CurrencyChange("CHF", 90m, 0m), new CurrencyChange("EUR", 60m, 20m)], Figure(FigureMeasure.TotalSpend, October, data).Currencies);
+    }
+
+    [Fact]
+    public void Figure_PerDistance_IsEachWindowsMoneyOverItsDistance_NullWhereNothingWasDriven()
+    {
+        var readings = new[] { new OdometerPoint(DateOnly.Parse("2026-09-01"), 10000), new OdometerPoint(DateOnly.Parse("2026-10-01"), 10500), new OdometerPoint(DateOnly.Parse("2026-10-31"), 11000) };
+        var data = Data([Fill("2026-09-15", 40, 20000, 10200), Fill("2026-10-15", 40, 24000, 10800)], [Cost("2026-10-20", 6000)], readings);
+
+        // October: 30 000 (fuel and the expense) over 1 000 km (from 10 000, the last reading before it, to 11 000); September: 20 000 over
+        // its one reading with none before it, so nothing driven.
+        Assert.Equal([new CurrencyChange("HUF", 3000m, null)], Figure(FigureMeasure.CostPerDistance, October, data).Currencies);
+        Assert.Equal([new CurrencyChange("HUF", 2400m, null)], Figure(FigureMeasure.FuelCostPerDistance, October, data).Currencies);
+        Assert.Equal(ChartUnit.CostPerDistance, Figure(FigureMeasure.CostPerDistance, October, data).Unit);
+    }
+
+    [Fact]
+    public void Figure_Averages_TheRecentFromOneFillUp_TheEarlierOnlyFromThree()
+    {
+        // October: one fill-up (60 000 for 40 L, 5 off at the pump); September: two, which is fewer than three to compare with.
+        var data = Data([Fill("2026-09-05", 40, 40000, 1000, consumption: 6m), Fill("2026-09-25", 40, 44000, 1500, consumption: 7m), Fill("2026-10-15", 40, 60000, 2000, consumption: 8m, discount: 400)]);
+
+        Assert.Equal(new ValueChange(8m, null), Figure(FigureMeasure.AverageConsumption, October, data).Value);
+        Assert.Equal([new CurrencyChange("HUF", 1500m, null)], Figure(FigureMeasure.AveragePricePerUnit, October, data).Currencies);
+        Assert.Equal([new CurrencyChange("HUF", 1510m, null)], Figure(FigureMeasure.AveragePricePerUnitBeforeDiscount, October, data).Currencies);
+        // Three before: compared (the price over the litres of all three, 128 000 over 120 L).
+        var three = Data([.. data.Fuel, Fill("2026-09-15", 40, 44000, 1200, consumption: 8m)]);
+        Assert.Equal(new ValueChange(8m, 7m), Figure(FigureMeasure.AverageConsumption, October, three).Value);
+        Assert.Equal([new CurrencyChange("HUF", 1500m, 1066.667m)], Figure(FigureMeasure.AveragePricePerUnit, October, three).Currencies);
+        Assert.Equal(ChartUnit.PricePerVolume, Figure(FigureMeasure.AveragePricePerUnit, October, three).Unit);
+    }
+
+    [Fact]
+    public void Figure_AWindowOfFillUps_IsEveryFillUp_ExceptForTheConsumption_WhichCountsThoseWithOne()
+    {
+        // The latest fill-up has no stored consumption (the first after a missed one): it counts for money, not for the consumption.
+        var data = Data([Fill("2026-10-01", 30, 100, 1000, consumption: 5m), Fill("2026-10-10", 30, 200, 1200, consumption: 6m), Fill("2026-10-20", 30, 300, 1400)]);
+        var lastTwo = new TrendPeriod(TrendWindowKind.Last, TrendUnit.FillUps, 2);
+
+        var spending = Figure(FigureMeasure.TotalSpend, lastTwo, data);
+        Assert.Equal((DateOnly.Parse("2026-10-10"), 2), (spending.Recent!.Start, spending.Recent.FillUps)); // the 10th and the 20th
+        Assert.Equal([new CurrencyChange("HUF", 500m, 100m)], spending.Currencies);
+        var consumption = Figure(FigureMeasure.AverageConsumption, lastTwo, data);
+        Assert.Equal((DateOnly.Parse("2026-10-01"), 2), (consumption.Recent!.Start, consumption.Recent.FillUps)); // the 1st and the 10th
+        Assert.Equal(new ValueChange(5.5m, null), consumption.Value); // none before them
+        Assert.Equal(new ValueChange(2m, 1m), Figure(FigureMeasure.FillUps, lastTwo, data).Value); // the fill-ups themselves
+    }
+
+    [Fact]
+    public void Figure_WithoutAComparison_HasNoEarlierWindow_AndNothingEarlier_TheMainCurrencyStillFirst()
+    {
+        var data = Data([Fill("2026-10-05", 40, 24000, 1500), Fill("2026-11-02", 40, 25000, 2000)], [Cost("2026-11-01", 30, currency: "EUR")]);
+        var thisMonth = new TrendPeriod(TrendWindowKind.ThisMonth, Against: TrendComparison.None);
+
+        var spent = Figure(FigureMeasure.TotalSpend, thisMonth, data);
+        Assert.Null(spent.Earlier);
+        Assert.Equal(new TrendWindow(DateOnly.Parse("2026-11-01"), DateOnly.Parse("2026-11-03"), 1), spent.Recent);
+        Assert.Equal([new CurrencyChange("HUF", 25000m, null), new CurrencyChange("EUR", 30m, null)], spent.Currencies);
+        Assert.Equal(new ValueChange(1m, null), Figure(FigureMeasure.FillUps, thisMonth, data).Value);
+        Assert.Equal([new CurrencyChange("HUF", 0m, null)], Figure(FigureMeasure.TotalSpend, thisMonth, Data(), main: "HUF").Currencies); // nothing at all: the main one
+        Assert.Null(Figure(FigureMeasure.TotalSpend, new TrendPeriod(TrendWindowKind.Last, TrendUnit.FillUps, 1, Against: TrendComparison.None), data).Earlier);
+    }
+
+    [Fact]
+    public void Figure_ThisMonth_AgainstTheWholeMonthBefore_AsSpentThisMonthWillAsk()
+    {
+        var data = Data([Fill("2026-10-05", 40, 24000, 1500), Fill("2026-10-28", 40, 26000, 1800), Fill("2026-11-02", 40, 25000, 2000)]);
+
+        var spent = Figure(FigureMeasure.TotalSpend, new TrendPeriod(TrendWindowKind.ThisMonth), data);
+        Assert.Equal((DateOnly.Parse("2026-10-01"), DateOnly.Parse("2026-10-31")), (spent.Earlier!.Start, spent.Earlier.End));
+        Assert.Equal([new CurrencyChange("HUF", 25000m, 50000m)], spent.Currencies);
+    }
+
+    [Fact]
+    public void Figure_TheOdometerAndTheLastFillUp_AreAPointInTime_AsTheSummaryHasThem()
+    {
+        var data = Data([Fill("2026-09-10", 30, 100, 12000), Fill("2026-10-05", 40, 200, 11800)], [Cost("2026-10-20", 50)]);
+
+        var odometer = Figure(FigureMeasure.Odometer, null, data);
+        Assert.Equal((null, null, ChartUnit.Distance, new ValueChange(12000m, null)), (odometer.Recent, odometer.Earlier, odometer.Unit, odometer.Value)); // the highest reading
+        Assert.Null(Figure(FigureMeasure.Odometer, null, Data()).Value);
+        var last = Figure(FigureMeasure.LastFillUp, null, data);
+        Assert.Equal((new LastFillUpFigure(DateOnly.Parse("2026-10-05"), 2, 1), (ChartUnit?)null), (last.LastFillUp, last.Unit));
+        Assert.Equal(new LastFillUpFigure(null, 0, 0), Figure(FigureMeasure.LastFillUp, null, Data()).LastFillUp);
+    }
+
+    [Fact]
+    public void Figure_APeriodWithAPointInTime_OrNoneWithAMeasureOverOne_IsRefused()
+    {
+        string Key(FigureMeasure measure, TrendPeriod? period) => Assert.Throws<Tankstat.Domain.DomainException>(() => Figure(measure, period, Data())).Key;
+
+        Assert.Equal("trend.invalid", Key(FigureMeasure.Odometer, October));
+        Assert.Equal("trend.invalid", Key(FigureMeasure.LastFillUp, October));
+        Assert.Equal("trend.invalid", Key(FigureMeasure.TotalSpend, null));
+        Assert.Equal("trend.invalid", Key((FigureMeasure)99, October));
+    }
 }
