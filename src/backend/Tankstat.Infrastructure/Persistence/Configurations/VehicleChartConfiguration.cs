@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Tankstat.Domain.Charts;
@@ -21,6 +22,16 @@ internal sealed class VehicleChartConfiguration : IEntityTypeConfiguration<Vehic
         b.Property(c => c.SecondMetric).HasConversion<string>().HasMaxLength(32);
         b.Property(c => c.SecondKind).HasConversion<string>().HasMaxLength(32);
         b.Ignore(c => c.Config);
+
+        // A saved key figure (#273): every row from before is a chart; a figure's columns are null on a chart and the chart's on a figure.
+        b.Property(c => c.Widget).HasConversion<string>().HasMaxLength(16).HasDefaultValue(WidgetKind.Chart);
+        b.Property(c => c.Measure).HasConversion<string>().HasMaxLength(48);
+        b.Property(c => c.Period).HasConversion(
+                v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => v == null ? null : JsonSerializer.Deserialize<TrendPeriod>(v, (JsonSerializerOptions?)null))
+            .HasMaxLength(400);
+        b.Property(c => c.Template).HasMaxLength(DashboardLayoutValues.MaxIdLength);
+        b.Ignore(c => c.Figure);
         b.HasOne<Vehicle>().WithMany().HasForeignKey(c => c.VehicleId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(c => new { c.VehicleId, c.CreatedById });
 

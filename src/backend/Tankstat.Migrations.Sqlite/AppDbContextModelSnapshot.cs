@@ -136,7 +136,6 @@ namespace Tankstat.Migrations.Sqlite
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Grouping")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
@@ -144,17 +143,22 @@ namespace Tankstat.Migrations.Sqlite
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Kind")
-                        .IsRequired()
                         .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Measure")
+                        .HasMaxLength(48)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Metric")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Period")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Range")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
@@ -175,8 +179,15 @@ namespace Tankstat.Migrations.Sqlite
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("Sparkline")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("Stacked")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Template")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -192,6 +203,13 @@ namespace Tankstat.Migrations.Sqlite
 
                     b.Property<Guid>("VehicleId")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("Widget")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Chart");
 
                     b.HasKey("Id");
 

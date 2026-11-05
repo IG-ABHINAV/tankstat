@@ -9,17 +9,24 @@ using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Application.Stats;
 
-public sealed record ChartInput(string Title, ChartConfig Config, bool Shared);
+/// <summary>A saved widget's title, sharing and recipe (#273): a chart's <paramref name="Config"/> or a key figure's <paramref name="Figure"/>, exactly one.</summary>
+public sealed record ChartInput(string Title, ChartConfig? Config, bool Shared, FigureRecipe? Figure = null);
 
 /// <summary>
-/// The charts users compose for a vehicle's dashboard. Anyone who can view the vehicle's logs may make charts for themselves; sharing a chart
-/// with everyone who sees the vehicle needs Edit access to its logs. A chart can be changed by its creator (and deleted by anyone with Delete access).
+/// The saved widgets (charts and, since #273, key figures) users compose for a vehicle's dashboard. Anyone who can view the vehicle's logs
+/// may make them for themselves; sharing one with everyone who sees the vehicle needs Edit access to its logs. A saved widget can be changed
+/// by its creator (and deleted by anyone with Delete access). The limit counts both kinds together.
 /// </summary>
 public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepository charts, AccessService access, TimeProvider clock, ILogger<ChartService> logger)
 {
     public const int MaxPerUserAndVehicle = 30;
 
-    public async Task<IReadOnlyList<VehicleChart>> ListAsync(Guid vehicleId, CancellationToken ct)
+    /// <summary>The vehicle's saved charts the user sees, oldest first: charts only, so an older app never meets a key figure (#273).</summary>
+    public async Task<IReadOnlyList<VehicleChart>> ListAsync(Guid vehicleId, CancellationToken ct) =>
+        (await ListWidgetsAsync(vehicleId, ct)).Where(c => c.Widget == WidgetKind.Chart).ToList();
+
+    /// <summary>The vehicle's saved widgets of both kinds the user sees (shared, plus their own), oldest first.</summary>
+    public async Task<IReadOnlyList<VehicleChart>> ListWidgetsAsync(Guid vehicleId, CancellationToken ct)
     {
         var user = await access.RequirePrincipalAsync(ct);
         var (vehicle, _) = await VisibleAsync(vehicleId, ct, throwIfMissing: false);
@@ -32,9 +39,9 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
         var (_, level) = await VisibleAsync(vehicleId, ct);
         RequireShareRight(input.Shared, level);
         if (await charts.CountByUserAsync(vehicleId, user.Id, ct) >= MaxPerUserAndVehicle)
-            throw new DomainException("chart.limit", $"You can have at most {MaxPerUserAndVehicle} charts for a vehicle.", new { Max = MaxPerUserAndVehicle });
+            throw new DomainException("chart.limit", $"You can have at most {MaxPerUserAndVehicle} saved widgets for a vehicle.", new { Max = MaxPerUserAndVehicle });
 
-        var chart = VehicleChart.Create(vehicleId, user.Id, input.Title, input.Config, input.Shared, clock.GetUtcNow());
+        var chart = VehicleChart.Create(vehicleId, user.Id, input.Title, input.Config, input.Figure, input.Shared, clock.GetUtcNow());
         await charts.AddAsync(chart, ct);
         logger.LogDebug("User {UserId} created chart {ChartId} for vehicle {VehicleId}", user.Id, chart.Id, vehicleId);
         return chart;
@@ -44,7 +51,7 @@ public sealed class ChartService(IVehicleRepository vehicles, IVehicleChartRepos
     {
         var (chart, level) = await EditableAsync(id, ct);
         RequireShareRight(input.Shared, level);
-        chart.Update(input.Title, input.Config, input.Shared);
+        chart.Update(input.Title, input.Config, input.Figure, input.Shared, clock.GetUtcNow());
         await charts.UpdateAsync(chart, ct);
         logger.LogDebug("Chart {ChartId} updated", chart.Id);
         return chart;

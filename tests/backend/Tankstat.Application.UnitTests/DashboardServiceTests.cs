@@ -89,6 +89,36 @@ public class DashboardServiceTests
     }
 
     [Fact]
+    public async Task ASavedKeyFigure_IsKeptLikeASavedChart_APrivateOneIsDroppedFromEveryonesDashboard()
+    {
+        var s = await Setup();
+        var spent = new FigureRecipe(FigureMeasure.TotalSpend, new TrendPeriod(TrendWindowKind.ThisMonth));
+        var mine = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Mine", null, false, spent), default);
+        var shared = await s.W.ChartService.CreateAsync(s.Car.Id, new ChartInput("Shared", null, true, spent), default);
+
+        await s.W.Dashboards.SaveAsync(s.Car.Id, personal: false, Layout([Ref(mine), Ref(shared)], [Ref(mine)]), default);
+        await s.W.Dashboards.SaveAsync(s.Car.Id, personal: true, Layout([Ref(mine), Ref(shared)], [Ref(mine)]), default);
+
+        var vehicles = s.W.DashboardLayouts.Shared.Single();
+        Assert.Equal([Ref(shared)], ChartsOf(vehicles)); // dropped, not refused
+        Assert.Empty(vehicles.Hidden);
+        Assert.Equal([Ref(mine), Ref(shared)], ChartsOf(s.W.DashboardLayouts.Personal.Single()));
+        Assert.Equal([Ref(mine)], s.W.DashboardLayouts.Personal.Single().Hidden);
+    }
+
+    [Fact]
+    public async Task ATileWithItsOwnRecipe_IsKeptAsItIs_ItsAudienceNeedsNoSavedWidget()
+    {
+        var s = await Setup();
+        var tile = $"tile:{Guid.NewGuid()}";
+        var recipe = new TileRecipe(WidgetKind.Chart, "Bars", Config);
+
+        await s.W.Dashboards.SaveAsync(s.Car.Id, personal: false, new DashboardLayoutValues([new DashboardTile(tile, 0, 0, 2, 8, Recipe: recipe)], []), default);
+
+        Assert.Equal(recipe, s.W.DashboardLayouts.Shared.Single().Tiles.Single().Recipe);
+    }
+
+    [Fact]
     public async Task AnotherVehiclesChart_IsDroppedToo()
     {
         var s = await Setup();
