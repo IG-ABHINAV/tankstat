@@ -104,6 +104,8 @@ fragment DashboardLayoutFields on DashboardLayoutInfo {
     recipe {
       widget
       title
+      # A chart's ready-made chart (#275), which words its default title.
+      template
       chart {
         ...ChartConfigFields
       }

@@ -247,6 +247,9 @@ export const recipeOf = (c: NonNullable<VehicleDashboardQuery['vehicleWidgets'][
 })
 
 /** The inputs of the chart query for a recipe (dates only count for a custom range). */
+/** Whether two recipes draw the same chart, once both are normalised (the options that mean nothing for them dropped). */
+export const sameRecipe = (a: ChartRecipe, b: ChartRecipe) => JSON.stringify(toConfig(normalise(a))) === JSON.stringify(toConfig(normalise(b)))
+
 export const toConfig = (r: ChartRecipe) => ({
   metric: r.metric,
   grouping: r.grouping,

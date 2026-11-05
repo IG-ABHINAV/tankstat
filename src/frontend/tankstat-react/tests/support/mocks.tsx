@@ -991,7 +991,7 @@ export interface FakeTile {
   /** An old trend figure id's own period (#230), as the input sends it; none for its default. */
   period?: FakePeriod | null
   /** A `tile:`'s own recipe (#273), as `TileRecipeInput` sends it. */
-  recipe?: { widget: string; title?: string | null; chart?: Record<string, unknown> | null; figure?: { measure: string; period?: FakePeriod | null; sparkline?: boolean | null; template?: string | null } | null } | null
+  recipe?: { widget: string; title?: string | null; template?: string | null; chart?: Record<string, unknown> | null; figure?: { measure: string; period?: FakePeriod | null; sparkline?: boolean | null; template?: string | null } | null } | null
 }
 
 /** A trend figure's period, as `TrendPeriodInput` sends it. */
@@ -1208,6 +1208,7 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
           __typename: 'TileRecipe',
           widget: r.widget,
           title: r.title ?? null,
+          template: r.template ?? null,
           chart: r.chart ? { __typename: 'ChartConfig', ...CONFIG_DEFAULTS, ...r.chart } : null,
           figure: r.figure ? typedRecipe({ measure: r.figure.measure, period: r.figure.period ?? null, sparkline: r.figure.sparkline ?? false, template: r.figure.template ?? null }) : null,
         } : null

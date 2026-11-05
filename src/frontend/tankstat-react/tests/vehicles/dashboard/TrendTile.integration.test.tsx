@@ -61,7 +61,7 @@ type SavedTile = { id: string; recipe?: { figure?: { template?: string | null; p
 const saved = (state: State) => (state.calls.SaveDashboardLayout!.at(-1) as { input: { personal: boolean; tiles: SavedTile[] } }).input
 /** A saved figure tile's period, by the built-in figure it was made from (#274: its recipe holds it). */
 const periodOf = (tiles: SavedTile[], template: string) => tiles.find((t) => t.recipe?.figure?.template === template)?.recipe?.figure?.period
-const figureRecipe = (measure: string, template: string, period: unknown) => ({ widget: 'FIGURE', title: null, chart: null, figure: { measure, period, sparkline: false, template } })
+const figureRecipe = (measure: string, template: string, period: unknown) => ({ widget: 'FIGURE', title: null, chart: null, figure: { measure, period, sparkline: false, template }, template: null })
 const eightWeeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' }
 
 it('shows the chip only while arranging, on the tile\'s strip; the sentence and the timeline follow, Apply keeps it, Save dashboard saves it (#230, #260)', async () => {

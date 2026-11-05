@@ -31,7 +31,7 @@ import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
 import { ChartCard } from './ChartCard.tsx'
-import { recipeOf } from './chartFormat.ts'
+import { recipeOf, type ChartRecipe } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
 import { canonicalRecipe, FIGURES, periodFigureOf, type FigureId } from './figureRecipe.ts'
 import { KeyFigure } from './KeyFigure.tsx'
@@ -47,11 +47,14 @@ import {
   pinTile,
   presetKey,
   READY_CHARTS,
+  readyChart,
+  readyTile,
   removeTile,
   replaceTile,
   resizeTile,
   resolveLayout,
   setTilePeriod,
+  templateOfTile,
   tileKey,
   toLayout,
   widgetOf,
@@ -80,7 +83,7 @@ interface Editing {
    * The ready-made chart (its tile's id) being customized into a chart of one's own from its tile's menu (#247), while its dialog is shown;
    * once saved, the tile that replaced it, whose menu button takes the focus when the dialog is gone.
    */
-  customizing: { tile: string; open: boolean; focus?: string } | null
+  customizing: { tile: string; open: boolean; focus?: string; copyOf: { title: string; recipe: ChartRecipe } } | null
   status: string
 }
 
@@ -146,8 +149,8 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const titleOf = (tile: Tile) => {
     const widget = widgetOf(tile, savedFigure)
     if (widget?.kind === 'figure') return figureTitle(widget.figure, widget.title)
-    if (widget?.kind === 'chart') return widget.title
-    if (widget?.kind === 'ready') return t(`dashboard.presets.${widget.chart.id}`)
+    // A chart's own title, else its ready-made chart's, in the viewer's language (#275).
+    if (widget?.kind === 'chart') return widget.title || (widget.template ? t(`dashboard.presets.${widget.template}`) : '')
     return charts.find((c) => c.id === widget?.id)?.title ?? tile.id
   }
 
@@ -200,14 +203,23 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
           const saved = charts.find((c) => chartKey(c.id) === tile.id)
           return { tiles: removeTile(e.tiles, tile.id), hidden: saved ? [...e.hidden, saved] : e.hidden, status: t('dashboard.edit.removed', { name }) }
         }
-        case 'customize':
-          return { customizing: { tile: tile.id, open: true } }
+        case 'customize': {
+          // What the copy starts from, kept with the dialog: once saved, the copy takes the tile's place and the tile is gone.
+          const widget = widgetOf(tile)
+          return widget?.kind === 'chart' ? { customizing: { tile: tile.id, open: true, copyOf: { title: name, recipe: widget.chart } } } : {}
+        }
       }
     })
   }
-  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. */
-  const add = (id: string, name?: string) =>
-    update((e) => ({ tiles: addTile(e.tiles, id, undefined, null, savedFigure), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
+  /**
+   * A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. A ready-made
+   * chart is a tile of its own with its recipe (#275), so it can be added more than once.
+   */
+  const add = (id: string, name?: string) => {
+    const ready = id.startsWith('preset:') ? readyChart(id.slice('preset:'.length)) : undefined
+    const tile: Tile = ready ? { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 2, h: 8, pinned: false, recipe: readyTile(ready) } : { id, x: 0, y: 0, w: 2, h: 8, pinned: false }
+    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, tile.recipe ?? null, savedFigure), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf(tile) }) }))
+  }
   /** A built-in figure added (#274): a tile of its own, its template's recipe over the period chosen for it (none: its default). */
   const addFigure = (template: FigureId, period: TrendPeriod | null = null) => {
     const tile: Tile = { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe: figureTile(template, period) }
@@ -242,14 +254,13 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
    */
   const customized = async (from: string, id: string, title: string) => {
     await refetch()
-    const name = titleOf({ id: from } as Tile)
+    const name = titleOf(edit?.tiles.find((x) => x.id === from) ?? ({ id: from } as Tile))
     const status = title === name ? t('dashboard.edit.customized', { name }) : t('dashboard.edit.customizedRenamed', { name, title })
     update((e) => (e.customizing?.tile === from ? { tiles: replaceTile(e.tiles, from, chartKey(id)), status, customizing: { ...e.customizing, focus: chartKey(id) } } : {}))
   }
-  const customizing = edit?.customizing ? widgetOf({ id: edit.customizing.tile }) : null
   const onDashboard = new Set(edit?.tiles.map((x) => x.id))
-  // The built-in figures some tile was made from (#274): Add widget offers the others.
-  const made = new Set(edit?.tiles.map((x) => (x.recipe?.widget === 'FIGURE' ? x.recipe.figure?.template : null)))
+  // The templates some tile was made from (#274, #275): Add widget offers the other figures, and marks the ready-made charts on it.
+  const made = new Set(edit?.tiles.map(templateOfTile))
   const scopes: Scope[] = [...(dashboard?.canChangeShared ? (['shared'] as const) : []), ...(!signInOff ? (['personal'] as const) : [])]
   const stored = edit ? (edit.scope === 'shared' ? shared : personal) : null
 
@@ -309,8 +320,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     const widget = widgetOf(tile, savedFigure)
     if (widget?.kind === 'figure') return <KeyFigure recipe={widget.figure} label={titleOf(tile)} vehicleId={vehicle.id} control={periodControl(tile)} rows={tile.h} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
-    if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
-    if (widget?.kind === 'chart') return <ChartCard vehicleId={vehicle.id} title={widget.title} recipe={widget.chart} units={vehicle.units} fill headingLevel={2} />
+    if (widget?.kind === 'chart') return <ChartCard vehicleId={vehicle.id} title={titleOf(tile)} recipe={widget.chart} units={vehicle.units} fill headingLevel={2} />
     const saved = charts.find((c) => c.id === widget?.id)
     // A saved key figure (#273) is drawn like a tile's own; changing its recipe is the builder's (#275).
     if (saved?.figure) return <KeyFigure recipe={saved.figure} label={figureTitle(saved.figure, saved.title)} vehicleId={vehicle.id} rows={tile.h} units={vehicle.units} />
@@ -412,7 +422,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             canShare={canShare}
             everyone={edit.scope === 'shared'}
             figures={FIGURES.filter((f) => !made.has(f))}
-            ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: onDashboard.has(presetKey(c.id)) }))}
+            ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: made.has(presetKey(c.id)) }))}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
             onAdd={(id) => add(id)}
             onAddFigure={addFigure}
@@ -421,12 +431,12 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
               add(chartKey(id), title)
             }}
           />
-          {customizing?.kind === 'ready' && edit.customizing && (
+          {edit.customizing && (
             <ChartBuilderDialog
               vehicle={vehicle}
               canShare={canShare}
               shareLocked={edit.scope === 'shared'}
-              copyOf={{ title: t(`dashboard.presets.${customizing.chart.id}`), recipe: customizing.chart.recipe }}
+              copyOf={edit.customizing.copyOf}
               open={edit.customizing.open}
               onOpenChange={(open) => update((e) => ({ customizing: e.customizing && { ...e.customizing, open } }))}
               onClosed={() => {

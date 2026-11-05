@@ -15,7 +15,7 @@ import { SaveChartDocument, type DistanceUnit, type VolumeUnit } from '../gql/ge
 import { ErrorMessage } from '../messages.tsx'
 import { ChartCard } from './ChartCard.tsx'
 import { ChartFields } from './ChartFields.tsx'
-import { isReady, NEW_RECIPE, normalise, toConfig, type ChartRecipe } from './chartFormat.ts'
+import { isReady, NEW_RECIPE, sameRecipe, toConfig, type ChartRecipe } from './chartFormat.ts'
 
 export interface EditableChart {
   id: string
@@ -24,7 +24,6 @@ export interface EditableChart {
   recipe: ChartRecipe
 }
 
-const sameRecipe = (a: ChartRecipe, b: ChartRecipe) => JSON.stringify(toConfig(normalise(a))) === JSON.stringify(toConfig(normalise(b)))
 
 /**
  * The form of a chart of one's own: its title, its recipe (`ChartFields`), whether it is shared, and the live preview on the vehicle's

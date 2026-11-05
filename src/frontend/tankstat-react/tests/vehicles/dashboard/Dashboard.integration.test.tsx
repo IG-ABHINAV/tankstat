@@ -46,10 +46,14 @@ const at = (id: string, x: number, y: number, w: number, h: number) => expect.ob
 /** A figure tile as saved (#274): a `tile:` of its own with its template's recipe. */
 const fig = (template: string, x: number, y: number, w: number, h: number) =>
   expect.objectContaining({ id: expect.stringMatching(/^tile:[0-9a-f-]{36}$/), x, y, w, h, recipe: expect.objectContaining({ widget: 'FIGURE', figure: expect.objectContaining({ template }) }) })
-type SavedTile = { id: string; w: number; h: number; pinned: boolean; recipe?: { figure?: { template?: string | null } | null } | null }
+/** A ready-made chart's tile as saved (#275): a `tile:` of its own with its recipe and template. */
+const ready = (template: string, x: number, y: number, w: number, h: number) =>
+  expect.objectContaining({ id: expect.stringMatching(/^tile:[0-9a-f-]{36}$/), x, y, w, h, recipe: expect.objectContaining({ widget: 'CHART', title: null, template }) })
+type SavedTile = { id: string; w: number; h: number; pinned: boolean; recipe?: { template?: string | null; figure?: { template?: string | null } | null } | null }
 const savedTiles = (state: ReturnType<typeof fakeDashboardBackend>['state'], i = 0) => (state.calls.SaveDashboardLayout![i] as { input: { tiles: SavedTile[] } }).input.tiles
-/** A saved tile by the built-in figure it was made from, else by its id. */
-const savedTile = (tiles: SavedTile[], id: string) => tiles.find((t) => t.recipe?.figure?.template === id || t.id === id)
+/** The template a saved tile was made from: a figure's built-in id, a ready-made chart's `preset:<id>` (#275), else its own id. */
+const templateOf = (t: SavedTile) => t.recipe?.figure?.template ?? (t.recipe?.template ? `preset:${t.recipe.template}` : t.id)
+const savedTile = (tiles: SavedTile[], id: string) => tiles.find((t) => templateOf(t) === id)
 
 const choose = async (ui: ReturnType<typeof userEvent.setup>, control: string, option: string) => {
   await ui.click(screen.getByRole('combobox', { name: control }))
@@ -349,10 +353,10 @@ it('customizes the vehicle\'s dashboard in place: a figure moved earlier, a read
         fig('odometer', 1, 0, 1, 4),
         fig('consumption', 2, 0, 1, 4),
         fig('lastFillUp', 3, 0, 1, 4),
-        at('preset:monthlyCosts', 0, 4, 2, 8),
-        at('preset:categories', 2, 4, 2, 8), // packed up into the removed chart's place
-        at('preset:fuelPrice', 0, 12, 2, 8),
-        at('preset:distance', 0, 20, 2, 8),
+        ready('monthlyCosts', 0, 4, 2, 8),
+        ready('categories', 2, 4, 2, 8), // packed up into the removed chart's place
+        ready('fuelPrice', 0, 12, 2, 8),
+        ready('distance', 0, 20, 2, 8),
       ],
       hidden: ['chart:c1'],
       layoutVersion: 3, // every save says the arrangement it knows (#273)
@@ -459,7 +463,7 @@ it('adds back what was taken off, starts afresh from a preset, and arranges one\
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(state.calls.SaveDashboardLayout![0]).toEqual({
-    input: { vehicleId: 'v1', personal: true, tiles: [fig('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), fig('lastFillUp', 0, 19, 1, 3)], hidden: [], layoutVersion: 3 }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
+    input: { vehicleId: 'v1', personal: true, tiles: [fig('odometer', 0, 0, 1, 3), ready('distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), fig('lastFillUp', 0, 19, 1, 3)], hidden: [], layoutVersion: 3 }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
   })
 
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save dashboard' })).not.toBeInTheDocument())
@@ -672,7 +676,7 @@ it('starts from the Usage preset: its figures and charts, saved as tiles', async
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
-  expect(savedTiles(state).map((t) => t.recipe?.figure?.template ?? t.id)).toEqual([
+  expect(savedTiles(state).map(templateOf)).toEqual([
     'odometer', 'distanceTrend', 'consumption', 'consumptionTrend', // the preset's figures, each a tile of its own with its template (#274)
     'preset:distanceYearEarlier', 'preset:consumptionTrend', 'preset:distanceAndConsumption', 'preset:distance',
   ])

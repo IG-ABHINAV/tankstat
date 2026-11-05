@@ -46,6 +46,8 @@ export interface TileRecipe {
   title?: string | null
   chart?: ChartRecipe | null
   figure?: FigureRecipe | null
+  /** A chart's ready-made chart it was made from (#275, `READY_CHARTS`' id), which words its default title; a figure's is in its recipe. */
+  template?: string | null
 }
 
 /**
@@ -81,14 +83,17 @@ export const tileKey = (id: string) => `${TILE}${id}`
 export const isTileKey = (id: string) => id.startsWith(TILE)
 
 /**
- * What a tile shows: a key figure of its own (#274: a built-in one's recipe, or a `tile:`'s), a chart of its own (a `tile:`'s, #275), a
- * ready-made chart, a saved widget (by its id; `figure` its recipe when it is a key figure), or nothing the app knows.
+ * What a tile shows: a key figure of its own (#274: a built-in one's recipe, or a `tile:`'s), a chart of its own (#275: a ready-made one's
+ * recipe, `template` its id, or a `tile:`'s), a saved widget (by its id; `figure` its recipe when it is a key figure), or nothing the app
+ * knows.
  */
 export type Widget =
   | { kind: 'figure'; figure: FigureRecipe; title: string | null }
-  | { kind: 'chart'; chart: ChartRecipe; title: string }
-  | { kind: 'ready'; chart: ReadyChart }
+  | { kind: 'chart'; chart: ChartRecipe; title: string | null; template: ReadyChart['id'] | null }
   | { kind: 'saved'; id: string; figure: FigureRecipe | null }
+
+/** The ready-made chart an id names, if any. */
+export const readyChart = (id: string | null | undefined): ReadyChart | undefined => READY_CHARTS.find((c) => c.id === id)
 
 /** A tile as far as what it shows goes. */
 export type TileWidget = Pick<Tile, 'id'> & Partial<Pick<Tile, 'recipe' | 'period'>>
@@ -98,11 +103,11 @@ export type SavedFigures = (id: string) => FigureRecipe | null | undefined
 export function widgetOf(tile: TileWidget, savedFigure?: SavedFigures): Widget | null {
   const { id, recipe } = tile
   if (recipe?.widget === 'FIGURE' && recipe.figure) return { kind: 'figure', figure: recipe.figure, title: recipe.title ?? null }
-  if (recipe?.widget === 'CHART' && recipe.chart) return { kind: 'chart', chart: recipe.chart, title: recipe.title ?? '' }
+  if (recipe?.widget === 'CHART' && recipe.chart) return { kind: 'chart', chart: recipe.chart, title: recipe.title ?? null, template: readyChart(recipe.template)?.id ?? null }
   if (isTemplate(id)) return { kind: 'figure', figure: templateRecipe(id, tile.period), title: null }
   if (id.startsWith(PRESET)) {
-    const chart = READY_CHARTS.find((c) => c.id === id.slice(PRESET.length))
-    return chart ? { kind: 'ready', chart } : null
+    const chart = readyChart(id.slice(PRESET.length))
+    return chart ? { kind: 'chart', chart: chart.recipe, title: null, template: chart.id } : null
   }
   if (!id.startsWith(CHART)) return null
   const saved = id.slice(CHART.length)
@@ -141,14 +146,19 @@ const tile = (id: string, x: number, y: number, w: number, h: number): Tile => (
 
 /** A built-in figure's tile recipe (#274): its template's, titled by the template. */
 export const figureTile = (id: FigureId, period?: TrendPeriod | null): TileRecipe => ({ widget: 'FIGURE', title: null, figure: templateRecipe(id, period) })
+/** A ready-made chart's tile recipe (#275): its recipe, titled by it (no title of its own), the ready-made id as its template. */
+export const readyTile = (chart: ReadyChart): TileRecipe => ({ widget: 'CHART', title: null, chart: chart.recipe, template: chart.id })
 
 /**
  * A preset's tiles: four figures in a row at the top (their built-in recipes, #274, by their template's id until saved), each as tall as the
- * tallest of them shows in full, then the charts two by two.
+ * tallest of them shows in full, then the ready-made charts two by two (their recipes, #275, by their `preset:` id until saved).
  */
 function presetTiles(figures: readonly FigureId[], charts: readonly ReadyChart['id'][]): Tile[] {
   const row = Math.max(...figures.map((f) => defaultSize({ id: f }).h))
-  return [...figures.map((f, i) => ({ ...tile(f, i, 0, 1, row), recipe: figureTile(f) })), ...charts.map((c, i) => tile(presetKey(c), (i % 2) * 2, row + Math.floor(i / 2) * 8, 2, 8))]
+  return [
+    ...figures.map((f, i) => ({ ...tile(f, i, 0, 1, row), recipe: figureTile(f) })),
+    ...charts.map((c, i) => ({ ...tile(presetKey(c), (i % 2) * 2, row + Math.floor(i / 2) * 8, 2, 8), recipe: readyTile(readyChart(c)!) })),
+  ]
 }
 
 /** The layouts a dashboard can start from, named `dashboard.layoutPresets.<id>`: Standard is the dashboard as it always was. */
@@ -248,19 +258,28 @@ function firstFit(placed: readonly Tile[], t: Tile, cols: number): Tile {
 /** A tile's recipe in the app's shape, whatever it came from (as stored it carries GraphQL's `__typename`s); null for one the app cannot draw. */
 function ownRecipe(r: TileRecipe): TileRecipe | null {
   if (r.widget === 'FIGURE' && r.figure) return { widget: 'FIGURE', title: r.title ?? null, figure: canonicalRecipe(r.figure) }
-  if (r.widget === 'CHART' && r.chart) return { widget: 'CHART', title: r.title ?? null, chart: { ...NEW_RECIPE, ...toConfig(r.chart) } }
+  if (r.widget === 'CHART' && r.chart) return { widget: 'CHART', title: r.title ?? null, chart: { ...NEW_RECIPE, ...toConfig(r.chart) }, template: r.template ?? null }
   return null
 }
 
-/** A tile as the dashboard keeps it while shown and arranged (#274): a figure's recipe on it (an old figure id's its template's), no period beside it. */
+/**
+ * A tile as the dashboard keeps it while shown and arranged: its recipe on it (#274: an old figure id's its template's; #275: an old
+ * `preset:` id's its ready-made chart's), no period beside it.
+ */
 function withRecipe(t: Tile): Tile {
   const own = t.recipe ? ownRecipe(t.recipe) : null
   if (own) return { ...t, recipe: own, period: null }
-  return isTemplate(t.id) ? { ...t, recipe: figureTile(t.id, t.period), period: null } : { ...t, recipe: null }
+  if (isTemplate(t.id)) return { ...t, recipe: figureTile(t.id, t.period), period: null }
+  const ready = t.id.startsWith(PRESET) ? readyChart(t.id.slice(PRESET.length)) : undefined
+  return ready ? { ...t, recipe: readyTile(ready), period: null } : { ...t, recipe: null }
 }
 
-/** The template of a figure tile's own recipe, for what Add widget still offers (#274). */
-const templateOfTile = (t: Tile) => (t.recipe?.widget === 'FIGURE' ? t.recipe.figure?.template : null)
+/**
+ * The template a tile was made from, for what Add widget marks and offers: a figure's its built-in id (#274), a chart's its ready-made id
+ * as `preset:<id>` (#275; the ready-made `consumption` is not the figure `consumption`). Also the grid's `data-template`.
+ */
+export const templateOfTile = (t: Pick<Tile, 'recipe'>): string | null =>
+  t.recipe?.widget === 'FIGURE' ? (t.recipe.figure?.template ?? null) : t.recipe?.template ? presetKey(t.recipe.template) : null
 
 /**
  * The dashboard a stored arrangement gives, with nothing stored the Standard preset: today's dashboard. It merges the way a grid's columns
@@ -300,7 +319,7 @@ export function resolveLayout<S extends { id: string; figure?: FigureRecipe | nu
     hidden: saved.filter((c) => hiddenKeys.has(chartKey(c.id)) && !shown.has(chartKey(c.id))),
     available: {
       figures: FIGURES.filter((f) => !made.has(f)),
-      ready: READY_CHARTS.filter((c) => !shown.has(presetKey(c.id))),
+      ready: READY_CHARTS.filter((c) => !made.has(presetKey(c.id))),
       saved: saved.filter((c) => !shown.has(chartKey(c.id))),
     },
   }
@@ -312,6 +331,7 @@ const toTileRecipeInput = (r: TileRecipe): TileRecipeInput => ({
   title: r.title ?? null,
   chart: r.chart ? toConfig(r.chart) : null,
   figure: r.figure ? toRecipeInput(r.figure) : null,
+  template: r.template ?? null,
 })
 
 /** A tile as the server takes it: a tile with a recipe of its own as a `tile:<id>` with it (#274), every other one by its id alone. */

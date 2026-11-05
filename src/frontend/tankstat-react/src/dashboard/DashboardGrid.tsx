@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
 import { TILE_STRIP, TileStripContext, type TileStrip } from './tileChrome.ts'
-import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, minSize, ROW_HEIGHT, widgetOf, type SavedFigures, type Tile } from './widgets.ts'
+import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, minSize, ROW_HEIGHT, templateOfTile, widgetOf, type SavedFigures, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
@@ -112,8 +112,8 @@ export function DashboardGrid({
   const cells = useMemo(
     () =>
       ordered.map((tile, i) => (
-        // `data-template`: the built-in figure a figure tile was made from (#274), which its `tile:` id no longer says once it is saved.
-        <Box key={tile.id} data-tile={tile.id} data-template={tile.recipe?.figure?.template ?? undefined} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        // `data-template`: the template a tile was made from (#274's figures, #275's `preset:<id>` charts), which a `tile:` id no longer says once saved.
+        <Box key={tile.id} data-tile={tile.id} data-template={templateOfTile(tile) ?? undefined} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <TileCell
             editing={editing}
             strip={(slots) => <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} slots={slots} savedFigure={savedFigure} onAction={(action) => onAction?.(tile, action)} />}
@@ -218,8 +218,9 @@ function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, ac
   const menuId = useId()
   const min = minSize(tile, savedFigure)
   const widget = widgetOf(tile, savedFigure)
-  const ready = widget?.kind === 'ready'
-  const chart = ready || widget?.kind === 'chart' || (widget?.kind === 'saved' && !widget.figure)
+  // A ready-made chart's tile (#275: a chart recipe with its template) is made one's own from its menu (#247) until the builder's pencil.
+  const ready = widget?.kind === 'chart' && widget.template !== null
+  const chart = widget?.kind === 'chart' || (widget?.kind === 'saved' && !widget.figure)
   const choose = (action: TileAction) => {
     setAnchor(null)
     if (action === 'customize') setOpening(action)

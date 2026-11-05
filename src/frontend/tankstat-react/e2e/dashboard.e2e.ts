@@ -25,19 +25,21 @@ const menu = async (page: Page, name: string, entry: string) => {
   await expect(page.getByRole('menu')).toBeHidden()
 }
 type Stored = { id: string; x: number; y: number; w: number; h: number; pinned: boolean }[]
-type Read = (Stored[number] & { recipe: { figure: { template: string | null } | null } | null })[]
+type Read = (Stored[number] & { recipe: { template: string | null; figure: { template: string | null } | null } | null })[]
 /**
  * The dashboard as stored, each figure tile by the built-in figure it was made from (#274: saved as a `tile:` of its own with its recipe),
  * every other tile by its id.
  */
 const stored = async (page: Page, vehicleId: string) => {
-  const tiles = 'tiles { id x y w h pinned recipe { figure { template } } }'
+  const tiles = 'tiles { id x y w h pinned recipe { template figure { template } } }'
   const data = await graphql<{ vehicle: { dashboard: { shared: { tiles: Read } | null; personal: { tiles: Read } | null } } }>(
     page,
     `query($id: UUID!) { vehicle(id: $id) { dashboard { shared { ${tiles} } personal { ${tiles} } } } }`,
     { id: vehicleId },
   )
-  const byTemplate = (layout: { tiles: Read } | null) => layout && { tiles: layout.tiles.map(({ recipe, ...t }) => ({ ...t, id: recipe?.figure?.template ?? t.id })) }
+  // A figure tile by its built-in figure, a ready-made chart's by its `preset:` id (#275), as before they were saved as tiles of their own.
+  const byTemplate = (layout: { tiles: Read } | null) =>
+    layout && { tiles: layout.tiles.map(({ recipe, ...t }) => ({ ...t, id: recipe?.figure?.template ?? (recipe?.template ? `preset:${recipe.template}` : t.id) })) }
   return { shared: byTemplate(data.vehicle.dashboard.shared), personal: byTemplate(data.vehicle.dashboard.personal) }
 }
 
@@ -520,6 +522,16 @@ const keyboardFocus = async (page: Page, target: Locator) => {
   await page.keyboard.press('Tab')
   await expect(target).toBeFocused()
 }
+/**
+ * A tooltip opened by the keyboard closed again, and gone before the next one opens: Escape, then the focus off its button, since a figure
+ * drawn again (its answer refetched, `cache-and-network`) with the focus still on the arrow opens it again (MUI unmounts it a little
+ * later, reduced motion too).
+ */
+const closeTooltip = async (page: Page, target: Locator) => {
+  await page.keyboard.press('Escape')
+  await target.evaluate((el) => (el as HTMLElement).blur())
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+}
 /** The figures whose words wrap in a one-column desktop tile, side by side at `rows`, through GraphQL. */
 const lowFigures = (rows: number): Stored => ['thisMonth', 'consumptionTrend', 'costPerDistance', 'odometer'].map((id, x) => ({ id, x, y: 0, w: 1, h: rows, pinned: false }))
 
@@ -541,8 +553,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await expect(spentArrow).toHaveAccessibleName(/\(This month\)$/)
   await keyboardFocus(page, spentArrow)
   await expect(page.getByRole('tooltip')).toContainText('This month')
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('tooltip')).toHaveCount(0) // gone before the next one opens: MUI unmounts it a little later, reduced motion too
+  await closeTooltip(page, spentArrow)
   // Outside Customize the label has the row to itself (no chip, #260): whole, no tab stop, in a desktop column too.
   const consumptionLabel = tile(page, 'consumptionTrend').locator('[data-kpi="label"]')
   await expect(consumptionLabel).toHaveText('Consumption change')
@@ -556,8 +567,7 @@ test('fits every figure to two and three rows in English and Hungarian: the labe
   await keyboardFocus(page, consumptionArrow)
   await expect(page.getByRole('tooltip')).toContainText('the 10 fill-ups before')
   await expect(page.getByRole('tooltip')).toContainText('Last 10 fill-ups')
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await closeTooltip(page, consumptionArrow)
   await expect(tile(page, 'costPerDistance').locator('[data-kpi="value-row"] > button')).toHaveAccessibleName(/than the 12 months before \(12 full months\)$/)
   await expect.poll(() => clippedFigures(page)).toEqual([])
   await expectSoundLayout(page) // the arrows 44 px to a finger on a phone
@@ -698,23 +708,29 @@ test('keeps every tile as tall while arranging as in view mode, the strip naming
 
 // ---- every key figure a recipe (#274) ------------------------------------------------------------------------------------
 
-/** Each figure tile's built-in figure and its card's text, in reading order, once every figure has its answer. */
+/** Each figure tile's built-in figure and its card's text, in reading order, once every figure has its answer (a ready-made chart's `preset:` template left out). */
 const figureTexts = async (page: Page) => {
   await expect(region(page).getByText('Loading…')).toHaveCount(0)
-  return region(page).locator('[data-template]').evaluateAll((tiles) => tiles.map((t) => `${(t as HTMLElement).dataset.template}: ${(t as HTMLElement).innerText.replace(/\s+/g, ' ').trim()}`))
+  return region(page).locator('[data-template]:not([data-template^="preset:"])').evaluateAll((tiles) => tiles.map((t) => `${(t as HTMLElement).dataset.template}: ${(t as HTMLElement).innerText.replace(/\s+/g, ' ').trim()}`))
 }
 
-test('reads a dashboard arranged with old figure ids as recipes, the same before and after a save, which stores them as tiles of their own (#274)', async ({ page }) => {
+test('reads a dashboard arranged with old figure and ready-made chart ids as recipes, the same before and after a save, which stores them as tiles of their own (#274, #275)', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
   await logRefueling(page, vehicle.id, { date: today(), odometer: 1500 })
   const ids = ['thisMonth', 'consumption', 'odometer', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend']
-  await arrange(page, vehicle.id, ids.map((id, i) => ({ id, x: i % 4, y: Math.floor(i / 4) * 4, w: 1, h: 4, pinned: false })))
+  const charts = ['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'distance', 'spendSoFar', 'costPerDistance', 'consumptionTrend', 'distanceYearEarlier', 'distanceAndConsumption']
+  await arrange(page, vehicle.id, [
+    ...ids.map((id, i) => ({ id, x: i % 4, y: Math.floor(i / 4) * 4, w: 1, h: 4, pinned: false })),
+    ...charts.map((c, i) => ({ id: `preset:${c}`, x: (i % 2) * 2, y: 8 + Math.floor(i / 2) * 8, w: 2, h: 8, pinned: false })),
+  ])
   await openVehicle(page, vehicle.id)
 
   const before = await figureTexts(page)
   expect(before.map((t) => t.split(':')[0])).toEqual(ids)
+  const chartsBefore = await chartTitles(page)
+  expect(chartsBefore).toHaveLength(10)
   expect(before[0]).toMatch(/^thisMonth: Spent this month HUF/)
   expect(before[2]).toMatch(/^odometer: Odometer 1,500 km/)
   await page.getByRole('button', { name: 'Customize' }).click()
@@ -723,16 +739,18 @@ test('reads a dashboard arranged with old figure ids as recipes, the same before
   await page.reload()
   await pageLoaded(page)
   await expect.poll(() => figureTexts(page)).toEqual(before)
+  expect(await chartTitles(page)).toEqual(chartsBefore)
 
-  // Stored as tiles of their own, each with its recipe and the built-in figure it came from.
-  const read = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown; recipe: { widget: string; figure: { template: string } } }[] } } } }>(
+  // Stored as tiles of their own, each with its recipe and the built-in figure or ready-made chart it came from (a chart's without a title).
+  const read = await graphql<{ vehicle: { dashboard: { shared: { tiles: { id: string; period: unknown; recipe: { widget: string; title: string | null; template: string | null; figure: { template: string } | null } }[] } } } }>(
     page,
-    'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind } recipe { widget figure { template } } } } } } }',
+    'query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id period { kind } recipe { widget title template figure { template } } } } } } }',
     { id: vehicle.id },
   )
   const tiles = read.vehicle.dashboard.shared.tiles
-  expect(tiles.every((t) => /^tile:[0-9a-f-]{36}$/.test(t.id) && t.period === null && t.recipe.widget === 'FIGURE')).toBe(true)
-  expect(tiles.map((t) => t.recipe.figure.template)).toEqual(ids)
+  expect(tiles.every((t) => /^tile:[0-9a-f-]{36}$/.test(t.id) && t.period === null)).toBe(true)
+  expect(tiles.map((t) => t.recipe.figure?.template ?? t.recipe.template)).toEqual([...ids, ...charts])
+  expect(tiles.filter((t) => t.recipe.widget === 'CHART').every((t) => t.recipe.title === null)).toBe(true)
 
   // In Hungarian, the default titles come from the templates, in the viewer's language.
   await page.addInitScript(() => localStorage.setItem('tankstat.language', 'hu'))

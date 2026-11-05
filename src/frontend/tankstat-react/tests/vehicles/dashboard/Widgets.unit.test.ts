@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { addTile, chartKey, defaultSize, figureTile, FIGURES, flow, LAYOUT_PRESETS, LAYOUT_VERSION, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, replaceTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
+import { addTile, chartKey, defaultSize, figureTile, FIGURES, templateOfTile, flow, LAYOUT_PRESETS, LAYOUT_VERSION, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, replaceTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
 import { DEFAULT_PERIOD } from '../../../src/dashboard/trendPeriod.ts'
+import { toConfig } from '../../../src/dashboard/chartFormat.ts'
 
 const chart = (id: string) => ({ id, title: `Chart ${id}` })
 const tile = (id: string, x: number, y: number, w = 2, h = 8, pinned = false): Tile => ({ id, x, y, w, h, pinned })
@@ -68,7 +69,7 @@ describe('resolveLayout', () => {
 
     expect(toLayout(layout.tiles, layout.hidden, () => 'n1')).toEqual({
       tiles: [
-        { ...tile('tile:n1', 0, 0, 1, 4, true), recipe: { widget: 'FIGURE', title: null, chart: null, figure: { measure: 'LAST_FILL_UP', period: null, sparkline: false, template: 'lastFillUp' } } },
+        { ...tile('tile:n1', 0, 0, 1, 4, true), recipe: { widget: 'FIGURE', title: null, chart: null, figure: { measure: 'LAST_FILL_UP', period: null, sparkline: false, template: 'lastFillUp' }, template: null } },
         tile(chartKey('a'), 1, 0),
       ],
       hidden: [chartKey('b')],
@@ -105,6 +106,24 @@ describe('resolveLayout', () => {
     expect(one.tiles[0].recipe?.figure?.period).toEqual(weeks)
     expect(toLayout(one.tiles, [], () => 'n2').tiles[0].recipe?.figure).toEqual({ measure: 'DISTANCE', period: weeks, sparkline: false, template: 'distanceTrend' })
     expect(toLayout(one.tiles, [], () => 'n2').tiles[0]).not.toHaveProperty('period')
+  })
+
+  it('reads every old ready-made chart id as its recipe with its template, kept under its id until a save, then a tile of its own without a title (#275)', () => {
+    const stored = { tiles: READY_CHARTS.map((c, i) => tile(presetKey(c.id), (i % 2) * 2, Math.floor(i / 2) * 8)), hidden: [] }
+    const layout = resolveLayout(stored, [])
+
+    expect(layout.tiles.map((t) => t.id)).toEqual(READY_CHARTS.map((c) => presetKey(c.id)))
+    for (const t of layout.tiles) {
+      const ready = READY_CHARTS.find((c) => presetKey(c.id) === t.id)!
+      expect(t.recipe).toEqual({ widget: 'CHART', title: null, chart: ready.recipe, template: ready.id })
+      expect(templateOfTile(t)).toBe(presetKey(ready.id)) // the ready-made consumption is not the figure consumption
+    }
+    expect(layout.available.ready).toEqual([]) // each made from: marked as on the dashboard
+    const saved = toLayout(layout.tiles, [], () => 'n').tiles
+    expect(saved.every((t) => t.id === 'tile:n' && t.recipe?.widget === 'CHART' && t.recipe.title === null)).toBe(true)
+    expect(saved.map((t) => t.recipe?.template)).toEqual(READY_CHARTS.map((c) => c.id))
+    expect(saved[0].recipe?.chart).toEqual(toConfig(READY_CHARTS[0].recipe))
+    expect(LAYOUT_PRESETS.standard.tiles.slice(4).map((t) => t.recipe?.template)).toEqual(['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'distance']) // the presets' charts are recipes too
   })
 
   it('reads a tile of its own as its recipe, keeps its id on a save, drops one without a recipe, and offers the figures no tile was made from', () => {
