@@ -255,9 +255,9 @@ export type StoredTile = Omit<Tile, 'period'> & { period?: ReturnType<typeof toI
 /**
  * The arrangement's version this app knows (#273), sent with every save: the server refuses a save without it or with an older one
  * (`dashboard.updateApp`), so an app never drops tiles it does not know. Raised with the server's `DashboardLayoutValues.LayoutVersion`
- * when tiles an older app would lose start being saved (#275's `tile:` tiles).
+ * whenever tiles an older app would lose start being saved: 2 since #274, which saves every key figure as a `tile:` with its recipe.
  */
-export const LAYOUT_VERSION = 1
+export const LAYOUT_VERSION = 2
 
 /** What the server stores for a dashboard as it is arranged on screen. */
 export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }[]): { tiles: StoredTile[]; hidden: string[]; layoutVersion: number } => ({
