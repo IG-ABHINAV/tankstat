@@ -1,6 +1,7 @@
 import type { TileRecipeInput, WidgetKind } from '../gql/generated.ts'
+import { uuidV4 } from '../offline/uuid.ts'
 import { NEW_RECIPE, toConfig, type ChartRecipe } from './chartFormat.ts'
-import { canonicalRecipe, defaultPeriodOf, FIGURES, figureRows, isTemplate, templateRecipe, toRecipeInput, type FigureId, type FigureRecipe } from './figureRecipe.ts'
+import { canonicalRecipe, defaultPeriodOf, FIGURES, figureRows, isTemplate, templateOf, templateRecipe, toRecipeInput, type FigureId, type FigureRecipe } from './figureRecipe.ts'
 import { canonical, type TrendPeriod } from './trendPeriod.ts'
 
 export { FIGURES, type FigureId } from './figureRecipe.ts'
@@ -275,11 +276,12 @@ function withRecipe(t: Tile): Tile {
 }
 
 /**
- * The template a tile was made from, for what Add widget marks and offers: a figure's its built-in id (#274), a chart's its ready-made id
- * as `preset:<id>` (#275; the ready-made `consumption` is not the figure `consumption`). Also the grid's `data-template`.
+ * The template a tile was made from, for what Add widget marks and offers: a figure's its built-in id while its measure is still that
+ * template's (`templateOf`, #274), a chart's its ready-made id as `preset:<id>` (#275; the ready-made `consumption` is not the figure
+ * `consumption`). Also the grid's `data-template`.
  */
 export const templateOfTile = (t: Pick<Tile, 'recipe'>): string | null =>
-  t.recipe?.widget === 'FIGURE' ? (t.recipe.figure?.template ?? null) : t.recipe?.template ? presetKey(t.recipe.template) : null
+  t.recipe?.widget === 'FIGURE' ? (t.recipe.figure ? templateOf(t.recipe.figure) : null) : t.recipe?.template ? presetKey(t.recipe.template) : null
 
 /**
  * The dashboard a stored arrangement gives, with nothing stored the Standard preset: today's dashboard. It merges the way a grid's columns
@@ -363,7 +365,8 @@ export const LAYOUT_VERSION = 3
 export const toLayout = (
   tiles: readonly Tile[],
   hidden: readonly { id: string }[],
-  newId: () => string = () => crypto.randomUUID(),
+  // Not `crypto.randomUUID()`: it only exists in secure contexts, and the app is also served over plain HTTP (`uuid.ts`).
+  newId: () => string = () => uuidV4(),
 ): { tiles: StoredTile[]; hidden: string[]; layoutVersion: number } => ({
   tiles: tiles.map((t) => {
     const base = { id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned }

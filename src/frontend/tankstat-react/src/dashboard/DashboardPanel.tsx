@@ -26,6 +26,7 @@ import {
 } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { useConnectivity } from '../offline/useConnectivity.ts'
+import { uuidV4 } from '../offline/uuid.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { WidgetEditDialog, type EditChoice, type EditMode } from './WidgetEditDialog.tsx'
@@ -224,7 +225,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       addSaved(id, title, 'addedSaved')
       return
     }
-    const tile: Tile = { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe }
+    const tile: Tile = { id: tileKey(uuidV4()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe }
     update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
   }
   /** A saved widget deleted for good from *Your widgets* (#275): from every dashboard it is on, at once. */
@@ -301,7 +302,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
         return
       }
       case 'here':
-        return placed(tileKey(crypto.randomUUID()), recipe, 'changed')
+        return placed(tileKey(uuidV4()), recipe, 'changed')
       case 'everywhere': {
         const saved = savedOf({ id: from })
         if (!saved) return
