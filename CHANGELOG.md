@@ -2,6 +2,50 @@
 
 Every release of Tankstat, newest first. Each one is a Docker image, `ghcr.io/carathorys/tankstat:<version>`, and a [GitHub release](https://github.com/carathorys/tankstat/releases). The numbers in brackets are the pull requests. Pre-releases (the previews) are not listed: their changes are in the release that followed them.
 
+## 0.20.0 (2026-11-05)
+
+### Added
+
+- **One builder for every dashboard widget** (#271, #275: #280). In *Customize*, *Add widget* has three groups:
+  - **Start from:** the eight key figures and the ten ready-made charts. One already on the dashboard is marked *On the dashboard* and can still be added again.
+  - **Your widgets:** the saved ones that are not on this dashboard. A bin deletes one you may delete, after a confirmation.
+  - **From scratch.**
+
+  The builder makes a key figure or a chart:
+  - **A key figure:** any of 13 measures (spending, fuel cost, expenses, fuel volume, distance, consumption, prices, cost per distance, fill-ups, the odometer, the last fill-up) over a period. It can be compared with the period before, the same dates a year earlier, or nothing, and can show the last six months as a sparkline. *This month* is now among the quick picks.
+  - **A chart:** the chart builder as before.
+
+  Both have a live preview. *Add to the dashboard* puts the widget in the arrangement. *Also save to my widgets* saves it as well: shared when saved on Everyone's dashboard, private on your own.
+- **Saved widgets can be key figures as well as charts** (#273: #277). Up to 30 per vehicle and user, both kinds counted together.
+- **A pencil and a bin on every tile** while customizing (#275: #280). The pencil opens the builder:
+  - **A tile in the arrangement** changes in place.
+  - **Your own saved widget** asks each time: *Only on this dashboard* (a copy takes its place) or *Change it everywhere*.
+  - **Someone else's saved widget** is saved as your own in its place.
+
+  The bin takes a tile off this dashboard only: a saved widget stays in *Your widgets*. A tag under the tile's strip says where the widget lives: *In this arrangement*, *Saved*, or *Saved · shared by …*. On a desktop, a tile one column wide has the pencil and the bin in its ⋮ menu (*Edit…*, *Remove*).
+
+### Changed
+
+- **Every key figure is drawn the same way** (#274: #279), from one query for any measure over a period (#272: #276). The dashboard looks as before, except for *Spent this month*:
+  - it is compared with the whole month before, in place of the "Last month: …" note;
+  - its other currencies are its note.
+- **Charts no longer have a share switch** (#275: #280). A widget is shared by saving it on Everyone's dashboard. *Customize as my chart…* in a tile's menu and the separate chart dialogs are gone: the pencil does what they did.
+
+### Upgrading
+
+- **One database migration (`SavedWidgets`)** runs at the first start, for every provider. Every saved chart stays a chart. As always since 0.15, a backup is written into `data/backups` before the migration.
+- **Dashboards saved by 0.20 use a new arrangement format** (layout version 3). A 0.19 web app still open cannot save a dashboard and says to reload the page; *Reload* on the update notice fixes it. To go back to 0.19, restore the backup written before the migration: 0.19 knows neither saved key figures nor the new tiles.
+- **The GraphQL schema only gains fields:** `vehicleFigure`, `vehicleWidgets` and `saveVehicleWidget` (with `SavedWidget`, `FigureRecipe` and `TileRecipe`), a tile's `recipe`, and `SaveDashboardLayoutInput.layoutVersion`. `vehicleCharts`, `saveVehicleChart` and `vehicleTrend` stay for older apps.
+- The Docker Compose example now runs 0.20 (`TANKSTAT_VERSION` in `.env.example`).
+
+### For developers
+
+- **Tile ids:** `tile:<uuid>` tiles carry their own `TileRecipe`: a chart's `ChartConfig` with an optional ready-made `template`, or a figure's `FigureRecipe`. Old figure ids and `preset:` ids are read as recipes and written as `tile:` on the next save.
+- **The layout version** (`DashboardLayoutValues.LayoutVersion`, `widgets.ts` `LAYOUT_VERSION`, `e2e/support/app.ts`) rises whenever tiles an older app would drop start being saved, and a save from an older version is refused with `dashboard.updateApp`.
+- **The builder** is `WidgetForm` over the pure `widgetDraft.ts`. *Add widget* is `AddWidgetDialog`, the pencil is `WidgetEditDialog`. `ChartForm`, `ChartBuilderDialog`, `TrendFigurePane` and the `SaveChart` document are gone.
+- **Tile ids come from `uuidV4`**, never `crypto.randomUUID`, which exists only in secure contexts, so saving works over plain HTTP.
+- **New real-browser tests** at both sizes: a key figure from scratch, a template added again, and a saved widget edited only here and then everywhere and deleted. The README's screenshots are retaken.
+
 ## 0.19.7 (2026-11-04)
 
 A bugfix release for customizing the dashboard.
