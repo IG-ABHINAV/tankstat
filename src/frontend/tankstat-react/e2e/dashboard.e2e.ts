@@ -1,6 +1,6 @@
 import { type Locator, type Page } from '@playwright/test'
-import { expect, test } from './support/test.ts'
-import { addExpense, addVehicle, graphql, LAYOUT_VERSION, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
+import { expect, newContext, test } from './support/test.ts'
+import { addExpense, addVehicle, createUser, graphql, LAYOUT_VERSION, logRefueling, openVehicle, pageLoaded, settled, signIn, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
@@ -892,4 +892,71 @@ test('saves a widget to my widgets, adds it on Just me from Your widgets, edits 
   const confirm = page.getByRole('alertdialog', { name: 'Delete this widget?' })
   await confirm.getByRole('button', { name: 'Delete widget' }).click()
   await expect(dialog.getByRole('button', { name: /^Kilometres/ })).toHaveCount(0)
+})
+
+test("customizes someone else's saved widget as one's own, in its place, the original kept off after a reload (#275)", async ({ page, browser }) => {
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: daysAgo(40), odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: daysAgo(5), odometer: 1500 })
+  // The owner's saved key figure, shared, on the vehicle's dashboard; a friend the logs are shared with (Edit: sharing takes Edit or Delete).
+  const { saveVehicleWidget: widget } = await graphql<{ saveVehicleWidget: { id: string } }>(
+    page,
+    'mutation($i: SaveWidgetInput!) { saveVehicleWidget(input: $i) { id } }',
+    { i: { vehicleId: vehicle.id, title: 'Team distance', shared: true, figure: { measure: 'DISTANCE', period: { kind: 'THIS_YEAR', against: 'YEAR_EARLIER' } } } },
+  )
+  const original = `chart:${widget.id}`
+  await arrange(page, vehicle.id, [{ id: original, x: 0, y: 0, w: 2, h: 4, pinned: false }])
+  const friend = await createUser()
+  await graphql(page, 'mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }', { i: { vehicleId: vehicle.id, userId: friend.id, level: 'EDIT' } })
+
+  const theirs = await newContext(browser)
+  const them = await theirs.newPage()
+  try {
+    await signIn(them, friend)
+    await openVehicle(them, vehicle.id)
+    await expect(tile(them, original).locator('[data-kpi="value"]')).toHaveText(/km$/)
+
+    // On their own dashboard (Just me): the owner's widget is theirs to customize, not to change.
+    await them.getByRole('button', { name: 'Customize' }).click()
+    await expect(them.getByRole('button', { name: 'Save dashboard' })).toBeVisible()
+    await them.locator('label', { hasText: 'Just me' }).click()
+    await expect(them.getByRole('radio', { name: 'Just me' })).toBeChecked()
+    await expect(tile(them, original).locator('[data-badge]')).toHaveText(/^Saved · shared by /)
+    // Its pencil, or its menu's Customize… on a narrow tile.
+    const pencil = them.getByRole('button', { name: 'Customize Team distance', exact: true })
+    if (await pencil.count()) await pencil.click()
+    else await menu(them, 'Team distance', 'Customize…')
+    const dialog = them.getByRole('dialog', { name: 'Customize widget' })
+    await expect(dialog.getByText("Saved as your own, it takes this tile's place in this arrangement.")).toBeVisible()
+    await expectSoundLayout(them)
+    expect(await violations(them, '[role="dialog"]')).toEqual([])
+    // Unchanged too: saved as their own widget (private on Just me), it takes the tile's place.
+    await dialog.getByRole('button', { name: 'Save as my own' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(them.locator('[data-badge]', { hasText: /^Saved$/ })).toHaveCount(1)
+    await expect(tile(them, original)).toHaveCount(0)
+    await them.getByRole('button', { name: 'Save dashboard' }).click()
+    await expect(them.getByText('Saved.')).toBeVisible()
+
+    // Their own arrangement points at their own copy, and holds the owner's widget among the taken off, so it does not come back at the bottom.
+    const read = await graphql<{ vehicle: { dashboard: { personal: { tiles: { id: string }[]; hidden: string[] } } }; vehicleWidgets: { id: string; isShared: boolean; canEdit: boolean; figure: { measure: string } | null }[] }>(
+      them,
+      'query($id: UUID!) { vehicle(id: $id) { dashboard { personal { tiles { id } hidden } } } vehicleWidgets(vehicleId: $id) { id isShared canEdit figure { measure } } }',
+      { id: vehicle.id },
+    )
+    const personal = read.vehicle.dashboard.personal
+    expect(personal.tiles).toHaveLength(1)
+    expect(personal.tiles[0].id).toMatch(/^chart:/)
+    expect(personal.tiles[0].id).not.toBe(original)
+    expect(personal.hidden).toContain(original)
+    const copy = read.vehicleWidgets.find((w) => `chart:${w.id}` === personal.tiles[0].id)
+    expect(copy).toMatchObject({ isShared: false, canEdit: true, figure: { measure: 'DISTANCE' } })
+    await them.reload()
+    await pageLoaded(them)
+    await expect(them.locator('[data-tile]')).toHaveCount(1)
+    await expect(tile(them, original)).toHaveCount(0)
+  } finally {
+    await theirs.close()
+  }
 })
