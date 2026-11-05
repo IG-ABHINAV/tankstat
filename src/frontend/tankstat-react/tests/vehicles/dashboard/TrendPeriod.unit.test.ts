@@ -24,6 +24,7 @@ describe('the defaults', () => {
     const readBack = { __typename: 'TrendPeriod', kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' } as const
     expect(stored('spendingTrend', readBack)).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })
     expect(canonical({ kind: 'LAST', unit: 'DAYS', count: 30 })).toEqual(last('DAYS', 30)) // left out, as the server reads it
+    expect(canonical({ kind: 'THIS_MONTH', against: 'NONE' })).toEqual({ ...THIS_MONTH, against: 'NONE' }) // this month without a comparison kept as it is (#272)
   })
 
   it('hands GraphQL a fresh input with every field, never a read-back object', () => {
@@ -38,6 +39,7 @@ describe('choosing a period', () => {
 
   it('checks it as the server does: a whole count from 1 to 1000, a first day from 2000 to today', () => {
     expect(periodProblem(last('WEEKS', 8), today)).toBeNull()
+    expect(periodProblem(THIS_MONTH, today)).toBeNull() // nothing to check: no count, no date (#272)
     expect(periodProblem(last('WEEKS', 0), today)).toEqual({ key: 'errors.trend.countRange', values: { max: 1000 } })
     expect(periodProblem(last('WEEKS', 1001), today)?.key).toBe('errors.trend.countRange')
     expect(periodProblem(last('WEEKS', null as never), today)?.key).toBe('errors.trend.countRange') // an empty field
