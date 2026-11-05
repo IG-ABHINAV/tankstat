@@ -39,7 +39,7 @@ export interface KpiProps {
  * four-row figures looks as it did. A trend figure's comparison without a row of its own (two rows, or a line that does not fit) is its arrow
  * alone before the value, the sentence in its tooltip (#260). The label stays the card's first paragraph, alone in its row on a dashboard
  * tile; a preview's chip (Add widget) sits beside it. While the dashboard is arranged the tile's strip is its header (#262): it names the
- * figure (the card draws no label row) and holds a trend figure's period chip (#260, `TrendTile`), and the card starts under it.
+ * figure (the card draws no label row) and holds a figure's period chip (#260, `KeyFigure`), and the card starts under it.
  *
  * What does not fit the card's height is never cut (#259): the card measures itself (`kpiFit.ts`, one step a render in a layout effect, so
  * nothing is painted half way) and leaves out from the bottom what has no room, then puts the label and the value on one line each. It

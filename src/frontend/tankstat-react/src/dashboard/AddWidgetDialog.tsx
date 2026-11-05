@@ -16,22 +16,22 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DialogButtons, DialogCancel, DialogFrame } from '../dialogs/DialogFrame.tsx'
 import { Form } from '../forms/Form.tsx'
-import type { DistanceUnit, VehicleDashboardQuery, VolumeUnit } from '../gql/generated.ts'
+import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { MEDIA } from '../theme/media.ts'
 import { ChartCard } from './ChartCard.tsx'
 import { ChartForm } from './ChartForm.tsx'
 import { NEW_RECIPE, recipeOf, type ChartRecipe } from './chartFormat.ts'
-import { Figure } from './Figures.tsx'
+import type { SavedChart } from './DashboardPanel.tsx'
+import { figureRows, TEMPLATE_MEASURE, templateRecipe } from './figureRecipe.ts'
+import { FigureView, KeyFigure } from './KeyFigure.tsx'
+import { useFigureTitle } from './useFigureTitle.ts'
 import { usePeriodText } from './usePeriodText.ts'
 import { DEFAULT_PERIOD, isTrendFigure, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
-import { TrendFigure } from './TrendFigure.tsx'
 import { TrendPeriodForm } from './TrendPeriodForm.tsx'
-import { useTrendPreview } from './useTrendPreview.ts'
+import { useFigurePreview } from './useFigurePreview.ts'
 import { chartKey, defaultSize, GAP, presetKey, ROW_HEIGHT, type FigureId, type ReadyChart } from './widgets.ts'
 
-type Summary = NonNullable<NonNullable<VehicleDashboardQuery['vehicle']>['summary']>
-type SavedChart = VehicleDashboardQuery['vehicleCharts'][number]
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
 
 /** A ready-made chart the dialog offers, and whether it is on the dashboard already (#247: then it can only be customized here). */
@@ -50,7 +50,7 @@ type Choice = { kind: 'figure'; id: FigureId } | ({ kind: 'ready' } & ReadyOffer
 function TrendFigurePane({ figure, vehicle, rows, onAdd }: { figure: TrendFigureId; vehicle: { id: string; units: Units }; rows: number; onAdd: (period: TrendPeriod) => void }) {
   const { t } = useTranslation()
   const [period, setPeriod] = useState(DEFAULT_PERIOD[figure])
-  const preview = useTrendPreview(figure, vehicle.id, period)
+  const preview = useFigurePreview(TEMPLATE_MEASURE[figure], vehicle.id, period)
   const periodText = usePeriodText()
   return (
     <Form
@@ -62,7 +62,7 @@ function TrendFigurePane({ figure, vehicle, rows, onAdd }: { figure: TrendFigure
       <Stack sx={{ gap: 2 }}>
         <Box role="status" aria-live="polite" aria-label={t('dashboard.period.preview')} sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
           {preview.data ? (
-            <TrendFigure figure={figure} period={period} data={preview.data} rows={rows} units={vehicle.units} label={t(`dashboard.kpi.${figure}`)} chip={<Chip size="small" variant="outlined" label={periodText(figure, period)} sx={{ flex: 'none', maxWidth: '60%' }} />} />
+            <FigureView recipe={{ measure: TEMPLATE_MEASURE[figure], period }} data={preview.data} rows={rows} units={vehicle.units} label={t(`dashboard.kpi.${figure}`)} chip={<Chip size="small" variant="outlined" label={periodText(figure, period)} sx={{ flex: 'none', maxWidth: '60%' }} />} />
           ) : (
             <Skeleton variant="rounded" aria-hidden height="100%" />
           )}
@@ -102,19 +102,18 @@ export function AddWidgetDialog({
   open,
   onClose,
   vehicle,
-  summary,
   canShare,
   everyone,
   figures,
   ready,
   saved,
   onAdd,
+  onAddFigure,
   onChartSaved,
 }: {
   open: boolean
   onClose: () => void
   vehicle: { id: string; units: Units }
-  summary: Summary | null | undefined
   canShare: boolean
   /** Everyone's dashboard is being arranged: a chart made here must be shared, or it would be dropped from it. */
   everyone: boolean
@@ -122,8 +121,10 @@ export function AddWidgetDialog({
   /** Every ready-made chart, in their order, each saying whether it is on the dashboard. */
   ready: readonly ReadyOffer[]
   saved: readonly SavedChart[]
-  /** A widget added, by its tile id; a trend figure with the period chosen for it (#230). */
-  onAdd: (id: string, period?: TrendPeriod | null) => void
+  /** A ready-made chart or a saved widget added, by its tile id. */
+  onAdd: (id: string) => void
+  /** A built-in figure added (#274: a tile with its template's recipe), a trend figure with the period chosen for it (#230). */
+  onAddFigure: (template: FigureId, period?: TrendPeriod | null) => void
   /** A chart saved here (the user's own, new): the dashboard adds its tile. */
   onChartSaved: (id: string, title: string) => void | Promise<unknown>
 }) {
@@ -145,8 +146,13 @@ export function AddWidgetDialog({
     setPicked(null)
     setStep('list')
   }
-  const added = (id: string, period?: TrendPeriod | null) => {
-    onAdd(id, period)
+  const figureTitle = useFigureTitle()
+  const added = (id: string) => {
+    onAdd(id)
+    close()
+  }
+  const addedFigure = (template: FigureId, period?: TrendPeriod | null) => {
+    onAddFigure(template, period)
     close()
   }
   const keyOf = (p: Choice) => `${p.kind}:${p.kind === 'blank' ? '' : p.kind === 'figure' ? p.id : p.chart.id}`
@@ -166,7 +172,7 @@ export function AddWidgetDialog({
       {ready.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.ready')}</ListSubheader>}
       {ready.map((r) => item({ kind: 'ready', ...r }, t(`dashboard.presets.${r.chart.id}`), chartGlyph(r.chart.recipe), false, r.onDashboard ? t('dashboard.widget.onDashboard') : undefined))}
       {saved.length > 0 && <ListSubheader disableSticky>{t('dashboard.widget.groups.yours')}</ListSubheader>}
-      {saved.map((c) => item({ kind: 'saved', chart: c }, c.title, chartGlyph(c)))}
+      {saved.map((c) => item({ kind: 'saved', chart: c }, c.title, c.chart ? chartGlyph(c.chart) : <Hash size={18} aria-hidden />))}
       {item({ kind: 'blank' }, t('dashboard.widget.blank'), <Plus size={18} aria-hidden />, true)}
     </List>
   )
@@ -185,23 +191,24 @@ export function AddWidgetDialog({
     switch (current.kind) {
       case 'figure': {
         // As it will be added: at its default rows (#229), in a box as tall as that tile.
-        const rows = defaultSize(current.id).h
-        if (isTrendFigure(current.id))
+        const rows = defaultSize({ id: current.id }).h
+        const template = current.id
+        if (isTrendFigure(template))
           return (
             <>
-              {heading(t(`dashboard.kpi.${current.id}`), t(`dashboard.widget.describe.figures.${current.id}`))}
-              <TrendFigurePane key={current.id} figure={current.id} vehicle={vehicle} rows={rows} onAdd={(period) => added(current.id, period)} />
+              {heading(t(`dashboard.kpi.${template}`), t(`dashboard.widget.describe.figures.${template}`))}
+              <TrendFigurePane key={template} figure={template} vehicle={vehicle} rows={rows} onAdd={(period) => addedFigure(template, period)} />
             </>
           )
         return (
           <>
-            {heading(t(`dashboard.kpi.${current.id}`), t(`dashboard.widget.describe.figures.${current.id}`))}
+            {heading(t(`dashboard.kpi.${template}`), t(`dashboard.widget.describe.figures.${template}`))}
             <Box sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
-              <Figure id={current.id} vehicleId={vehicle.id} rows={rows} summary={summary} units={vehicle.units} />
+              <KeyFigure recipe={templateRecipe(template)} label={t(`dashboard.kpi.${template}`)} vehicleId={vehicle.id} rows={rows} units={vehicle.units} />
             </Box>
             <DialogButtons>
               <DialogCancel />
-              <Button type="button" onClick={() => added(current.id)}>
+              <Button type="button" onClick={() => addedFigure(template)}>
                 <Plus size={16} aria-hidden />
                 {t('dashboard.widget.add')}
               </Button>
@@ -209,11 +216,21 @@ export function AddWidgetDialog({
           </>
         )
       }
-      case 'saved':
+      case 'saved': {
+        // A saved key figure (#273) at the rows it is added at (`figureRows`, as `addTile` sizes it).
+        const figure = current.chart.figure
+        const rows = figure ? figureRows(figure) : 0
         return (
           <>
             {heading(current.chart.title, current.chart.isShared ? t('dashboard.widget.describe.shared', { name: current.chart.createdBy?.displayName ?? '' }) : t('dashboard.widget.describe.saved'))}
-            <ChartCard vehicleId={vehicle.id} title={current.chart.title} recipe={recipeOf(current.chart)} units={vehicle.units} headingLevel={2} />
+            {current.chart.chart ? (
+              <ChartCard vehicleId={vehicle.id} title={current.chart.title} recipe={recipeOf(current.chart.chart)} units={vehicle.units} headingLevel={2} />
+            ) : figure ? (
+              // As its tile will show it.
+              <Box sx={{ width: 'min(100%, 18rem)', height: rows * ROW_HEIGHT + (rows - 1) * GAP }}>
+                <KeyFigure recipe={figure} label={figureTitle(figure, current.chart.title)} vehicleId={vehicle.id} rows={rows} units={vehicle.units} />
+              </Box>
+            ) : null}
             <DialogButtons>
               <DialogCancel />
               <Button type="button" onClick={() => added(chartKey(current.chart.id))}>
@@ -223,6 +240,7 @@ export function AddWidgetDialog({
             </DialogButtons>
           </>
         )
+      }
       case 'ready': {
         const title = t(`dashboard.presets.${current.chart.id}`)
         // One already on the dashboard (#247) is only customized: saved once something differs, never added as it is.

@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Responsive, useContainerWidth, verticalCompactor, type Layout as GridItems, type LayoutItem } from 'react-grid-layout'
 import { IconAction } from '../components/IconAction.tsx'
 import { TILE_STRIP, TileStripContext, type TileStrip } from './tileChrome.ts'
-import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, minSize, ROW_HEIGHT, widgetOf, type Tile } from './widgets.ts'
+import { COLUMNS, flow, GAP, inReadingOrder, MAX_ROWS, minSize, ROW_HEIGHT, widgetOf, type SavedFigures, type Tile } from './widgets.ts'
 
 /** The grid's columns by the container's width: four on a desktop, two on a tablet, one on a phone. */
 const BREAKPOINTS = { lg: 900, sm: 520, xs: 0 } as const
@@ -46,9 +46,12 @@ export function DashboardGrid({
   name,
   onTilesChange,
   onAction,
+  savedFigure,
 }: {
   tiles: readonly Tile[]
   editing: boolean
+  /** The recipe of each saved widget that is a key figure (#273), for its sizes and its strip. */
+  savedFigure?: SavedFigures
   /** What a tile shows, by its widget's id. */
   render: (tile: Tile) => ReactNode
   /** The name of a tile for its controls, by its widget's id. */
@@ -74,14 +77,14 @@ export function DashboardGrid({
     if (item) setMoving((m) => ({ id: item.i, moves: (m?.moves ?? 0) + 1 }))
   }, [])
 
-  const item = (tile: Tile, inFour: boolean): LayoutItem => {
-    const min = minSize(tile.id)
-    return { i: tile.id, x: tile.x, y: tile.y, w: tile.w, h: tile.h, minW: min.w, minH: min.h, maxH: MAX_ROWS, static: inFour && tile.pinned }
-  }
-  const layouts = useMemo(
-    () => ({ lg: ordered.map((tile) => item(tile, true)), sm: flow(ordered, 2).map((tile) => item(tile, false)), xs: flow(ordered, 1).map((tile) => item(tile, false)) }),
-    [ordered],
-  )
+  // `savedFigure` keeps its identity while the saved widgets do (the page memoizes it), so the grid's layouts do too.
+  const layouts = useMemo(() => {
+    const item = (tile: Tile, inFour: boolean): LayoutItem => {
+      const min = minSize(tile, savedFigure)
+      return { i: tile.id, x: tile.x, y: tile.y, w: tile.w, h: tile.h, minW: min.w, minH: min.h, maxH: MAX_ROWS, static: inFour && tile.pinned }
+    }
+    return { lg: ordered.map((tile) => item(tile, true)), sm: flow(ordered, 2).map((tile) => item(tile, false)), xs: flow(ordered, 1).map((tile) => item(tile, false)) }
+  }, [ordered, savedFigure])
 
   /** The tiles after the grid changed them: in the four-column grid as they are; on fewer columns their new order, flowed back into four. */
   const fromGrid = useCallback(
@@ -109,16 +112,17 @@ export function DashboardGrid({
   const cells = useMemo(
     () =>
       ordered.map((tile, i) => (
-        <Box key={tile.id} data-tile={tile.id} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        // `data-template`: the built-in figure a figure tile was made from (#274), which its `tile:` id no longer says once it is saved.
+        <Box key={tile.id} data-tile={tile.id} data-template={tile.recipe?.figure?.template ?? undefined} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <TileCell
             editing={editing}
-            strip={(slots) => <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} slots={slots} onAction={(action) => onAction?.(tile, action)} />}
+            strip={(slots) => <EditStrip tile={tile} name={name(tile)} index={i} count={ordered.length} cols={cols} slots={slots} savedFigure={savedFigure} onAction={(action) => onAction?.(tile, action)} />}
           >
             {render(tile)}
           </TileCell>
         </Box>
       )),
-    [ordered, editing, cols, name, render, onAction],
+    [ordered, editing, cols, name, render, onAction, savedFigure],
   )
 
   const styles = {
@@ -206,16 +210,16 @@ const HANDLE_SX = { alignSelf: 'stretch', display: 'flex', alignItems: 'center',
  * the pin when the tile is pinned, the content's actions (a chart's table, edit and delete buttons) and the menu for everyone. The name and
  * the grip are the handle for a pointer.
  */
-function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, actions: actionsSlot }, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; slots: StripSlots; onAction: (action: TileAction) => void }) {
+function EditStrip({ tile, name, index, count, cols, slots: { lead: leadSlot, actions: actionsSlot }, savedFigure, onAction }: { tile: Tile; name: string; index: number; count: number; cols: number; slots: StripSlots; savedFigure?: SavedFigures; onAction: (action: TileAction) => void }) {
   const { t } = useTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   /** An action that opens a dialog, done once the menu is gone (`LogFab`): the menu's leaving would take the focus back from it. */
   const [opening, setOpening] = useState<TileAction | null>(null)
   const menuId = useId()
-  const min = minSize(tile.id)
-  const kind = widgetOf(tile.id)?.kind
-  const ready = kind === 'ready'
-  const chart = kind === 'ready' || kind === 'saved'
+  const min = minSize(tile, savedFigure)
+  const widget = widgetOf(tile, savedFigure)
+  const ready = widget?.kind === 'ready'
+  const chart = ready || widget?.kind === 'chart' || (widget?.kind === 'saved' && !widget.figure)
   const choose = (action: TileAction) => {
     setAnchor(null)
     if (action === 'customize') setOpening(action)

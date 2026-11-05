@@ -977,6 +977,8 @@ export interface FakeChart {
   canEdit: boolean
   canDelete: boolean
   createdBy: Person
+  /** A saved key figure's recipe (#273): then it is a key figure, not a chart. */
+  figure?: { measure: string; period: FakePeriod | null; sparkline: boolean; template: string | null } | null
 }
 
 export interface FakeTile {
@@ -986,8 +988,10 @@ export interface FakeTile {
   w: number
   h: number
   pinned: boolean
-  /** A trend figure's own period (#230), as the input sends it; none for its default. */
+  /** An old trend figure id's own period (#230), as the input sends it; none for its default. */
   period?: FakePeriod | null
+  /** A `tile:`'s own recipe (#273), as `TileRecipeInput` sends it. */
+  recipe?: { widget: string; title?: string | null; chart?: Record<string, unknown> | null; figure?: { measure: string; period?: FakePeriod | null; sparkline?: boolean | null; template?: string | null } | null } | null
 }
 
 /** A trend figure's period, as `TrendPeriodInput` sends it. */
@@ -1064,13 +1068,83 @@ export function trendOfSummary(summary: FakeSummary, figure: string): FakeTrend 
   }
 }
 
-const typedTrend = (t: FakeTrend) => ({
-  __typename: 'TrendFigureData',
-  recent: { __typename: 'TrendWindow', ...t.recent },
-  earlier: { __typename: 'TrendWindow', ...t.earlier },
-  currencies: t.currencies.map((c) => ({ __typename: 'CurrencyChange', ...c })),
-  consumption: t.consumption && { __typename: 'ConsumptionChange', ...t.consumption },
-  distance: t.distance && { __typename: 'ValueChange', ...t.distance },
+/** A key figure's answer (#272) as the fake server gives it: the windows, the unit, the money per currency, a value, the last fill-up. */
+export interface FakeFigure {
+  recent: { start: string; end: string; fillUps: number } | null
+  earlier: { start: string; end: string; fillUps: number } | null
+  unit: string | null
+  currencies: { currency: string; recent: number | null; earlier: number | null }[]
+  value: { recent: number | null; earlier: number | null } | null
+  lastFillUp: { date: string | null; fillUps: number; expenses: number } | null
+}
+
+/** The old trend figure a measure answers for (#230), so `trendFor` still says what a tile over a period of its own shows. */
+const TREND_OF: Record<string, string> = { TOTAL_SPEND: 'SPENDING', COST_PER_DISTANCE: 'COST_PER_DISTANCE', AVERAGE_CONSUMPTION: 'CONSUMPTION', DISTANCE: 'DISTANCE' }
+
+/** A trend figure's answer as a key figure's (#274): the same windows and values. */
+const figureOfTrend = (t: FakeTrend, measure: string): FakeFigure => ({
+  recent: t.recent,
+  earlier: t.earlier,
+  unit: measure === 'AVERAGE_CONSUMPTION' ? 'CONSUMPTION' : measure === 'DISTANCE' ? 'DISTANCE' : measure === 'COST_PER_DISTANCE' ? 'COST_PER_DISTANCE' : 'CURRENCY',
+  currencies: t.currencies,
+  value: measure === 'AVERAGE_CONSUMPTION' ? t.consumption && { recent: t.consumption.recent, earlier: t.consumption.earlier } : measure === 'DISTANCE' ? t.distance : null,
+  lastFillUp: null,
+})
+
+/**
+ * What the server answers for a key figure (#274) from the summary: *Spent this month* the month's spending per currency against the
+ * month before, *Average consumption* the summary's average of the last 10 with nothing to compare, the odometer and the last fill-up as
+ * the summary says them, and the trend figures as `trendOfSummary`. Without a comparison (`NONE`) there is no earlier window. Any other
+ * measure: 100 against 80 in the main currency or as a plain value.
+ */
+export function figureOfSummary(summary: FakeSummary, measure: string, period: FakePeriod | null): FakeFigure {
+  const none = period?.against === 'NONE'
+  const plain: FakeFigure = { recent: null, earlier: null, unit: null, currencies: [], value: null, lastFillUp: null }
+  const drop = (f: FakeFigure): FakeFigure => (none ? { ...f, earlier: null, currencies: f.currencies.map((c) => ({ ...c, earlier: null })), value: f.value && { ...f.value, earlier: null } } : f)
+  if (measure === 'ODOMETER') return { ...plain, unit: 'DISTANCE', value: summary.latestOdometer == null ? null : { recent: summary.latestOdometer, earlier: null } }
+  if (measure === 'LAST_FILL_UP') return { ...plain, lastFillUp: { date: summary.lastFillUpDate, fillUps: summary.fillUpCount, expenses: summary.expenseCount } }
+  if (measure === 'TOTAL_SPEND' && period?.kind === 'THIS_MONTH')
+    return drop({ ...plain, recent: { start: '2026-10-01', end: '2026-10-05', fillUps: 1 }, earlier: { start: '2026-09-01', end: '2026-09-30', fillUps: 2 }, unit: 'CURRENCY', currencies: summary.spending.map((c) => ({ currency: c.currency, recent: c.thisMonth, earlier: c.lastMonth })) })
+  if (measure === 'AVERAGE_CONSUMPTION' && none)
+    return { ...plain, recent: { start: '2026-03-01', end: '2026-10-01', fillUps: 10 }, unit: 'CONSUMPTION', value: summary.averageConsumption == null ? null : { recent: summary.averageConsumption, earlier: null } }
+  if (TREND_OF[measure]) return drop(figureOfTrend(trendOfSummary(summary, TREND_OF[measure]), measure))
+  const window = { recent: { start: '2026-09-05', end: '2026-10-04', fillUps: 3 }, earlier: { start: '2026-08-06', end: '2026-09-04', fillUps: 2 } }
+  const money = ['FUEL_COST', 'EXPENSE_COST', 'FUEL_COST_PER_DISTANCE', 'AVERAGE_PRICE_PER_UNIT', 'AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT'].includes(measure)
+  return drop({
+    ...plain,
+    ...window,
+    unit: measure === 'FUEL_VOLUME' ? 'VOLUME' : measure === 'FILL_UPS' ? 'COUNT' : 'CURRENCY',
+    currencies: money ? [{ currency: summary.currency ?? 'HUF', recent: 100, earlier: 80 }] : [],
+    value: money ? null : { recent: 100, earlier: 80 },
+  })
+}
+
+const typedFigure = (f: FakeFigure) => ({
+  __typename: 'FigureData',
+  recent: f.recent && { __typename: 'TrendWindow', ...f.recent },
+  earlier: f.earlier && { __typename: 'TrendWindow', ...f.earlier },
+  unit: f.unit,
+  currencies: f.currencies.map((c) => ({ __typename: 'CurrencyChange', ...c })),
+  value: f.value && { __typename: 'ValueChange', ...f.value },
+  lastFillUp: f.lastFillUp && { __typename: 'LastFillUpFigure', ...f.lastFillUp },
+})
+
+const typedPeriod = (p: FakePeriod | null | undefined) => (p ? { __typename: 'TrendPeriod', unit: null, count: null, since: null, whole: false, against: 'BEFORE', ...p } : null)
+const CONFIG_DEFAULTS = { from: null, to: null, trend: 'NONE', runningTotal: false, compareYearEarlier: false, secondMetric: null, secondKind: null }
+const typedRecipe = (f: NonNullable<FakeChart['figure']>) => ({ __typename: 'FigureRecipe', ...f, period: typedPeriod(f.period) })
+
+/** A saved widget (#273) as `vehicleWidgets` answers it: a fake chart's recipe as its `chart`, or its `figure`. */
+export const typedWidget = (c: FakeChart) => ({
+  __typename: 'SavedWidget',
+  id: c.id,
+  title: c.title,
+  widget: c.figure ? 'FIGURE' : 'CHART',
+  chart: c.figure ? null : { __typename: 'ChartConfig', metric: c.metric, grouping: c.grouping, kind: c.kind, range: c.range, stacked: c.stacked, from: c.rangeFrom, to: c.rangeTo, trend: c.trend, runningTotal: c.runningTotal, compareYearEarlier: c.compareYearEarlier, secondMetric: c.secondMetric, secondKind: c.secondKind },
+  figure: c.figure ? typedRecipe(c.figure) : null,
+  isShared: c.isShared,
+  canEdit: c.canEdit,
+  canDelete: c.canDelete,
+  createdBy: c.createdBy,
 })
 
 export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] = []) {
@@ -1080,8 +1154,11 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
     calls: {} as Record<string, unknown[]>,
     chartRequests: [] as { vehicleId: string; config: Record<string, unknown> }[],
     trendRequests: [] as { vehicleId: string; figure: string; period: FakePeriod }[],
-    /** A trend figure's answer for a period of its own (#230); none: what the summary's trends say, as for the defaults. */
+    /** A trend figure's answer for a period of its own (#230), by its old figure; none: what the summary's trends say, as for the defaults. */
     trendFor: undefined as ((figure: string, period: FakePeriod) => FakeTrend | undefined) | undefined,
+    /** A key figure's answer (#274) by its measure and period; none: `trendFor`'s, else what the summary says (`figureOfSummary`). */
+    figureFor: undefined as ((measure: string, period: FakePeriod | null) => FakeFigure | undefined) | undefined,
+    figureRequests: [] as { vehicleId: string; measure: string; period: FakePeriod | null }[],
     failWith: undefined as { message: string; key: string; args?: Record<string, unknown> } | undefined,
     nextId: 400,
     /** How the dashboard is arranged: the vehicle's and the user's own (null for none), and whether the user may change the vehicle's. */
@@ -1125,11 +1202,19 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
 
   const handlers = [
     graphql.query('VehicleDashboard', ({ variables }) => {
-      // Every tile says its period, as the server does: null for none.
-      const tiles = (l: FakeLayout) => l.tiles.map((t) => ({ ...t, period: t.period ? { __typename: 'TrendPeriod', unit: null, count: null, since: null, whole: false, against: 'BEFORE', ...t.period } : null }))
+      // Every tile says its period and its recipe, as the server does: null for none.
+      const recipe = (r: FakeTile['recipe']) =>
+        r ? {
+          __typename: 'TileRecipe',
+          widget: r.widget,
+          title: r.title ?? null,
+          chart: r.chart ? { __typename: 'ChartConfig', ...CONFIG_DEFAULTS, ...r.chart } : null,
+          figure: r.figure ? typedRecipe({ measure: r.figure.measure, period: r.figure.period ?? null, sparkline: r.figure.sparkline ?? false, template: r.figure.template ?? null }) : null,
+        } : null
+      const tiles = (l: FakeLayout) => l.tiles.map((t) => ({ ...t, period: typedPeriod(t.period), recipe: recipe(t.recipe) }))
       const layout = (l: FakeLayout | null) => (l ? { __typename: 'DashboardLayoutInfo', ...l, tiles: tiles(l) } : null)
       const dashboard = { __typename: 'DashboardInfo', shared: layout(state.dashboard.shared), personal: layout(state.dashboard.personal), canChangeShared: state.dashboard.canChangeShared }
-      return HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, summary: state.vehicle.summary, dashboard } : null, vehicleCharts: state.charts } })
+      return HttpResponse.json({ data: { vehicle: variables.id === state.vehicle.id ? { __typename: 'Vehicle', id: state.vehicle.id, dashboard } : null, vehicleWidgets: state.charts.map(typedWidget) } })
     }),
     graphql.mutation('SaveDashboardLayout', ({ variables }) => {
       record('SaveDashboardLayout', variables)
@@ -1143,10 +1228,15 @@ export function fakeDashboardBackend(vehicle: FakeVehicle, charts: FakeChart[] =
       state.dashboard[variables.personal ? 'personal' : 'shared'] = null
       return HttpResponse.json({ data: { resetDashboardLayout: true } })
     }),
-    graphql.query('VehicleTrend', ({ variables }) => {
-      state.trendRequests.push(variables as never)
-      const { figure, period } = variables as { figure: string; period: FakePeriod }
-      return HttpResponse.json({ data: { vehicleTrend: typedTrend(state.trendFor?.(figure, period) ?? trendOfSummary(state.vehicle.summary, figure)) } })
+    graphql.query('VehicleFigure', ({ variables }) => {
+      const { vehicleId, measure, period } = variables as { vehicleId: string; measure: string; period: FakePeriod | null }
+      state.figureRequests.push({ vehicleId, measure, period })
+      // A measure over a period of a trend figure (#230) is also that figure's request, as the tests of periods knew it.
+      const trend = TREND_OF[measure] && period && period.kind !== 'THIS_MONTH' && period.against !== 'NONE' ? TREND_OF[measure] : null
+      if (trend && period) state.trendRequests.push({ vehicleId, figure: trend, period })
+      const own = state.figureFor?.(measure, period) ?? (trend && period ? state.trendFor?.(trend, period) : undefined)
+      const answer = own && 'value' in own ? own : own ? figureOfTrend(own, measure) : figureOfSummary(state.vehicle.summary, measure, period)
+      return HttpResponse.json({ data: { vehicleFigure: typedFigure(answer) } })
     }),
     graphql.query('ChartData', ({ variables }) => {
       state.chartRequests.push(variables as never)

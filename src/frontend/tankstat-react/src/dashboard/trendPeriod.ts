@@ -1,23 +1,21 @@
-import type { TrendComparison, TrendFigure, TrendPeriodInput, TrendUnit, TrendWindowKind } from '../gql/generated.ts'
+import type { TrendComparison, TrendPeriodInput, TrendUnit, TrendWindowKind } from '../gql/generated.ts'
 
 /**
- * A trend figure's period (#230), pure like `widgets.ts`: the four trend figures, their defaults (exactly what each showed before periods
- * existed), the quick picks, and the words of the tile's chip and of its comparison as i18n keys with their values, so the tile, the
- * popover and the Add widget dialog word a period the same way. The windows themselves are the server's (`StatsCalculator.Trend`).
+ * A key figure's period (#230, #274), pure like `widgets.ts`: the built-in figures that have one, their defaults (exactly what each showed
+ * before periods existed), the quick picks, and the words of the tile's chip and of its comparison as i18n keys with their values, so the
+ * tile, the popover and the Add widget dialog word a period the same way. A figure of no built-in one takes its measure's
+ * (`figureRecipe.ts` `periodFigureOf`). The windows themselves are the server's (`StatsCalculator.Figure`).
  */
 
-/** The key figures that compare two windows of a period; each loads its own figure (`vehicleTrend`). */
+/** The built-in figures that compare two windows of a period by default; the Add widget dialog gives them a period before they are added. */
 export const TREND_FIGURES = ['spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend'] as const
 export type TrendFigureId = (typeof TREND_FIGURES)[number]
 export const isTrendFigure = (id: string): id is TrendFigureId => (TREND_FIGURES as readonly string[]).includes(id)
 
-/** The server's name of each trend figure. */
-export const TREND_FIGURE: Record<TrendFigureId, TrendFigure> = {
-  spendingTrend: 'SPENDING',
-  costPerDistance: 'COST_PER_DISTANCE',
-  consumptionTrend: 'CONSUMPTION',
-  distanceTrend: 'DISTANCE',
-}
+/** The built-in figures over a period (#274: *Spent this month* and *Average consumption* too); the odometer and the last fill-up have none. */
+export const PERIOD_FIGURES = ['thisMonth', 'consumption', ...TREND_FIGURES] as const
+export type PeriodFigureId = (typeof PERIOD_FIGURES)[number]
+export const isPeriodFigure = (id: string): id is PeriodFigureId => (PERIOD_FIGURES as readonly string[]).includes(id)
 
 /** A period as the app keeps it: every field there, none of GraphQL's own (a period read back carries `__typename`). */
 export interface TrendPeriod {
@@ -30,19 +28,28 @@ export interface TrendPeriod {
   against: TrendComparison
 }
 
-const last = (unit: TrendUnit, count: number, whole = false): TrendPeriod => ({ kind: 'LAST', unit, count, since: null, whole, against: 'BEFORE' })
+const last = (unit: TrendUnit, count: number, whole = false, against: TrendComparison = 'BEFORE'): TrendPeriod => ({ kind: 'LAST', unit, count, since: null, whole, against })
 const THIS_YEAR: TrendPeriod = { kind: 'THIS_YEAR', unit: null, count: null, since: null, whole: false, against: 'YEAR_EARLIER' }
+const THIS_MONTH: TrendPeriod = { kind: 'THIS_MONTH', unit: null, count: null, since: null, whole: false, against: 'BEFORE' }
 
-/** What a figure shows without a period of its own: the server's defaults (`TrendPeriod.TwelveWholeMonths` and the others). */
-export const DEFAULT_PERIOD: Record<TrendFigureId, TrendPeriod> = {
+/**
+ * What a built-in figure shows without a period of its own: the server's defaults (`TrendPeriod.TwelveWholeMonths` and the others) for the
+ * trend figures, and what *Spent this month* (this month against the whole month before, #272) and *Average consumption* (the last 10
+ * fill-ups, compared with nothing) always showed.
+ */
+export const DEFAULT_PERIOD: Record<PeriodFigureId, TrendPeriod> = {
+  thisMonth: THIS_MONTH,
+  consumption: last('FILL_UPS', 10, false, 'NONE'),
   spendingTrend: last('MONTHS', 12, true),
   costPerDistance: last('MONTHS', 12, true),
   consumptionTrend: last('FILL_UPS', 10),
   distanceTrend: THIS_YEAR,
 }
 
-/** Each figure's quick picks: whole months for the money, fill-ups for consumption, the year so far or 12 whole months for distance. */
-export const QUICK_PICKS: Record<TrendFigureId, readonly TrendPeriod[]> = {
+/** Each figure's quick picks: whole months for the money (this month too for *Spent this month*), fill-ups for consumption, the year so far or 12 whole months for distance. */
+export const QUICK_PICKS: Record<PeriodFigureId, readonly TrendPeriod[]> = {
+  thisMonth: [THIS_MONTH, ...[3, 6, 12].map((n) => last('MONTHS', n, true))],
+  consumption: [5, 10, 20].map((n) => last('FILL_UPS', n)),
   spendingTrend: [3, 6, 12].map((n) => last('MONTHS', n, true)),
   costPerDistance: [3, 6, 12].map((n) => last('MONTHS', n, true)),
   consumptionTrend: [5, 10, 20].map((n) => last('FILL_UPS', n)),
@@ -55,7 +62,7 @@ export function canonical(p: Partial<TrendPeriodInput> & { kind: TrendWindowKind
 }
 
 /** A tile's period, its figure's default when it has none of its own. */
-export const periodOf = (figure: TrendFigureId, period: TrendPeriod | null | undefined): TrendPeriod => (period ? canonical(period) : DEFAULT_PERIOD[figure])
+export const periodOf = (figure: PeriodFigureId, period: TrendPeriod | null | undefined): TrendPeriod => (period ? canonical(period) : DEFAULT_PERIOD[figure])
 
 /** The period as GraphQL takes it (a fresh object: never one with `__typename`, which the server refuses in an input). */
 export const toInput = (p: TrendPeriod): TrendPeriodInput => ({ kind: p.kind, unit: p.unit, count: p.count, since: p.since, whole: p.whole, against: p.against })
@@ -66,10 +73,6 @@ export const samePeriod = (a: TrendPeriod, b: TrendPeriod) =>
 /** The same window, whatever each is compared with: a quick pick sets the window only, the comparison is a choice of its own. */
 export const sameWindow = (a: TrendPeriod, b: TrendPeriod) => samePeriod({ ...a, against: b.against }, b)
 
-export const isDefault = (figure: TrendFigureId, p: TrendPeriod) => samePeriod(p, DEFAULT_PERIOD[figure])
-
-/** What a tile stores: nothing for its figure's default, so a layout keeps reading the same when a default is ever changed. */
-export const stored = (figure: TrendFigureId, p: TrendPeriod | null | undefined): TrendPeriod | null => (p && !isDefault(figure, canonical(p)) ? canonical(p) : null)
 
 /** A text of `en.json` with its values. */
 export interface Words {
@@ -97,7 +100,7 @@ export const canBeWhole = (unit: TrendUnit | null) => unit === 'WEEKS' || unit =
 
 /** The tab a period is set on: a quick pick's, `SINCE`'s, else `LAST`'s (this year and this month so far are only quick picks). */
 export type PeriodTab = 'quick' | 'last' | 'since'
-export function tabOf(figure: TrendFigureId, p: TrendPeriod): PeriodTab {
+export function tabOf(figure: PeriodFigureId, p: TrendPeriod): PeriodTab {
   if (p.kind === 'THIS_YEAR' || p.kind === 'THIS_MONTH' || QUICK_PICKS[figure].some((q) => sameWindow(q, p))) return 'quick'
   return p.kind === 'SINCE' ? 'since' : 'last'
 }
@@ -107,29 +110,30 @@ export function tabOf(figure: TrendFigureId, p: TrendPeriod): PeriodTab {
  * 8 weeks, or 10 fill-ups for consumption; since the first of the month 3 months ago; the figure's default for the quick picks), keeping
  * what it is compared with.
  */
-export function startOf(tab: PeriodTab, figure: TrendFigureId, p: TrendPeriod, today: string): TrendPeriod {
+export function startOf(tab: PeriodTab, figure: PeriodFigureId, p: TrendPeriod, today: string): TrendPeriod {
   if (tabOf(figure, p) === tab) return p
   if (tab === 'quick') return { ...DEFAULT_PERIOD[figure], against: p.against }
-  if (tab === 'last') return figure === 'consumptionTrend' ? { ...last('FILL_UPS', 10), against: p.against } : { ...last('WEEKS', 8), against: p.against }
+  if (tab === 'last') return figure === 'consumptionTrend' || figure === 'consumption' ? { ...last('FILL_UPS', 10), against: p.against } : { ...last('WEEKS', 8), against: p.against }
   const [y, m] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))]
   const back = new Date(Date.UTC(y, m - 1 - 3, 1)).toISOString().slice(0, 10)
   return { kind: 'SINCE', unit: null, count: null, since: back, whole: false, against: p.against }
 }
 
 const UNIT_KEY: Record<TrendUnit, string> = { DAYS: 'days', WEEKS: 'weeks', MONTHS: 'months', YEARS: 'years', FILL_UPS: 'fillUps' }
+const AGAINST_KEY: Record<TrendComparison, string> = { BEFORE: 'before', YEAR_EARLIER: 'yearEarlier', NONE: 'none' }
 
 /**
  * The chip's words: "12 full months", "Last 8 weeks", "Since 15 Mar 2026", "This year", "This month"; with the comparison when it is not
- * the figure's default ("… · vs a year earlier"). No comparison (`NONE`, #272) says nothing here: a key figure without one has no arrow,
- * and how its chip says so is the builder's (#275). `date` writes the `SINCE` day in the user's format.
+ * the figure's default ("… · vs a year earlier", "… · no comparison" for `NONE` where the figure compares by default, #274). `date`
+ * writes the `SINCE` day in the user's format.
  */
-export function periodWords(figure: TrendFigureId, p: TrendPeriod, date: (day: string) => string): { period: Words; against: Words | null } {
+export function periodWords(figure: PeriodFigureId, p: TrendPeriod, date: (day: string) => string): { period: Words; against: Words | null } {
   const period: Words =
     p.kind === 'THIS_YEAR' ? { key: 'dashboard.period.thisYear', values: {} }
     : p.kind === 'THIS_MONTH' ? { key: 'dashboard.period.thisMonth', values: {} }
     : p.kind === 'SINCE' ? { key: 'dashboard.period.since', values: { date: p.since ? date(p.since) : '' } }
     : { key: `dashboard.period.${p.whole ? 'whole' : 'last'}.${UNIT_KEY[p.unit ?? 'DAYS']}`, values: { count: p.count ?? 0 } }
-  const against = p.against === DEFAULT_PERIOD[figure].against || p.against === 'NONE' ? null : { key: `dashboard.period.vs.${p.against === 'YEAR_EARLIER' ? 'yearEarlier' : 'before'}`, values: {} }
+  const against = p.against === DEFAULT_PERIOD[figure].against ? null : { key: `dashboard.period.vs.${AGAINST_KEY[p.against]}`, values: {} }
   return { period, against }
 }
 

@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { graphql } from '../../support/graphql.ts'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { createApolloClient } from '../../../src/apolloClient.ts'
-import { AdminDocument, HealthDocument, LoginDocument, RefuelingDetailsDocument, ResetPasswordDocument, SessionDocument, VehicleDefaultsDocument } from '../../../src/gql/generated.ts'
+import { AdminDocument, HealthDocument, LoginDocument, RefuelingDetailsDocument, ResetPasswordDocument, SessionDocument, VehicleDefaultsDocument, VehicleFigureDocument } from '../../../src/gql/generated.ts'
 import { appliedMutations } from '../../../src/offline/appliedMutations.ts'
 import { connectivity } from '../../../src/offline/connectivity.ts'
 import { deviceData } from '../../../src/offline/deviceData.ts'
@@ -186,6 +186,22 @@ it('while a change of a log waits, its details are answered by the device even t
   expect(data?.refueling).toMatchObject({ id: 'r1', volume: 31 })
   expect(other.data?.refueling).toBeNull() // nothing waits for that one: the server answered
   expect(asked).toBe(1)
+})
+
+it('a key figure of a vehicle added here, while its add waits, is the device\'s answer; another vehicle\'s is the server\'s (#274)', async () => {
+  const asked: string[] = []
+  server.use(graphql.query('VehicleFigure', ({ variables }) => (asked.push(String(variables.vehicleId)), HttpResponse.json({ errors: [{ message: 'no such vehicle', extensions: { key: 'vehicle.notFound', code: 'NOT_FOUND' } }] }))))
+  await deviceData.signedIn('u1')
+  await outbox.reload()
+  await outbox.enqueue({ id: 'golf', entity: 'vehicles', action: 'add', vehicleId: 'golf', targetId: 'golf', input: { id: 'golf', name: 'Golf', fuelType: 'PETROL' } })
+  const client = createApolloClient('http://localhost/graphql')
+
+  const added = await client.query({ query: VehicleFigureDocument, variables: { vehicleId: 'golf', measure: 'ODOMETER', period: null }, fetchPolicy: 'network-only' })
+
+  expect(added.data?.vehicleFigure).toMatchObject({ unit: 'DISTANCE', value: null }) // no reading kept yet: the device's empty answer, not the server's NOT_FOUND
+  expect(asked).toEqual([])
+  await client.query({ query: VehicleFigureDocument, variables: { vehicleId: 'v9', measure: 'ODOMETER', period: null }, fetchPolicy: 'network-only', errorPolicy: 'all' })
+  expect(asked).toEqual(['v9']) // nothing waits for that one: the server is asked
 })
 
 it('an answer the device cannot keep (its storage is full) still reaches the screen', async () => {

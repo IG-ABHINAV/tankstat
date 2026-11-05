@@ -1,15 +1,16 @@
-import { NEW_RECIPE, type ChartRecipe } from './chartFormat.ts'
-import { isTrendFigure, stored, toInput, type TrendPeriod } from './trendPeriod.ts'
+import type { TileRecipeInput, WidgetKind } from '../gql/generated.ts'
+import { uuidV4 } from '../offline/uuid.ts'
+import { NEW_RECIPE, toConfig, type ChartRecipe } from './chartFormat.ts'
+import { canonicalRecipe, defaultPeriodOf, FIGURES, figureRows, isTemplate, templateOf, templateRecipe, toRecipeInput, type FigureId, type FigureRecipe } from './figureRecipe.ts'
+import { canonical, type TrendPeriod } from './trendPeriod.ts'
+
+export { FIGURES, type FigureId } from './figureRecipe.ts'
 
 /**
  * What a vehicle's dashboard can show, and how a stored arrangement becomes the dashboard's tiles (#211). Pure, like `chartFormat.ts`: no
- * React, no MUI, so it can be tested and imported anywhere; the figures are drawn by `Figures.tsx` and the grid by `DashboardGrid.tsx`,
- * in the dashboard's own chunk.
+ * React, no MUI, so it can be tested and imported anywhere; the key figures are drawn by `KeyFigure.tsx` and the grid by
+ * `DashboardGrid.tsx`, in the dashboard's own chunk.
  */
-
-/** The key figures a dashboard can show; their texts are `dashboard.kpi.*`. */
-export const FIGURES = ['thisMonth', 'consumption', 'odometer', 'lastFillUp', 'spendingTrend', 'costPerDistance', 'consumptionTrend', 'distanceTrend'] as const
-export type FigureId = (typeof FIGURES)[number]
 
 /** The key figures' grid while the figures load: one column on a phone, two from a small tablet, four on a desktop. */
 export const FIGURE_GRID = { display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 } as const
@@ -37,7 +38,21 @@ export const MAX_ROWS = 24
 export const ROW_HEIGHT = 36
 export const GAP = 12
 
-/** A tile as stored: a widget's id (a figure's, `preset:<id>` or `chart:<id>`) at its place and size in the four-column grid. */
+/**
+ * A tile's own recipe (#273): a key figure's (#274: every key figure on the dashboard has one) or a chart's (#275), and its title; null
+ * for a figure's default title (its template's, translated).
+ */
+export interface TileRecipe {
+  widget: WidgetKind
+  title?: string | null
+  chart?: ChartRecipe | null
+  figure?: FigureRecipe | null
+}
+
+/**
+ * A tile: a widget at its place and size in the four-column grid. Its id is a built-in figure's (an arrangement stored before #274, or a
+ * preset's, until it is saved), `tile:<id>` (a tile with its own recipe), `preset:<id>` or `chart:<id>` (a saved widget).
+ */
 export interface Tile {
   id: string
   x: number
@@ -46,8 +61,10 @@ export interface Tile {
   h: number
   /** Never moved by dragging the other tiles. */
   pinned: boolean
-  /** A trend figure's own period (#230, `trendPeriod.ts`); none (or null) for its default, and for every other tile. */
+  /** An old trend figure id's own period as stored (#230); read into its recipe by `resolveLayout`, and never stored again. */
   period?: TrendPeriod | null
+  /** A key figure's recipe (every figure tile's, once resolved), or a `tile:`'s own chart. */
+  recipe?: TileRecipe | null
 }
 
 /** How a dashboard is stored: its tiles, and the saved charts taken off it. */
@@ -58,20 +75,43 @@ export interface Layout {
 
 const PRESET = 'preset:'
 const CHART = 'chart:'
+const TILE = 'tile:'
 export const presetKey = (id: string) => `${PRESET}${id}`
 export const chartKey = (id: string) => `${CHART}${id}`
+export const tileKey = (id: string) => `${TILE}${id}`
+export const isTileKey = (id: string) => id.startsWith(TILE)
 
-/** What a tile's id names: a key figure, a ready-made chart, a saved chart (by its id), or nothing the app knows. */
-export type Widget = { kind: 'figure'; id: FigureId } | { kind: 'ready'; chart: ReadyChart } | { kind: 'saved'; id: string }
+/**
+ * What a tile shows: a key figure of its own (#274: a built-in one's recipe, or a `tile:`'s), a chart of its own (a `tile:`'s, #275), a
+ * ready-made chart, a saved widget (by its id; `figure` its recipe when it is a key figure), or nothing the app knows.
+ */
+export type Widget =
+  | { kind: 'figure'; figure: FigureRecipe; title: string | null }
+  | { kind: 'chart'; chart: ChartRecipe; title: string }
+  | { kind: 'ready'; chart: ReadyChart }
+  | { kind: 'saved'; id: string; figure: FigureRecipe | null }
 
-export function widgetOf(id: string): Widget | null {
-  if ((FIGURES as readonly string[]).includes(id)) return { kind: 'figure', id: id as FigureId }
+/** A tile as far as what it shows goes. */
+export type TileWidget = Pick<Tile, 'id'> & Partial<Pick<Tile, 'recipe' | 'period'>>
+/** The recipe of a saved widget that is a key figure (#273), by its id; null for a chart (or one not known). */
+export type SavedFigures = (id: string) => FigureRecipe | null | undefined
+
+export function widgetOf(tile: TileWidget, savedFigure?: SavedFigures): Widget | null {
+  const { id, recipe } = tile
+  if (recipe?.widget === 'FIGURE' && recipe.figure) return { kind: 'figure', figure: recipe.figure, title: recipe.title ?? null }
+  if (recipe?.widget === 'CHART' && recipe.chart) return { kind: 'chart', chart: recipe.chart, title: recipe.title ?? '' }
+  if (isTemplate(id)) return { kind: 'figure', figure: templateRecipe(id, tile.period), title: null }
   if (id.startsWith(PRESET)) {
     const chart = READY_CHARTS.find((c) => c.id === id.slice(PRESET.length))
     return chart ? { kind: 'ready', chart } : null
   }
-  return id.startsWith(CHART) ? { kind: 'saved', id: id.slice(CHART.length) } : null
+  if (!id.startsWith(CHART)) return null
+  const saved = id.slice(CHART.length)
+  return { kind: 'saved', id: saved, figure: savedFigure?.(saved) ?? null }
 }
+
+/** The key figure a widget shows (its own or a saved one's), or null for a chart. */
+const figureOfWidget = (w: Widget | null): FigureRecipe | null => (w?.kind === 'figure' || w?.kind === 'saved' ? w.figure : null)
 
 export interface Size {
   w: number
@@ -82,47 +122,42 @@ export interface Size {
  * A key figure shows what its rows hold (#229, `Kpi.tsx`): two rows (84 px) its label and value, three (132 px) its comparison or note
  * too, four (180 px) its sparkline as well. Every figure can be made as low as two rows (#259): its card fits what it shows to its height by
  * measuring (`Kpi.tsx`), leaving out from the bottom what has no room and putting a label or value that would wrap on one line, so the
- * least rows never depend on a width, a language or the currencies used. Its default rows are what it shows in full: the sparkline's and
- * the trend figures' four, the plain figures' three.
+ * least rows never depend on a width, a language or the currencies used. Its default rows are what it shows in full, by its recipe
+ * (`figureRecipe.ts` `figureRows`): four with a comparison or a sparkline, else three. The fewest rows a figure can take are its label and
+ * value (while arranging its value under the edit strip, which names it: #262).
  */
-const FIGURE_ROWS: Record<FigureId, number> = {
-  thisMonth: 4,
-  consumption: 3,
-  odometer: 3,
-  lastFillUp: 3,
-  spendingTrend: 4,
-  costPerDistance: 4,
-  consumptionTrend: 4,
-  distanceTrend: 4,
-}
-/** The fewest rows a figure can take, its label and value (while arranging its value under the edit strip, which names it: #262). */
 export const MIN_FIGURE_ROWS = 2
 
 /** A widget's size when it is put on the dashboard: a figure one column wide and as low as it shows in full, a chart two columns wide and tall. */
-export function defaultSize(id: string): Size {
-  const widget = widgetOf(id)
-  return widget?.kind === 'figure' ? { w: 1, h: FIGURE_ROWS[widget.id] } : { w: 2, h: 8 }
+export function defaultSize(tile: TileWidget, savedFigure?: SavedFigures): Size {
+  const figure = figureOfWidget(widgetOf(tile, savedFigure))
+  return figure ? { w: 1, h: figureRows(figure) } : { w: 2, h: 8 }
 }
 /** The least a tile can be: a figure its label and value (`MIN_FIGURE_ROWS`), a chart its picture. */
-export function minSize(id: string): Size {
-  const widget = widgetOf(id)
-  return widget?.kind === 'figure' ? { w: 1, h: MIN_FIGURE_ROWS } : { w: 1, h: 5 }
+export function minSize(tile: TileWidget, savedFigure?: SavedFigures): Size {
+  return figureOfWidget(widgetOf(tile, savedFigure)) ? { w: 1, h: MIN_FIGURE_ROWS } : { w: 1, h: 5 }
 }
 
 const tile = (id: string, x: number, y: number, w: number, h: number): Tile => ({ id, x, y, w, h, pinned: false })
 
-/** A preset's tiles: four figures in a row at the top, each as tall as the tallest of them shows in full, then the charts two by two. */
+/** A built-in figure's tile recipe (#274): its template's, titled by the template. */
+export const figureTile = (id: FigureId, period?: TrendPeriod | null): TileRecipe => ({ widget: 'FIGURE', title: null, figure: templateRecipe(id, period) })
+
+/**
+ * A preset's tiles: four figures in a row at the top (their built-in recipes, #274, by their template's id until saved), each as tall as the
+ * tallest of them shows in full, then the charts two by two.
+ */
 function presetTiles(figures: readonly FigureId[], charts: readonly ReadyChart['id'][]): Tile[] {
-  const row = Math.max(...figures.map((f) => defaultSize(f).h))
-  return [...figures.map((f, i) => tile(f, i, 0, 1, row)), ...charts.map((c, i) => tile(presetKey(c), (i % 2) * 2, row + Math.floor(i / 2) * 8, 2, 8))]
+  const row = Math.max(...figures.map((f) => defaultSize({ id: f }).h))
+  return [...figures.map((f, i) => ({ ...tile(f, i, 0, 1, row), recipe: figureTile(f) })), ...charts.map((c, i) => tile(presetKey(c), (i % 2) * 2, row + Math.floor(i / 2) * 8, 2, 8))]
 }
 
 /** The layouts a dashboard can start from, named `dashboard.layoutPresets.<id>`: Standard is the dashboard as it always was. */
-export const LAYOUT_PRESETS = {
+export const LAYOUT_PRESETS: Record<'standard' | 'spending' | 'usage', Layout> = {
   standard: { tiles: presetTiles(['thisMonth', 'consumption', 'odometer', 'lastFillUp'], ['monthlyCosts', 'consumption', 'fuelPrice', 'categories', 'distance']), hidden: [] },
   spending: { tiles: presetTiles(['thisMonth', 'spendingTrend', 'costPerDistance', 'lastFillUp'], ['monthlyCosts', 'spendSoFar', 'categories', 'costPerDistance', 'fuelPrice']), hidden: [] },
   usage: { tiles: presetTiles(['odometer', 'distanceTrend', 'consumption', 'consumptionTrend'], ['distanceYearEarlier', 'consumptionTrend', 'distanceAndConsumption', 'distance']), hidden: [] },
-} as const satisfies Record<string, Layout>
+}
 export type LayoutPresetId = keyof typeof LAYOUT_PRESETS
 
 export interface ResolvedLayout<S> {
@@ -130,7 +165,7 @@ export interface ResolvedLayout<S> {
   tiles: Tile[]
   /** The saved charts taken off the dashboard. */
   hidden: S[]
-  /** What can be put on it: the figures and ready-made charts not shown, and the saved charts taken off. */
+  /** What can be put on it: the built-in figures no tile was made from (#274: by template), the ready-made charts not shown, and the saved widgets taken off. */
   available: { figures: FigureId[]; ready: ReadyChart[]; saved: S[] }
 }
 
@@ -211,59 +246,106 @@ function firstFit(placed: readonly Tile[], t: Tile, cols: number): Tile {
   return { ...t, w, x: best.x, y: best.y }
 }
 
+/** A tile's recipe in the app's shape, whatever it came from (as stored it carries GraphQL's `__typename`s); null for one the app cannot draw. */
+function ownRecipe(r: TileRecipe): TileRecipe | null {
+  if (r.widget === 'FIGURE' && r.figure) return { widget: 'FIGURE', title: r.title ?? null, figure: canonicalRecipe(r.figure) }
+  if (r.widget === 'CHART' && r.chart) return { widget: 'CHART', title: r.title ?? null, chart: { ...NEW_RECIPE, ...toConfig(r.chart) } }
+  return null
+}
+
+/** A tile as the dashboard keeps it while shown and arranged (#274): a figure's recipe on it (an old figure id's its template's), no period beside it. */
+function withRecipe(t: Tile): Tile {
+  const own = t.recipe ? ownRecipe(t.recipe) : null
+  if (own) return { ...t, recipe: own, period: null }
+  return isTemplate(t.id) ? { ...t, recipe: figureTile(t.id, t.period), period: null } : { ...t, recipe: null }
+}
+
+/** The template a figure tile's own recipe still is (`templateOf`), for what Add widget still offers (#274). */
+export const templateOfTile = (t: Pick<Tile, 'recipe'>): FigureId | null => (t.recipe?.widget === 'FIGURE' && t.recipe.figure ? templateOf(t.recipe.figure) : null)
+
 /**
  * The dashboard a stored arrangement gives, with nothing stored the Standard preset: today's dashboard. It merges the way a grid's columns
- * do (`useGridSettings.merge`): a tile the app does not know (any more) is dropped; a saved chart the layout does not mention comes at the
- * bottom, so a new chart always shows and none is lost (taking one off is what `hidden` is for); a figure or ready-made chart it does not
+ * do (`useGridSettings.merge`): a tile the app does not know (any more) is dropped; a saved widget the layout does not mention comes at the
+ * bottom, so a new one always shows and none is lost (taking one off is what `hidden` is for); a figure or ready-made chart it does not
  * mention is not shown, so the widgets of a later release never appear unasked. A tile is only ever raised to its widget's least size,
- * never lowered, so a stored arrangement keeps its places when a widget's least size goes down.
+ * never lowered, so a stored arrangement keeps its places when a widget's least size goes down. Every figure tile comes with its recipe
+ * (#274): a stored old figure id (and its period) as its template's, kept under that id until the next save (`toLayout`).
  */
-export function resolveLayout<S extends { id: string }>(stored: Layout | null, saved: readonly S[]): ResolvedLayout<S> {
+export function resolveLayout<S extends { id: string; figure?: FigureRecipe | null }>(stored: Layout | null, saved: readonly S[]): ResolvedLayout<S> {
   const layout = stored ?? LAYOUT_PRESETS.standard
   const savedIds = new Set(saved.map((c) => c.id))
+  const savedFigure: SavedFigures = (id) => saved.find((c) => c.id === id)?.figure
   const known = (t: Tile) => {
-    const widget = widgetOf(t.id)
+    const widget = widgetOf(t)
     return widget !== null && (widget.kind !== 'saved' || savedIds.has(widget.id))
   }
   const seen = new Set<string>()
   // No smaller than its widget needs (a figure stored lower than its label and value take), and no wider than the grid.
   const sized = (t: Tile): Tile => {
-    const min = minSize(t.id)
+    const min = minSize(t, savedFigure)
     return { ...t, w: Math.min(COLUMNS, Math.max(min.w, t.w)), h: Math.min(MAX_ROWS, Math.max(min.h, t.h)) }
   }
-  const tiles = layout.tiles.filter((t) => known(t) && !seen.has(t.id) && seen.add(t.id)).map(sized)
+  const tiles = layout.tiles.map(withRecipe).filter((t) => known(t) && !seen.has(t.id) && seen.add(t.id)).map(sized)
   const hiddenKeys = new Set(layout.hidden)
   const mentioned = new Set([...tiles.map((t) => t.id), ...hiddenKeys])
-  // The saved charts the layout does not mention, each at the first free spot, in the order they were made.
+  // The saved widgets the layout does not mention, each at the first free spot at its default size, in the order they were made.
   const packed = pack(tiles)
-  for (const c of saved.filter((c) => !mentioned.has(chartKey(c.id)))) packed.push(firstFit(packed, tile(chartKey(c.id), 0, 0, 2, 8), COLUMNS))
+  for (const c of saved.filter((c) => !mentioned.has(chartKey(c.id)))) {
+    const { w, h } = defaultSize({ id: chartKey(c.id) }, savedFigure)
+    packed.push(firstFit(packed, tile(chartKey(c.id), 0, 0, w, h), COLUMNS))
+  }
   const shown = new Set(packed.map((t) => t.id))
+  const made = new Set(packed.map(templateOfTile))
   return {
     tiles: inReadingOrder(packed),
     hidden: saved.filter((c) => hiddenKeys.has(chartKey(c.id)) && !shown.has(chartKey(c.id))),
     available: {
-      figures: FIGURES.filter((f) => !shown.has(f)),
+      figures: FIGURES.filter((f) => !made.has(f)),
       ready: READY_CHARTS.filter((c) => !shown.has(presetKey(c.id))),
       saved: saved.filter((c) => !shown.has(chartKey(c.id))),
     },
   }
 }
 
-/** A tile as the server takes it: its period only when it has one of its own (a trend figure's, not its default), in GraphQL's shape. */
-export type StoredTile = Omit<Tile, 'period'> & { period?: ReturnType<typeof toInput> }
+/** A tile's recipe as GraphQL takes it, field by field. */
+const toTileRecipeInput = (r: TileRecipe): TileRecipeInput => ({
+  widget: r.widget,
+  title: r.title ?? null,
+  chart: r.chart ? toConfig(r.chart) : null,
+  figure: r.figure ? toRecipeInput(r.figure) : null,
+})
+
+/** A tile as the server takes it: a tile with a recipe of its own as a `tile:<id>` with it (#274), every other one by its id alone. */
+export interface StoredTile {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  pinned: boolean
+  recipe?: TileRecipeInput
+}
 
 /**
  * The arrangement's version this app knows (#273), sent with every save: the server refuses a save without it or with an older one
  * (`dashboard.updateApp`), so an app never drops tiles it does not know. Raised with the server's `DashboardLayoutValues.LayoutVersion`
- * when tiles an older app would lose start being saved (#275's `tile:` tiles).
+ * whenever tiles an older app would lose start being saved: 2 since #274, which saves every key figure as a `tile:` with its recipe.
  */
-export const LAYOUT_VERSION = 1
+export const LAYOUT_VERSION = 2
 
-/** What the server stores for a dashboard as it is arranged on screen. */
-export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }[]): { tiles: StoredTile[]; hidden: string[]; layoutVersion: number } => ({
+/**
+ * What the server stores for a dashboard as it is arranged on screen: a tile with a recipe of its own (every figure's, #274) as a `tile:`,
+ * which keeps its id once it has one; an old figure id or a preset's figure gets a new one (`newId`) on its first save.
+ */
+export const toLayout = (
+  tiles: readonly Tile[],
+  hidden: readonly { id: string }[],
+  // Not `crypto.randomUUID()`: it only exists in secure contexts, and the app is also served over plain HTTP (`uuid.ts`).
+  newId: () => string = () => uuidV4(),
+): { tiles: StoredTile[]; hidden: string[]; layoutVersion: number } => ({
   tiles: tiles.map((t) => {
-    const period = isTrendFigure(t.id) ? stored(t.id, t.period) : null
-    return { id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned, ...(period ? { period: toInput(period) } : {}) }
+    const base = { id: t.id, x: t.x, y: t.y, w: t.w, h: t.h, pinned: t.pinned }
+    return t.recipe ? { ...base, id: isTileKey(t.id) ? t.id : tileKey(newId()), recipe: toTileRecipeInput(t.recipe) } : base
   }),
   hidden: hidden.map((c) => chartKey(c.id)),
   layoutVersion: LAYOUT_VERSION,
@@ -271,18 +353,20 @@ export const toLayout = (tiles: readonly Tile[], hidden: readonly { id: string }
 
 // ---- what the tile menu does (the keyboard's and a screen reader's way to arrange) --------------------------------
 
-/** A widget put on the dashboard at the bottom, at its default size; a trend figure with the period chosen for it (none: its default). */
-export function addTile(tiles: readonly Tile[], id: string, cols = COLUMNS, period: TrendPeriod | null = null): Tile[] {
-  const { w, h } = defaultSize(id)
+/** A widget put on the dashboard at the bottom, at its default size: by its id, a figure (#274: a `tile:` id) with its recipe. */
+export function addTile(tiles: readonly Tile[], id: string, cols = COLUMNS, recipe: TileRecipe | null = null, savedFigure?: SavedFigures): Tile[] {
+  const { w, h } = defaultSize({ id, recipe }, savedFigure)
   const bottom = Math.max(0, ...tiles.map((t) => t.y + t.h))
-  const added = tile(id, 0, bottom, w, h)
-  const own = isTrendFigure(id) ? stored(id, period) : null
-  return pack([...tiles, own ? { ...added, period: own } : added], cols)
+  return pack([...tiles, { ...tile(id, 0, bottom, w, h), recipe }], cols)
 }
 
-/** A trend figure given a period of its own (or back to its default with null). */
+/** A figure tile given another period (or back to its figure's default with null); a point in time, or any other tile, stays as it is. */
 export const setTilePeriod = (tiles: readonly Tile[], id: string, period: TrendPeriod | null): Tile[] =>
-  tiles.map((t) => (t.id === id ? { ...t, period: isTrendFigure(id) ? stored(id, period) : null } : t))
+  tiles.map((t) => {
+    const figure = t.id === id && t.recipe?.widget === 'FIGURE' ? t.recipe.figure : null
+    if (!figure || !figure.period) return t
+    return { ...t, recipe: { ...t.recipe!, figure: { ...figure, period: period ? canonical(period) : defaultPeriodOf(figure) } } }
+  })
 
 export const removeTile = (tiles: readonly Tile[], id: string, cols = COLUMNS): Tile[] => pack(tiles.filter((t) => t.id !== id), cols)
 
@@ -304,10 +388,10 @@ export function moveTile(tiles: readonly Tile[], id: string, step: -1 | 1, cols 
 }
 
 /** A tile made wider or narrower, taller or shorter, by one step, within what its widget needs and the grid holds. */
-export function resizeTile(tiles: readonly Tile[], id: string, change: { w?: -1 | 1; h?: -1 | 1 }, cols = COLUMNS): Tile[] {
+export function resizeTile(tiles: readonly Tile[], id: string, change: { w?: -1 | 1; h?: -1 | 1 }, cols = COLUMNS, savedFigure?: SavedFigures): Tile[] {
   const current = tiles.find((t) => t.id === id)
   if (!current) return [...tiles]
-  const min = minSize(id)
+  const min = minSize(current, savedFigure)
   const w = Math.max(min.w, Math.min(cols, current.w + (change.w ?? 0)))
   const h = Math.max(min.h, Math.min(MAX_ROWS, current.h + (change.h ?? 0)))
   return pack(tiles.map((t) => (t.id === id ? { ...t, w, h, x: Math.min(t.x, cols - w) } : t)), cols)

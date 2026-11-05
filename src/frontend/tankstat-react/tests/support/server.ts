@@ -14,13 +14,13 @@ import { graphql } from './graphql.ts'
 // and no schedules; dashboard and recurring tests answer them with their own fakes.
 export const server = setupServer(
   graphql.query('VehicleDashboard', ({ variables }) =>
-    HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null, dashboard: null }, vehicleCharts: [] } }),
+    HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.id, dashboard: null }, vehicleWidgets: [] } }),
   ),
   // The Standard preset's ready-made charts ask for their data (the grid draws them once it is measured, which can be after the test that
   // passed through the page has ended): nothing to draw.
   graphql.query('ChartData', () => HttpResponse.json({ data: { vehicleChartData: { __typename: 'ChartData', unit: 'CURRENCY', series: [] } } })),
-  // A trend figure asks for its own (#230): nothing in either window.
-  graphql.query('VehicleTrend', () => HttpResponse.json({ data: { vehicleTrend: emptyTrend() } })),
+  // Each key figure asks for its own (#274): nothing in its windows, nothing measured.
+  graphql.query('VehicleFigure', () => HttpResponse.json({ data: { vehicleFigure: emptyFigure() } })),
   graphql.query('RecurringExpenses', ({ variables }) =>
     HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.vehicleId, recurring: [] } } }),
   ),
@@ -98,7 +98,7 @@ export async function answered() {
 }
 
 /** A trend figure with nothing in either window, as the server answers a vehicle without logs. */
-export const emptyTrend = () => {
+export const emptyFigure = () => {
   const window = { __typename: 'TrendWindow', start: '2026-10-01', end: '2026-10-01', fillUps: 0 }
-  return { __typename: 'TrendFigureData', recent: window, earlier: { ...window }, currencies: [], consumption: null, distance: null }
+  return { __typename: 'FigureData', recent: window, earlier: { ...window }, unit: null, currencies: [], value: null, lastFillUp: null }
 }

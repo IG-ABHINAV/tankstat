@@ -10,10 +10,11 @@ import { Form } from '../forms/Form.tsx'
 import type { DistanceUnit, VolumeUnit } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { MEDIA } from '../theme/media.ts'
-import { samePeriod, type TrendFigureId, type TrendPeriod } from './trendPeriod.ts'
-import { TrendFigure } from './TrendFigure.tsx'
+import type { FigureRecipe } from './figureRecipe.ts'
+import { FigureView } from './KeyFigure.tsx'
+import { samePeriod, type PeriodFigureId, type TrendPeriod } from './trendPeriod.ts'
 import { TrendPeriodForm } from './TrendPeriodForm.tsx'
-import { useTrendPreview } from './useTrendPreview.ts'
+import { useFigurePreview } from './useFigurePreview.ts'
 
 /** What the tile's chip can do with a period while the dashboard is arranged (#260): where Apply puts it (worded), whether it can, and the change itself. */
 export interface PeriodControl {
@@ -24,18 +25,17 @@ export interface PeriodControl {
 }
 
 /**
- * A trend tile's period, chosen in a popover from its chip (#230): the form, the figure as the tile will show it (the server's answer for
- * the period being chosen), where Apply puts it, Cancel and Apply. Enter applies (the form never goes to the browser: a sent form
- * would load the page again); it closes once the period is applied.
+ * A key figure tile's period, chosen in a popover from its chip (#230, #274): the form (`figure`'s quick picks), the figure as the tile will
+ * show it (the server's answer for the period being chosen), where Apply puts it, Cancel and Apply. Enter applies (the form never goes to
+ * the browser: a sent form would load the page again); it closes once the period is applied.
  */
-export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, control, onClose }: { anchor: HTMLElement | null; figure: TrendFigureId; vehicleId: string; units: { distance: DistanceUnit; volume: VolumeUnit }; period: TrendPeriod; control: PeriodControl; onClose: () => void }) {
+export function TrendPeriodPopover({ anchor, figure, recipe, label, vehicleId, units, period, control, onClose }: { anchor: HTMLElement | null; figure: PeriodFigureId; recipe: FigureRecipe; label: string; vehicleId: string; units: { distance: DistanceUnit; volume: VolumeUnit }; period: TrendPeriod; control: PeriodControl; onClose: () => void }) {
   const { t } = useTranslation()
   const id = useId()
   const [draft, setDraft] = useState(period)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<unknown>()
-  const preview = useTrendPreview(figure, vehicleId, draft)
-  const label = t(`dashboard.kpi.${figure}`)
+  const preview = useFigurePreview(recipe.measure, vehicleId, draft)
   // On a phone it is nearly a sheet of the screen's width: dimmed behind like a dialog, so its see-through panel reads over any tile.
   const phone = useMediaQuery(MEDIA.narrow)
 
@@ -75,8 +75,8 @@ export function TrendPeriodPopover({ anchor, figure, vehicleId, units, period, c
           </Typography>
           <TrendPeriodForm figure={figure} value={draft} onChange={setDraft} preview={preview} />
           <Box role="status" aria-live="polite" aria-label={t('dashboard.period.preview')} sx={{ minHeight: 132 }}>
-            {/* `TrendTile` opens it outside the tile's strip (`OutsideTile`): the preview is a card of its own, not the tile's (#262). */}
-            {preview.data && <TrendFigure figure={figure} period={draft} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />}
+            {/* `KeyFigure` opens it outside the tile's strip (`OutsideTile`): the preview is a card of its own, not the tile's (#262). */}
+            {preview.data && <FigureView recipe={{ measure: recipe.measure, period: draft }} data={preview.data} rows={3} units={units} label={t('dashboard.period.preview')} />}
           </Box>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {control.hint}

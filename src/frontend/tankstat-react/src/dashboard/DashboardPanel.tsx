@@ -6,7 +6,7 @@ import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { IconAction } from '../components/IconAction.tsx'
@@ -27,18 +27,21 @@ import {
 } from '../gql/generated.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { useConnectivity } from '../offline/useConnectivity.ts'
+import { uuidV4 } from '../offline/uuid.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { AddWidgetDialog } from './AddWidgetDialog.tsx'
 import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
 import { ChartCard } from './ChartCard.tsx'
 import { recipeOf } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
-import { Figure } from './Figures.tsx'
+import { canonicalRecipe, FIGURES, periodFigureOf, type FigureId } from './figureRecipe.ts'
+import { KeyFigure } from './KeyFigure.tsx'
+import { useFigureTitle } from './useFigureTitle.ts'
 import {
   addTile,
   chartKey,
   FIGURE_GRID,
-  FIGURES,
+  figureTile,
   inReadingOrder,
   LAYOUT_PRESETS,
   moveTile,
@@ -50,18 +53,22 @@ import {
   resizeTile,
   resolveLayout,
   setTilePeriod,
+  templateOfTile,
+  tileKey,
   toLayout,
   widgetOf,
   type Layout,
   type LayoutPresetId,
+  type SavedFigures,
   type Tile,
 } from './widgets.ts'
-import { isTrendFigure, type TrendPeriod } from './trendPeriod.ts'
+import type { TrendPeriod } from './trendPeriod.ts'
 import type { PeriodControl } from './TrendPeriodPopover.tsx'
 import { usePeriodText } from './usePeriodText.ts'
 
 type Units = { distance: DistanceUnit; volume: VolumeUnit }
-type SavedChart = VehicleDashboardQuery['vehicleCharts'][number]
+/** A saved widget (#273), its key figure's recipe in the app's shape. */
+export type SavedChart = Omit<VehicleDashboardQuery['vehicleWidgets'][number], 'figure'> & { figure: ReturnType<typeof canonicalRecipe> | null }
 type Scope = 'shared' | 'personal'
 
 /** The dashboard while it is being arranged: whose, the tiles and the charts taken off as they are now, and what is going on. */
@@ -117,17 +124,20 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const [actionError, setActionError] = useState<unknown>()
   const [edit, setEdit] = useState<Editing | null>(null)
   const periodText = usePeriodText()
+  const figureTitle = useFigureTitle()
   const panel = useRef<HTMLElement>(null)
   const canShare = vehicle.logAccess === 'EDIT' || vehicle.logAccess === 'DELETE'
+  // The saved widgets (#273) in the app's shape, and the recipe of each key figure among them, kept while the answer is (the grid's layouts follow it).
+  const answered = data?.vehicleWidgets
+  const charts: SavedChart[] = useMemo(() => (answered ?? []).map((w) => ({ ...w, figure: w.figure ? canonicalRecipe(w.figure) : null })), [answered])
+  const savedFigure: SavedFigures = useMemo(() => (id) => charts.find((c) => c.id === id)?.figure, [charts])
 
   if (error) return <ErrorMessage error={error} />
   if (!data) return <DashboardSkeleton />
 
-  const s = data.vehicle?.summary
   const dashboard = data.vehicle?.dashboard
   const shared: Layout | null = dashboard?.shared ?? null
   const personal: Layout | null = dashboard?.personal ?? null
-  const charts = data.vehicleCharts
   // Everyone's dashboard holds only shared charts, except with sign-in off, where everyone is the same user and every chart is theirs
   // (so a chart of the anonymous user can still be edited and shared from there).
   const chartsFor = (scope: Scope) => (scope === 'shared' && !signInOff ? charts.filter((c) => c.isShared) : charts)
@@ -136,8 +146,9 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   const busy = saving.loading || resetting.loading
 
   const titleOf = (tile: Tile) => {
-    const widget = widgetOf(tile.id)
-    if (widget?.kind === 'figure') return t(`dashboard.kpi.${widget.id}`)
+    const widget = widgetOf(tile, savedFigure)
+    if (widget?.kind === 'figure') return figureTitle(widget.figure, widget.title)
+    if (widget?.kind === 'chart') return widget.title
     if (widget?.kind === 'ready') return t(`dashboard.presets.${widget.chart.id}`)
     return charts.find((c) => c.id === widget?.id)?.title ?? tile.id
   }
@@ -180,7 +191,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
         case 'taller':
         case 'shorter': {
           const change = action === 'wider' ? { w: 1 as const } : action === 'narrower' ? { w: -1 as const } : action === 'taller' ? { h: 1 as const } : { h: -1 as const }
-          const next = resizeTile(e.tiles, tile.id, change)
+          const next = resizeTile(e.tiles, tile.id, change, undefined, savedFigure)
           const sized = next.find((x) => x.id === tile.id)!
           return { tiles: next, status: t('dashboard.edit.resized', { name, w: sized.w, h: sized.h }) }
         }
@@ -196,21 +207,29 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       }
     })
   }
-  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet; a trend figure with its period. */
-  const add = (id: string, name?: string, period: TrendPeriod | null = null) =>
-    update((e) => ({ tiles: addTile(e.tiles, id, undefined, period), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
+  /** A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. */
+  const add = (id: string, name?: string) =>
+    update((e) => ({ tiles: addTile(e.tiles, id, undefined, null, savedFigure), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf({ id } as Tile) }) }))
+  /** A built-in figure added (#274): a tile of its own, its template's recipe over the period chosen for it (none: its default). */
+  const addFigure = (template: FigureId, period: TrendPeriod | null = null) => {
+    const tile: Tile = { id: tileKey(uuidV4()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe: figureTile(template, period) }
+    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, tile.recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
+  }
 
   /**
-   * What a trend tile's chip does with a period (#230): it is shown only while the dashboard is arranged (#260, on the tile's strip), and
-   * Apply changes the tile being edited, saved with the rest by Save dashboard. Outside Customize there is no chip, so no control.
+   * What a key figure tile's chip does with a period (#230): it is shown only while the dashboard is arranged (#260, on the tile's strip),
+   * and Apply changes the tile being edited, saved with the rest by Save dashboard. Outside Customize there is no chip, so no control; a
+   * figure without a period (a point in time) and a saved one (its recipe is its own, #275) have none either.
    */
   const periodControl = (tile: Tile): PeriodControl | undefined => {
-    if (!isTrendFigure(tile.id) || !dashboard || !edit) return undefined
+    const figure = tile.recipe?.widget === 'FIGURE' ? tile.recipe.figure : null
+    const key = figure && periodFigureOf(figure)
+    if (!figure?.period || !key || !dashboard || !edit) return undefined
     const id = tile.id
     return {
       hint: t('dashboard.period.saveTo.editing'),
       canApply: true,
-      apply: async (period) => update((e) => ({ tiles: setTilePeriod(e.tiles, id, period), status: t('dashboard.period.changedSaid', { name: titleOf(tile), period: periodText(id, period) }) })),
+      apply: async (period) => update((e) => ({ tiles: setTilePeriod(e.tiles, id, period), status: t('dashboard.period.changedSaid', { name: titleOf(tile), period: periodText(key, period) }) })),
     }
   }
   const applyPreset = (id: LayoutPresetId) =>
@@ -229,15 +248,18 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     const status = title === name ? t('dashboard.edit.customized', { name }) : t('dashboard.edit.customizedRenamed', { name, title })
     update((e) => (e.customizing?.tile === from ? { tiles: replaceTile(e.tiles, from, chartKey(id)), status, customizing: { ...e.customizing, focus: chartKey(id) } } : {}))
   }
-  const customizing = edit?.customizing ? widgetOf(edit.customizing.tile) : null
+  const customizing = edit?.customizing ? widgetOf({ id: edit.customizing.tile }) : null
   const onDashboard = new Set(edit?.tiles.map((x) => x.id))
+  // The built-in figures some tile was made from (#274): Add widget offers the others.
+  const made = new Set(edit?.tiles.map(templateOfTile))
   const scopes: Scope[] = [...(dashboard?.canChangeShared ? (['shared'] as const) : []), ...(!signInOff ? (['personal'] as const) : [])]
   const stored = edit ? (edit.scope === 'shared' ? shared : personal) : null
 
   // ---- the tiles -----------------------------------------------------------------------------------------
 
   const savedCard = (c: SavedChart) => {
-    const r = recipeOf(c)
+    if (!c.chart) return null
+    const r = recipeOf(c.chart)
     return (
       <ChartCard
         vehicleId={vehicle.id}
@@ -286,11 +308,14 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
     )
   }
   const render = (tile: Tile) => {
-    const widget = widgetOf(tile.id)
-    if (widget?.kind === 'figure') return <Figure id={widget.id} vehicleId={vehicle.id} period={tile.period} control={periodControl(tile)} rows={tile.h} summary={s} units={vehicle.units} />
+    const widget = widgetOf(tile, savedFigure)
+    if (widget?.kind === 'figure') return <KeyFigure recipe={widget.figure} label={titleOf(tile)} vehicleId={vehicle.id} control={periodControl(tile)} rows={tile.h} units={vehicle.units} />
     // The tiles' headings come right under the vehicle's name: h2, with no section heading between.
     if (widget?.kind === 'ready') return <ChartCard vehicleId={vehicle.id} title={t(`dashboard.presets.${widget.chart.id}`)} recipe={widget.chart.recipe} units={vehicle.units} fill headingLevel={2} />
+    if (widget?.kind === 'chart') return <ChartCard vehicleId={vehicle.id} title={widget.title} recipe={widget.chart} units={vehicle.units} fill headingLevel={2} />
     const saved = charts.find((c) => c.id === widget?.id)
+    // A saved key figure (#273) is drawn like a tile's own; changing its recipe is the builder's (#275).
+    if (saved?.figure) return <KeyFigure recipe={saved.figure} label={figureTitle(saved.figure, saved.title)} vehicleId={vehicle.id} rows={tile.h} units={vehicle.units} />
     return saved ? savedCard(saved) : null
   }
 
@@ -386,13 +411,13 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             open={edit.adding}
             onClose={() => update(() => ({ adding: false }))}
             vehicle={vehicle}
-            summary={s}
             canShare={canShare}
             everyone={edit.scope === 'shared'}
-            figures={FIGURES.filter((f) => !onDashboard.has(f))}
+            figures={FIGURES.filter((f) => !made.has(f))}
             ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: onDashboard.has(presetKey(c.id)) }))}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
-            onAdd={(id, period) => add(id, undefined, period)}
+            onAdd={(id) => add(id)}
+            onAddFigure={addFigure}
             onChartSaved={async (id, title) => {
               await refetch()
               add(chartKey(id), title)
@@ -418,13 +443,13 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       )}
       {actionError !== undefined && <ErrorMessage error={actionError} />}
       {tiles.length > 0 ? (
-        <DashboardGrid tiles={tiles} editing={edit !== null} render={render} name={titleOf} onTilesChange={(next) => update(() => ({ tiles: next }))} onAction={onAction} />
+        <DashboardGrid tiles={tiles} editing={edit !== null} render={render} name={titleOf} savedFigure={savedFigure} onTilesChange={(next) => update(() => ({ tiles: next }))} onAction={onAction} />
       ) : (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('dashboard.customize.noCharts')}
         </Typography>
       )}
-      {charts.length === 0 && (
+      {!charts.some((c) => c.chart) && (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('dashboard.noCharts')}
         </Typography>

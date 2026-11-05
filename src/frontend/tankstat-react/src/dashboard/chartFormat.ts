@@ -230,15 +230,15 @@ export const NEW_RECIPE: ChartRecipe = {
   secondKind: null,
 }
 
-/** The recipe of a saved chart as the dashboard's query returns it (its custom range as `rangeFrom`/`rangeTo`). */
-export const recipeOf = (c: VehicleDashboardQuery['vehicleCharts'][number]): ChartRecipe => ({
+/** The recipe of a saved widget's chart as the dashboard's query returns it (`vehicleWidgets`, #273: its `ChartConfig`). */
+export const recipeOf = (c: NonNullable<VehicleDashboardQuery['vehicleWidgets'][number]['chart']>): ChartRecipe => ({
   metric: c.metric,
   grouping: c.grouping,
   kind: c.kind,
   range: c.range,
   stacked: c.stacked,
-  from: c.rangeFrom ?? null,
-  to: c.rangeTo ?? null,
+  from: c.from ?? null,
+  to: c.to ?? null,
   trend: c.trend,
   runningTotal: c.runningTotal,
   compareYearEarlier: c.compareYearEarlier,

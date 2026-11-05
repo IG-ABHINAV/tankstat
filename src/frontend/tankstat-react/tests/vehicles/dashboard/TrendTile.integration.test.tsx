@@ -57,7 +57,11 @@ async function lastEightWeeksAYearEarlier(ui: ReturnType<typeof userEvent.setup>
   await ui.click(within(dialog).getByRole('combobox', { name: 'Compared with' }))
   await ui.click(await screen.findByRole('option', { name: 'The same dates a year earlier' }))
 }
-const saved = (state: State) => (state.calls.SaveDashboardLayout!.at(-1) as { input: { personal: boolean; tiles: { id: string; period?: unknown }[] } }).input
+type SavedTile = { id: string; recipe?: { figure?: { template?: string | null; period?: unknown } | null } | null }
+const saved = (state: State) => (state.calls.SaveDashboardLayout!.at(-1) as { input: { personal: boolean; tiles: SavedTile[] } }).input
+/** A saved figure tile's period, by the built-in figure it was made from (#274: its recipe holds it). */
+const periodOf = (tiles: SavedTile[], template: string) => tiles.find((t) => t.recipe?.figure?.template === template)?.recipe?.figure?.period
+const figureRecipe = (measure: string, template: string, period: unknown) => ({ widget: 'FIGURE', title: null, chart: null, figure: { measure, period, sparkline: false, template } })
 const eightWeeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' }
 
 it('shows the chip only while arranging, on the tile\'s strip; the sentence and the timeline follow, Apply keeps it, Save dashboard saves it (#230, #260)', async () => {
@@ -91,7 +95,11 @@ it('shows the chip only while arranging, on the tile\'s strip; the sentence and 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   const input = saved(state)
   expect(input.personal).toBe(false)
-  expect(input.tiles).toEqual([{ id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false, period: eightWeeks }, { id: 'odometer', x: 1, y: 0, w: 1, h: 3, pinned: false }])
+  // Each figure a tile of its own with its recipe (#274), the period chosen in it.
+  expect(input.tiles).toEqual([
+    { id: expect.stringMatching(/^tile:/), x: 0, y: 0, w: 1, h: 4, pinned: false, recipe: figureRecipe('TOTAL_SPEND', 'spendingTrend', eightWeeks) },
+    { id: expect.stringMatching(/^tile:/), x: 1, y: 0, w: 1, h: 3, pinned: false, recipe: figureRecipe('ODOMETER', 'odometer', null) },
+  ])
   expect(await screen.findByText('HUF 20,000 (20%) more than the same 8 weeks a year earlier')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /^Spending period: / })).not.toBeInTheDocument() // arranged no more: no chip
 })
@@ -118,7 +126,7 @@ it('sets a period since a day, checks the number, and offers whole periods only 
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
-  expect(saved(state).tiles[0].period).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })
+  expect(periodOf(saved(state).tiles, 'spendingTrend')).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })
 })
 
 it('keeps a period with the tiles being arranged until the dashboard is saved, and adds a trend figure at the period chosen in Add widget', async () => {
@@ -150,8 +158,8 @@ it('keeps a period with the tiles being arranged until the dashboard is saved, a
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   const tiles = saved(state).tiles
-  expect(tiles.find((t) => t.id === 'spendingTrend')?.period).toEqual({ kind: 'LAST', unit: 'MONTHS', count: 6, since: null, whole: true, against: 'BEFORE' })
-  expect(tiles.find((t) => t.id === 'distanceTrend')?.period).toEqual({ kind: 'LAST', unit: 'MONTHS', count: 12, since: null, whole: true, against: 'YEAR_EARLIER' }) // a quick pick sets the window, the comparison stays distance's own
+  expect(periodOf(tiles, 'spendingTrend')).toEqual({ kind: 'LAST', unit: 'MONTHS', count: 6, since: null, whole: true, against: 'BEFORE' })
+  expect(periodOf(tiles, 'distanceTrend')).toEqual({ kind: 'LAST', unit: 'MONTHS', count: 12, since: null, whole: true, against: 'YEAR_EARLIER' }) // a quick pick sets the window, the comparison stays distance's own
 })
 
 it('opens on a phone, and the popover has no accessibility violations', { timeout: 30_000 }, async () => {
