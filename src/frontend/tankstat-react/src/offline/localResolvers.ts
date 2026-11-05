@@ -488,8 +488,12 @@ const vehicleFigure: Resolver = async (rows, variables) => {
     const refuelings = (await downloaded(rows, 'refuelings', variables.vehicleId)) ?? []
     const expenses = (await downloaded(rows, 'expenses', variables.vehicleId)) ?? []
     if (measure === 'LAST_FILL_UP') {
-      const date = refuelings.map((r) => String(r.date)).sort().at(-1) ?? null
-      return { vehicleFigure: { ...figure, lastFillUp: { __typename: 'LastFillUpFigure', date, fillUps: refuelings.length, expenses: expenses.length } } }
+      // Only complete logs count, as the server's statistics read them (`StatsRepository`): a refuelling with its litres, cost and reading,
+      // an expense with its amount; one left for its photos counts once they are read.
+      const fillUps = refuelings.filter((r) => num(r.volume) !== null && num(r.totalCost) !== null && num(r.odometer) !== null)
+      const date = fillUps.map((r) => String(r.date)).sort().at(-1) ?? null
+      const expenseCount = expenses.filter((x) => num(x.amount) !== null).length
+      return { vehicleFigure: { ...figure, lastFillUp: { __typename: 'LastFillUpFigure', date, fillUps: fillUps.length, expenses: expenseCount } } }
     }
     const readings = [...refuelings, ...expenses].map((r) => num(r.odometer)).filter((v): v is number => v !== null)
     return { vehicleFigure: { ...figure, value: readings.length > 0 ? { __typename: 'ValueChange', recent: Math.max(...readings), earlier: null } : null } }

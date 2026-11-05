@@ -478,6 +478,11 @@ describe('answering offline, the device\'s own data', () => {
     await enqueue({ id: 'x1', entity: 'expenses', action: 'add', vehicleId: 'golf', targetId: 'x1', input: { id: 'x1', vehicleId: 'golf', date: '2026-10-25', title: 'Wash', amount: 3000, currency: 'HUF', odometer: 12700 } })
     expect(await figure('ODOMETER')).toMatchObject({ vehicleFigure: { value: { __typename: 'ValueChange', recent: 12700, earlier: null } } }) // the highest reading, the expense's too
     expect(await figure('LAST_FILL_UP')).toMatchObject({ vehicleFigure: { lastFillUp: { date: '2026-10-20', fillUps: 2, expenses: 1 } } })
+    // Left for its photos (no litres, cost or amount yet): not counted until they are read, as the server's statistics leave it out.
+    await enqueue({ id: 'r3', entity: 'refuelings', action: 'add', vehicleId: 'golf', targetId: 'r3', input: { id: 'r3', vehicleId: 'golf', date: '2026-10-28', currency: 'HUF', odometer: 12900, isFullTank: true } })
+    await enqueue({ id: 'x2', entity: 'expenses', action: 'add', vehicleId: 'golf', targetId: 'x2', input: { id: 'x2', vehicleId: 'golf', date: '2026-10-29', title: 'Tyres', currency: 'HUF' } })
+    expect(await figure('LAST_FILL_UP')).toMatchObject({ vehicleFigure: { lastFillUp: { date: '2026-10-20', fillUps: 2, expenses: 1 } } })
+    expect(await figure('ODOMETER')).toMatchObject({ vehicleFigure: { value: { recent: 12900 } } }) // a reading counts whatever the log lacks
     expect(await answerLocally(rows, 'VehicleFigure', { vehicleId: 'v1', measure: 'ODOMETER' })).toBeUndefined() // the server's
   })
 

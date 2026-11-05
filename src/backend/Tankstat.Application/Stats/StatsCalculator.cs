@@ -392,9 +392,6 @@ public static class StatsCalculator
         var fillUps = data.Fuel.Where(f => measure != FigureMeasure.AverageConsumption || f.Consumption is not null)
             .OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).ToList();
         var (recent, earlierRange, recentItems, earlierItems) = Windows(period!, today, fillUps);
-        int CountIn((DateOnly Start, DateOnly End) w) => fillUps.Count(f => f.Date >= w.Start && f.Date <= w.End);
-        var recentWindow = new TrendWindow(recent.Start, recent.End, recentItems?.Count ?? CountIn(recent));
-        TrendWindow? earlierWindow = earlierRange is { } e ? new TrendWindow(e.Start, e.End, earlierItems?.Count ?? (e.End < e.Start ? 0 : CountIn(e))) : null;
         // No comparison, or an earlier window of fill-ups that holds none: nothing to compare with, no sums of its dates.
         var nothingEarlier = earlierRange is null || earlierItems is { Count: 0 };
         var earlier = earlierRange ?? default;
@@ -402,9 +399,16 @@ public static class StatsCalculator
         List<FuelPoint> FuelIn((DateOnly Start, DateOnly End) w, List<FuelPoint>? items) => items ?? fillUps.Where(f => f.Date >= w.Start && f.Date <= w.End).ToList();
         var recentFuel = FuelIn(recent, recentItems);
         var earlierFuel = nothingEarlier ? [] : FuelIn(earlier, earlierItems);
+        var recentWindow = new TrendWindow(recent.Start, recent.End, recentFuel.Count);
+        TrendWindow? earlierWindow = earlierRange is { } e ? new TrendWindow(e.Start, e.End, earlierFuel.Count) : null;
         var unit = UnitOf(measure.ToMetric()!.Value);
 
-        // Money per currency, main first, then by what was spent lately, then by code: the order of the summary and the trend figures.
+        // The currencies used, the main one first (always), then by what the recent window spent in them, then by code: the summary's order.
+        IEnumerable<string> Ordered(IEnumerable<string> used, Func<string, decimal> spentRecently) =>
+            (mainCurrency is null ? used : used.Prepend(mainCurrency)).Distinct()
+                .OrderByDescending(c => c == mainCurrency).ThenByDescending(spentRecently).ThenBy(c => c, StringComparer.Ordinal);
+
+        // Money per currency, in the order above.
         List<CurrencyChange> Money(bool fuel, bool expenses)
         {
             var costs = (fuel ? data.Fuel.Select(f => (f.Currency, f.Date, f.Amount)) : [])
@@ -412,8 +416,7 @@ public static class StatsCalculator
             decimal Spent(string c, (DateOnly Start, DateOnly End) w) => costs.Where(x => x.Currency == c && x.Date >= w.Start && x.Date <= w.End).Sum(x => x.Amount);
             bool In(DateOnly d) => d >= recent.Start && d <= recent.End || !nothingEarlier && d >= earlier.Start && d <= earlier.End;
             var used = costs.Where(x => In(x.Date)).Select(x => x.Currency);
-            return (mainCurrency is null ? used : used.Prepend(mainCurrency)).Distinct()
-                .OrderByDescending(c => c == mainCurrency).ThenByDescending(c => Spent(c, recent)).ThenBy(c => c, StringComparer.Ordinal)
+            return Ordered(used, c => Spent(c, recent))
                 .Select(c => new CurrencyChange(c, Spent(c, recent), nothingEarlier ? null : Spent(c, earlier))).ToList();
         }
         List<CurrencyChange> PerDistance(List<CurrencyChange> money)
@@ -431,9 +434,7 @@ public static class StatsCalculator
                 var volume = rows.Sum(f => f.Volume);
                 return rows.Count >= least && volume > 0 ? Math.Round(rows.Sum(amount) / volume, 3) : null;
             }
-            var used = recentFuel.Concat(earlierFuel).Select(f => f.Currency);
-            return (mainCurrency is null ? used : used.Prepend(mainCurrency)).Distinct()
-                .OrderByDescending(c => c == mainCurrency).ThenByDescending(c => recentFuel.Where(f => f.Currency == c).Sum(f => f.Amount)).ThenBy(c => c, StringComparer.Ordinal)
+            return Ordered(recentFuel.Concat(earlierFuel).Select(f => f.Currency), c => recentFuel.Where(f => f.Currency == c).Sum(f => f.Amount))
                 .Select(c => new CurrencyChange(c, Price(recentFuel.Where(f => f.Currency == c).ToList(), 1),
                     nothingEarlier ? null : Price(earlierFuel.Where(f => f.Currency == c).ToList(), MinTrendFillUps))).ToList();
         }
