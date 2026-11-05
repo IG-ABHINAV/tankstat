@@ -826,6 +826,8 @@ it('sizes a key figure saved to one\'s widgets as it is added as a key figure, n
   await ui.click(within(dialog).getByRole('button', { name: 'Spending Key figure' }))
   await saveAndAdd(ui, dialog)
   expect(await screen.findByText('Spending added, and saved to your widgets.')).toBeInTheDocument()
+  // The dialog closes once the widgets are fetched again; until then the page behind it is hidden from the accessibility tree.
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
