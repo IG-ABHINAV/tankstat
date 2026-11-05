@@ -92,9 +92,9 @@ public sealed record DashboardTileInput(string Id, int X, int Y, int W, int H, b
     public DashboardTile ToDomain() => new(Id, X, Y, W, H, Pinned ?? false, Period?.ToDomain());
 }
 
-/// <summary>A trend figure's period (#230): the last N units (<paramref name="Unit"/>, <paramref name="Count"/>), since a date, or this year so far.</summary>
+/// <summary>A trend figure's period (#230): the last N units (<paramref name="Unit"/>, <paramref name="Count"/>), since a date, this year or this month so far.</summary>
 /// <param name="Whole">Weeks, months or years whole (Monday to Sunday, calendar months and years, the running one left out); null or left out is false.</param>
-/// <param name="Against">What the period is compared with; null or left out is the period before.</param>
+/// <param name="Against">What the period is compared with (nothing, <c>NONE</c>, only for a key figure, #272); null or left out is the period before.</param>
 public sealed record TrendPeriodInput(TrendWindowKind Kind, TrendUnit? Unit, int? Count, DateOnly? Since, bool? Whole = null, TrendComparison? Against = null)
 {
     public TrendPeriod ToDomain() => new(Kind, Unit, Count, Since, Whole ?? false, Against ?? TrendComparison.Before);
@@ -121,6 +121,14 @@ public sealed class DashboardQueries
     /// </summary>
     public Task<TrendFigureData> GetVehicleTrend(Guid vehicleId, TrendFigure figure, TrendPeriodInput period, [Service] StatsService stats, CancellationToken ct) =>
         stats.TrendAsync(vehicleId, figure, period.ToDomain(), ct);
+
+    /// <summary>
+    /// A key figure (#272): any measure over a period of its own, compared with the period before, a year earlier or nothing, or a point in
+    /// time (the odometer, the last fill-up) without a period. The windows and the values in them, from the vehicle's logs (money per
+    /// currency, never converted, the main one first). <c>vehicleTrend</c> stays for an older client.
+    /// </summary>
+    public Task<FigureData> GetVehicleFigure(Guid vehicleId, FigureMeasure measure, TrendPeriodInput? period, [Service] StatsService stats, CancellationToken ct) =>
+        stats.FigureAsync(vehicleId, measure, period?.ToDomain(), ct);
 
     /// <summary>The charts of a vehicle's dashboard: the user's own and the shared ones, oldest first.</summary>
     public Task<IReadOnlyList<VehicleChart>> GetVehicleCharts(Guid vehicleId, [Service] ChartService charts, CancellationToken ct) => charts.ListAsync(vehicleId, ct);
