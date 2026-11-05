@@ -47,8 +47,12 @@ test('a vehicle\'s dashboard, shown and being arranged, has no axe violations', 
   await expect(dialog).toBeVisible()
   await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1') // faded in: axe reads the colours as they are drawn
   expect(await violations(page, '[role="dialog"]')).toEqual([])
-  await dialog.getByRole('button', { name: 'Blank chart' }).click()
-  await expect(dialog.getByLabel('Title')).toBeVisible()
+  // The builder (#275): a key figure from scratch, then as a chart.
+  await dialog.getByRole('button', { name: /^From scratch/ }).click()
+  await expect(dialog.getByRole('combobox', { name: 'What it shows' })).toBeVisible()
+  expect(await violations(page, '[role="dialog"]')).toEqual([])
+  await dialog.locator('label', { hasText: /^Chart$/ }).click()
+  await expect(dialog.getByRole('combobox', { name: 'What to measure' })).toBeVisible()
   expect(await violations(page, '[role="dialog"]')).toEqual([])
 })
 

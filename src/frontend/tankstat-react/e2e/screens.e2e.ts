@@ -8,16 +8,18 @@ test('saves a chart on the dashboard, with a trend line', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id)
   await openVehicle(page, vehicle.id)
-  // A chart of one's own is made while customizing the dashboard, from the Add widget dialog's blank chart (#228).
+  // A chart of one's own is made while customizing the dashboard, in Add widget's builder from scratch (#228, #275).
   await page.getByRole('button', { name: 'Customize' }).click()
   await page.getByRole('button', { name: 'Add widget' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add widget' })
-  await dialog.getByRole('button', { name: 'Blank chart' }).click()
+  await dialog.getByRole('button', { name: /^From scratch/ }).click()
+  await dialog.locator('label', { hasText: /^Chart$/ }).click()
   await dialog.getByLabel('Title').fill('Fuel by month')
   // An icon toggle: its radio is visually hidden inside the segment, so the segment (its label) is what is clicked.
   await dialog.getByRole('radiogroup', { name: 'Trend line' }).getByRole('radio', { name: 'Linear trend' }).locator('xpath=..').click()
   await expect(dialog.getByRole('radio', { name: 'Linear trend' })).toBeChecked()
-  await dialog.getByRole('button', { name: 'Save and add' }).click()
+  await dialog.getByRole('checkbox', { name: 'Also save to my widgets' }).check()
+  await dialog.getByRole('button', { name: 'Add to the dashboard' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Fuel by month' })).toBeVisible()
   await page.getByRole('button', { name: 'Save dashboard' }).click()
