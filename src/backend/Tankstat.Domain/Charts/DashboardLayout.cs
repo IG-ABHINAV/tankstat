@@ -24,12 +24,14 @@ public sealed partial record DashboardLayoutValues(IReadOnlyList<DashboardTile> 
 
     /// <summary>
     /// Every tile and entry in shape and within bounds, duplicates dropped (the first wins), at most <see cref="MaxItems"/> per list. A period
-    /// only on a key figure (not on a chart), and valid on <paramref name="today"/> (<see cref="TrendPeriod.Validated"/>).
+    /// only on a key figure (not on a chart), and valid on <paramref name="today"/> (<see cref="TrendPeriod.Validated"/>). A tile's period is a
+    /// trend figure's, which always compares (<c>vehicleTrend</c> refuses <see cref="TrendComparison.None"/>): none is refused here, or the
+    /// tile would be saved and then never load.
     /// </summary>
     public DashboardLayoutValues Checked(DateOnly today)
     {
         var tiles = (Tiles ?? []).Select(t => t is not null && IsWidget(t.Id) && t.X >= 0 && t.W >= 1 && t.X + t.W <= Columns && t.Y >= 0 && t.H >= 1 && t.H <= MaxRows
-                    && (t.Period is null || IsFigure(t.Id))
+                    && (t.Period is null || IsFigure(t.Id) && t.Period.Against != TrendComparison.None)
                 ? t with { Period = t.Period?.Validated(today) }
                 : throw new DomainException("dashboard.itemInvalid", "An entry of the dashboard is not valid."))
             .DistinctBy(t => t.Id, StringComparer.Ordinal).ToList();
