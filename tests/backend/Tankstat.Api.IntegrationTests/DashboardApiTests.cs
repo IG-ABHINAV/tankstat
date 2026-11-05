@@ -198,7 +198,7 @@ public class DashboardApiTests : IDisposable
         const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { canChangeShared shared { tiles { id x y w h pinned } hidden updatedAt } personal { tiles { id } } } } }";
         object Layout(bool personal, params string[] charts) => new
         {
-            i = new { vehicleId = id, personal, tiles = charts.Select((c, k) => new { id = c, x = 0, y = k * 8, w = 2, h = 8, pinned = k == 0 }).Prepend(new { id = "odometer", x = 2, y = 0, w = 1, h = 3, pinned = false }).ToArray(), hidden = Array.Empty<string>() },
+            i = new { vehicleId = id, personal, tiles = charts.Select((c, k) => new { id = c, x = 0, y = k * 8, w = 2, h = 8, pinned = k == 0 }).Prepend(new { id = "odometer", x = 2, y = 0, w = 1, h = 3, pinned = false }).ToArray(), hidden = Array.Empty<string>(), layoutVersion = 1 },
         };
         static IEnumerable<string?> Ids(JsonElement layout) => layout.GetProperty("tiles").EnumerateArray().Select(t => t.GetProperty("id").GetString());
 
@@ -220,6 +220,26 @@ public class DashboardApiTests : IDisposable
         Assert.Equal(JsonValueKind.Null, (await bob.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").ValueKind);
         var invalid = await alice.Gql(save, Layout(true, "not a chart"));
         Assert.Equal("dashboard.itemInvalid", invalid.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
+
+    // #273: an app from before saved widgets sends no layout version; its save is refused with a sentence, never stored, so it never drops
+    // tiles it does not know.
+    [Fact]
+    public async Task ASaveFromAnOlderApp_WithoutTheLayoutVersion_IsRefused_AndTheLayoutStaysAsItWas()
+    {
+        var (alice, _, _) = await Users();
+        var id = await AddVehicle(alice);
+        const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
+        object Layout(string tile, int? layoutVersion) => new { i = new { vehicleId = id, personal = false, hidden = Array.Empty<string>(), layoutVersion, tiles = new object[] { new { id = tile, x = 0, y = 0, w = 1, h = 4 } } } };
+        await alice.Gql(save, Layout("odometer", 1));
+
+        var old = await alice.Gql(save, Layout("lastFillUp", null));
+        var older = await alice.Gql(save, Layout("lastFillUp", 0));
+
+        Assert.Equal(("dashboard.updateApp", "dashboard.updateApp"), (old.ErrorKey(), older.ErrorKey()));
+        Assert.Equal("This version of the app can no longer save dashboards. Reload the page to update it.", old.GetProperty("errors")[0].GetProperty("message").GetString()); // what an older app shows
+        var tiles = (await alice.Gql("query($id: UUID!) { vehicle(id: $id) { dashboard { shared { tiles { id } } } } }", new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("shared").GetProperty("tiles");
+        Assert.Equal(["odometer"], tiles.EnumerateArray().Select(t => t.GetProperty("id").GetString()));
     }
 
     [Fact]
@@ -293,7 +313,7 @@ public class DashboardApiTests : IDisposable
         const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { personal { tiles { id period { kind unit count since whole against } } } } } }";
         var period = new { kind = "LAST", unit = "WEEKS", count = 8, whole = true, against = "YEAR_EARLIER" };
 
-        await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period }, new { id = "odometer", x = 1, y = 0, w = 1, h = 4 } } } });
+        await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), layoutVersion = 1, tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period }, new { id = "odometer", x = 1, y = 0, w = 1, h = 4 } } } });
 
         var tiles = (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").GetProperty("tiles");
         var saved = tiles[0].GetProperty("period");
@@ -301,10 +321,10 @@ public class DashboardApiTests : IDisposable
         Assert.Equal(JsonValueKind.Null, saved.GetProperty("since").ValueKind);
         Assert.Equal(JsonValueKind.Null, tiles[1].GetProperty("period").ValueKind); // the figure's default
         // A period on a chart, or one that does not hold, is refused whole.
-        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "preset:monthlyCosts", x = 0, y = 0, w = 2, h = 8, period } } } })).ErrorKey());
-        Assert.Equal("trend.wholeNeedsUnit", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "DAYS", count = 8, whole = true } } } } })).ErrorKey());
+        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), layoutVersion = 1, tiles = new object[] { new { id = "preset:monthlyCosts", x = 0, y = 0, w = 2, h = 8, period } } } })).ErrorKey());
+        Assert.Equal("trend.wholeNeedsUnit", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), layoutVersion = 1, tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "DAYS", count = 8, whole = true } } } } })).ErrorKey());
         // A trend figure's tile always compares: one with no comparison would be saved and then never load (vehicleTrend refuses it).
-        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "MONTHS", count = 12, against = "NONE" } } } } })).ErrorKey());
+        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), layoutVersion = 1, tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "MONTHS", count = 12, against = "NONE" } } } } })).ErrorKey());
     }
 
     // #273: a saved key figure is a saved widget with a chart's rights; vehicleCharts, which an older app reads, never lists it.
@@ -363,7 +383,7 @@ public class DashboardApiTests : IDisposable
         var figureTile = $"tile:{Guid.NewGuid()}";
         const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
         const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { personal { tiles { id period { kind } recipe { widget title chart { metric kind range secondMetric } figure { measure sparkline template period { kind unit count against } } } } } } } }";
-        object Layout(params object[] tiles) => new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles } };
+        object Layout(params object[] tiles) => new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), layoutVersion = 1, tiles } };
 
         await alice.Gql(save, Layout(
             new { id = chartTile, x = 0, y = 0, w = 2, h = 8, recipe = new { widget = "CHART", title = "Bars", chart = new { metric = "TOTAL_SPEND", grouping = "MONTH", kind = "BAR", range = "LAST12_MONTHS", stacked = false } } },

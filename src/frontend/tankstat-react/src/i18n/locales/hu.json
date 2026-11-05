@@ -954,6 +954,7 @@
     },
     "dashboard": {
       "itemInvalid": "Az irányítópult egyik eleme nem érvényes.",
+      "updateApp": "Az alkalmazás ezen változata már nem tud irányítópultot menteni. Töltsd újra az oldalt a frissítéshez.",
       "tooMany": "Egy irányítópult mindegyikből legfeljebb {{max}} elemet sorolhat fel.",
       "needEditToChange": "Az irányítópult módosításához szerkesztési jog kell a jármű naplójához."
     },

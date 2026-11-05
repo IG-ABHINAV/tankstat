@@ -954,6 +954,7 @@
     },
     "dashboard": {
       "itemInvalid": "An entry of the dashboard is not valid.",
+      "updateApp": "This version of the app can no longer save dashboards. Reload the page to update it.",
       "tooMany": "A dashboard can list at most {{max}} of each.",
       "needEditToChange": "You need edit access to the vehicle's logs to change its dashboard."
     },

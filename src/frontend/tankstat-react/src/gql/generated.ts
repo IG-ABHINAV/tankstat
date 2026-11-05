@@ -485,6 +485,7 @@ export type SaveChartInput = {
 
 export type SaveDashboardLayoutInput = {
   hidden: Array<string>;
+  layoutVersion?: number | null | undefined;
   personal: boolean;
   tiles: Array<DashboardTileInput>;
   vehicleId: string;

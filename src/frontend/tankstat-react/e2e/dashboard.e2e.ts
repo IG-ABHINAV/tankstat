@@ -1,6 +1,6 @@
 import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
+import { addExpense, addVehicle, graphql, LAYOUT_VERSION, logRefueling, openVehicle, pageLoaded, settled, signInAsNewUser } from './support/app.ts'
 import { violations } from './support/axe.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
@@ -378,9 +378,9 @@ const clippedFigures = (page: Page) =>
       .filter(({ card }) => card.scrollHeight > card.clientHeight + 1)
       .map(({ id, card }) => `${id}: ${card.scrollHeight} > ${card.clientHeight}`),
   )
-/** The vehicle's dashboard set through GraphQL: these tiles, nothing taken off. */
+/** The vehicle's dashboard set through GraphQL: these tiles, nothing taken off, with the layout version the app sends (#273: refused without). */
 const arrange = (page: Page, vehicleId: string, tiles: Stored) =>
-  graphql(page, 'mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }', { i: { vehicleId, personal: false, tiles, hidden: [] } })
+  graphql(page, 'mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }', { i: { vehicleId, personal: false, tiles, hidden: [], layoutVersion: LAYOUT_VERSION } })
 const daysAgo = (days: number, years = 0) => {
   const d = new Date()
   d.setUTCDate(d.getUTCDate() - days)

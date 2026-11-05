@@ -19,6 +19,14 @@ it('words a known error key with its arguments, and knows nothing of an unknown 
   expect(keyText(undefined, {})).toBeUndefined()
 })
 
+it('words the saved widgets\' and the dashboard\'s keys of #273: an older app\'s save refused, a widget out of shape, the shared limit', () => {
+  const keyText = renderHook(() => useKeyText()).result.current
+
+  expect(keyText('dashboard.updateApp', {})).toBe('This version of the app can no longer save dashboards. Reload the page to update it.')
+  expect(keyText('chart.invalid', {})).toBe('This chart is not valid.')
+  expect(keyText('chart.limit', { max: 30 })).toBe('You can have at most 30 saved widgets for a vehicle.')
+})
+
 it('words the reason a change was not applied, falls back to its key, and says nothing without one', () => {
   const reasonText = renderHook(() => useReasonText()).result.current
 

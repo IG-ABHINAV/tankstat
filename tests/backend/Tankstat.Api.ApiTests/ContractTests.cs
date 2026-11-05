@@ -170,7 +170,7 @@ public class ContractTests
     [InlineData("ChangePasswordInput", "currentPassword", "newPassword", "newPasswordConfirmation")]
     [InlineData("ResetPasswordInput", "token", "newPassword", "newPasswordConfirmation")]
     [InlineData("SetupFinishInput", "code", "email", "password", "passwordConfirmation", "acknowledgeOpenAccess")]
-    [InlineData("SaveDashboardLayoutInput", "vehicleId", "personal", "tiles", "hidden")]
+    [InlineData("SaveDashboardLayoutInput", "vehicleId", "personal", "tiles", "hidden", "layoutVersion")]
     [InlineData("DashboardTileInput", "id", "x", "y", "w", "h", "pinned", "period", "recipe")]
     [InlineData("TileRecipeInput", "widget", "title", "chart", "figure")]
     [InlineData("FigureRecipeInput", "measure", "period", "sparkline", "template")]
