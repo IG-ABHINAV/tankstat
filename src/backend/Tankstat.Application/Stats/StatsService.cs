@@ -31,7 +31,8 @@ public sealed class StatsService(IVehicleRepository vehicles, IStatsRepository s
     {
         var today = Today;
         period = period.Validated(today);
-        if (!Enum.IsDefined(figure)) throw new DomainException("trend.invalid", "This period is not valid.");
+        // A trend figure always compares: a period without a comparison is a key figure's (vehicleFigure, #272), never an older client's.
+        if (!Enum.IsDefined(figure) || period.Against == TrendComparison.None) throw new DomainException("trend.invalid", "This period is not valid.");
         await RequireVisibleAsync(vehicleId, ct);
         var data = await stats.LoadAsync(vehicleId, ct);
         return StatsCalculator.Trend(data, figure, period, today, StatsCalculator.MainCurrency(data, today));

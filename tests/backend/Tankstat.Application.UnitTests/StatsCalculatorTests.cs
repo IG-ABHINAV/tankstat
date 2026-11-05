@@ -581,6 +581,31 @@ public class StatsCalculatorTests
         Assert.Equal(Days("2025-02-28", "2025-12-31"), Windows(Trend(TrendPeriod.ThisYearAgainstLast with { Against = TrendComparison.Before })).Earlier); // 307 days each
     }
 
+    private static readonly TrendPeriod ThisMonth = new(TrendWindowKind.ThisMonth);
+
+    [Theory]
+    [InlineData("2026-11-01", "2026-11-01", "2026-10-01", "2026-10-31")] // the 1st: the month so far is one day, against the whole month before
+    [InlineData("2026-11-15", "2026-11-01", "2026-10-01", "2026-10-31")]
+    [InlineData("2026-10-31", "2026-10-01", "2026-09-01", "2026-09-30")] // the 31st: against a month of 30 days, still the whole of it
+    [InlineData("2026-01-10", "2026-01-01", "2025-12-01", "2025-12-31")] // January: December of the year before
+    [InlineData("2024-03-05", "2024-03-01", "2024-02-01", "2024-02-29")] // March in a leap year: the whole of February, its 29th included
+    public void Trend_ThisMonth_IsTheMonthSoFar_AgainstTheWholeMonthBefore(string today, string start, string beforeStart, string beforeEnd)
+    {
+        Assert.Equal((Days(start, today), Days(beforeStart, beforeEnd)), Windows(Trend(ThisMonth, today: today)));
+    }
+
+    [Fact]
+    public void Trend_ThisMonth_AYearEarlier_IsTheSameDatesAYearBack_ALeapDayOnThe28th()
+    {
+        Assert.Equal((Days("2024-02-01", "2024-02-29"), Days("2023-02-01", "2023-02-28")), Windows(Trend(ThisMonth with { Against = TrendComparison.YearEarlier }, today: "2024-02-29")));
+    }
+
+    [Fact]
+    public void Trend_WithoutAComparison_IsRefused_ATrendFigureAlwaysCompares()
+    {
+        Assert.Equal("trend.invalid", Assert.Throws<Tankstat.Domain.DomainException>(() => Trend(ThisMonth with { Against = TrendComparison.None })).Key);
+    }
+
     [Fact]
     public void Trend_TheLastFillUps_RunFromTheOldestOfThemToToday_AndTheOnesBefore_FewerWhenThereAreFewer()
     {

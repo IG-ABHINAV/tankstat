@@ -12,6 +12,8 @@ public enum TrendWindowKind
     Since,
     /// <summary>From 1 January of this year to today: the year so far, which no stored date can stay (a date would freeze at the year it was saved).</summary>
     ThisYear,
+    /// <summary>From the 1st of this month to today: the month so far (#272), for the same reason as <see cref="ThisYear"/>.</summary>
+    ThisMonth,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<TrendUnit>))]
@@ -29,16 +31,18 @@ public enum TrendUnit
 [JsonConverter(typeof(JsonStringEnumConverter<TrendComparison>))]
 public enum TrendComparison
 {
-    /// <summary>A window of the same length (or the same number of fill-ups) just before it.</summary>
+    /// <summary>A window of the same length (or the same number of fill-ups) just before it; for <see cref="TrendWindowKind.ThisMonth"/> the whole month before.</summary>
     Before,
     /// <summary>The same dates one year back.</summary>
     YearEarlier,
+    /// <summary>Nothing: the period alone, with no earlier window (#272: a key figure without a comparison).</summary>
+    None,
 }
 
 /// <summary>
 /// The period a trend figure looks at and what it compares it with (#230): the last N days, weeks, months, years or fill-ups (weeks,
-/// months and years whole if asked: Monday to Sunday, calendar months and years, the running one left out), since a date, or this year so
-/// far; against the period before or the same dates a year earlier. A tile without one shows its figure's default (<see cref="TwelveWholeMonths"/>,
+/// months and years whole if asked: Monday to Sunday, calendar months and years, the running one left out), since a date, this year so
+/// far or this month so far (#272); against the period before, the same dates a year earlier, or nothing (#272). A tile without one shows its figure's default (<see cref="TwelveWholeMonths"/>,
 /// <see cref="TenFillUps"/>, <see cref="ThisYearAgainstLast"/>), exactly what the figure showed before periods existed.
 /// </summary>
 public sealed record TrendPeriod(TrendWindowKind Kind, TrendUnit? Unit = null, int? Count = null, DateOnly? Since = null, bool Whole = false, TrendComparison Against = TrendComparison.Before)
@@ -80,7 +84,7 @@ public sealed record TrendPeriod(TrendWindowKind Kind, TrendUnit? Unit = null, i
                 if (since < Earliest || since > today)
                     throw new DomainException("trend.sinceRange", "A period starts on a day from 2000 to today.", new { Earliest = Earliest.ToString("yyyy-MM-dd"), Latest = today.ToString("yyyy-MM-dd") });
                 break;
-            default: // ThisYear: nothing else to say
+            default: // ThisYear, ThisMonth: nothing else to say
                 if (Unit is not null || Count is not null || Since is not null) throw Invalid();
                 break;
         }

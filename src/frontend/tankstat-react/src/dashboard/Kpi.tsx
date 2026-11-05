@@ -22,7 +22,7 @@ export interface KpiProps {
   short?: ReactNode
   hint?: string
   /** A trend figure's comparison (`useChangeWords`): its line when there is room, else its arrow alone before the value (#260). */
-  change?: ChangeWords
+  change?: ChangeWords | null
   /** A trend figure's period in words ("12 full months"), said by its arrow alone outside Customize (#260). */
   period?: string
   sparkline?: ReactNode

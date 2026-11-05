@@ -589,6 +589,7 @@ export type TimeFormat =
 
 export type TrendComparison =
   | 'BEFORE'
+  | 'NONE'
   | 'YEAR_EARLIER';
 
 export type TrendFigure =
@@ -616,6 +617,7 @@ export type TrendUnit =
 export type TrendWindowKind =
   | 'LAST'
   | 'SINCE'
+  | 'THIS_MONTH'
   | 'THIS_YEAR';
 
 export type UpdateExpenseInput = {

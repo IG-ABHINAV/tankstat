@@ -1,3 +1,4 @@
+using Tankstat.Domain;
 using Tankstat.Domain.Charts;
 
 namespace Tankstat.Application.Stats;
@@ -341,7 +342,9 @@ public static class StatsCalculator
         // consumption for the consumption.
         var fillUps = data.Fuel.Where(f => figure != TrendFigure.Consumption || f.Consumption is not null)
             .OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).ToList();
-        var (recent, earlier, recentItems, earlierItems) = Windows(period, today, fillUps);
+        var (recent, earlierRange, recentItems, earlierItems) = Windows(period, today, fillUps);
+        // A trend figure always compares (TrendAsync refuses a period without a comparison): its earlier window is never missing.
+        if (earlierRange is not { } earlier) throw new DomainException("trend.invalid", "This period is not valid.");
         int CountIn((DateOnly Start, DateOnly End) w) => fillUps.Count(f => f.Date >= w.Start && f.Date <= w.End);
         var recentWindow = new TrendWindow(recent.Start, recent.End, recentItems?.Count ?? CountIn(recent));
         var earlierWindow = new TrendWindow(earlier.Start, earlier.End, earlierItems?.Count ?? (earlier.End < earlier.Start ? 0 : CountIn(earlier)));
@@ -392,10 +395,11 @@ public static class StatsCalculator
     /// The two windows of a period. A time period ends today, or, whole, with the last completed week (Monday to Sunday), month or year.
     /// Fill-ups: the latest N (<paramref name="fillUps"/>, latest first) from the oldest of them to today, and the N before them up to the
     /// day before; they are handed back too, since two on one day may fall either side of that day. A window before is as long (in
-    /// calendar months or years for those, else in days) and ends the day before; a year earlier is the same dates a year back (29 February
-    /// to 28 February), and then fill-ups are those inside its dates.
+    /// calendar months or years for those, else in days) and ends the day before; this month's is the whole month before (#272); a year
+    /// earlier is the same dates a year back (29 February to 28 February), and then fill-ups are those inside its dates. No comparison
+    /// (<see cref="TrendComparison.None"/>) has no earlier window.
     /// </summary>
-    private static ((DateOnly Start, DateOnly End) Recent, (DateOnly Start, DateOnly End) Earlier, List<FuelPoint>? RecentItems, List<FuelPoint>? EarlierItems)
+    private static ((DateOnly Start, DateOnly End) Recent, (DateOnly Start, DateOnly End)? Earlier, List<FuelPoint>? RecentItems, List<FuelPoint>? EarlierItems)
         Windows(TrendPeriod period, DateOnly today, List<FuelPoint> fillUps)
     {
         (DateOnly Start, DateOnly End) recent;
@@ -405,6 +409,11 @@ public static class StatsCalculator
         {
             case TrendWindowKind.ThisYear:
                 recent = (new DateOnly(today.Year, 1, 1), today);
+                break;
+            case TrendWindowKind.ThisMonth:
+                // The month so far, against the whole month before (the owner's choice: "the month before" says it), not its first days.
+                recent = (MonthStart(today), today);
+                before = w => (w.Start.AddMonths(-1), w.Start.AddDays(-1));
                 break;
             case TrendWindowKind.Since:
                 recent = (period.Since!.Value, today);
@@ -417,6 +426,7 @@ public static class StatsCalculator
                         recentItems = fillUps.Take(n).ToList();
                         var start = recentItems.Count > 0 ? recentItems[^1].Date : today;
                         recent = (start, today);
+                        if (period.Against == TrendComparison.None) return (recent, null, recentItems, null);
                         if (period.Against == TrendComparison.Before)
                         {
                             earlierItems = fillUps.Skip(n).Take(n).ToList();
@@ -448,7 +458,12 @@ public static class StatsCalculator
                 }
                 break;
         }
-        var earlier = period.Against == TrendComparison.YearEarlier ? (recent.Start.AddYears(-1), recent.End.AddYears(-1)) : before(recent);
+        (DateOnly Start, DateOnly End)? earlier = period.Against switch
+        {
+            TrendComparison.None => null,
+            TrendComparison.YearEarlier => (recent.Start.AddYears(-1), recent.End.AddYears(-1)),
+            _ => before(recent),
+        };
         // A year earlier counts the fill-ups inside its dates, as a window of dates does.
         return (recent, earlier, period.Against == TrendComparison.YearEarlier ? null : recentItems, null);
     }

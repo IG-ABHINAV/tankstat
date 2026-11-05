@@ -3,7 +3,8 @@ import { canBeWhole, canonical, comparedWith, daysIn, DEFAULT_PERIOD, isDefault,
 
 const last = (unit: TrendPeriod['unit'], count: number, over: Partial<TrendPeriod> = {}): TrendPeriod => ({ kind: 'LAST', unit, count, since: null, whole: false, against: 'BEFORE', ...over })
 const window = (start: string, end: string, fillUps = 0) => ({ start, end, fillUps })
-const words = (w: { key: string; values: Record<string, string | number> }) => `${w.key} ${JSON.stringify(w.values)}`
+const THIS_MONTH: TrendPeriod = { kind: 'THIS_MONTH', unit: null, count: null, since: null, whole: false, against: 'BEFORE' }
+const words = (w: { key: string; values: Record<string, string | number> } | null) => (w ? `${w.key} ${JSON.stringify(w.values)}` : null)
 
 describe('the defaults', () => {
   it('are what each figure showed before periods: 12 whole months, 10 fill-ups, this year against last', () => {
@@ -54,6 +55,7 @@ describe('choosing a period', () => {
     expect(tabOf('spendingTrend', last('MONTHS', 6))).toBe('last') // not whole: no pick
     expect(tabOf('distanceTrend', { ...DEFAULT_PERIOD.distanceTrend, against: 'BEFORE' })).toBe('quick')
     expect(tabOf('spendingTrend', { kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })).toBe('since')
+    expect(tabOf('spendingTrend', THIS_MONTH)).toBe('quick') // this month so far, like this year, is only a quick pick (#272)
     expect(sameWindow(last('MONTHS', 6, { whole: true }), last('MONTHS', 6, { whole: true, against: 'YEAR_EARLIER' }))).toBe(true)
 
     const yearEarlier = last('MONTHS', 6, { whole: true, against: 'YEAR_EARLIER' })
@@ -79,6 +81,10 @@ describe('the words', () => {
     expect(chip('distanceTrend', DEFAULT_PERIOD.distanceTrend)).toEqual(['dashboard.period.thisYear {}', null]) // a year earlier is distance's own
     expect(chip('distanceTrend', { ...DEFAULT_PERIOD.distanceTrend, against: 'BEFORE' })).toEqual(['dashboard.period.thisYear {}', 'dashboard.period.vs.before {}'])
     expect(chip('consumptionTrend', { kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })).toEqual(['dashboard.period.since {"date":"«2026-03-15»"}', null])
+    // This month so far; no comparison says nothing on the chip (#272: how a key figure without one says so is the builder's, #275).
+    expect(chip('spendingTrend', THIS_MONTH)).toEqual(['dashboard.period.thisMonth {}', null])
+    expect(chip('spendingTrend', { ...THIS_MONTH, against: 'NONE' })).toEqual(['dashboard.period.thisMonth {}', null])
+    expect(chip('spendingTrend', last('WEEKS', 8, { against: 'NONE' }))).toEqual(['dashboard.period.last.weeks {"count":8}', null])
   })
 
   it('keeps the defaults\' sentences, and words every other period from its own count or the earlier window\'s days', () => {
@@ -92,6 +98,11 @@ describe('the words', () => {
     expect(words(comparedWith(since, earlier))).toBe('dashboard.trend.than.before.days {"count":31}')
     expect(words(comparedWith({ ...since, against: 'YEAR_EARLIER' }, earlier))).toBe('dashboard.trend.than.sameDaysYearEarlier {}')
     expect(words(comparedWith({ ...DEFAULT_PERIOD.distanceTrend, against: 'BEFORE' }, window('2025-02-28', '2025-12-31')))).toBe('dashboard.trend.than.before.days {"count":307}')
+    // This month so far against the whole month before, "the month before" (#272), or the same days a year earlier; nothing, nothing.
+    expect(words(comparedWith(THIS_MONTH, window('2026-10-01', '2026-10-31')))).toBe('dashboard.trend.than.before.months {"count":1}')
+    expect(words(comparedWith({ ...THIS_MONTH, against: 'YEAR_EARLIER' }, earlier))).toBe('dashboard.trend.than.sameDaysYearEarlier {}')
+    expect(comparedWith({ ...THIS_MONTH, against: 'NONE' }, earlier)).toBeNull()
+    expect(comparedWith(last('FILL_UPS', 10, { against: 'NONE' }), earlier)).toBeNull()
   })
 
   it('counts a window\'s days with both ends, across a leap day, and names the fill-ups compared only for a window by dates', () => {

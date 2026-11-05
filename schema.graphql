@@ -1678,6 +1678,7 @@ enum TimeFormat {
 enum TrendComparison {
   BEFORE
   YEAR_EARLIER
+  NONE
 }
 
 enum TrendFigure {
@@ -1699,6 +1700,7 @@ enum TrendWindowKind {
   LAST
   SINCE
   THIS_YEAR
+  THIS_MONTH
 }
 
 enum UserDataDisposition {

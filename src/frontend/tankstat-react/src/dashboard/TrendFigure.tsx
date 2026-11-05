@@ -46,10 +46,9 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
         hint={error ? errorText(error) : undefined}
       />
     )
-  const than = (() => {
-    const w = comparedWith(p, data.earlier)
-    return String(t(w.key as never, w.values))
-  })()
+  // What the recent window is compared with; a period without a comparison (#272) has no change to show.
+  const compared = comparedWith(p, data.earlier)
+  const than = compared ? String(t(compared.key as never, compared.values)) : ''
   switch (figure) {
     case 'spendingTrend': {
       const main = data.currencies[0]
@@ -63,7 +62,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           fitKey={fitKey}
           value={main ? format.money(main.recent ?? 0, main.currency) : none}
           hint={others.length > 0 ? others.map((c) => format.money(c.recent ?? 0, c.currency)).join(' · ') : undefined}
-          change={main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.money(v, main.currency), none: t('dashboard.trend.nothingBefore') })}
+          change={compared && main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.money(v, main.currency), none: t('dashboard.trend.nothingBefore') })}
         />
       )
     }
@@ -77,7 +76,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           period={periodWords}
           fitKey={fitKey}
           value={main?.recent != null ? <ValueWithUnit {...format.costPerDistanceParts(main.recent, main.currency, units.distance)} /> : none}
-          change={main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.costPerDistance(v, main.currency, units.distance), none: t('dashboard.trend.nothingBefore'), noneRecent: t('dashboard.trend.nothingDriven') })}
+          change={compared && main && wordsOf({ recent: main.recent, earlier: main.earlier, than, meaning: 'worseUp', size: (v) => format.costPerDistance(v, main.currency, units.distance), none: t('dashboard.trend.nothingBefore'), noneRecent: t('dashboard.trend.nothingDriven') })}
         />
       )
     }
@@ -94,7 +93,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           fitKey={fitKey}
           value={c?.recent != null ? <ValueWithUnit {...format.consumptionParts(c.recent, units)} /> : none}
           hint={c ? (fillUps ? t('dashboard.kpi.fillUpsIn', { count: c.recentFillUps }) : t('dashboard.kpi.lastFillUps', { count: c.recentFillUps })) : undefined}
-          change={wordsOf({
+          change={compared && wordsOf({
             recent: c?.recent,
             earlier: c?.earlier,
             fuel: true,
@@ -116,7 +115,7 @@ export function TrendFigure({ figure, period: p, data, error, rows, units, label
           period={periodWords}
           fitKey={fitKey}
           value={d?.recent != null ? format.distance(d.recent, units.distance) : none}
-          change={d ? wordsOf({ recent: d.recent, earlier: d.earlier, than, meaning: 'neutral', size: (v) => format.distance(v, units.distance), none: t('dashboard.trend.nothingBefore') }) : undefined}
+          change={compared && d ? wordsOf({ recent: d.recent, earlier: d.earlier, than, meaning: 'neutral', size: (v) => format.distance(v, units.distance), none: t('dashboard.trend.nothingBefore') }) : undefined}
         />
       )
     }

@@ -95,10 +95,10 @@ export function periodProblem(p: TrendPeriod, today: string): Words | null {
 /** Whether a unit can be whole: weeks (Monday to Sunday), calendar months and years. */
 export const canBeWhole = (unit: TrendUnit | null) => unit === 'WEEKS' || unit === 'MONTHS' || unit === 'YEARS'
 
-/** The tab a period is set on: a quick pick's, `SINCE`'s, else `LAST`'s (this year so far is only a quick pick). */
+/** The tab a period is set on: a quick pick's, `SINCE`'s, else `LAST`'s (this year and this month so far are only quick picks). */
 export type PeriodTab = 'quick' | 'last' | 'since'
 export function tabOf(figure: TrendFigureId, p: TrendPeriod): PeriodTab {
-  if (p.kind === 'THIS_YEAR' || QUICK_PICKS[figure].some((q) => sameWindow(q, p))) return 'quick'
+  if (p.kind === 'THIS_YEAR' || p.kind === 'THIS_MONTH' || QUICK_PICKS[figure].some((q) => sameWindow(q, p))) return 'quick'
   return p.kind === 'SINCE' ? 'since' : 'last'
 }
 
@@ -119,15 +119,17 @@ export function startOf(tab: PeriodTab, figure: TrendFigureId, p: TrendPeriod, t
 const UNIT_KEY: Record<TrendUnit, string> = { DAYS: 'days', WEEKS: 'weeks', MONTHS: 'months', YEARS: 'years', FILL_UPS: 'fillUps' }
 
 /**
- * The chip's words: "12 full months", "Last 8 weeks", "Since 15 Mar 2026", "This year"; with the comparison when it is not the figure's
- * default ("… · vs a year earlier"). `date` writes the `SINCE` day in the user's format.
+ * The chip's words: "12 full months", "Last 8 weeks", "Since 15 Mar 2026", "This year", "This month"; with the comparison when it is not
+ * the figure's default ("… · vs a year earlier"). No comparison (`NONE`, #272) says nothing here: a key figure without one has no arrow,
+ * and how its chip says so is the builder's (#275). `date` writes the `SINCE` day in the user's format.
  */
 export function periodWords(figure: TrendFigureId, p: TrendPeriod, date: (day: string) => string): { period: Words; against: Words | null } {
   const period: Words =
     p.kind === 'THIS_YEAR' ? { key: 'dashboard.period.thisYear', values: {} }
+    : p.kind === 'THIS_MONTH' ? { key: 'dashboard.period.thisMonth', values: {} }
     : p.kind === 'SINCE' ? { key: 'dashboard.period.since', values: { date: p.since ? date(p.since) : '' } }
     : { key: `dashboard.period.${p.whole ? 'whole' : 'last'}.${UNIT_KEY[p.unit ?? 'DAYS']}`, values: { count: p.count ?? 0 } }
-  const against = p.against === DEFAULT_PERIOD[figure].against ? null : { key: `dashboard.period.vs.${p.against === 'YEAR_EARLIER' ? 'yearEarlier' : 'before'}`, values: {} }
+  const against = p.against === DEFAULT_PERIOD[figure].against || p.against === 'NONE' ? null : { key: `dashboard.period.vs.${p.against === 'YEAR_EARLIER' ? 'yearEarlier' : 'before'}`, values: {} }
   return { period, against }
 }
 
@@ -140,9 +142,12 @@ export function daysIn(window: { start: string; end: string }): number {
 /**
  * What the recent window is compared with, for the sentence under the value ("… more than <this>"): the defaults keep their words ("the
  * 12 months before", "the 10 fill-ups before", "last year to this day"). The N before name the period's own count (for fill-ups those
- * found before, which can be fewer); a window by dates (since a day, this year against the days before) counts the earlier window's days.
+ * found before, which can be fewer); this month so far is against "the month before" (the whole of it, #272); a window by dates (since a
+ * day, this year against the days before) counts the earlier window's days. No comparison (`NONE`) is compared with nothing: null.
  */
-export function comparedWith(p: TrendPeriod, earlier: { start: string; end: string; fillUps: number }): Words {
+export function comparedWith(p: TrendPeriod, earlier: { start: string; end: string; fillUps: number }): Words | null {
+  if (p.against === 'NONE') return null
+  if (p.kind === 'THIS_MONTH') return p.against === 'YEAR_EARLIER' ? { key: 'dashboard.trend.than.sameDaysYearEarlier', values: {} } : { key: 'dashboard.trend.than.before.months', values: { count: 1 } }
   if (p.kind === 'LAST' && p.unit) {
     const unit = UNIT_KEY[p.unit]
     if (p.against === 'YEAR_EARLIER') return p.unit === 'FILL_UPS' ? { key: 'dashboard.trend.than.sameDaysYearEarlier', values: {} } : { key: `dashboard.trend.than.yearEarlier.${unit}`, values: { count: p.count ?? 0 } }
