@@ -1285,22 +1285,22 @@
   "dashboard": {
     "kpi": {
       "thisMonth": "Költés ebben a hónapban",
-      "lastMonth": "Előző hónap: {{amount}}",
       "consumption": "Átlagos fogyasztás",
-      "consumptionHint": "az utolsó 10 teli tankolás",
       "odometer": "Kilométeróra",
       "lastFillUp": "Utolsó tankolás",
       "spendingTrend": "Költés",
       "costPerDistance": "Költség távolságra, változás",
       "consumptionTrend": "Fogyasztás változása",
-      "lastFillUps": "utolsó {{count}} tankolás",
+      "lastFillUps": "utolsó {{count}} teli tankolás",
       "distanceTrend": "Megtett távolság",
       "counts": "{{fuel}} tankolás, {{expenses}} költség",
       "none": "–",
       "fillUpsIn_one": "{{count}} tankolás az időszakban",
       "fillUpsIn_other": "{{count}} tankolás az időszakban",
       "moreCurrencies": "és még {{number}}: {{list}}",
-      "moreCount": "+{{number}}"
+      "moreCount": "+{{number}}",
+      "fillUpCount_one": "{{count}} tankolás",
+      "fillUpCount_other": "{{count}} tankolás"
     },
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",
@@ -1412,7 +1412,8 @@
       },
       "vs": {
         "before": "az előzőhöz képest",
-        "yearEarlier": "egy évvel korábbihoz képest"
+        "yearEarlier": "egy évvel korábbihoz képest",
+        "none": "összevetés nélkül"
       },
       "withAgainst": "{{period}} · {{against}}",
       "title": "{{figure}} időszaka",
@@ -1443,6 +1444,7 @@
       "fillUpsHint": "A legrégebbitől máig.",
       "sinceDate": "Első nap",
       "against": "Összevetve",
+      "againstNone": "Nincs összevetés",
       "againstBefore": "Az előző időszakkal",
       "againstYearEarlier": "Ugyanezekkel a napokkal egy évvel korábban",
       "preview": "A csempe ezt mutatja majd",
@@ -1544,6 +1546,9 @@
         "readyOnDashboard": "Már az irányítópulton van, ezért itt csak testre szabható: saját grafikonként mentve alulra kerül, a kész grafikon mellé."
       },
       "onDashboard": "Az irányítópulton"
+    },
+    "figure": {
+      "title": "{{measure}} · {{period}}"
     }
   },
   "charts": {

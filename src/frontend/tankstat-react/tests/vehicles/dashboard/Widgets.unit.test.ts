@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addTile, chartKey, defaultSize, FIGURES, flow, LAYOUT_PRESETS, LAYOUT_VERSION, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, replaceTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
+import { addTile, chartKey, defaultSize, figureTile, FIGURES, flow, LAYOUT_PRESETS, LAYOUT_VERSION, MIN_FIGURE_ROWS, minSize, moveTile, pack, pinTile, presetKey, READY_CHARTS, removeTile, replaceTile, resizeTile, resolveLayout, setTilePeriod, toLayout, type Tile } from '../../../src/dashboard/widgets.ts'
 import { DEFAULT_PERIOD } from '../../../src/dashboard/trendPeriod.ts'
 
 const chart = (id: string) => ({ id, title: `Chart ${id}` })
@@ -63,32 +63,92 @@ describe('resolveLayout', () => {
     expect(layout.hidden).toEqual([])
   })
 
-  it('stores what is on screen, and Standard holds every figure and ready-made chart', () => {
+  it('stores what is on screen, a figure as a tile of its own with its recipe (#274), and Standard holds every figure and ready-made chart', () => {
     const layout = resolveLayout({ tiles: [tile('lastFillUp', 0, 0, 1, 4, true)], hidden: [chartKey('b')] }, [chart('a'), chart('b')])
 
-    expect(toLayout(layout.tiles, layout.hidden)).toEqual({ tiles: [tile('lastFillUp', 0, 0, 1, 4, true), tile(chartKey('a'), 1, 0)], hidden: [chartKey('b')], layoutVersion: LAYOUT_VERSION }) // the version every save sends (#273)
+    expect(toLayout(layout.tiles, layout.hidden, () => 'n1')).toEqual({
+      tiles: [
+        { ...tile('tile:n1', 0, 0, 1, 4, true), recipe: { widget: 'FIGURE', title: null, chart: null, figure: { measure: 'LAST_FILL_UP', period: null, sparkline: false, template: 'lastFillUp' } } },
+        tile(chartKey('a'), 1, 0),
+      ],
+      hidden: [chartKey('b')],
+      layoutVersion: LAYOUT_VERSION, // the version every save sends (#273), 2 since tiles are saved with their recipes (#274)
+    })
+    expect(LAYOUT_VERSION).toBe(2)
     expect(LAYOUT_PRESETS.standard.tiles.map((t) => `${t.id}@${t.x},${t.y}`)).toEqual([
       'thisMonth@0,0', 'consumption@1,0', 'odometer@2,0', 'lastFillUp@3,0',
       'preset:monthlyCosts@0,4', 'preset:consumption@2,4', 'preset:fuelPrice@0,12', 'preset:categories@2,12', 'preset:distance@0,20',
     ])
+    expect(LAYOUT_PRESETS.usage.tiles.slice(0, 4).map((t) => t.recipe?.figure?.template)).toEqual(['odometer', 'distanceTrend', 'consumption', 'consumptionTrend']) // the presets' figures are recipes
   })
 
-  it('keeps a trend figure\'s own period through the merge and the packing, and stores it as GraphQL takes it, the default as none (#230)', () => {
+  it('reads every old figure id as its template\'s recipe, a trend figure with its own period or its default, kept under its id until a save (#274)', () => {
     const weeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' } as const
-    const readBack = { __typename: 'TrendPeriod', ...weeks } // as the server answers it
-    const stored = { tiles: [{ ...tile('spendingTrend', 0, 5, 1, 4), period: readBack }, { ...tile('consumptionTrend', 1, 0, 1, 4), period: DEFAULT_PERIOD.consumptionTrend }, tile('odometer', 2, 0, 1, 3)], hidden: [] }
-    const layout = resolveLayout(stored, [])
+    const stored = { tiles: [...FIGURES.map((f, i) => tile(f, i % 4, Math.floor(i / 4) * 4, 1, 4)), { ...tile('distanceTrend', 0, 8, 1, 4), period: { __typename: 'TrendPeriod', ...weeks } }], hidden: [] }
+    const resolved = resolveLayout(stored as never, []).tiles
+    const recipes = Object.fromEntries(resolved.map((t) => [t.id, { ...t.recipe?.figure, title: t.recipe?.title }]))
+    expect(resolved.every((t) => t.period === null)).toBe(true) // the period lives in the recipe now
+    const months12 = { kind: 'LAST', unit: 'MONTHS', count: 12, since: null, whole: true, against: 'BEFORE' }
 
-    expect(layout.tiles.find((t) => t.id === 'spendingTrend')).toMatchObject({ y: 0, period: weeks }) // lifted by the packing, the period kept
-    expect(toLayout(layout.tiles, []).tiles).toEqual([
-      { id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false, period: weeks }, // no __typename: the server refuses it in an input
-      { id: 'consumptionTrend', x: 1, y: 0, w: 1, h: 4, pinned: false }, // its default: none stored
-      tile('odometer', 2, 0, 1, 3),
-    ])
-    expect(toLayout([{ ...tile('odometer', 0, 0, 1, 3), period: weeks }], []).tiles).toEqual([tile('odometer', 0, 0, 1, 3)]) // never on a figure without one
-    expect(addTile([], 'distanceTrend', 4, weeks)).toEqual([{ ...tile('distanceTrend', 0, 0, 1, 4), period: weeks }])
-    expect(addTile([], 'distanceTrend', 4, DEFAULT_PERIOD.distanceTrend)).toEqual([tile('distanceTrend', 0, 0, 1, 4)])
-    expect(setTilePeriod(layout.tiles, 'spendingTrend', null).find((t) => t.id === 'spendingTrend')?.period).toBeNull()
+    expect(recipes).toEqual({
+      thisMonth: { measure: 'TOTAL_SPEND', period: { kind: 'THIS_MONTH', unit: null, count: null, since: null, whole: false, against: 'BEFORE' }, sparkline: true, template: 'thisMonth', title: null },
+      consumption: { measure: 'AVERAGE_CONSUMPTION', period: { kind: 'LAST', unit: 'FILL_UPS', count: 10, since: null, whole: false, against: 'NONE' }, sparkline: false, template: 'consumption', title: null },
+      odometer: { measure: 'ODOMETER', period: null, sparkline: false, template: 'odometer', title: null },
+      lastFillUp: { measure: 'LAST_FILL_UP', period: null, sparkline: false, template: 'lastFillUp', title: null },
+      spendingTrend: { measure: 'TOTAL_SPEND', period: months12, sparkline: false, template: 'spendingTrend', title: null },
+      costPerDistance: { measure: 'COST_PER_DISTANCE', period: months12, sparkline: false, template: 'costPerDistance', title: null },
+      consumptionTrend: { measure: 'AVERAGE_CONSUMPTION', period: { kind: 'LAST', unit: 'FILL_UPS', count: 10, since: null, whole: false, against: 'BEFORE' }, sparkline: false, template: 'consumptionTrend', title: null },
+      distanceTrend: { measure: 'DISTANCE', period: { kind: 'THIS_YEAR', unit: null, count: null, since: null, whole: false, against: 'YEAR_EARLIER' }, sparkline: false, template: 'distanceTrend', title: null }, // the first one wins: the stored duplicate's period is dropped with it
+    })
+    // A stored trend id with its period: the period goes into the recipe (without its __typename) and is stored there.
+    const one = resolveLayout({ tiles: [{ ...tile('distanceTrend', 0, 0, 1, 4), period: { __typename: 'TrendPeriod', ...weeks } as never }], hidden: [] }, [])
+    expect(one.tiles[0].recipe?.figure?.period).toEqual(weeks)
+    expect(toLayout(one.tiles, [], () => 'n2').tiles[0].recipe?.figure).toEqual({ measure: 'DISTANCE', period: weeks, sparkline: false, template: 'distanceTrend' })
+    expect(toLayout(one.tiles, [], () => 'n2').tiles[0]).not.toHaveProperty('period')
+  })
+
+  it('reads a tile of its own as its recipe, keeps its id on a save, drops one without a recipe, and offers the figures no tile was made from', () => {
+    const figure = { __typename: 'FigureRecipe', measure: 'FUEL_VOLUME', period: { __typename: 'TrendPeriod', kind: 'LAST', unit: 'DAYS', count: 30, since: null, whole: false, against: 'NONE' }, sparkline: false, template: null } as const
+    const fromThisMonth = { ...figure, measure: 'TOTAL_SPEND', template: 'thisMonth' } as const
+    const bars = { __typename: 'ChartConfig', metric: 'DISTANCE', grouping: 'MONTH', kind: 'BAR', range: 'ALL', stacked: false, from: null, to: null, trend: 'NONE', runningTotal: false, compareYearEarlier: false, secondMetric: null, secondKind: null } as const
+    const stored = {
+      tiles: [
+        { ...tile('tile:f', 0, 0, 1, 3), recipe: { widget: 'FIGURE', title: 'Fuel', chart: null, figure } },
+        { ...tile('tile:m', 1, 0, 1, 4), recipe: { widget: 'FIGURE', title: null, chart: null, figure: fromThisMonth } },
+        { ...tile('tile:c', 0, 4, 2, 8), recipe: { widget: 'CHART', title: 'Bars', chart: bars, figure: null } }, // #275's: drawn, so a save keeps it
+        tile('tile:lost', 2, 4, 1, 3), // no recipe: nothing to draw
+      ],
+      hidden: [],
+    } as const
+    const layout = resolveLayout(stored as never, [])
+
+    expect(layout.tiles.map((t) => t.id)).toEqual(['tile:f', 'tile:m', 'tile:c'])
+    expect(layout.tiles[0].recipe).toEqual({ widget: 'FIGURE', title: 'Fuel', figure: { measure: 'FUEL_VOLUME', period: { kind: 'LAST', unit: 'DAYS', count: 30, since: null, whole: false, against: 'NONE' }, sparkline: false, template: null } })
+    expect(layout.tiles[2].recipe).toMatchObject({ widget: 'CHART', title: 'Bars', chart: { metric: 'DISTANCE', kind: 'BAR', range: 'ALL' } })
+    expect(layout.available.figures).toEqual(FIGURES.filter((f) => f !== 'thisMonth')) // made from thisMonth: not offered again
+    expect(toLayout(layout.tiles, [], () => 'never').tiles.map((t) => t.id)).toEqual(['tile:f', 'tile:m', 'tile:c'])
+  })
+
+  it('sizes a saved key figure as a figure, and puts one the layout does not mention at the bottom at a figure\'s size (#273)', () => {
+    const saved = [{ id: 'f', figure: { measure: 'ODOMETER' as const, period: null, sparkline: false, template: null } }, { id: 'c', figure: null }]
+    const layout = resolveLayout({ tiles: [{ ...tile(chartKey('f'), 0, 0, 1, 1) }], hidden: [] }, saved)
+
+    expect(places(layout.tiles)).toEqual(['chart:f@0,0 1x2', 'chart:c@1,0 2x8']) // lifted to a figure's two rows, not a chart's five
+    const figureOf = (id: string) => saved.find((s) => s.id === id)?.figure
+    expect([minSize({ id: chartKey('f') }, figureOf), defaultSize({ id: chartKey('f') }, figureOf), defaultSize({ id: chartKey('c') }, figureOf)]).toEqual([{ w: 1, h: 2 }, { w: 1, h: 3 }, { w: 2, h: 8 }])
+  })
+
+  it('adds a figure with its recipe at its rows, and changes a figure tile\'s period, back to its default with none', () => {
+    const weeks = { kind: 'LAST', unit: 'WEEKS', count: 8, since: null, whole: false, against: 'YEAR_EARLIER' } as const
+    const recipe = figureTile('distanceTrend', weeks)
+    const added = addTile([], 'tile:x', 4, recipe)
+    expect(added).toEqual([{ ...tile('tile:x', 0, 0, 1, 4), recipe }])
+    expect(places(addTile([], 'tile:o', 4, figureTile('odometer')))).toEqual(['tile:o@0,0 1x3'])
+
+    expect(setTilePeriod(added, 'tile:x', null)[0].recipe?.figure?.period).toEqual(DEFAULT_PERIOD.distanceTrend)
+    expect(setTilePeriod(added, 'tile:x', { ...weeks, __typename: 'TrendPeriod' } as never)[0].recipe?.figure?.period).toEqual(weeks)
+    const odometer = addTile([], 'tile:o', 4, figureTile('odometer'))
+    expect(setTilePeriod(odometer, 'tile:o', weeks)).toEqual(odometer) // a point in time has no period to change
   })
 })
 
@@ -139,7 +199,7 @@ describe('the tile menu', () => {
 
   it('lets every figure go down to two rows, gives each the rows it shows in full, and lifts a stored figure only up to two (#229, #259)', () => {
     // Every figure fits what it shows to its card by measuring (#259), so the least is its label and value: two rows, whatever it lists.
-    expect(Object.fromEntries(FIGURES.map((f) => [f, `${minSize(f).h}..${defaultSize(f).h}`]))).toEqual({
+    expect(Object.fromEntries(FIGURES.map((f) => [f, `${minSize({ id: f }).h}..${defaultSize({ id: f }).h}`]))).toEqual({
       thisMonth: '2..4',
       consumption: '2..3',
       odometer: '2..3',
@@ -150,8 +210,8 @@ describe('the tile menu', () => {
       distanceTrend: '2..4',
     })
     expect(MIN_FIGURE_ROWS).toBe(2)
-    expect(minSize(presetKey('distance'))).toEqual({ w: 1, h: 5 })
-    expect(defaultSize(chartKey('x'))).toEqual({ w: 2, h: 8 })
+    expect(minSize({ id: presetKey('distance') })).toEqual({ w: 1, h: 5 })
+    expect(defaultSize({ id: chartKey('x') })).toEqual({ w: 2, h: 8 })
     // Shorter stops at two rows for every figure, the ones whose words wrap in a desktop column too.
     const row = [tile('odometer', 0, 0, 1, 3), tile('thisMonth', 1, 0, 1, 4), tile('costPerDistance', 2, 0, 1, 4)]
     expect(places(resizeTile(resizeTile(row, 'odometer', { h: -1 }), 'odometer', { h: -1 }))).toContain('odometer@0,0 1x2')

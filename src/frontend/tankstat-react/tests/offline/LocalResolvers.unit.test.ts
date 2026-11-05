@@ -443,23 +443,16 @@ describe('answering offline, the device\'s own data', () => {
     expect(await answerLocally(rows, 'RecurringExpenses', { vehicleId: 'v2' }, kept)).toBeUndefined() // nothing waits for v2
   })
 
-  it('a vehicle added here has its schedules, no figures and no charts until the server has it', async () => {
+  it('a vehicle added here has its schedules, no saved widgets and no chart data until the server has it', async () => {
     const rows = await device()
     await enqueue({ id: 'golf', entity: 'vehicles', action: 'add', vehicleId: 'golf', targetId: 'golf', input: { id: 'golf', name: 'Golf', fuelType: 'PETROL' } })
     await enqueue({ id: 's1', entity: 'recurring', action: 'add', vehicleId: 'golf', targetId: 's1', input: { id: 's1', title: 'Oil' } })
 
     expect(await answerLocally(rows, 'RecurringExpenses', { vehicleId: 'golf' })).toMatchObject({ vehicle: { __typename: 'Vehicle', id: 'golf', recurring: [{ id: 's1', title: 'Oil' }] } })
-    expect(await answerLocally(rows, 'VehicleDashboard', { id: 'golf' })).toEqual({ vehicle: { __typename: 'Vehicle', id: 'golf', summary: null, dashboard: null }, vehicleCharts: [] })
+    expect(await answerLocally(rows, 'VehicleDashboard', { id: 'golf' })).toEqual({ vehicle: { __typename: 'Vehicle', id: 'golf', dashboard: null }, vehicleWidgets: [] }) // no saved widgets (#273)
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'golf' })).toEqual({ vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } })
-    const empty = { __typename: 'TrendWindow', start: todayIso(), end: todayIso(), fillUps: 0 }
-    expect(await answerLocally(rows, 'VehicleTrend', { vehicleId: 'golf', figure: 'SPENDING', period: { kind: 'THIS_YEAR' } })).toEqual({
-      vehicleTrend: { __typename: 'TrendFigureData', recent: empty, earlier: empty, currencies: [], consumption: null, distance: null }, // the windows are non-null: the tile says it has nothing yet
-    })
     expect(await answerLocally(rows, 'VehicleDashboard', { id: 'v1' })).toBeUndefined()
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'v1' })).toBeUndefined()
-    expect(await answerLocally(rows, 'VehicleTrend', { vehicleId: 'v1' })).toBeUndefined()
-    expect(await answerLocally(rows, 'VehicleWidgets', { vehicleId: 'golf' })).toEqual({ vehicleWidgets: [] }) // no saved widgets either (#273)
-    expect(await answerLocally(rows, 'VehicleWidgets', { vehicleId: 'v1' })).toBeUndefined()
   })
 
   it('a vehicle added here has no key figure over a period yet, and its odometer and last fill-up from the logs kept here (#272)', async () => {

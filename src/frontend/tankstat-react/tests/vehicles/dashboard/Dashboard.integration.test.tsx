@@ -4,6 +4,7 @@ import { delay } from 'msw'
 import { axe } from 'vitest-axe'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
+import { i18n } from '../../../src/i18n/index.ts'
 import { graphql } from '../../support/graphql.ts'
 import { server } from '../../support/server.ts'
 import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeTile, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
@@ -42,6 +43,13 @@ const tileMenu = async (ui: ReturnType<typeof userEvent.setup>, name: string, en
 }
 const said = () => screen.getByRole('status', { name: 'Last change to the arrangement' })
 const at = (id: string, x: number, y: number, w: number, h: number) => expect.objectContaining({ id, x, y, w, h })
+/** A figure tile as saved (#274): a `tile:` of its own with its template's recipe. */
+const fig = (template: string, x: number, y: number, w: number, h: number) =>
+  expect.objectContaining({ id: expect.stringMatching(/^tile:[0-9a-f-]{36}$/), x, y, w, h, recipe: expect.objectContaining({ widget: 'FIGURE', figure: expect.objectContaining({ template }) }) })
+type SavedTile = { id: string; w: number; h: number; pinned: boolean; recipe?: { figure?: { template?: string | null } | null } | null }
+const savedTiles = (state: ReturnType<typeof fakeDashboardBackend>['state'], i = 0) => (state.calls.SaveDashboardLayout![i] as { input: { tiles: SavedTile[] } }).input.tiles
+/** A saved tile by the built-in figure it was made from, else by its id. */
+const savedTile = (tiles: SavedTile[], id: string) => tiles.find((t) => t.recipe?.figure?.template === id || t.id === id)
 
 const choose = async (ui: ReturnType<typeof userEvent.setup>, control: string, option: string) => {
   await ui.click(screen.getByRole('combobox', { name: control }))
@@ -84,16 +92,24 @@ it('opens on the dashboard, with the vehicle picture as the banner', async () =>
 })
 
 it('shows the key figures', async () => {
-  setup(fakeVehicle({ summary: fakeSummary({ thisMonthSpend: 52000, lastMonthSpend: 40000, averageConsumption: 6.25, latestOdometer: 123456, lastFillUpDate: '2026-09-17', fillUpCount: 5, expenseCount: 2 }) }))
+  const { state } = setup(fakeVehicle({ summary: fakeSummary({ thisMonthSpend: 52000, lastMonthSpend: 40000, averageConsumption: 6.25, latestOdometer: 123456, lastFillUpDate: '2026-09-17', fillUpCount: 5, expenseCount: 2 }) }))
 
   await screen.findByText('Spent this month')
 
-  expect(screen.getByText(/52,000/)).toBeInTheDocument()
-  expect(screen.getByText(/Last month: .*40,000/)).toBeInTheDocument()
-  expect(screen.getByText(whole('6.25 L/100 km'))).toBeInTheDocument()
-  expect(screen.getByText(/123,456 km/)).toBeInTheDocument()
-  expect(screen.getByText('Sep 17, 2026')).toBeInTheDocument()
+  // Each figure is its recipe's own answer (#274): the same numbers as the summary gave.
+  expect(await screen.findByText('HUF 52,000')).toBeInTheDocument()
+  // Spent this month is compared with the whole month before, its arrow and sentence in place of the old "Last month: …" note (#272).
+  expect(screen.getByText('HUF 12,000 (30%) more than the month before')).toBeInTheDocument()
+  expect(screen.queryByText(/Last month/)).not.toBeInTheDocument()
+  expect(await screen.findByText(whole('6.25 L/100 km'))).toBeInTheDocument()
+  expect(screen.getByText('last 10 full fill-ups')).toBeInTheDocument()
+  expect(await screen.findByText(/123,456 km/)).toBeInTheDocument()
+  expect(await screen.findByText('Sep 17, 2026')).toBeInTheDocument()
   expect(screen.getByText('5 fill-ups, 2 expenses')).toBeInTheDocument()
+  // Each asked for its recipe: this month against the month before, the last 10 fill-ups against nothing, two points in time.
+  expect(state.figureRequests.map((r) => `${r.measure} ${r.period ? `${r.period.kind} ${r.period.unit ?? ''}${r.period.count ?? ''} ${r.period.against}` : '-'}`)).toEqual(
+    expect.arrayContaining(['TOTAL_SPEND THIS_MONTH  BEFORE', 'AVERAGE_CONSUMPTION LAST FILL_UPS10 NONE', 'ODOMETER -', 'LAST_FILL_UP -']),
+  )
 })
 
 it('shows what was spent in another currency next to the main one, not dropped or relabelled', async () => {
@@ -101,8 +117,10 @@ it('shows what was spent in another currency next to the main one, not dropped o
 
   await screen.findByText('Spent this month')
 
-  expect(screen.getByText(/52,000.* · €73\.90/)).toBeInTheDocument()
-  expect(screen.getByText(/Last month: .*40,000/)).not.toHaveTextContent('€') // nothing in euro last month
+  // The owner's choice B (#274): the main currency is the value, the others are the note (from four rows when it compares).
+  expect(await screen.findByText('HUF 52,000')).toBeInTheDocument()
+  expect(screen.getByText('€73.90')).toBeInTheDocument()
+  expect(screen.getByText('HUF 12,000 (30%) more than the month before')).toBeInTheDocument() // the main currency's comparison
 })
 
 it('has the ready-made charts, and each loads its own data from the server', async () => {
@@ -113,7 +131,8 @@ it('has the ready-made charts, and each loads its own data from the server', asy
   await waitFor(() => expect(state.chartRequests.length).toBeGreaterThanOrEqual(5))
   const metrics = state.chartRequests.map((r) => `${r.config.metric}/${r.config.grouping}/${r.config.range}`)
   expect(metrics).toEqual(expect.arrayContaining(['TOTAL_SPEND/MONTH/LAST12_MONTHS', 'AVERAGE_CONSUMPTION/MONTH/LAST12_MONTHS', 'EXPENSE_COST/CATEGORY/LAST12_MONTHS']))
-  expect(state.chartRequests.find((r) => r.config.metric === 'TOTAL_SPEND')!.config).toMatchObject({ stacked: true, kind: 'BAR', from: null, to: null })
+  // Monthly costs' own request (Spent this month's sparkline asks for its six months too, #274).
+  expect(state.chartRequests.find((r) => r.config.metric === 'TOTAL_SPEND' && r.config.range === 'LAST12_MONTHS')!.config).toMatchObject({ stacked: true, kind: 'BAR', from: null, to: null })
 })
 
 /** Opens a chart's table from the button in its card's header (a dialog named after the chart) and gives the table. */
@@ -326,10 +345,10 @@ it('customizes the vehicle\'s dashboard in place: a figure moved earlier, a read
       vehicleId: 'v1',
       personal: false,
       tiles: [
-        at('thisMonth', 0, 0, 1, 4),
-        at('odometer', 1, 0, 1, 4),
-        at('consumption', 2, 0, 1, 4),
-        at('lastFillUp', 3, 0, 1, 4),
+        fig('thisMonth', 0, 0, 1, 4), // a figure is saved as a tile of its own with its recipe (#274)
+        fig('odometer', 1, 0, 1, 4),
+        fig('consumption', 2, 0, 1, 4),
+        fig('lastFillUp', 3, 0, 1, 4),
         at('preset:monthlyCosts', 0, 4, 2, 8),
         at('preset:categories', 2, 4, 2, 8), // packed up into the removed chart's place
         at('preset:fuelPrice', 0, 12, 2, 8),
@@ -362,9 +381,9 @@ it('resizes and pins a tile by its menu, within what it needs', async () => {
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
-  const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; w: number; h: number; pinned: boolean }[] } }).input.tiles
-  expect(tiles.find((t) => t.id === 'preset:monthlyCosts')).toMatchObject({ w: 3, h: 9 })
-  expect(tiles.find((t) => t.id === 'odometer')).toMatchObject({ pinned: true })
+  const tiles = savedTiles(state)
+  expect(savedTile(tiles, 'preset:monthlyCosts')).toMatchObject({ w: 3, h: 9 })
+  expect(savedTile(tiles, 'odometer')).toMatchObject({ pinned: true })
 })
 
 it('shows what a figure\'s rows hold: label and value at two, the comparison or the note at three, the sparkline at four (#229)', async () => {
@@ -382,7 +401,7 @@ it('shows what a figure\'s rows hold: label and value at two, the comparison or 
   expect(within(region).getByText(whole('6.5 L/100 km'))).toBeInTheDocument()
   expect(within(region).queryByText('last 10 full fill-ups')).not.toBeInTheDocument() // but not the note
   expect(within(region).getByText('5 fill-ups, 2 expenses')).toBeInTheDocument() // three rows: the note
-  expect(within(region).getByText(/Last month: .*40,000/)).toBeInTheDocument()
+  expect(await within(region).findByText('HUF 10,000 (25%) more than the month before')).toBeInTheDocument() // three rows: Spent this month's comparison (#274)
   expect(await within(region).findByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument() // three rows: the comparison (each trend tile loads its own)
   expect(await within(region).findByText('HUF 60,000 (12%) more than the 12 months before')).toBeInTheDocument() // four rows: the comparison and the note
   expect(within(region).getByText('€200.00')).toBeInTheDocument()
@@ -414,10 +433,10 @@ it('makes a figure shorter down to two rows, its label and value, and saves the 
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
-  const tiles = (state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string; h: number }[] } }).input.tiles
-  expect(tiles.find((t) => t.id === 'odometer')).toMatchObject({ h: 2 })
-  expect(tiles.find((t) => t.id === 'thisMonth')).toMatchObject({ h: 2 })
-  expect(tiles.find((t) => t.id === 'consumption')).toMatchObject({ h: 4 })
+  const tiles = savedTiles(state)
+  expect(savedTile(tiles, 'odometer')).toMatchObject({ h: 2 })
+  expect(savedTile(tiles, 'thisMonth')).toMatchObject({ h: 2 })
+  expect(savedTile(tiles, 'consumption')).toMatchObject({ h: 4 })
 })
 
 it('adds back what was taken off, starts afresh from a preset, and arranges one\'s own from what one sees', async () => {
@@ -440,7 +459,7 @@ it('adds back what was taken off, starts afresh from a preset, and arranges one\
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
   expect(state.calls.SaveDashboardLayout![0]).toEqual({
-    input: { vehicleId: 'v1', personal: true, tiles: [at('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), at('lastFillUp', 0, 19, 1, 3)], hidden: [], layoutVersion: 2 }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
+    input: { vehicleId: 'v1', personal: true, tiles: [fig('odometer', 0, 0, 1, 3), at('preset:distance', 0, 3, 2, 8), at('chart:c1', 0, 11, 2, 8), fig('lastFillUp', 0, 19, 1, 3)], hidden: [], layoutVersion: 2 }, // the figure stored three rows high keeps them, the one added gets the three it shows in full
   })
 
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save dashboard' })).not.toBeInTheDocument())
@@ -484,7 +503,7 @@ it('words the trend figures with an arrow and a change, never by colour alone', 
   expect(within(region).getByText(whole('HUF 4,480 / 100 km'))).toBeInTheDocument()
   expect(within(region).getByText('HUF 480 / 100 km (12%) more than the 12 months before')).toBeInTheDocument()
   expect(within(region).getByText(whole('6.5 L/100 km'))).toBeInTheDocument()
-  expect(within(region).getByText('last 10 fill-ups')).toBeInTheDocument()
+  expect(within(region).getByText('last 10 full fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('uses 7% less fuel than the 10 fill-ups before')).toBeInTheDocument()
   expect(within(region).getByText('12,500 km')).toBeInTheDocument()
   expect(within(region).getByText('1,500 km (14%) more than last year to this day')).toBeInTheDocument()
@@ -549,10 +568,98 @@ it('words a consumption trend with few fill-ups before, and a cost per distance 
 
   const region = await screen.findByRole('region', { name: 'Dashboard' })
   expect(await within(region).findByText(whole('7.5 L/100 km'))).toBeInTheDocument() // the latest mean shows as soon as there is one
-  expect(within(region).getByText('last 4 fill-ups')).toBeInTheDocument()
+  expect(within(region).getByText('last 4 full fill-ups')).toBeInTheDocument()
   expect(within(region).getByText('needs 3 earlier fill-ups to compare with')).toBeInTheDocument()
   expect(await within(region).findByText('nothing driven in this period')).toBeInTheDocument() // the recent window is the empty one
   await waitFor(() => expect(within(region).getAllByText('–')).toHaveLength(2)) // cost per distance and distance (no reading at all)
+})
+
+// ---- every key figure a recipe (#274) -----------------------------------------------------------------------------------------
+
+const period = (kind: string, unit: string | null, count: number | null, against = 'BEFORE') => ({ kind, unit, count, since: null, whole: false, against })
+const figureTile = (id: string, x: number, measure: string, p: ReturnType<typeof period> | null, template: string | null = null, title: string | null = null) =>
+  ({ ...fakeTile(id, x, 0, 1, 4), recipe: { widget: 'FIGURE', title, chart: null, figure: { measure, period: p, sparkline: false, template } } })
+
+it('draws any recipe: a new measure without a comparison, fill-ups against the period before, a saved figure, titled in the viewer\'s language (#274)', async () => {
+  const savedOdometer = fakeChart({ id: 's1', title: 'Kilometres', isShared: true, figure: { measure: 'ODOMETER', period: null, sparkline: false, template: null } })
+  const { state } = setup(fakeVehicle(), [savedOdometer], undefined, {
+    signedIn: true,
+    arranged: (s) =>
+      (s.dashboard.shared = layout({
+        tiles: [
+          figureTile('tile:a', 0, 'FUEL_VOLUME', period('LAST', 'DAYS', 30, 'NONE')),
+          figureTile('tile:b', 1, 'FILL_UPS', period('LAST', 'MONTHS', 3)),
+          figureTile('tile:m', 2, 'TOTAL_SPEND', period('THIS_MONTH', null, null), 'thisMonth'),
+          figureTile('tile:c', 3, 'AVERAGE_CONSUMPTION', period('LAST', 'FILL_UPS', 10, 'NONE'), 'thisMonth'), // its measure changed: no longer Spent this month
+          { ...fakeTile('chart:s1', 0, 4, 1, 3) },
+        ],
+      })),
+  })
+
+  const region = await screen.findByRole('region', { name: 'Dashboard' })
+  expect(await within(region).findByText('100 L')).toBeInTheDocument() // the fuel volume, nothing to compare with
+  expect(await within(region).findByText('20 fill-ups (25%) more than the 3 months before')).toBeInTheDocument()
+  const toneOf = (text: string) => within(region).getByText(text).closest('p')!.querySelector('[data-tone]')!.getAttribute('data-tone')
+  expect(toneOf('20 fill-ups (25%) more than the 3 months before')).toBe('neutral') // the owner's table: more fill-ups is neither good nor bad
+  expect(await within(region).findByText('12,000 km')).toBeInTheDocument() // the saved key figure (#273)
+  expect(figureLabels()).toEqual(['Fuel volume · Last 30 days', 'Number of fill-ups · Last 3 months', 'Spent this month', 'Average consumption · Last 10 fill-ups', 'Kilometres'])
+  expect(within(region).queryByText(/more than/, { selector: '[data-tile="tile:a"] *' })).not.toBeInTheDocument()
+  expect(state.figureRequests).toEqual(expect.arrayContaining([{ vehicleId: 'v1', measure: 'FUEL_VOLUME', period: period('LAST', 'DAYS', 30, 'NONE') }, { vehicleId: 'v1', measure: 'ODOMETER', period: null }]))
+
+  // A built-in figure's default title is its template's, in the viewer's language; a title of its own or a measure's stays as written.
+  await i18n.changeLanguage('hu')
+  try {
+    // The region is named in Hungarian now: the labels are read from the one found above.
+    const labels = () => [...within(region).getAllByText(/./, { selector: '.MuiCard-root > div:first-child > p:first-child' })].map((p) => p.textContent)
+    await waitFor(() => expect(labels()).toContain('Költés ebben a hónapban'))
+    expect(labels()).toContain('Kilometres')
+    expect(labels()).toContain('Átlagos fogyasztás · Utolsó 10 tankolás')
+  } finally {
+    await i18n.changeLanguage('en-US')
+  }
+})
+
+it('puts a chip only on a figure with a period while arranging, and Average consumption\'s popover opens on no comparison (#274)', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, { signedIn: true })
+  await screen.findByText('HUF 50,000')
+  await customize(ui)
+
+  const region = screen.getByRole('region', { name: 'Dashboard' })
+  expect(await within(region).findByRole('button', { name: 'Spent this month period: This month. Change it' })).toBeInTheDocument()
+  expect(within(region).getByRole('button', { name: 'Average consumption period: Last 10 fill-ups. Change it' })).toBeInTheDocument()
+  expect(within(region).queryByRole('button', { name: /^Odometer period/ })).not.toBeInTheDocument() // a point in time has no period
+  expect(within(region).queryByRole('button', { name: /^Last fill-up period/ })).not.toBeInTheDocument()
+
+  await ui.click(within(region).getByRole('button', { name: 'Average consumption period: Last 10 fill-ups. Change it' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Period of Average consumption' })
+  expect(within(dialog).getByRole('combobox', { name: 'Compared with' })).toHaveTextContent('No comparison') // the owner's choice: a third option
+  expect(within(dialog).getByRole('radio', { name: 'Last 10 fill-ups' })).toBeChecked()
+  await ui.click(within(dialog).getByRole('combobox', { name: 'Compared with' }))
+  await ui.click(await screen.findByRole('option', { name: 'The period before' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
+  expect(await within(region).findByRole('button', { name: 'Average consumption period: Last 10 fill-ups · vs the period before. Change it' })).toBeInTheDocument()
+  await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
+  await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
+  expect(savedTile(savedTiles(state), 'consumption')?.recipe?.figure).toMatchObject({ measure: 'AVERAGE_CONSUMPTION', period: { kind: 'LAST', unit: 'FILL_UPS', count: 10, against: 'BEFORE' } })
+})
+
+it('draws Spent this month\'s sparkline from its measure by month over six months, and offers no built-in figure a tile was made from (#274)', async () => {
+  const { ui, state } = setup(fakeVehicle(), [], undefined, {
+    signedIn: true,
+    arranged: (s) => (s.dashboard.shared = layout({ tiles: [figureTile('tile:m', 0, 'TOTAL_SPEND', period('THIS_MONTH', null, null), 'thisMonth'), fakeTile('odometer', 1, 0, 1, 3)] })),
+  })
+  state.dashboard.shared!.tiles[0].recipe!.figure!.sparkline = true
+
+  expect(await screen.findByRole('img', { name: /^Spending in the last six months: / })).toBeInTheDocument()
+  expect(state.chartRequests.map((r) => `${r.config.metric}/${r.config.grouping}/${r.config.range}`)).toContain('TOTAL_SPEND/MONTH/LAST6_MONTHS')
+
+  await customize(ui)
+  await ui.click(screen.getByRole('button', { name: 'Add widget' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add widget' })
+  const offered = within(within(dialog).getByRole('list', { name: 'What to add' })).getAllByRole('button').map((b) => b.textContent)
+  expect(offered).not.toContain('Spent this month') // made from that template already, though its id is a tile: of its own
+  expect(offered).not.toContain('Odometer') // an old figure id is its template too
+  expect(offered).toContain('Last fill-up')
 })
 
 it('starts from the Usage preset: its figures and charts, saved as tiles', async () => {
@@ -565,8 +672,8 @@ it('starts from the Usage preset: its figures and charts, saved as tiles', async
   await ui.click(screen.getByRole('button', { name: 'Save dashboard' }))
 
   await waitFor(() => expect(state.calls.SaveDashboardLayout).toHaveLength(1))
-  expect((state.calls.SaveDashboardLayout![0] as { input: { tiles: { id: string }[] } }).input.tiles.map((t) => t.id)).toEqual([
-    'odometer', 'distanceTrend', 'consumption', 'consumptionTrend',
+  expect(savedTiles(state).map((t) => t.recipe?.figure?.template ?? t.id)).toEqual([
+    'odometer', 'distanceTrend', 'consumption', 'consumptionTrend', // the preset's figures, each a tile of its own with its template (#274)
     'preset:distanceYearEarlier', 'preset:consumptionTrend', 'preset:distanceAndConsumption', 'preset:distance',
   ])
   await waitFor(async () => expect(await chartTitles()).toEqual(['Distance, this year and last', 'Consumption trend', 'Distance and consumption', 'Distance per month']))

@@ -1285,22 +1285,22 @@
   "dashboard": {
     "kpi": {
       "thisMonth": "Spent this month",
-      "lastMonth": "Last month: {{amount}}",
       "consumption": "Average consumption",
-      "consumptionHint": "last 10 full fill-ups",
       "odometer": "Odometer",
       "lastFillUp": "Last fill-up",
       "spendingTrend": "Spending",
       "costPerDistance": "Cost per distance change",
       "consumptionTrend": "Consumption change",
-      "lastFillUps": "last {{count}} fill-ups",
+      "lastFillUps": "last {{count}} full fill-ups",
       "distanceTrend": "Distance driven",
       "counts": "{{fuel}} fill-ups, {{expenses}} expenses",
       "none": "–",
       "fillUpsIn_one": "{{count}} fill-up in the period",
       "fillUpsIn_other": "{{count}} fill-ups in the period",
       "moreCurrencies": "and {{number}} more: {{list}}",
-      "moreCount": "+{{number}}"
+      "moreCount": "+{{number}}",
+      "fillUpCount_one": "{{count}} fill-up",
+      "fillUpCount_other": "{{count}} fill-ups"
     },
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",
@@ -1412,7 +1412,8 @@
       },
       "vs": {
         "before": "vs the period before",
-        "yearEarlier": "vs a year earlier"
+        "yearEarlier": "vs a year earlier",
+        "none": "no comparison"
       },
       "withAgainst": "{{period}} · {{against}}",
       "title": "Period of {{figure}}",
@@ -1443,6 +1444,7 @@
       "fillUpsHint": "From the oldest of them to today.",
       "sinceDate": "First day",
       "against": "Compared with",
+      "againstNone": "No comparison",
       "againstBefore": "The period before",
       "againstYearEarlier": "The same dates a year earlier",
       "preview": "The tile will show",
@@ -1544,6 +1546,9 @@
         "readyOnDashboard": "It is on the dashboard already, so here it can only be customized: saved as a chart of your own, it is added at the bottom, beside the ready-made one."
       },
       "onDashboard": "On the dashboard"
+    },
+    "figure": {
+      "title": "{{measure}} · {{period}}"
     }
   },
   "charts": {

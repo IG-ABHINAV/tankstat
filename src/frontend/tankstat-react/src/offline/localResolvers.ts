@@ -443,23 +443,15 @@ const recurringExpenses: Resolver = async (_rows, variables, kept) => {
   return { vehicle: { __typename: 'Vehicle', id: vehicleId, ...base, recurring: schedulesOf(vehicleId, (base?.recurring as Record<string, unknown>[] | undefined) ?? []) } }
 }
 
-/** A vehicle added here has no figures, charts or arrangement (the Standard preset, which needs the server to change) until the server has it. */
+/**
+ * A vehicle added here has no saved widgets (#273) or arrangement (the Standard preset, which needs the server to change) until the server
+ * has it; its key figures are the device's own answers (`vehicleFigure`).
+ */
 const vehicleDashboard: Resolver = async (_rows, variables) =>
-  addedVehicle(variables.id) ? { vehicle: { __typename: 'Vehicle', id: variables.id, summary: null, dashboard: null }, vehicleCharts: [] } : undefined
-
-/** A vehicle added here has no saved widgets (#273) until the server has it. */
-const vehicleWidgets: Resolver = async (_rows, variables) => (addedVehicle(variables.vehicleId) ? { vehicleWidgets: [] } : undefined)
+  addedVehicle(variables.id) ? { vehicle: { __typename: 'Vehicle', id: variables.id, dashboard: null }, vehicleWidgets: [] } : undefined
 
 const chartData: Resolver = async (_rows, variables) =>
   addedVehicle(variables.vehicleId) ? { vehicleChartData: { __typename: 'ChartData', unit: 'COUNT', series: [] } } : undefined
-
-/** Nor a trend figure (#230): both windows today with nothing in them, so the tile says it has nothing to show yet. */
-const vehicleTrend: Resolver = async (_rows, variables) => {
-  if (!addedVehicle(variables.vehicleId)) return undefined
-  const today = todayIso()
-  const empty = () => ({ __typename: 'TrendWindow', start: today, end: today, fillUps: 0 })
-  return { vehicleTrend: { __typename: 'TrendFigureData', recent: empty(), earlier: empty(), currencies: [], consumption: null, distance: null } }
-}
 
 /** The chart unit of a key figure's measure (`StatsCalculator.UnitOf`): the odometer's a distance, the last fill-up's none. */
 const FIGURE_UNIT: Record<FigureMeasure, ChartUnit | null> = {
@@ -523,9 +515,7 @@ const RESOLVERS: Record<string, Resolver> = {
   RecurringExpenses: recurringExpenses,
   VehicleDashboard: vehicleDashboard,
   ChartData: chartData,
-  VehicleTrend: vehicleTrend,
   VehicleFigure: vehicleFigure,
-  VehicleWidgets: vehicleWidgets,
 }
 
 /** The device's own answer to a query, or undefined when it has none (not one of these queries, or not downloaded). */

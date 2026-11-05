@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canBeWhole, canonical, comparedWith, daysIn, DEFAULT_PERIOD, isDefault, namesFillUps, periodOf, periodProblem, periodWords, QUICK_PICKS, sameWindow, startOf, stored, tabOf, toInput, TREND_FIGURES, type TrendPeriod } from '../../../src/dashboard/trendPeriod.ts'
+import { canBeWhole, canonical, comparedWith, daysIn, DEFAULT_PERIOD, namesFillUps, PERIOD_FIGURES, periodOf, periodProblem, periodWords, QUICK_PICKS, samePeriod, sameWindow, startOf, tabOf, toInput, type PeriodFigureId, type TrendPeriod } from '../../../src/dashboard/trendPeriod.ts'
 
 const last = (unit: TrendPeriod['unit'], count: number, over: Partial<TrendPeriod> = {}): TrendPeriod => ({ kind: 'LAST', unit, count, since: null, whole: false, against: 'BEFORE', ...over })
 const window = (start: string, end: string, fillUps = 0) => ({ start, end, fillUps })
@@ -7,22 +7,25 @@ const THIS_MONTH: TrendPeriod = { kind: 'THIS_MONTH', unit: null, count: null, s
 const words = (w: { key: string; values: Record<string, string | number> } | null) => (w ? `${w.key} ${JSON.stringify(w.values)}` : null)
 
 describe('the defaults', () => {
-  it('are what each figure showed before periods: 12 whole months, 10 fill-ups, this year against last', () => {
+  it('are what each figure showed before periods: 12 whole months, 10 fill-ups, this year against last; this month and the 10 fill-ups of the plain figures (#274)', () => {
     expect(DEFAULT_PERIOD).toEqual({
+      thisMonth: THIS_MONTH, // against the whole month before (#272)
+      consumption: last('FILL_UPS', 10, { against: 'NONE' }), // the summary's average: compared with nothing
       spendingTrend: last('MONTHS', 12, { whole: true }),
       costPerDistance: last('MONTHS', 12, { whole: true }),
       consumptionTrend: last('FILL_UPS', 10),
       distanceTrend: { kind: 'THIS_YEAR', unit: null, count: null, since: null, whole: false, against: 'YEAR_EARLIER' },
     })
     expect(periodOf('consumptionTrend', null)).toBe(DEFAULT_PERIOD.consumptionTrend)
-    for (const f of TREND_FIGURES) expect(QUICK_PICKS[f].some((q) => isDefault(f, q)), f).toBe(true) // a quick pick takes a tile back to its default
+    // A quick pick takes a tile back to its default's window (what it is compared with is a choice of its own).
+    for (const f of PERIOD_FIGURES) expect(QUICK_PICKS[f].some((q) => sameWindow(q, DEFAULT_PERIOD[f])), f).toBe(true)
+    expect(QUICK_PICKS.thisMonth[0]).toEqual(THIS_MONTH) // so the Segmented selects it on Spent this month's chip
   })
 
-  it('stores nothing for a default, and a period of its own in the app\'s shape whatever it came from', () => {
-    expect(stored('spendingTrend', last('MONTHS', 12, { whole: true }))).toBeNull()
-    expect(stored('spendingTrend', null)).toBeNull()
+  it('reads a period in the app\'s shape whatever it came from', () => {
     const readBack = { __typename: 'TrendPeriod', kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' } as const
-    expect(stored('spendingTrend', readBack)).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })
+    expect(periodOf('spendingTrend', readBack)).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })
+    expect(samePeriod(periodOf('spendingTrend', null), last('MONTHS', 12, { whole: true }))).toBe(true)
     expect(canonical({ kind: 'LAST', unit: 'DAYS', count: 30 })).toEqual(last('DAYS', 30)) // left out, as the server reads it
     expect(canonical({ kind: 'THIS_MONTH', against: 'NONE' })).toEqual({ ...THIS_MONTH, against: 'NONE' }) // this month without a comparison kept as it is (#272)
   })
@@ -63,6 +66,7 @@ describe('choosing a period', () => {
     const yearEarlier = last('MONTHS', 6, { whole: true, against: 'YEAR_EARLIER' })
     expect(startOf('last', 'spendingTrend', yearEarlier, today)).toEqual(last('WEEKS', 8, { against: 'YEAR_EARLIER' })) // the comparison kept
     expect(startOf('last', 'consumptionTrend', DEFAULT_PERIOD.consumptionTrend, today)).toEqual(DEFAULT_PERIOD.consumptionTrend) // already a Last period
+    expect(startOf('last', 'consumption', { ...THIS_MONTH, against: 'NONE' }, today)).toEqual(last('FILL_UPS', 10, { against: 'NONE' })) // fill-ups for Average consumption too (#274)
     expect(startOf('since', 'spendingTrend', yearEarlier, today)).toEqual({ kind: 'SINCE', unit: null, count: null, since: '2026-08-01', whole: false, against: 'YEAR_EARLIER' })
     expect(startOf('since', 'spendingTrend', yearEarlier, '2026-02-10').since).toBe('2025-11-01') // across the year
     expect(startOf('quick', 'spendingTrend', last('DAYS', 30, { against: 'YEAR_EARLIER' }), today)).toEqual(last('MONTHS', 12, { whole: true, against: 'YEAR_EARLIER' }))
@@ -74,7 +78,7 @@ describe('the words', () => {
   const date = (day: string) => `«${day}»`
 
   it('names the period on the chip, and the comparison only when it is not the figure\'s own', () => {
-    const chip = (f: (typeof TREND_FIGURES)[number], p: TrendPeriod) => {
+    const chip = (f: PeriodFigureId, p: TrendPeriod) => {
       const w = periodWords(f, p, date)
       return [words(w.period), w.against && words(w.against)]
     }
@@ -83,10 +87,13 @@ describe('the words', () => {
     expect(chip('distanceTrend', DEFAULT_PERIOD.distanceTrend)).toEqual(['dashboard.period.thisYear {}', null]) // a year earlier is distance's own
     expect(chip('distanceTrend', { ...DEFAULT_PERIOD.distanceTrend, against: 'BEFORE' })).toEqual(['dashboard.period.thisYear {}', 'dashboard.period.vs.before {}'])
     expect(chip('consumptionTrend', { kind: 'SINCE', unit: null, count: null, since: '2026-03-15', whole: false, against: 'BEFORE' })).toEqual(['dashboard.period.since {"date":"«2026-03-15»"}', null])
-    // This month so far; no comparison says nothing on the chip (#272: how a key figure without one says so is the builder's, #275).
+    // This month so far; no comparison is said where the figure compares by default (#274), and the other way round.
     expect(chip('spendingTrend', THIS_MONTH)).toEqual(['dashboard.period.thisMonth {}', null])
-    expect(chip('spendingTrend', { ...THIS_MONTH, against: 'NONE' })).toEqual(['dashboard.period.thisMonth {}', null])
-    expect(chip('spendingTrend', last('WEEKS', 8, { against: 'NONE' }))).toEqual(['dashboard.period.last.weeks {"count":8}', null])
+    expect(chip('thisMonth', THIS_MONTH)).toEqual(['dashboard.period.thisMonth {}', null])
+    expect(chip('spendingTrend', { ...THIS_MONTH, against: 'NONE' })).toEqual(['dashboard.period.thisMonth {}', 'dashboard.period.vs.none {}'])
+    expect(chip('spendingTrend', last('WEEKS', 8, { against: 'NONE' }))).toEqual(['dashboard.period.last.weeks {"count":8}', 'dashboard.period.vs.none {}'])
+    expect(chip('consumption', DEFAULT_PERIOD.consumption)).toEqual(['dashboard.period.last.fillUps {"count":10}', null]) // Average consumption's own: no comparison
+    expect(chip('consumption', last('FILL_UPS', 10))).toEqual(['dashboard.period.last.fillUps {"count":10}', 'dashboard.period.vs.before {}'])
   })
 
   it('keeps the defaults\' sentences, and words every other period from its own count or the earlier window\'s days', () => {

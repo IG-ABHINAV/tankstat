@@ -81,49 +81,10 @@ query VehicleDashboard($id: UUID!) {
         ...DashboardLayoutFields
       }
     }
-    summary {
-      lastFillUpDate
-      latestOdometer
-      averageConsumption
-      currency
-      thisMonthSpend
-      lastMonthSpend
-      spending {
-        currency
-        thisMonth
-        lastMonth
-      }
-      fillUpCount
-      expenseCount
-      spendTrend {
-        month
-        amount
-      }
-    }
   }
-  vehicleCharts(vehicleId: $id) {
-    id
-    title
-    metric
-    grouping
-    kind
-    range
-    rangeFrom
-    rangeTo
-    stacked
-    trend
-    runningTotal
-    compareYearEarlier
-    secondMetric
-    secondKind
-    isShared
-    canEdit
-    canDelete
-    createdBy {
-      id
-      displayName
-      avatarUrl
-    }
+  # The saved widgets of both kinds (#273), charts and key figures (#274: the dashboard draws both; vehicleCharts stays for an older app).
+  vehicleWidgets(vehicleId: $id) {
+    ...SavedWidgetFields
   }
 }
 
@@ -135,9 +96,20 @@ fragment DashboardLayoutFields on DashboardLayoutInfo {
     w
     h
     pinned
-    # A trend figure's own period (#230); null for its default.
+    # An old trend figure id's own period (#230); null for its default. A tile with its own recipe keeps it there.
     period {
       ...TrendPeriodFields
+    }
+    # A tile:'s own recipe (#273): every key figure's once saved by this app (#274).
+    recipe {
+      widget
+      title
+      chart {
+        ...ChartConfigFields
+      }
+      figure {
+        ...FigureRecipeFields
+      }
     }
   }
   hidden
@@ -150,37 +122,6 @@ fragment TrendPeriodFields on TrendPeriod {
   since
   whole
   against
-}
-
-# A trend figure over its period (#230): each trend tile asks its own, as a chart tile asks its data.
-query VehicleTrend($vehicleId: UUID!, $figure: TrendFigure!, $period: TrendPeriodInput!) {
-  vehicleTrend(vehicleId: $vehicleId, figure: $figure, period: $period) {
-    recent {
-      start
-      end
-      fillUps
-    }
-    earlier {
-      start
-      end
-      fillUps
-    }
-    currencies {
-      currency
-      recent
-      earlier
-    }
-    consumption {
-      recent
-      earlier
-      recentFillUps
-      earlierFillUps
-    }
-    distance {
-      recent
-      earlier
-    }
-  }
 }
 
 # A key figure (#272): any measure over a period of its own, compared or not, or a point in time (the odometer, the last fill-up) without
@@ -215,26 +156,23 @@ query VehicleFigure($vehicleId: UUID!, $measure: FigureMeasure!, $period: TrendP
   }
 }
 
-# The saved widgets of both kinds (#273), charts and key figures; the dashboard switches to it from #274 (vehicleCharts stays for an older app).
-query VehicleWidgets($vehicleId: UUID!) {
-  vehicleWidgets(vehicleId: $vehicleId) {
+fragment SavedWidgetFields on SavedWidget {
+  id
+  title
+  widget
+  chart {
+    ...ChartConfigFields
+  }
+  figure {
+    ...FigureRecipeFields
+  }
+  isShared
+  canEdit
+  canDelete
+  createdBy {
     id
-    title
-    widget
-    chart {
-      ...ChartConfigFields
-    }
-    figure {
-      ...FigureRecipeFields
-    }
-    isShared
-    canEdit
-    canDelete
-    createdBy {
-      id
-      displayName
-      avatarUrl
-    }
+    displayName
+    avatarUrl
   }
 }
 

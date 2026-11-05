@@ -13,10 +13,10 @@ import { FieldDate } from '../forms/FieldDate.tsx'
 import { FieldInput } from '../forms/FieldInput.tsx'
 import type { TrendComparison, TrendUnit } from '../gql/generated.ts'
 import { useErrorText } from '../i18n/errors.ts'
-import { canBeWhole, EARLIEST, MAX_COUNT, QUICK_PICKS, sameWindow, startOf, tabOf, type PeriodTab, type TrendFigureId, type TrendPeriod, type Words } from './trendPeriod.ts'
+import { canBeWhole, EARLIEST, MAX_COUNT, QUICK_PICKS, sameWindow, startOf, tabOf, type PeriodFigureId, type PeriodTab, type TrendPeriod, type Words } from './trendPeriod.ts'
 import { TrendTimeline } from './TrendTimeline.tsx'
 import { usePeriodText } from './usePeriodText.ts'
-import type { useTrendPreview } from './useTrendPreview.ts'
+import type { useFigurePreview } from './useFigurePreview.ts'
 
 const UNITS: readonly TrendUnit[] = ['DAYS', 'WEEKS', 'MONTHS', 'YEARS', 'FILL_UPS']
 const UNIT_KEY: Record<TrendUnit, 'days' | 'weeks' | 'months' | 'years' | 'fillUps'> = { DAYS: 'days', WEEKS: 'weeks', MONTHS: 'months', YEARS: 'years', FILL_UPS: 'fillUps' }
@@ -24,10 +24,10 @@ const UNIT_KEY: Record<TrendUnit, 'days' | 'weeks' | 'months' | 'years' | 'fillU
 /**
  * A trend figure's period being chosen (#230), with no buttons of its own: the tile's popover and the Add widget dialog's figure pane put
  * it in a form with theirs. Tabs *Quick* (the figure's picks), *Last* (a number and a unit, whole weeks, months or years if asked) and
- * *Since* (a first day), the comparison, and the two windows the server worked out for it (`preview`, the caller's `useTrendPreview`, so
+ * *Since* (a first day), the comparison, and the two windows the server worked out for it (`preview`, the caller's `useFigurePreview`, so
  * the dialog's tile and this read one answer).
  */
-export function TrendPeriodForm({ figure, value, onChange, preview }: { figure: TrendFigureId; value: TrendPeriod; onChange: (period: TrendPeriod) => void; preview: ReturnType<typeof useTrendPreview> }) {
+export function TrendPeriodForm({ figure, value, onChange, preview }: { figure: PeriodFigureId; value: TrendPeriod; onChange: (period: TrendPeriod) => void; preview: ReturnType<typeof useFigurePreview> }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const periodText = usePeriodText()
@@ -119,6 +119,8 @@ export function TrendPeriodForm({ figure, value, onChange, preview }: { figure: 
         label={t('dashboard.period.against')}
         value={value.against}
         options={[
+          // No comparison (#274, the owner's choice): the figure shows its value alone, without an arrow or a sentence.
+          { value: 'NONE', label: t('dashboard.period.againstNone') },
           { value: 'BEFORE', label: t('dashboard.period.againstBefore') },
           { value: 'YEAR_EARLIER', label: t('dashboard.period.againstYearEarlier') },
         ]}
@@ -126,8 +128,8 @@ export function TrendPeriodForm({ figure, value, onChange, preview }: { figure: 
       />
       {/* The windows as the server works them out; until it answers (or while the period is not valid) the room stays. */}
       <Box sx={{ minHeight: 36 }}>
-        {data ? (
-          <TrendTimeline recent={data.recent} earlier={data.earlier} />
+        {data?.recent ? (
+          <TrendTimeline recent={data.recent} earlier={data.earlier ?? null} />
         ) : error ? (
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {errorText(error)}
