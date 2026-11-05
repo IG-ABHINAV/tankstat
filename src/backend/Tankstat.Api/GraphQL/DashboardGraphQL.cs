@@ -112,15 +112,12 @@ public sealed class SavedWidget(VehicleChart entity)
 public sealed class SavedWidgetExtensions
 {
     /// <summary>Whether the user may change it: its creator only.</summary>
-    public async Task<bool> GetCanEdit([Parent] SavedWidget widget, [Service] AccessService access, CancellationToken ct) =>
-        ChartService.MayChange(widget.Entity, await access.RequirePrincipalAsync(ct));
+    public Task<bool> GetCanEdit([Parent] SavedWidget widget, [Service] AccessService access, CancellationToken ct) =>
+        VehicleChartExtensions.CanEditAsync(widget.Entity, access, ct);
 
     /// <summary>Whether the user may delete it: its creator, or anyone with Delete access to the vehicle's logs.</summary>
-    public async Task<bool> GetCanDelete([Parent] SavedWidget widget, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct)
-    {
-        var user = await access.RequirePrincipalAsync(ct);
-        return ChartService.MayChange(widget.Entity, user) || ChartService.MayDelete(widget.Entity, user, await levels.LoadAsync(widget.Entity.VehicleId, ct));
-    }
+    public Task<bool> GetCanDelete([Parent] SavedWidget widget, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct) =>
+        VehicleChartExtensions.CanDeleteAsync(widget.Entity, access, levels, ct);
 
     public Task<UserRef?> GetCreatedBy([Parent] SavedWidget widget, UserRefLoader users, CancellationToken ct) => users.LoadAsync(widget.Entity.CreatedById, ct);
 }
@@ -135,18 +132,24 @@ public sealed class TrendPeriodType : ObjectType<TrendPeriod>
 public sealed class VehicleChartExtensions
 {
     /// <summary>Whether the user may change the chart: its creator only.</summary>
-    public async Task<bool> GetCanEdit([Parent] VehicleChart chart, [Service] AccessService access, CancellationToken ct) =>
-        ChartService.MayChange(chart, await access.RequirePrincipalAsync(ct));
+    public Task<bool> GetCanEdit([Parent] VehicleChart chart, [Service] AccessService access, CancellationToken ct) => CanEditAsync(chart, access, ct);
 
     /// <summary>Whether the user may delete the chart: its creator, or anyone with Delete access to the vehicle's logs.</summary>
-    public async Task<bool> GetCanDelete([Parent] VehicleChart chart, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct)
+    public Task<bool> GetCanDelete([Parent] VehicleChart chart, [Service] AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct) =>
+        CanDeleteAsync(chart, access, levels, ct);
+
+    public Task<UserRef?> GetCreatedBy([Parent] VehicleChart chart, UserRefLoader users, CancellationToken ct) => users.LoadAsync(chart.CreatedById, ct);
+
+    // The two rights as both types say them (VehicleChart's and SavedWidget's, #273), decided by ChartService.
+    internal static async Task<bool> CanEditAsync(VehicleChart chart, AccessService access, CancellationToken ct) =>
+        ChartService.MayChange(chart, await access.RequirePrincipalAsync(ct));
+
+    internal static async Task<bool> CanDeleteAsync(VehicleChart chart, AccessService access, LogLevelByVehicleLoader levels, CancellationToken ct)
     {
         var user = await access.RequirePrincipalAsync(ct);
         // The creator needs no level loaded (MayDelete holds for them anyway): the batch runs only for someone else's shared chart.
         return ChartService.MayChange(chart, user) || ChartService.MayDelete(chart, user, await levels.LoadAsync(chart.VehicleId, ct));
     }
-
-    public Task<UserRef?> GetCreatedBy([Parent] VehicleChart chart, UserRefLoader users, CancellationToken ct) => users.LoadAsync(chart.CreatedById, ct);
 }
 
 [ExtendObjectType<Vehicle>]
