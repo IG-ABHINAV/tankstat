@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Tankstat.Domain.Charts;
 
 /// <summary>What a chart measures. Costs are kept per currency (amounts in different currencies are never added together).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ChartMetric>))] // by name in a tile's recipe (#273): a later order never remaps a stored chart
 public enum ChartMetric
 {
     /// <summary>Fuel and expenses together.</summary>
@@ -24,6 +27,7 @@ public enum ChartMetric
 }
 
 /// <summary>How values are grouped on the horizontal axis.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ChartGrouping>))] // by name in a tile's recipe (#273): a later order never remaps a stored chart
 public enum ChartGrouping
 {
     Month,
@@ -33,6 +37,7 @@ public enum ChartGrouping
     Category,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<ChartKind>))] // by name in a tile's recipe (#273): a later order never remaps a stored chart
 public enum ChartKind
 {
     Bar,
@@ -42,6 +47,7 @@ public enum ChartKind
 }
 
 /// <summary>The period shown, relative to today so a saved chart stays current.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ChartRange>))] // by name in a tile's recipe (#273): a later order never remaps a stored chart
 public enum ChartRange
 {
     /// <summary>The last month up to today (a rolling window, not a calendar month).</summary>
@@ -60,6 +66,7 @@ public enum ChartRange
 }
 
 /// <summary>A line drawn over a chart's values to show where they are heading.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ChartTrend>))] // by name in a tile's recipe (#273): a later order never remaps a stored chart
 public enum ChartTrend
 {
     None,
