@@ -1300,7 +1300,8 @@
       "moreCurrencies": "and {{number}} more: {{list}}",
       "moreCount": "+{{number}}",
       "fillUpCount_one": "{{count}} fill-up",
-      "fillUpCount_other": "{{count}} fill-ups"
+      "fillUpCount_other": "{{count}} fill-ups",
+      "sparkline": "{{measure}} in the last six months"
     },
     "noCharts": "Compose your own charts from your data: pick what to measure, how to group it, and the period.",
     "noData": "No data for this period yet.",
@@ -1310,9 +1311,9 @@
     "tableDescription": "The numbers behind the chart, which is what a screen reader reads.",
     "editChart": "Edit the chart {{title}}",
     "deleteChart": "Delete the chart {{title}}",
-    "deleteTitle": "Delete this chart?",
-    "deleteDescription": "“{{title}}” is removed for everyone it is shared with. The data itself is not affected.",
-    "deleteConfirm": "Delete chart",
+    "deleteTitle": "Delete this widget?",
+    "deleteDescription": "“{{title}}” goes from every dashboard it is on, also for everyone it is shared with. The data itself is not affected.",
+    "deleteConfirm": "Delete widget",
     "chartLabel": "{{title}}: chart",
     "ownScales": "Each currency is drawn on a scale of its own; the amounts are in the tooltip and the table.",
     "trendSentence": "{{series}}: the trend line goes from {{from}} to {{to}}.",
@@ -1444,7 +1445,7 @@
       "fillUpsHint": "From the oldest of them to today.",
       "sinceDate": "First day",
       "against": "Compared with",
-      "againstNone": "No comparison",
+      "againstNone": "Nothing",
       "againstBefore": "The period before",
       "againstYearEarlier": "The same dates a year earlier",
       "preview": "The tile will show",
@@ -1494,7 +1495,11 @@
       "added": "{{name}} added.",
       "customize": "Customize as my chart…",
       "customized": "{{name}} is now your own chart, in the same place.",
-      "customizedRenamed": "{{name}} is now your own chart, {{title}}, in the same place."
+      "customizedRenamed": "{{name}} is now your own chart, {{title}}, in the same place.",
+      "changed": "{{name}} changed.",
+      "addedSaved": "{{name}} added, and saved to your widgets.",
+      "deleted": "{{name}} deleted.",
+      "copied": "{{name}} is now your own, in the same place."
     },
     "sectionLabel": "Dashboard",
     "layoutPresets": {
@@ -1504,12 +1509,12 @@
     },
     "widget": {
       "title": "Add widget",
-      "description": "What is not on the dashboard yet, and a chart of your own from scratch. Whatever you pick is added at the bottom.",
+      "description": "A key figure or a chart: start from one of these, from one of yours, or from scratch.",
       "listLabel": "What to add",
       "groups": {
-        "figures": "Key figures",
-        "ready": "Ready-made charts",
-        "yours": "Your charts"
+        "start": "Start from",
+        "yours": "Your widgets",
+        "scratch": "From scratch"
       },
       "blank": "Blank chart",
       "add": "Add to the dashboard",
@@ -1545,10 +1550,50 @@
         "blank": "A chart of your own, from scratch: what to measure, how to group it, the chart type and the period. The preview shows your data as you choose.",
         "readyOnDashboard": "It is on the dashboard already, so here it can only be customized: saved as a chart of your own, it is added at the bottom, beside the ready-made one."
       },
-      "onDashboard": "On the dashboard"
+      "onDashboard": "On the dashboard",
+      "kind": "Kind",
+      "kindFigure": "Key figure",
+      "kindChart": "Chart",
+      "kindOnDashboard": "{{kind}} · On the dashboard",
+      "yoursFigure": "A key figure of your own",
+      "yoursChart": "A chart of your own",
+      "yoursShared": "Shared by {{name}}",
+      "scratch": "From scratch",
+      "scratchNote": "A key figure or a chart, set up freely",
+      "fieldTitle": "Title",
+      "titleDefault": "Left empty: “{{title}}”",
+      "measure": "What it shows",
+      "period": "Period",
+      "sparkline": "Show the last six months as a sparkline",
+      "saveToo": "Also save to my widgets",
+      "editTitle": "Edit widget",
+      "customizeTitle": "Customize widget",
+      "inArrangement": "In this arrangement only.",
+      "alsoOnShared": "Also on Everyone's dashboard.",
+      "alsoOnOwn": "Also on your own dashboard.",
+      "othersMayHave": "Others may have it on their dashboards too.",
+      "onlyHere": "Only on this dashboard",
+      "everywhere": "Change it everywhere",
+      "copyNote": "Saved as your own, it takes this tile's place in this arrangement.",
+      "saveAsMine": "Save as my own",
+      "save": "Save",
+      "preview": "Preview, on your data",
+      "badge": {
+        "arrangement": "In this arrangement",
+        "saved": "Saved",
+        "sharedBy": "Saved · shared by {{name}}"
+      }
     },
     "figure": {
       "title": "{{measure}} · {{period}}"
+    },
+    "editWidget": "Edit {{title}}",
+    "customizeWidget": "Customize {{title}}",
+    "removeWidget": "Remove {{title}} from this dashboard",
+    "deleteWidget": "Delete {{title}}",
+    "measures": {
+      "ODOMETER": "Odometer (the latest reading)",
+      "LAST_FILL_UP": "Last fill-up"
     }
   },
   "charts": {

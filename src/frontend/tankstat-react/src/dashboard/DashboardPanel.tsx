@@ -16,6 +16,7 @@ import { UserChip } from '../components/UserAvatar.tsx'
 import { visuallyHidden } from '../components/visuallyHidden.ts'
 import {
   DeleteChartDocument,
+  SaveVehicleWidgetDocument,
   ResetDashboardLayoutDocument,
   SaveDashboardLayoutDocument,
   SessionDocument,
@@ -33,22 +34,17 @@ import { ChartBuilderDialog } from './ChartBuilderDialog.tsx'
 import { ChartCard } from './ChartCard.tsx'
 import { recipeOf, type ChartRecipe } from './chartFormat.ts'
 import { DashboardGrid, type TileAction } from './DashboardGrid.tsx'
-import { canonicalRecipe, FIGURES, periodFigureOf, type FigureId } from './figureRecipe.ts'
+import { canonicalRecipe, periodFigureOf } from './figureRecipe.ts'
 import { KeyFigure } from './KeyFigure.tsx'
 import { useFigureTitle } from './useFigureTitle.ts'
 import {
   addTile,
   chartKey,
   FIGURE_GRID,
-  figureTile,
   inReadingOrder,
   LAYOUT_PRESETS,
   moveTile,
   pinTile,
-  presetKey,
-  READY_CHARTS,
-  readyChart,
-  readyTile,
   removeTile,
   replaceTile,
   resizeTile,
@@ -62,8 +58,9 @@ import {
   type LayoutPresetId,
   type SavedFigures,
   type Tile,
+  type TileRecipe,
+  widgetInput,
 } from './widgets.ts'
-import type { TrendPeriod } from './trendPeriod.ts'
 import type { PeriodControl } from './TrendPeriodPopover.tsx'
 import { usePeriodText } from './usePeriodText.ts'
 
@@ -120,6 +117,7 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
   // With sign-in off everyone is the same anonymous user: an arrangement of one's own would be everyone's.
   const signInOff = useQuery(SessionDocument, { fetchPolicy: 'cache-only' }).data?.session.mode === 'NONE'
   const [remove] = useMutation(DeleteChartDocument)
+  const [saveWidget] = useMutation(SaveVehicleWidgetDocument)
   const [reset, resetting] = useMutation(ResetDashboardLayoutDocument)
   const [save, saving] = useMutation(SaveDashboardLayoutDocument)
   const [actionError, setActionError] = useState<unknown>()
@@ -211,19 +209,34 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
       }
     })
   }
+  /** A saved widget added at the bottom (`chart:<id>`), out of the ones taken off; `name` for one just saved, which the list may not hold yet. */
+  const addSaved = (id: string, name?: string, said?: 'added' | 'addedSaved') =>
+    update((e) => ({
+      tiles: addTile(e.tiles, chartKey(id), undefined, null, savedFigure),
+      hidden: e.hidden.filter((c) => c.id !== id),
+      status: t(`dashboard.edit.${said ?? 'added'}`, { name: name || titleOf({ id: chartKey(id) } as Tile) }),
+    }))
   /**
-   * A widget added at the bottom (by its tile id); `name` for a chart just saved, which the charts list may not hold yet. A ready-made
-   * chart is a tile of its own with its recipe (#275), so it can be added more than once.
+   * A widget made in the builder (#275): a tile of its own in the arrangement, kept by Save dashboard; with *Also save to my widgets* a saved
+   * widget at once (shared on Everyone's dashboard, private on one's own: the owner's choice) and a tile pointing at it.
    */
-  const add = (id: string, name?: string) => {
-    const ready = id.startsWith('preset:') ? readyChart(id.slice('preset:'.length)) : undefined
-    const tile: Tile = ready ? { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 2, h: 8, pinned: false, recipe: readyTile(ready) } : { id, x: 0, y: 0, w: 2, h: 8, pinned: false }
-    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, tile.recipe ?? null, savedFigure), hidden: e.hidden.filter((c) => chartKey(c.id) !== id), status: t('dashboard.edit.added', { name: name || titleOf(tile) }) }))
+  const addMade = async (recipe: TileRecipe, saveToo: boolean, title: string) => {
+    if (saveToo) {
+      const result = await saveWidget({ variables: { input: { vehicleId: vehicle.id, title, shared: edit?.scope === 'shared', ...widgetInput(recipe) } } })
+      const id = result.data?.saveVehicleWidget.id
+      if (!id) return
+      await refetch()
+      addSaved(id, title, 'addedSaved')
+      return
+    }
+    const tile: Tile = { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe }
+    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
   }
-  /** A built-in figure added (#274): a tile of its own, its template's recipe over the period chosen for it (none: its default). */
-  const addFigure = (template: FigureId, period: TrendPeriod | null = null) => {
-    const tile: Tile = { id: tileKey(crypto.randomUUID()), x: 0, y: 0, w: 1, h: 1, pinned: false, recipe: figureTile(template, period) }
-    update((e) => ({ tiles: addTile(e.tiles, tile.id, undefined, tile.recipe), status: t('dashboard.edit.added', { name: titleOf(tile) }) }))
+  /** A saved widget deleted for good from *Your widgets* (#275): from every dashboard it is on, at once. */
+  const deleteSaved = async (w: SavedChart) => {
+    await remove({ variables: { id: w.id } })
+    await refetch()
+    update((e) => ({ tiles: removeTile(e.tiles, chartKey(w.id)), hidden: e.hidden.filter((h) => h.id !== w.id), status: t('dashboard.edit.deleted', { name: w.figure ? figureTitle(w.figure, w.title) : w.title }) }))
   }
 
   /**
@@ -419,17 +432,11 @@ export function DashboardPanel({ vehicle }: { vehicle: { id: string; units: Unit
             open={edit.adding}
             onClose={() => update(() => ({ adding: false }))}
             vehicle={vehicle}
-            canShare={canShare}
-            everyone={edit.scope === 'shared'}
-            figures={FIGURES.filter((f) => !made.has(f))}
-            ready={READY_CHARTS.map((c) => ({ chart: c, onDashboard: made.has(presetKey(c.id)) }))}
+            made={made}
             saved={chartsFor(edit.scope).filter((c) => !onDashboard.has(chartKey(c.id)))}
-            onAdd={(id) => add(id)}
-            onAddFigure={addFigure}
-            onChartSaved={async (id, title) => {
-              await refetch()
-              add(chartKey(id), title)
-            }}
+            onAdd={addMade}
+            onAddSaved={(w) => addSaved(w.id)}
+            onDelete={deleteSaved}
           />
           {edit.customizing && (
             <ChartBuilderDialog

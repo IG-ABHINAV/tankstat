@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import type { ChartMetric } from '../gql/generated.ts'
+import type { ChartMetric, FigureMeasure } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
 import { periodFigureOf, templateOf, type FigureRecipe } from './figureRecipe.ts'
 import { periodWords } from './trendPeriod.ts'
@@ -22,4 +22,10 @@ export function useFigureTitle() {
     const { period } = periodWords(figure, r.period, format.date)
     return t('dashboard.figure.title', { measure, period: String(t(period.key as never, period.values)) })
   }
+}
+
+/** The name of a measure a key figure can show (#275): the chart's, and the two points in time with what they are. */
+export function useMeasureName() {
+  const { t } = useTranslation()
+  return (m: FigureMeasure) => (m === 'ODOMETER' || m === 'LAST_FILL_UP' ? t(`dashboard.measures.${m}`) : t(`charts.metrics.${m as ChartMetric}`))
 }

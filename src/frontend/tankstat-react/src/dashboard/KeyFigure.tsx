@@ -190,7 +190,10 @@ export function KeyFigure({ recipe, label, vehicleId, rows, units, control }: { 
  * dashboard's charts ask for it; for money the main currency's series, and none until there is one, as *Spent this month*'s always was.
  */
 function FigureSparkline({ vehicleId, measure, currency }: { vehicleId: string; measure: ChartMetric; currency: string | null | undefined }) {
+  const { t } = useTranslation()
   const byCurrency = BY_CURRENCY.includes(KIND[measure])
+  // Named by its measure (#275: the builder offers a sparkline on any); total spend as the card's always was.
+  const label = measure === 'TOTAL_SPEND' ? undefined : t('dashboard.kpi.sparkline', { measure: t(`charts.metrics.${measure}`) })
   const { data } = useQuery(ChartDataDocument, {
     variables: { vehicleId, config: toConfig({ ...NEW_RECIPE, metric: measure, grouping: 'MONTH', kind: 'LINE', range: 'LAST6_MONTHS' }) },
     fetchPolicy: 'cache-and-network',
@@ -199,7 +202,7 @@ function FigureSparkline({ vehicleId, measure, currency }: { vehicleId: string; 
   const series = data?.vehicleChartData.series.filter((s) => s.role === 'VALUE')
   const line = byCurrency ? series?.find((s) => s.currency === currency) : series?.[0]
   if (!line || line.points.length === 0) return null
-  return <LazySparkline points={line.points.map((pt) => ({ month: pt.key, amount: pt.value ?? 0 }))} currency={byCurrency ? currency : null} />
+  return <LazySparkline points={line.points.map((pt) => ({ month: pt.key, amount: pt.value ?? 0 }))} currency={byCurrency ? currency : null} label={label} />
 }
 
 /**

@@ -1300,7 +1300,8 @@
       "moreCurrencies": "és még {{number}}: {{list}}",
       "moreCount": "+{{number}}",
       "fillUpCount_one": "{{count}} tankolás",
-      "fillUpCount_other": "{{count}} tankolás"
+      "fillUpCount_other": "{{count}} tankolás",
+      "sparkline": "{{measure}} az utolsó hat hónapban"
     },
     "noCharts": "Állítsd össze saját grafikonjaidat: válaszd ki, mit mérjünk, hogyan csoportosítsuk, és melyik időszakra.",
     "noData": "Ebben az időszakban még nincs adat.",
@@ -1310,9 +1311,9 @@
     "tableDescription": "A grafikon mögötti számok; a képernyőolvasó ezt olvassa.",
     "editChart": "A(z) {{title}} grafikon szerkesztése",
     "deleteChart": "A(z) {{title}} grafikon törlése",
-    "deleteTitle": "Törlöd ezt a grafikont?",
-    "deleteDescription": "A(z) „{{title}}” mindenkinek eltűnik, akivel meg van osztva. Maguk az adatok nem változnak.",
-    "deleteConfirm": "Grafikon törlése",
+    "deleteTitle": "Törlöd ezt az elemet?",
+    "deleteDescription": "A(z) „{{title}}” minden irányítópultról eltűnik, mindenkinél, akivel meg van osztva. Maguk az adatok nem változnak.",
+    "deleteConfirm": "Elem törlése",
     "chartLabel": "{{title}}: grafikon",
     "ownScales": "Minden pénznem saját léptékben látszik; az összegek a buboréksúgóban és a táblázatban vannak.",
     "trendSentence": "{{series}}: a trendvonal {{from}} értékről {{to}} értékre halad.",
@@ -1444,7 +1445,7 @@
       "fillUpsHint": "A legrégebbitől máig.",
       "sinceDate": "Első nap",
       "against": "Összevetve",
-      "againstNone": "Nincs összevetés",
+      "againstNone": "Semmivel",
       "againstBefore": "Az előző időszakkal",
       "againstYearEarlier": "Ugyanezekkel a napokkal egy évvel korábban",
       "preview": "A csempe ezt mutatja majd",
@@ -1494,7 +1495,11 @@
       "added": "{{name}} hozzáadva.",
       "customize": "Testreszabás saját grafikonként…",
       "customized": "{{name}} mostantól saját grafikonod, ugyanott.",
-      "customizedRenamed": "{{name}} mostantól saját grafikonod, {{title}} néven, ugyanott."
+      "customizedRenamed": "{{name}} mostantól saját grafikonod, {{title}} néven, ugyanott.",
+      "changed": "{{name}} módosítva.",
+      "addedSaved": "{{name}} hozzáadva, és a saját elemeid közé mentve.",
+      "deleted": "{{name}} törölve.",
+      "copied": "{{name}} mostantól a sajátod, ugyanott."
     },
     "sectionLabel": "Irányítópult",
     "layoutPresets": {
@@ -1504,12 +1509,12 @@
     },
     "widget": {
       "title": "Csempe hozzáadása",
-      "description": "Ami még nincs az irányítópulton, és egy saját grafikon a semmiből. Amit kiválasztasz, alulra kerül.",
+      "description": "Egy fő adat vagy egy grafikon: indulj ki ezek egyikéből, a sajátjaid közül, vagy a semmiből.",
       "listLabel": "Mit adjunk hozzá",
       "groups": {
-        "figures": "Fő adatok",
-        "ready": "Kész grafikonok",
-        "yours": "Saját grafikonok"
+        "start": "Kiindulás",
+        "yours": "Saját elemeid",
+        "scratch": "A semmiből"
       },
       "blank": "Üres grafikon",
       "add": "Hozzáadás az irányítópulthoz",
@@ -1545,10 +1550,50 @@
         "blank": "Saját grafikon a semmiből: mit mérjen, hogyan csoportosítson, a grafikon típusa és az időszak. Az előnézet a te adataidat mutatja.",
         "readyOnDashboard": "Már az irányítópulton van, ezért itt csak testre szabható: saját grafikonként mentve alulra kerül, a kész grafikon mellé."
       },
-      "onDashboard": "Az irányítópulton"
+      "onDashboard": "Az irányítópulton",
+      "kind": "Fajta",
+      "kindFigure": "Fő adat",
+      "kindChart": "Grafikon",
+      "kindOnDashboard": "{{kind}} · Az irányítópulton",
+      "yoursFigure": "Saját fő adat",
+      "yoursChart": "Saját grafikon",
+      "yoursShared": "{{name}} osztotta meg",
+      "scratch": "A semmiből",
+      "scratchNote": "Egy fő adat vagy egy grafikon, szabadon összeállítva",
+      "fieldTitle": "Cím",
+      "titleDefault": "Üresen: „{{title}}”",
+      "measure": "Mit mutat",
+      "period": "Időszak",
+      "sparkline": "Az utolsó hat hónap kis grafikonon",
+      "saveToo": "Mentés a saját elemeim közé is",
+      "editTitle": "Elem szerkesztése",
+      "customizeTitle": "Elem testreszabása",
+      "inArrangement": "Csak ebben az elrendezésben.",
+      "alsoOnShared": "A közös irányítópulton is ott van.",
+      "alsoOnOwn": "A saját irányítópultodon is ott van.",
+      "othersMayHave": "Mások irányítópultján is ott lehet.",
+      "onlyHere": "Csak ezen az irányítópulton",
+      "everywhere": "Mindenhol módosítom",
+      "copyNote": "Sajátként mentve ennek az elemnek a helyére kerül ebben az elrendezésben.",
+      "saveAsMine": "Mentés sajátként",
+      "save": "Mentés",
+      "preview": "Előnézet, a saját adataiddal",
+      "badge": {
+        "arrangement": "Ebben az elrendezésben",
+        "saved": "Mentett",
+        "sharedBy": "Mentett · {{name}} osztotta meg"
+      }
     },
     "figure": {
       "title": "{{measure}} · {{period}}"
+    },
+    "editWidget": "{{title}} szerkesztése",
+    "customizeWidget": "{{title}} testreszabása",
+    "removeWidget": "{{title}} levétele erről az irányítópultról",
+    "deleteWidget": "{{title}} törlése",
+    "measures": {
+      "ODOMETER": "Kilométeróra (a legutóbbi állás)",
+      "LAST_FILL_UP": "Utolsó tankolás"
     }
   },
   "charts": {

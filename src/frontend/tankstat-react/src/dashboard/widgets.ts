@@ -334,6 +334,9 @@ const toTileRecipeInput = (r: TileRecipe): TileRecipeInput => ({
   template: r.template ?? null,
 })
 
+/** A tile's recipe as a saved widget's (#275, `SaveWidgetInput`): a chart's config or a figure's recipe, field by field. */
+export const widgetInput = (r: TileRecipe) => (r.widget === 'FIGURE' && r.figure ? { chart: null, figure: toRecipeInput(r.figure) } : { chart: r.chart ? toConfig(r.chart) : null, figure: null })
+
 /** A tile as the server takes it: a tile with a recipe of its own as a `tile:<id>` with it (#274), every other one by its id alone. */
 export interface StoredTile {
   id: string
