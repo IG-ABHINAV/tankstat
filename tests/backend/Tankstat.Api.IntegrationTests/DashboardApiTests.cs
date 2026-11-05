@@ -307,6 +307,89 @@ public class DashboardApiTests : IDisposable
         Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "MONTHS", count = 12, against = "NONE" } } } } })).ErrorKey());
     }
 
+    // #273: a saved key figure is a saved widget with a chart's rights; vehicleCharts, which an older app reads, never lists it.
+    [Fact]
+    public async Task ASavedKeyFigure_IsCreatedChangedSharedAndDeleted_WithAChartsRights_AndVehicleChartsListsChartsOnly()
+    {
+        var (alice, bob, bobId) = await Users();
+        var id = await AddVehicle(alice);
+        await Share(alice, id, bobId, "EDIT");
+        const string save = "mutation($i: SaveWidgetInput!) { saveVehicleWidget(input: $i) { id title widget isShared canEdit canDelete createdBy { displayName } chart { metric from } figure { measure sparkline template period { kind against } } } }";
+        object Figure(string title, bool shared, string? widgetId = null, string measure = "TOTAL_SPEND", object? period = null) =>
+            new { i = new { id = widgetId, vehicleId = id, title, shared, figure = new { measure, period = period ?? new { kind = "THIS_MONTH", against = "NONE" }, sparkline = true, template = "thisMonth" } } };
+
+        var figure = (await alice.Gql(save, Figure("Spent", false))).Data().GetProperty("saveVehicleWidget");
+        var figureId = figure.GetProperty("id").GetString()!;
+        Assert.Equal(("FIGURE", "TOTAL_SPEND", true, "thisMonth", "THIS_MONTH", "NONE"), (figure.GetProperty("widget").GetString(), figure.GetProperty("figure").GetProperty("measure").GetString(),
+            figure.GetProperty("figure").GetProperty("sparkline").GetBoolean(), figure.GetProperty("figure").GetProperty("template").GetString(),
+            figure.GetProperty("figure").GetProperty("period").GetProperty("kind").GetString(), figure.GetProperty("figure").GetProperty("period").GetProperty("against").GetString()));
+        Assert.Equal(JsonValueKind.Null, figure.GetProperty("chart").ValueKind);
+        var chart = (await alice.Gql(save, new { i = new { vehicleId = id, title = "Bars", shared = true, chart = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "BAR", range = "LAST6_MONTHS", stacked = false } } })).Data().GetProperty("saveVehicleWidget");
+        Assert.Equal(("CHART", "FUEL_VOLUME", JsonValueKind.Null), (chart.GetProperty("widget").GetString(), chart.GetProperty("chart").GetProperty("metric").GetString(), chart.GetProperty("figure").ValueKind));
+
+        // Changed and shared; an odometer takes no period.
+        var changed = (await alice.Gql(save, new { i = new { id = figureId, vehicleId = id, title = "Odometer", shared = true, figure = new { measure = "ODOMETER" } } })).Data().GetProperty("saveVehicleWidget");
+        Assert.Equal(("Odometer", true, JsonValueKind.Null), (changed.GetProperty("title").GetString(), changed.GetProperty("isShared").GetBoolean(), changed.GetProperty("figure").GetProperty("period").ValueKind));
+
+        // Refusals: the recipe its kind does not name, a period that does not suit the measure, a template out of shape, someone else's.
+        Assert.Equal("chart.invalid", (await alice.Gql(save, new { i = new { vehicleId = id, title = "Neither", shared = false } })).ErrorKey());
+        Assert.Equal("chart.invalid", (await alice.Gql(save, new { i = new { id = figureId, vehicleId = id, title = "Now a chart", shared = true, chart = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "BAR", range = "ALL", stacked = false } } })).ErrorKey());
+        Assert.Equal("chart.invalid", (await alice.Gql("mutation($i: SaveChartInput!) { saveVehicleChart(input: $i) { id } }", new { i = new { id = figureId, vehicleId = id, title = "Old app", shared = true, config = new { metric = "FUEL_VOLUME", grouping = "MONTH", kind = "BAR", range = "ALL", stacked = false } } })).ErrorKey());
+        Assert.Equal("trend.invalid", (await alice.Gql(save, Figure("Odometer", false, measure: "ODOMETER", period: new { kind = "THIS_YEAR" }))).ErrorKey());
+        Assert.Equal("chart.invalid", (await alice.Gql(save, new { i = new { vehicleId = id, title = "x", shared = false, figure = new { measure = "ODOMETER", template = "This month" } } })).ErrorKey());
+        Assert.Equal("chart.notYours", (await bob.Gql(save, Figure("Hijack", true, figureId))).ErrorKey());
+
+        // Bob sees both shared widgets, charts only among the charts, and may change neither.
+        const string widgets = "query($id: UUID!) { vehicleWidgets(vehicleId: $id) { id widget canEdit canDelete } }";
+        var bobs = (await bob.Gql(widgets, new { id })).Data().GetProperty("vehicleWidgets").EnumerateArray().ToList();
+        Assert.Equal([(figureId, "FIGURE", false, false), (chart.GetProperty("id").GetString()!, "CHART", false, false)],
+            bobs.Select(w => (w.GetProperty("id").GetString()!, w.GetProperty("widget").GetString(), w.GetProperty("canEdit").GetBoolean(), w.GetProperty("canDelete").GetBoolean())));
+        var charts = (await alice.Gql("query($id: UUID!) { vehicleCharts(vehicleId: $id) { id metric } }", new { id })).Data().GetProperty("vehicleCharts").EnumerateArray().ToList();
+        Assert.Equal([chart.GetProperty("id").GetString()], charts.Select(c => c.GetProperty("id").GetString()));
+
+        Assert.True(await DeleteChart(alice, figureId));
+        Assert.Single((await alice.Gql(widgets, new { id })).Data().GetProperty("vehicleWidgets").EnumerateArray());
+    }
+
+    // #273: the three tile shapes and an old trend id with its period, saved and read back.
+    [Fact]
+    public async Task TheTileShapes_AreSavedAndReadBack_ATileWithItsRecipe_ASavedFigure_AndAnOldTrendWithItsPeriod()
+    {
+        var (alice, _, _) = await Users();
+        var id = await AddVehicle(alice);
+        var saved = (await alice.Gql("mutation($i: SaveWidgetInput!) { saveVehicleWidget(input: $i) { id } }", new { i = new { vehicleId = id, title = "Odometer", shared = false, figure = new { measure = "ODOMETER" } } }))
+            .Data().GetProperty("saveVehicleWidget").GetProperty("id").GetString();
+        var chartTile = $"tile:{Guid.NewGuid()}";
+        var figureTile = $"tile:{Guid.NewGuid()}";
+        const string save = "mutation($i: SaveDashboardLayoutInput!) { saveDashboardLayout(input: $i) }";
+        const string read = "query($id: UUID!) { vehicle(id: $id) { dashboard { personal { tiles { id period { kind } recipe { widget title chart { metric kind range secondMetric } figure { measure sparkline template period { kind unit count against } } } } } } } }";
+        object Layout(params object[] tiles) => new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles } };
+
+        await alice.Gql(save, Layout(
+            new { id = chartTile, x = 0, y = 0, w = 2, h = 8, recipe = new { widget = "CHART", title = "Bars", chart = new { metric = "TOTAL_SPEND", grouping = "MONTH", kind = "BAR", range = "LAST12_MONTHS", stacked = false } } },
+            new { id = figureTile, x = 2, y = 0, w = 1, h = 4, recipe = new { widget = "FIGURE", figure = new { measure = "AVERAGE_CONSUMPTION", period = new { kind = "LAST", unit = "FILL_UPS", count = 5 }, template = "consumptionTrend" } } },
+            new { id = $"chart:{saved}", x = 3, y = 0, w = 1, h = 4 },
+            new { id = "spendingTrend", x = 0, y = 8, w = 1, h = 4, period = new { kind = "THIS_MONTH" } }));
+
+        var tiles = (await alice.Gql(read, new { id })).Data().GetProperty("vehicle").GetProperty("dashboard").GetProperty("personal").GetProperty("tiles").EnumerateArray().ToList();
+        Assert.Equal([chartTile, figureTile, $"chart:{saved}", "spendingTrend"], tiles.Select(t => t.GetProperty("id").GetString()));
+        var chart = tiles[0].GetProperty("recipe");
+        Assert.Equal(("CHART", "Bars", "TOTAL_SPEND", "BAR", "LAST12_MONTHS", JsonValueKind.Null, JsonValueKind.Null),
+            (chart.GetProperty("widget").GetString(), chart.GetProperty("title").GetString(), chart.GetProperty("chart").GetProperty("metric").GetString(), chart.GetProperty("chart").GetProperty("kind").GetString(),
+             chart.GetProperty("chart").GetProperty("range").GetString(), chart.GetProperty("chart").GetProperty("secondMetric").ValueKind, chart.GetProperty("figure").ValueKind));
+        var figure = tiles[1].GetProperty("recipe");
+        var period = figure.GetProperty("figure").GetProperty("period");
+        Assert.Equal(("FIGURE", JsonValueKind.Null, "AVERAGE_CONSUMPTION", false, "consumptionTrend", "LAST", "FILL_UPS", 5, "BEFORE"),
+            (figure.GetProperty("widget").GetString(), figure.GetProperty("title").ValueKind, figure.GetProperty("figure").GetProperty("measure").GetString(), figure.GetProperty("figure").GetProperty("sparkline").GetBoolean(),
+             figure.GetProperty("figure").GetProperty("template").GetString(), period.GetProperty("kind").GetString(), period.GetProperty("unit").GetString(), period.GetProperty("count").GetInt32(), period.GetProperty("against").GetString()));
+        Assert.Equal(JsonValueKind.Null, tiles[2].GetProperty("recipe").ValueKind);
+        Assert.Equal(("THIS_MONTH", JsonValueKind.Null), (tiles[3].GetProperty("period").GetProperty("kind").GetString(), tiles[3].GetProperty("recipe").ValueKind));
+
+        // A recipe on a saved widget's tile, and a tile: without one, are refused.
+        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, Layout(new { id = $"chart:{saved}", x = 0, y = 0, w = 1, h = 4, recipe = new { widget = "FIGURE", figure = new { measure = "ODOMETER" } } }))).ErrorKey());
+        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, Layout(new { id = chartTile, x = 0, y = 0, w = 1, h = 4 }))).ErrorKey());
+    }
+
     [Fact]
     public async Task StrangersGetNothing()
     {

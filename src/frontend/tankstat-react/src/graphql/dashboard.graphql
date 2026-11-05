@@ -215,6 +215,53 @@ query VehicleFigure($vehicleId: UUID!, $measure: FigureMeasure!, $period: TrendP
   }
 }
 
+# The saved widgets of both kinds (#273), charts and key figures; the dashboard switches to it from #274 (vehicleCharts stays for an older app).
+query VehicleWidgets($vehicleId: UUID!) {
+  vehicleWidgets(vehicleId: $vehicleId) {
+    id
+    title
+    widget
+    chart {
+      ...ChartConfigFields
+    }
+    figure {
+      ...FigureRecipeFields
+    }
+    isShared
+    canEdit
+    canDelete
+    createdBy {
+      id
+      displayName
+      avatarUrl
+    }
+  }
+}
+
+fragment ChartConfigFields on ChartConfig {
+  metric
+  grouping
+  kind
+  range
+  from
+  to
+  stacked
+  trend
+  runningTotal
+  compareYearEarlier
+  secondMetric
+  secondKind
+}
+
+fragment FigureRecipeFields on FigureRecipe {
+  measure
+  period {
+    ...TrendPeriodFields
+  }
+  sparkline
+  template
+}
+
 mutation SaveDashboardLayout($input: SaveDashboardLayoutInput!) {
   saveDashboardLayout(input: $input)
 }

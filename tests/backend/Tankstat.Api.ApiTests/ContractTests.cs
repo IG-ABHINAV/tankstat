@@ -63,8 +63,8 @@ public class ContractTests
     }
 
     [Theory]
-    [InlineData("Query", "health", "vehicles", "myVehicles", "myVehicleCount", "vehicle", "session", "notices", "users", "canSetUserPasswords", "accessSettings", "accessGrants", "trash", "vehicleCount", "trashCount", "trashDeletableCount", "vehicleDefaults", "refuelings", "refuelingCount", "refueling", "logDefaults", "refuelingTrash", "refuelingTrashCount", "refuelingTrashDeletableCount", "vehicleLogAccess", "shareCandidates", "notifications", "notificationCount", "recognitionStatus", "photoDrafts", "uiSettings", "mySessions", "offlineChanges", "offlineSettings", "parkedChanges", "systemSettings", "backups", "backupDetails", "setup", "setupRestorePoints", "setupBackupDetails", "setupUploadLimitMb", "passwordRequirements", "vehicleTrend", "vehicleFigure")]
-    [InlineData("Mutation", "addVehicle", "logRefueling", "login", "logout", "changePassword", "requestPasswordReset", "resetPassword", "createUser", "issuePasswordReset", "setUserAdmin", "setUserDisabled", "updateUser", "setUserPassword", "deleteUser", "setDefaultAccess", "setAccessGrant", "updateVehicle", "deleteVehicle", "restoreVehicle", "emptyTrash", "logRefueling", "updateRefueling", "deleteRefueling", "restoreRefueling", "emptyRefuelingTrash", "setVehicleLogAccess", "markNotificationsRead", "updateUiSettings", "saveGridSettings", "resetGridSettings", "setVehicleOrder", "addRecurringExpense", "updateRecurringExpense", "deleteRecurringExpense", "markRecurringExpensesDone", "saveDashboardLayout", "resetDashboardLayout", "revokeSession", "revokeOtherSessions", "updateOfflineSettings", "syncChanges", "resolveSyncChange", "updateSystemSettings", "restartServer", "restoreBackup", "runBackup", "deleteBackup", "holdBackup", "prepareBackupEncryption", "setupClaimAdministrator", "setupFinish")]
+    [InlineData("Query", "health", "vehicles", "myVehicles", "myVehicleCount", "vehicle", "session", "notices", "users", "canSetUserPasswords", "accessSettings", "accessGrants", "trash", "vehicleCount", "trashCount", "trashDeletableCount", "vehicleDefaults", "refuelings", "refuelingCount", "refueling", "logDefaults", "refuelingTrash", "refuelingTrashCount", "refuelingTrashDeletableCount", "vehicleLogAccess", "shareCandidates", "notifications", "notificationCount", "recognitionStatus", "photoDrafts", "uiSettings", "mySessions", "offlineChanges", "offlineSettings", "parkedChanges", "systemSettings", "backups", "backupDetails", "setup", "setupRestorePoints", "setupBackupDetails", "setupUploadLimitMb", "passwordRequirements", "vehicleTrend", "vehicleFigure", "vehicleWidgets")]
+    [InlineData("Mutation", "addVehicle", "logRefueling", "login", "logout", "changePassword", "requestPasswordReset", "resetPassword", "createUser", "issuePasswordReset", "setUserAdmin", "setUserDisabled", "updateUser", "setUserPassword", "deleteUser", "setDefaultAccess", "setAccessGrant", "updateVehicle", "deleteVehicle", "restoreVehicle", "emptyTrash", "logRefueling", "updateRefueling", "deleteRefueling", "restoreRefueling", "emptyRefuelingTrash", "setVehicleLogAccess", "markNotificationsRead", "updateUiSettings", "saveGridSettings", "resetGridSettings", "setVehicleOrder", "addRecurringExpense", "updateRecurringExpense", "deleteRecurringExpense", "markRecurringExpensesDone", "saveDashboardLayout", "resetDashboardLayout", "saveVehicleWidget", "revokeSession", "revokeOtherSessions", "updateOfflineSettings", "syncChanges", "resolveSyncChange", "updateSystemSettings", "restartServer", "restoreBackup", "runBackup", "deleteBackup", "holdBackup", "prepareBackupEncryption", "setupClaimAdministrator", "setupFinish")]
     [InlineData("Session", "mode", "user", "instance")]
     [InlineData("InstanceInfo", "generation", "restorePoint")]
     [InlineData("BackupOverviewInfo", "folder", "migration", "restorePoints", "sizes", "run", "settings")]
@@ -131,7 +131,11 @@ public class ContractTests
     [InlineData("ChartSeries", "kind", "currency", "points", "role", "slope", "metric", "unit")]
     [InlineData("DashboardInfo", "shared", "personal", "canChangeShared")]
     [InlineData("DashboardLayoutInfo", "tiles", "hidden", "updatedAt")]
-    [InlineData("DashboardTileInfo", "id", "x", "y", "w", "h", "pinned", "period")]
+    [InlineData("DashboardTileInfo", "id", "x", "y", "w", "h", "pinned", "period", "recipe")]
+    [InlineData("TileRecipe", "widget", "title", "chart", "figure")]
+    [InlineData("FigureRecipe", "measure", "period", "sparkline", "template")]
+    [InlineData("ChartConfig", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind")]
+    [InlineData("SavedWidget", "id", "title", "widget", "chart", "figure", "isShared", "createdAt", "canEdit", "canDelete", "createdBy")]
     [InlineData("TrendPeriod", "kind", "unit", "count", "since", "whole", "against")]
     [InlineData("TrendFigureData", "recent", "earlier", "currencies", "consumption", "distance")]
     [InlineData("TrendWindow", "start", "end", "fillUps")]
@@ -167,7 +171,10 @@ public class ContractTests
     [InlineData("ResetPasswordInput", "token", "newPassword", "newPasswordConfirmation")]
     [InlineData("SetupFinishInput", "code", "email", "password", "passwordConfirmation", "acknowledgeOpenAccess")]
     [InlineData("SaveDashboardLayoutInput", "vehicleId", "personal", "tiles", "hidden")]
-    [InlineData("DashboardTileInput", "id", "x", "y", "w", "h", "pinned", "period")]
+    [InlineData("DashboardTileInput", "id", "x", "y", "w", "h", "pinned", "period", "recipe")]
+    [InlineData("TileRecipeInput", "widget", "title", "chart", "figure")]
+    [InlineData("FigureRecipeInput", "measure", "period", "sparkline", "template")]
+    [InlineData("SaveWidgetInput", "id", "vehicleId", "title", "chart", "figure", "shared")]
     [InlineData("TrendPeriodInput", "kind", "unit", "count", "since", "whole", "against")]
     [InlineData("ChartConfigInput", "metric", "grouping", "kind", "range", "stacked", "from", "to", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind")]
     public async Task Schema_InputTypeTakesContractFields(string type, params string[] fields)
@@ -220,6 +227,7 @@ public class ContractTests
     [InlineData("TrendComparison", "BEFORE", "YEAR_EARLIER", "NONE")]
     [InlineData("FigureMeasure", "TOTAL_SPEND", "FUEL_COST", "EXPENSE_COST", "FUEL_VOLUME", "DISTANCE", "AVERAGE_CONSUMPTION", "AVERAGE_PRICE_PER_UNIT", "FILL_UPS", "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT", "COST_PER_DISTANCE", "FUEL_COST_PER_DISTANCE", "ODOMETER", "LAST_FILL_UP")]
     [InlineData("TrendFigure", "SPENDING", "COST_PER_DISTANCE", "CONSUMPTION", "DISTANCE")]
+    [InlineData("WidgetKind", "CHART", "FIGURE")]
     [InlineData("ChartRange", "LAST1_MONTH", "LAST3_MONTHS", "LAST6_MONTHS", "LAST12_MONTHS", "THIS_YEAR", "LAST_YEAR", "ALL", "CUSTOM")]
     [InlineData("ChartTrend", "NONE", "MOVING_AVERAGE", "LINEAR")]
     [InlineData("ChartSeriesRole", "VALUE", "MOVING_AVERAGE", "LINEAR", "YEAR_EARLIER")]
@@ -362,6 +370,31 @@ public class ContractTests
 
         var unknown = await Query("{ vehicleFigure(vehicleId: \"00000000-0000-0000-0000-00000000f00d\", measure: ODOMETER) { unit } }");
         Assert.Equal("NOT_FOUND", unknown.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    // #273: a saved key figure is among the saved widgets, never among the charts an older app reads.
+    [Fact]
+    public async Task ASavedKeyFigure_IsAmongTheWidgets_NotTheCharts_AgainstRealDatabase()
+    {
+        var added = await Query("mutation { addVehicle(input: { name: \"Widget car\", fuelType: PETROL }) { id } }");
+        var id = added.GetProperty("data").GetProperty("addVehicle").GetProperty("id").GetString();
+
+        var saved = await Query($@"mutation {{
+            figure: saveVehicleWidget(input: {{ vehicleId: ""{id}"", title: ""Spent"", shared: false, figure: {{ measure: TOTAL_SPEND, period: {{ kind: THIS_MONTH }}, sparkline: true, template: ""thisMonth"" }} }}) {{ id widget chart {{ metric }} figure {{ measure sparkline template period {{ kind against }} }} canEdit }}
+            chart: saveVehicleWidget(input: {{ vehicleId: ""{id}"", title: ""Bars"", shared: false, chart: {{ metric: FUEL_VOLUME, grouping: MONTH, kind: BAR, range: ALL, stacked: false }} }}) {{ id widget chart {{ metric range }} figure {{ measure }} }} }}");
+        Assert.False(saved.TryGetProperty("errors", out _), saved.ToString());
+        var figure = saved.GetProperty("data").GetProperty("figure");
+        var chart = saved.GetProperty("data").GetProperty("chart");
+        Assert.Equal(("FIGURE", JsonValueKind.Null, "TOTAL_SPEND", true, "thisMonth", "THIS_MONTH", "BEFORE", true), (figure.GetProperty("widget").GetString(), figure.GetProperty("chart").ValueKind,
+            figure.GetProperty("figure").GetProperty("measure").GetString(), figure.GetProperty("figure").GetProperty("sparkline").GetBoolean(), figure.GetProperty("figure").GetProperty("template").GetString(),
+            figure.GetProperty("figure").GetProperty("period").GetProperty("kind").GetString(), figure.GetProperty("figure").GetProperty("period").GetProperty("against").GetString(), figure.GetProperty("canEdit").GetBoolean()));
+        Assert.Equal(("CHART", "FUEL_VOLUME", JsonValueKind.Null), (chart.GetProperty("widget").GetString(), chart.GetProperty("chart").GetProperty("metric").GetString(), chart.GetProperty("figure").ValueKind));
+
+        var read = await Query($"{{ vehicleCharts(vehicleId: \"{id}\") {{ id metric }} vehicleWidgets(vehicleId: \"{id}\") {{ id widget }} }}");
+        Assert.False(read.TryGetProperty("errors", out _), read.ToString());
+        Assert.Equal([chart.GetProperty("id").GetString()], read.GetProperty("data").GetProperty("vehicleCharts").EnumerateArray().Select(c => c.GetProperty("id").GetString()));
+        Assert.Equal([(figure.GetProperty("id").GetString(), "FIGURE"), (chart.GetProperty("id").GetString(), "CHART")],
+            read.GetProperty("data").GetProperty("vehicleWidgets").EnumerateArray().Select(w => (w.GetProperty("id").GetString(), w.GetProperty("widget").GetString())));
     }
 
     [Fact]

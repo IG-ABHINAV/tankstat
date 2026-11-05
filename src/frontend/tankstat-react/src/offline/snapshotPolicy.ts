@@ -22,6 +22,7 @@ const POLICIES: Record<string, SnapshotPolicy> = {
   ChartData: 'keep',
   VehicleTrend: 'keep',
   VehicleFigure: 'keep', // a key figure (#272), answered by the device for a vehicle added there
+  VehicleWidgets: 'keep', // the saved widgets (#273), as the dashboard's saved charts are kept
   RecurringExpenses: 'keep',
   Refuelings: 'keep',
   RefuelingDetails: 'keep',

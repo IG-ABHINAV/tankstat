@@ -99,6 +99,7 @@ type Query {
     period: TrendPeriodInput
   ): FigureData! @cost(weight: "10")
   vehicleCharts(vehicleId: UUID!): [VehicleChart!]! @cost(weight: "10")
+  vehicleWidgets(vehicleId: UUID!): [SavedWidget!]! @cost(weight: "10")
   uiSettings: UiSettingsInfo! @cost(weight: "10")
   offlineChanges(input: OfflineChangesInput!): OfflineChanges!
     @cost(weight: "10")
@@ -166,6 +167,7 @@ type Mutation {
   confirmImport(input: ConfirmImportInput!): ImportResultInfo!
     @cost(weight: "10")
   saveVehicleChart(input: SaveChartInput!): VehicleChart! @cost(weight: "10")
+  saveVehicleWidget(input: SaveWidgetInput!): SavedWidget! @cost(weight: "10")
   deleteVehicleChart(id: UUID!): Boolean! @cost(weight: "10")
   saveDashboardLayout(input: SaveDashboardLayoutInput!): Boolean!
     @cost(weight: "10")
@@ -300,6 +302,21 @@ type BackupTableInfo {
   rows: Long!
 }
 
+type ChartConfig {
+  metric: ChartMetric!
+  grouping: ChartGrouping!
+  kind: ChartKind!
+  range: ChartRange!
+  stacked: Boolean!
+  from: LocalDate
+  to: LocalDate
+  trend: ChartTrend!
+  runningTotal: Boolean!
+  compareYearEarlier: Boolean!
+  secondMetric: ChartMetric
+  secondKind: ChartKind
+}
+
 type ChartData {
   unit: ChartUnit!
   series: [ChartSeries!]!
@@ -364,6 +381,7 @@ type DashboardTileInfo {
   h: Int!
   pinned: Boolean!
   period: TrendPeriod
+  recipe: TileRecipe
 }
 
 type DashboardTrends {
@@ -411,6 +429,13 @@ type FigureData {
   currencies: [CurrencyChange!]!
   value: ValueChange
   lastFillUp: LastFillUpFigure
+}
+
+type FigureRecipe {
+  measure: FigureMeasure!
+  period: TrendPeriod
+  sparkline: Boolean!
+  template: String
 }
 
 type GridSettingsInfo {
@@ -712,6 +737,19 @@ type RestorePointInfo {
   heldSince: DateTime
 }
 
+type SavedWidget {
+  id: UUID!
+  title: String!
+  widget: WidgetKind!
+  chart: ChartConfig
+  figure: FigureRecipe
+  isShared: Boolean!
+  createdAt: DateTime!
+  canEdit: Boolean! @cost(weight: "10")
+  canDelete: Boolean! @cost(weight: "10")
+  createdBy: UserRef @cost(weight: "10")
+}
+
 type ServerFolder {
   kind: ServerFolderKind!
   path: String!
@@ -839,6 +877,13 @@ type SystemSettingsInfo {
   groups: [SystemSettingsGroup!]!
   restartPending: Boolean!
   folders: [ServerFolder!]!
+}
+
+type TileRecipe {
+  widget: WidgetKind!
+  title: String
+  chart: ChartConfig
+  figure: FigureRecipe
 }
 
 type TrendFigureData {
@@ -1101,12 +1146,20 @@ input DashboardTileInput {
   h: Int!
   pinned: Boolean
   period: TrendPeriodInput
+  recipe: TileRecipeInput
 }
 
 input DeleteUserInput {
   userId: UUID!
   data: UserDataDisposition
   moveToUserId: UUID
+}
+
+input FigureRecipeInput {
+  measure: FigureMeasure!
+  period: TrendPeriodInput
+  sparkline: Boolean
+  template: String
 }
 
 input GridSettingsInput {
@@ -1216,6 +1269,15 @@ input SaveDashboardLayoutInput {
   hidden: [String!]!
 }
 
+input SaveWidgetInput {
+  id: UUID
+  vehicleId: UUID!
+  title: String!
+  chart: ChartConfigInput
+  figure: FigureRecipeInput
+  shared: Boolean!
+}
+
 input SetAccessGrantInput {
   ownerId: UUID!
   granteeId: UUID!
@@ -1249,6 +1311,13 @@ input SystemSettingChangeInput {
   key: String!
   value: String
   clear: Boolean! = false
+}
+
+input TileRecipeInput {
+  widget: WidgetKind!
+  title: String
+  chart: ChartConfigInput
+  figure: FigureRecipeInput
 }
 
 input TrendPeriodInput {
@@ -1763,6 +1832,11 @@ enum VolumeUnit {
   LITERS
   US_GALLONS
   IMPERIAL_GALLONS
+}
+
+enum WidgetKind {
+  CHART
+  FIGURE
 }
 
 "The `Any` scalar type represents any valid GraphQL value."

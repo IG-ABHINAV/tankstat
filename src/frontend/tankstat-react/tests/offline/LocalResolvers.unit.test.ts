@@ -458,6 +458,8 @@ describe('answering offline, the device\'s own data', () => {
     expect(await answerLocally(rows, 'VehicleDashboard', { id: 'v1' })).toBeUndefined()
     expect(await answerLocally(rows, 'ChartData', { vehicleId: 'v1' })).toBeUndefined()
     expect(await answerLocally(rows, 'VehicleTrend', { vehicleId: 'v1' })).toBeUndefined()
+    expect(await answerLocally(rows, 'VehicleWidgets', { vehicleId: 'golf' })).toEqual({ vehicleWidgets: [] }) // no saved widgets either (#273)
+    expect(await answerLocally(rows, 'VehicleWidgets', { vehicleId: 'v1' })).toBeUndefined()
   })
 
   it('a vehicle added here has no key figure over a period yet, and its odometer and last fill-up from the logs kept here (#272)', async () => {
