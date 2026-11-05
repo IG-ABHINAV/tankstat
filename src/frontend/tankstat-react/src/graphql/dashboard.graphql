@@ -183,6 +183,38 @@ query VehicleTrend($vehicleId: UUID!, $figure: TrendFigure!, $period: TrendPerio
   }
 }
 
+# A key figure (#272): any measure over a period of its own, compared or not, or a point in time (the odometer, the last fill-up) without
+# a period. #274's key figure tile asks it; kept offline (snapshotPolicy), answered by the device for a vehicle added there.
+query VehicleFigure($vehicleId: UUID!, $measure: FigureMeasure!, $period: TrendPeriodInput) {
+  vehicleFigure(vehicleId: $vehicleId, measure: $measure, period: $period) {
+    recent {
+      start
+      end
+      fillUps
+    }
+    earlier {
+      start
+      end
+      fillUps
+    }
+    unit
+    currencies {
+      currency
+      recent
+      earlier
+    }
+    value {
+      recent
+      earlier
+    }
+    lastFillUp {
+      date
+      fillUps
+      expenses
+    }
+  }
+}
+
 mutation SaveDashboardLayout($input: SaveDashboardLayoutInput!) {
   saveDashboardLayout(input: $input)
 }

@@ -65,6 +65,24 @@ public class TrendPeriodTests
     }
 
     [Fact]
+    public void ThisMonth_TakesNothingElse_LikeThisYear()
+    {
+        var thisMonth = new TrendPeriod(TrendWindowKind.ThisMonth);
+        Assert.Same(thisMonth, thisMonth.Validated(Today));
+        Assert.Equal("trend.invalid", Key(new(TrendWindowKind.ThisMonth, TrendUnit.Days)));
+        Assert.Equal("trend.invalid", Key(new(TrendWindowKind.ThisMonth, Count: 1)));
+        Assert.Equal("trend.invalid", Key(new(TrendWindowKind.ThisMonth, Since: Today)));
+        Assert.Equal("trend.wholeNeedsUnit", Key(new(TrendWindowKind.ThisMonth, Whole: true)));
+    }
+
+    [Fact]
+    public void NoComparison_IsValid_WithAnyKind()
+    {
+        foreach (var period in new TrendPeriod[] { new(TrendWindowKind.ThisMonth, Against: TrendComparison.None), new(TrendWindowKind.Last, TrendUnit.FillUps, 10, Against: TrendComparison.None), new(TrendWindowKind.Since, Since: Today, Against: TrendComparison.None) })
+            Assert.Same(period, period.Validated(Today));
+    }
+
+    [Fact]
     public void AnUnknownKindUnitOrComparison_IsRefused()
     {
         Assert.Equal("trend.invalid", Key(new((TrendWindowKind)9)));

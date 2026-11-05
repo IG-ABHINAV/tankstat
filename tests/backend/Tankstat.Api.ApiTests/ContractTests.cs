@@ -63,7 +63,7 @@ public class ContractTests
     }
 
     [Theory]
-    [InlineData("Query", "health", "vehicles", "myVehicles", "myVehicleCount", "vehicle", "session", "notices", "users", "canSetUserPasswords", "accessSettings", "accessGrants", "trash", "vehicleCount", "trashCount", "trashDeletableCount", "vehicleDefaults", "refuelings", "refuelingCount", "refueling", "logDefaults", "refuelingTrash", "refuelingTrashCount", "refuelingTrashDeletableCount", "vehicleLogAccess", "shareCandidates", "notifications", "notificationCount", "recognitionStatus", "photoDrafts", "uiSettings", "mySessions", "offlineChanges", "offlineSettings", "parkedChanges", "systemSettings", "backups", "backupDetails", "setup", "setupRestorePoints", "setupBackupDetails", "setupUploadLimitMb", "passwordRequirements", "vehicleTrend")]
+    [InlineData("Query", "health", "vehicles", "myVehicles", "myVehicleCount", "vehicle", "session", "notices", "users", "canSetUserPasswords", "accessSettings", "accessGrants", "trash", "vehicleCount", "trashCount", "trashDeletableCount", "vehicleDefaults", "refuelings", "refuelingCount", "refueling", "logDefaults", "refuelingTrash", "refuelingTrashCount", "refuelingTrashDeletableCount", "vehicleLogAccess", "shareCandidates", "notifications", "notificationCount", "recognitionStatus", "photoDrafts", "uiSettings", "mySessions", "offlineChanges", "offlineSettings", "parkedChanges", "systemSettings", "backups", "backupDetails", "setup", "setupRestorePoints", "setupBackupDetails", "setupUploadLimitMb", "passwordRequirements", "vehicleTrend", "vehicleFigure")]
     [InlineData("Mutation", "addVehicle", "logRefueling", "login", "logout", "changePassword", "requestPasswordReset", "resetPassword", "createUser", "issuePasswordReset", "setUserAdmin", "setUserDisabled", "updateUser", "setUserPassword", "deleteUser", "setDefaultAccess", "setAccessGrant", "updateVehicle", "deleteVehicle", "restoreVehicle", "emptyTrash", "logRefueling", "updateRefueling", "deleteRefueling", "restoreRefueling", "emptyRefuelingTrash", "setVehicleLogAccess", "markNotificationsRead", "updateUiSettings", "saveGridSettings", "resetGridSettings", "setVehicleOrder", "addRecurringExpense", "updateRecurringExpense", "deleteRecurringExpense", "markRecurringExpensesDone", "saveDashboardLayout", "resetDashboardLayout", "revokeSession", "revokeOtherSessions", "updateOfflineSettings", "syncChanges", "resolveSyncChange", "updateSystemSettings", "restartServer", "restoreBackup", "runBackup", "deleteBackup", "holdBackup", "prepareBackupEncryption", "setupClaimAdministrator", "setupFinish")]
     [InlineData("Session", "mode", "user", "instance")]
     [InlineData("InstanceInfo", "generation", "restorePoint")]
@@ -135,6 +135,8 @@ public class ContractTests
     [InlineData("TrendPeriod", "kind", "unit", "count", "since", "whole", "against")]
     [InlineData("TrendFigureData", "recent", "earlier", "currencies", "consumption", "distance")]
     [InlineData("TrendWindow", "start", "end", "fillUps")]
+    [InlineData("FigureData", "recent", "earlier", "unit", "currencies", "value", "lastFillUp")]
+    [InlineData("LastFillUpFigure", "date", "fillUps", "expenses")]
     [InlineData("VehicleChart", "id", "vehicleId", "title", "metric", "grouping", "kind", "range", "rangeFrom", "rangeTo", "stacked", "trend", "runningTotal", "compareYearEarlier", "secondMetric", "secondKind", "isShared", "createdAt", "canEdit", "canDelete", "createdBy")]
     [InlineData("Refueling", "id", "vehicleId", "createdBy", "date", "volume", "totalCost", "discount", "currency", "odometer", "pricePerUnit", "pricePerUnitBeforeDiscount", "consumption", "isFullTank", "missedPreviousFillUp", "note", "deletedAt", "canEdit", "canDelete", "vehicle", "photos", "reviewState", "filledFromPhoto", "version", "updatedAt", "changedAt", "changedBy", "lastChange")]
     [InlineData("Expense", "id", "amount", "discount", "currency", "odometer", "reviewState", "filledFromPhoto")]
@@ -213,9 +215,10 @@ public class ContractTests
     [InlineData("ChartMetric", "TOTAL_SPEND", "FUEL_COST", "EXPENSE_COST", "FUEL_VOLUME", "DISTANCE", "AVERAGE_CONSUMPTION", "AVERAGE_PRICE_PER_UNIT", "FILL_UPS", "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT", "COST_PER_DISTANCE", "FUEL_COST_PER_DISTANCE")]
     [InlineData("ChartGrouping", "MONTH", "QUARTER", "YEAR", "CATEGORY")]
     [InlineData("ChartKind", "BAR", "LINE", "AREA", "DONUT")]
-    [InlineData("TrendWindowKind", "LAST", "SINCE", "THIS_YEAR")]
+    [InlineData("TrendWindowKind", "LAST", "SINCE", "THIS_YEAR", "THIS_MONTH")]
     [InlineData("TrendUnit", "DAYS", "WEEKS", "MONTHS", "YEARS", "FILL_UPS")]
-    [InlineData("TrendComparison", "BEFORE", "YEAR_EARLIER")]
+    [InlineData("TrendComparison", "BEFORE", "YEAR_EARLIER", "NONE")]
+    [InlineData("FigureMeasure", "TOTAL_SPEND", "FUEL_COST", "EXPENSE_COST", "FUEL_VOLUME", "DISTANCE", "AVERAGE_CONSUMPTION", "AVERAGE_PRICE_PER_UNIT", "FILL_UPS", "AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT", "COST_PER_DISTANCE", "FUEL_COST_PER_DISTANCE", "ODOMETER", "LAST_FILL_UP")]
     [InlineData("TrendFigure", "SPENDING", "COST_PER_DISTANCE", "CONSUMPTION", "DISTANCE")]
     [InlineData("ChartRange", "LAST1_MONTH", "LAST3_MONTHS", "LAST6_MONTHS", "LAST12_MONTHS", "THIS_YEAR", "LAST_YEAR", "ALL", "CUSTOM")]
     [InlineData("ChartTrend", "NONE", "MOVING_AVERAGE", "LINEAR")]
@@ -331,6 +334,34 @@ public class ContractTests
         Assert.False(read.TryGetProperty("errors", out _), read.ToString());
         Assert.Equal("HUF", Assert.Single(read.GetProperty("data").GetProperty("refuelings").EnumerateArray()).GetProperty("currency").GetString());
         Assert.Equal(1, read.GetProperty("data").GetProperty("refuelingCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task AKeyFigure_AnyMeasureOverAPeriod_OrAPointInTime_AgainstRealDatabase()
+    {
+        var added = await Query("mutation { addVehicle(input: { name: \"Figure car\", fuelType: PETROL }) { id } }");
+        var id = added.GetProperty("data").GetProperty("addVehicle").GetProperty("id").GetString();
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        foreach (var (reading, volume) in new[] { (1000, 40), (1500, 30) })
+            await Query($"mutation {{ logRefueling(input: {{ vehicleId: \"{id}\", date: \"{today}\", volume: {volume}, totalCost: 20000, currency: \"HUF\", odometer: {reading}, isFullTank: true }}) {{ id }} }}");
+
+        var read = await Query($@"{{
+            total: vehicleFigure(vehicleId: ""{id}"", measure: TOTAL_SPEND, period: {{ kind: THIS_MONTH, against: NONE }}) {{ recent {{ start end fillUps }} earlier {{ start }} unit currencies {{ currency recent earlier }} }}
+            mean: vehicleFigure(vehicleId: ""{id}"", measure: AVERAGE_CONSUMPTION, period: {{ kind: LAST, unit: FILL_UPS, count: 10 }}) {{ unit value {{ recent earlier }} }}
+            odometer: vehicleFigure(vehicleId: ""{id}"", measure: ODOMETER) {{ recent {{ start }} unit value {{ recent earlier }} }} }}");
+
+        Assert.False(read.TryGetProperty("errors", out _), read.ToString());
+        var data = read.GetProperty("data");
+        var total = data.GetProperty("total");
+        Assert.Equal((today, 2, JsonValueKind.Null, "CURRENCY"), (total.GetProperty("recent").GetProperty("end").GetString(), total.GetProperty("recent").GetProperty("fillUps").GetInt32(), total.GetProperty("earlier").ValueKind, total.GetProperty("unit").GetString()));
+        var huf = Assert.Single(total.GetProperty("currencies").EnumerateArray());
+        Assert.Equal(("HUF", 40000m, JsonValueKind.Null), (huf.GetProperty("currency").GetString(), huf.GetProperty("recent").GetDecimal(), huf.GetProperty("earlier").ValueKind));
+        Assert.Equal(("CONSUMPTION", 6m), (data.GetProperty("mean").GetProperty("unit").GetString(), data.GetProperty("mean").GetProperty("value").GetProperty("recent").GetDecimal())); // 30 L over 500 km
+        var odometer = data.GetProperty("odometer");
+        Assert.Equal((JsonValueKind.Null, "DISTANCE", 1500m), (odometer.GetProperty("recent").ValueKind, odometer.GetProperty("unit").GetString(), odometer.GetProperty("value").GetProperty("recent").GetDecimal()));
+
+        var unknown = await Query("{ vehicleFigure(vehicleId: \"00000000-0000-0000-0000-00000000f00d\", measure: ODOMETER) { unit } }");
+        Assert.Equal("NOT_FOUND", unknown.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
     [Fact]

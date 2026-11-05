@@ -1,3 +1,4 @@
+using Tankstat.Domain;
 using Tankstat.Domain.Charts;
 
 namespace Tankstat.Application.Stats;
@@ -330,72 +331,143 @@ public static class StatsCalculator
 
     /// <summary>
     /// A trend figure over <paramref name="period"/> (checked by the caller): the recent window and the one it is compared with, and the
-    /// figure's values in both. Money per currency as the summary's trends (the main currency first, always, then the others used in
-    /// either window by what was spent lately), never converted; cost per distance over each window's distance (null where nothing was
-    /// driven); consumption the mean of the stored consumptions in each window (the recent from one fill-up, the earlier from
-    /// <see cref="MinTrendFillUps"/>); distance from the odometer readings, null for a vehicle without one.
+    /// figure's values in both, through <see cref="Figure"/> (one code path, #272): spending is <see cref="FigureMeasure.TotalSpend"/>, cost
+    /// per distance <see cref="FigureMeasure.CostPerDistance"/>, consumption <see cref="FigureMeasure.AverageConsumption"/> (its fill-ups
+    /// those of the windows), distance <see cref="FigureMeasure.Distance"/>. A trend figure always compares: a period without a comparison
+    /// is refused.
     /// </summary>
     public static TrendFigureData Trend(StatsData data, TrendFigure figure, TrendPeriod period, DateOnly today, string? mainCurrency)
     {
-        // Latest first, by date then odometer, as the stored consumptions are read: every fill-up for money and distance, those with a
-        // consumption for the consumption.
-        var fillUps = data.Fuel.Where(f => figure != TrendFigure.Consumption || f.Consumption is not null)
-            .OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).ToList();
-        var (recent, earlier, recentItems, earlierItems) = Windows(period, today, fillUps);
-        int CountIn((DateOnly Start, DateOnly End) w) => fillUps.Count(f => f.Date >= w.Start && f.Date <= w.End);
-        var recentWindow = new TrendWindow(recent.Start, recent.End, recentItems?.Count ?? CountIn(recent));
-        var earlierWindow = new TrendWindow(earlier.Start, earlier.End, earlierItems?.Count ?? (earlier.End < earlier.Start ? 0 : CountIn(earlier)));
-        // An earlier window of fill-ups that holds none has nothing to compare with: no sums of its dates.
-        var nothingEarlier = earlierItems is { Count: 0 };
-
-        IReadOnlyList<CurrencyChange> currencies = [];
-        ConsumptionChange? consumption = null;
-        ValueChange? distance = null;
-        switch (figure)
+        if (period.Against == TrendComparison.None) throw new DomainException("trend.invalid", "This period is not valid.");
+        var measure = figure switch
         {
-            case TrendFigure.Spending:
-            case TrendFigure.CostPerDistance:
-                var costs = data.Fuel.Select(f => (f.Currency, f.Date, f.Amount)).Concat(data.Expenses.Select(e => (e.Currency, e.Date, e.Amount))).ToList();
-                decimal Spent(string c, (DateOnly Start, DateOnly End) w) => costs.Where(x => x.Currency == c && x.Date >= w.Start && x.Date <= w.End).Sum(x => x.Amount);
-                bool In((DateOnly Date, string Currency) x) => x.Date >= recent.Start && x.Date <= recent.End || !nothingEarlier && x.Date >= earlier.Start && x.Date <= earlier.End;
-                var used = costs.Where(x => In((x.Date, x.Currency))).Select(x => x.Currency);
-                var spending = (mainCurrency is null ? used : used.Prepend(mainCurrency)).Distinct()
-                    .OrderByDescending(c => c == mainCurrency).ThenByDescending(c => Spent(c, recent)).ThenBy(c => c, StringComparer.Ordinal)
-                    .Select(c => new CurrencyChange(c, Spent(c, recent), nothingEarlier ? null : Spent(c, earlier))).ToList();
-                if (figure == TrendFigure.Spending)
-                {
-                    currencies = spending;
-                    break;
-                }
-                var recentDistance = DistanceIn(data.Readings, recent);
-                var earlierDistance = nothingEarlier ? 0 : DistanceIn(data.Readings, earlier);
-                decimal? PerDistance(decimal? amount, decimal driven) => amount is { } a && driven > 0 ? Math.Round(a / driven * 100, 3) : null;
-                currencies = spending.Select(s => new CurrencyChange(s.Currency, PerDistance(s.Recent, recentDistance), PerDistance(s.Earlier, earlierDistance))).ToList();
-                break;
-            case TrendFigure.Consumption:
-                // Fill-ups counted by number keep their own (two on one day may fall either side); windows of dates take those inside.
-                var recentValues = (recentItems ?? fillUps.Where(f => f.Date >= recent.Start && f.Date <= recent.End).ToList()).Select(f => f.Consumption!.Value).ToList();
-                var earlierValues = (earlierItems ?? fillUps.Where(f => f.Date >= earlier.Start && f.Date <= earlier.End).ToList()).Select(f => f.Consumption!.Value).ToList();
-                consumption = recentValues.Count == 0
-                    ? null
-                    : new ConsumptionChange(Math.Round(recentValues.Average(), 2), earlierValues.Count >= MinTrendFillUps ? Math.Round(earlierValues.Average(), 2) : null, recentValues.Count, earlierValues.Count);
-                break;
-            default:
-                // Nothing driven is a 0 like the distance chart's; a vehicle without a reading has no distance at all.
-                distance = data.Readings.Count == 0 ? null : new ValueChange(DistanceIn(data.Readings, recent), nothingEarlier ? null : DistanceIn(data.Readings, earlier));
-                break;
+            TrendFigure.Spending => FigureMeasure.TotalSpend,
+            TrendFigure.CostPerDistance => FigureMeasure.CostPerDistance,
+            TrendFigure.Consumption => FigureMeasure.AverageConsumption,
+            _ => FigureMeasure.Distance,
+        };
+        var f = Figure(data, measure, period, today, mainCurrency);
+        var (recent, earlier) = (f.Recent!, f.Earlier!);
+        return figure switch
+        {
+            TrendFigure.Spending or TrendFigure.CostPerDistance => new(recent, earlier, f.Currencies, null, null),
+            TrendFigure.Consumption => new(recent, earlier, [], f.Value is { } v ? new ConsumptionChange(v.Recent, v.Earlier, recent.FillUps, earlier.FillUps) : null, null),
+            _ => new(recent, earlier, [], null, f.Value),
+        };
+    }
+
+    // ---- a key figure: any measure over a period, compared or not (#272) ----------------------------------------
+
+    /// <summary>
+    /// A key figure: <paramref name="measure"/> over <paramref name="period"/> (checked by the caller) and over the window it is compared
+    /// with, if any; a point in time (<see cref="FigureMeasure.Odometer"/>, <see cref="FigureMeasure.LastFillUp"/>) takes no period.
+    /// <list type="bullet">
+    /// <item>The windows are <see cref="Windows"/>'s, over the fill-ups latest first (by date, then odometer): for the consumption only those
+    /// with a stored consumption, every one otherwise.</item>
+    /// <item>Totals add up over each window: money (per currency, never converted; the main currency first, always, then the others used in
+    /// either window by what was spent in the recent one, then by code), volume, distance (null for a vehicle without a reading) and the
+    /// fill-ups.</item>
+    /// <item>Per distance is each window's money over its <see cref="DistanceIn"/>, per 100 units, rounded to 3 places, null where nothing was
+    /// driven.</item>
+    /// <item>Averages: the consumption is the mean of the stored consumptions (2 places, as the summary), a price per unit each window's
+    /// money over its volume per currency (3 places, as the charts); the recent one from one fill-up, the earlier only from
+    /// <see cref="MinTrendFillUps"/>.</item>
+    /// <item>Money is counted by its dates; what fill-ups measure (volume, count, consumption, price) over a window of the last N fill-ups
+    /// is those fill-ups themselves, since two on one day may fall either side of it.</item>
+    /// </list>
+    /// A point in time with a period, or a measure over a period without one, is refused (<c>trend.invalid</c>), as a period is: nothing
+    /// is filled in or dropped.
+    /// </summary>
+    public static FigureData Figure(StatsData data, FigureMeasure measure, TrendPeriod? period, DateOnly today, string? mainCurrency)
+    {
+        if (!Enum.IsDefined(measure) || measure.IsPointInTime() != period is null) throw new DomainException("trend.invalid", "This period is not valid.");
+        switch (measure)
+        {
+            case FigureMeasure.Odometer:
+                return new(null, null, ChartUnit.Distance, [], data.Readings.Count == 0 ? null : new ValueChange(data.Readings.Max(r => r.Value), null), null);
+            case FigureMeasure.LastFillUp:
+                return new(null, null, null, [], null, new LastFillUpFigure(data.Fuel.Count == 0 ? null : data.Fuel.Max(f => f.Date), data.Fuel.Count, data.Expenses.Count));
         }
-        return new TrendFigureData(recentWindow, earlierWindow, currencies, consumption, distance);
+
+        var fillUps = data.Fuel.Where(f => measure != FigureMeasure.AverageConsumption || f.Consumption is not null)
+            .OrderByDescending(f => f.Date).ThenByDescending(f => f.Odometer).ToList();
+        var (recent, earlierRange, recentItems, earlierItems) = Windows(period!, today, fillUps);
+        // No comparison, or an earlier window of fill-ups that holds none: nothing to compare with, no sums of its dates.
+        var nothingEarlier = earlierRange is null || earlierItems is { Count: 0 };
+        var earlier = earlierRange ?? default;
+        // The fill-ups of a window: those counted by number keep their own, windows of dates take those inside.
+        List<FuelPoint> FuelIn((DateOnly Start, DateOnly End) w, List<FuelPoint>? items) => items ?? fillUps.Where(f => f.Date >= w.Start && f.Date <= w.End).ToList();
+        var recentFuel = FuelIn(recent, recentItems);
+        var earlierFuel = nothingEarlier ? [] : FuelIn(earlier, earlierItems);
+        var recentWindow = new TrendWindow(recent.Start, recent.End, recentFuel.Count);
+        TrendWindow? earlierWindow = earlierRange is { } e ? new TrendWindow(e.Start, e.End, earlierFuel.Count) : null;
+        var unit = UnitOf(measure.ToMetric()!.Value);
+
+        // The currencies used, the main one first (always), then by what the recent window spent in them, then by code: the summary's order.
+        IEnumerable<string> Ordered(IEnumerable<string> used, Func<string, decimal> spentRecently) =>
+            (mainCurrency is null ? used : used.Prepend(mainCurrency)).Distinct()
+                .OrderByDescending(c => c == mainCurrency).ThenByDescending(spentRecently).ThenBy(c => c, StringComparer.Ordinal);
+
+        // Money per currency, in the order above.
+        List<CurrencyChange> Money(bool fuel, bool expenses)
+        {
+            var costs = (fuel ? data.Fuel.Select(f => (f.Currency, f.Date, f.Amount)) : [])
+                .Concat(expenses ? data.Expenses.Select(x => (x.Currency, x.Date, x.Amount)) : []).ToList();
+            decimal Spent(string c, (DateOnly Start, DateOnly End) w) => costs.Where(x => x.Currency == c && x.Date >= w.Start && x.Date <= w.End).Sum(x => x.Amount);
+            bool In(DateOnly d) => d >= recent.Start && d <= recent.End || !nothingEarlier && d >= earlier.Start && d <= earlier.End;
+            var used = costs.Where(x => In(x.Date)).Select(x => x.Currency);
+            return Ordered(used, c => Spent(c, recent))
+                .Select(c => new CurrencyChange(c, Spent(c, recent), nothingEarlier ? null : Spent(c, earlier))).ToList();
+        }
+        List<CurrencyChange> PerDistance(List<CurrencyChange> money)
+        {
+            var recentDistance = DistanceIn(data.Readings, recent);
+            var earlierDistance = nothingEarlier ? 0 : DistanceIn(data.Readings, earlier);
+            decimal? Over(decimal? amount, decimal driven) => amount is { } a && driven > 0 ? Math.Round(a / driven * 100, 3) : null;
+            return money.Select(m => new CurrencyChange(m.Currency, Over(m.Recent, recentDistance), Over(m.Earlier, earlierDistance))).ToList();
+        }
+        // A fuel price per currency: the money over the volume of the window's fill-ups in it; the earlier from MinTrendFillUps of them.
+        List<CurrencyChange> PricePerUnit(Func<FuelPoint, decimal> amount)
+        {
+            decimal? Price(List<FuelPoint> rows, int least)
+            {
+                var volume = rows.Sum(f => f.Volume);
+                return rows.Count >= least && volume > 0 ? Math.Round(rows.Sum(amount) / volume, 3) : null;
+            }
+            return Ordered(recentFuel.Concat(earlierFuel).Select(f => f.Currency), c => recentFuel.Where(f => f.Currency == c).Sum(f => f.Amount))
+                .Select(c => new CurrencyChange(c, Price(recentFuel.Where(f => f.Currency == c).ToList(), 1),
+                    nothingEarlier ? null : Price(earlierFuel.Where(f => f.Currency == c).ToList(), MinTrendFillUps))).ToList();
+        }
+        ValueChange Total(Func<List<FuelPoint>, decimal> of) => new(of(recentFuel), nothingEarlier ? null : of(earlierFuel));
+
+        return measure switch
+        {
+            FigureMeasure.TotalSpend => new(recentWindow, earlierWindow, unit, Money(fuel: true, expenses: true), null, null),
+            FigureMeasure.FuelCost => new(recentWindow, earlierWindow, unit, Money(fuel: true, expenses: false), null, null),
+            FigureMeasure.ExpenseCost => new(recentWindow, earlierWindow, unit, Money(fuel: false, expenses: true), null, null),
+            FigureMeasure.CostPerDistance => new(recentWindow, earlierWindow, unit, PerDistance(Money(fuel: true, expenses: true)), null, null),
+            FigureMeasure.FuelCostPerDistance => new(recentWindow, earlierWindow, unit, PerDistance(Money(fuel: true, expenses: false)), null, null),
+            FigureMeasure.AveragePricePerUnit => new(recentWindow, earlierWindow, unit, PricePerUnit(f => f.Amount), null, null),
+            FigureMeasure.AveragePricePerUnitBeforeDiscount => new(recentWindow, earlierWindow, unit, PricePerUnit(f => f.Amount + f.Discount), null, null),
+            FigureMeasure.FuelVolume => new(recentWindow, earlierWindow, unit, [], Total(rows => rows.Sum(f => f.Volume)), null),
+            FigureMeasure.FillUps => new(recentWindow, earlierWindow, unit, [], Total(rows => rows.Count), null),
+            // The mean of the stored consumptions: the recent as soon as there is one, the earlier from MinTrendFillUps; none without a recent one.
+            FigureMeasure.AverageConsumption => new(recentWindow, earlierWindow, unit, [], recentFuel.Count == 0 ? null
+                : new ValueChange(Math.Round(recentFuel.Average(f => f.Consumption!.Value), 2), earlierFuel.Count >= MinTrendFillUps ? Math.Round(earlierFuel.Average(f => f.Consumption!.Value), 2) : null), null),
+            // Nothing driven is a 0 like the distance chart's; a vehicle without a reading has no distance at all.
+            _ => new(recentWindow, earlierWindow, unit, [], data.Readings.Count == 0 ? null : new ValueChange(DistanceIn(data.Readings, recent), nothingEarlier ? null : DistanceIn(data.Readings, earlier)), null),
+        };
     }
 
     /// <summary>
     /// The two windows of a period. A time period ends today, or, whole, with the last completed week (Monday to Sunday), month or year.
     /// Fill-ups: the latest N (<paramref name="fillUps"/>, latest first) from the oldest of them to today, and the N before them up to the
     /// day before; they are handed back too, since two on one day may fall either side of that day. A window before is as long (in
-    /// calendar months or years for those, else in days) and ends the day before; a year earlier is the same dates a year back (29 February
-    /// to 28 February), and then fill-ups are those inside its dates.
+    /// calendar months or years for those, else in days) and ends the day before; this month's is the whole month before (#272); a year
+    /// earlier is the same dates a year back (29 February to 28 February), and then fill-ups are those inside its dates. No comparison
+    /// (<see cref="TrendComparison.None"/>) has no earlier window.
     /// </summary>
-    private static ((DateOnly Start, DateOnly End) Recent, (DateOnly Start, DateOnly End) Earlier, List<FuelPoint>? RecentItems, List<FuelPoint>? EarlierItems)
+    private static ((DateOnly Start, DateOnly End) Recent, (DateOnly Start, DateOnly End)? Earlier, List<FuelPoint>? RecentItems, List<FuelPoint>? EarlierItems)
         Windows(TrendPeriod period, DateOnly today, List<FuelPoint> fillUps)
     {
         (DateOnly Start, DateOnly End) recent;
@@ -405,6 +477,11 @@ public static class StatsCalculator
         {
             case TrendWindowKind.ThisYear:
                 recent = (new DateOnly(today.Year, 1, 1), today);
+                break;
+            case TrendWindowKind.ThisMonth:
+                // The month so far, against the whole month before (the owner's choice: "the month before" says it), not its first days.
+                recent = (MonthStart(today), today);
+                before = w => (w.Start.AddMonths(-1), w.Start.AddDays(-1));
                 break;
             case TrendWindowKind.Since:
                 recent = (period.Since!.Value, today);
@@ -417,6 +494,7 @@ public static class StatsCalculator
                         recentItems = fillUps.Take(n).ToList();
                         var start = recentItems.Count > 0 ? recentItems[^1].Date : today;
                         recent = (start, today);
+                        if (period.Against == TrendComparison.None) return (recent, null, recentItems, null);
                         if (period.Against == TrendComparison.Before)
                         {
                             earlierItems = fillUps.Skip(n).Take(n).ToList();
@@ -448,7 +526,12 @@ public static class StatsCalculator
                 }
                 break;
         }
-        var earlier = period.Against == TrendComparison.YearEarlier ? (recent.Start.AddYears(-1), recent.End.AddYears(-1)) : before(recent);
+        (DateOnly Start, DateOnly End)? earlier = period.Against switch
+        {
+            TrendComparison.None => null,
+            TrendComparison.YearEarlier => (recent.Start.AddYears(-1), recent.End.AddYears(-1)),
+            _ => before(recent),
+        };
         // A year earlier counts the fill-ups inside its dates, as a window of dates does.
         return (recent, earlier, period.Against == TrendComparison.YearEarlier ? null : recentItems, null);
     }

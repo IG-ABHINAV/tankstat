@@ -1387,6 +1387,7 @@
     },
     "period": {
       "thisYear": "This year",
+      "thisMonth": "This month",
       "since": "Since {{date}}",
       "last": {
         "days_one": "Last day",

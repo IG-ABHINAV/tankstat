@@ -245,6 +245,46 @@ public class DashboardApiTests : IDisposable
     }
 
     [Fact]
+    public async Task AKeyFigure_IsAnyMeasureOverAPeriod_ComparedOrNot_OrAPointInTime_AndABadOneIsRefused()
+    {
+        var (alice, bob, _) = await Users();
+        var id = await CarWithLogs(alice);
+        const string figure = "query($id: UUID!, $m: FigureMeasure!, $p: TrendPeriodInput) { vehicleFigure(vehicleId: $id, measure: $m, period: $p) { recent { start end fillUps } earlier { start end fillUps } unit currencies { currency recent earlier } value { recent earlier } lastFillUp { date fillUps expenses } } }";
+        var today = DateTime.UtcNow;
+        string Day(DateTime d) => d.ToString("yyyy-MM-dd");
+        var monthStart = new DateTime(today.Year, today.Month, 1);
+
+        // This month so far (this month's fill-up and the oil change) against the whole month before.
+        var spent = (await alice.Gql(figure, new { id, m = "TOTAL_SPEND", p = new { kind = "THIS_MONTH" } })).Data().GetProperty("vehicleFigure");
+        Assert.Equal((Day(monthStart), Day(today)), (spent.GetProperty("recent").GetProperty("start").GetString(), spent.GetProperty("recent").GetProperty("end").GetString()));
+        Assert.Equal((Day(monthStart.AddMonths(-1)), Day(monthStart.AddDays(-1))), (spent.GetProperty("earlier").GetProperty("start").GetString(), spent.GetProperty("earlier").GetProperty("end").GetString()));
+        var huf = Assert.Single(spent.GetProperty("currencies").EnumerateArray());
+        Assert.Equal(("HUF", 52500m, 18000m), (huf.GetProperty("currency").GetString(), huf.GetProperty("recent").GetDecimal(), huf.GetProperty("earlier").GetDecimal()));
+        Assert.Equal("CURRENCY", spent.GetProperty("unit").GetString());
+        // Without a comparison: no earlier window, nothing earlier.
+        var alone = (await alice.Gql(figure, new { id, m = "TOTAL_SPEND", p = new { kind = "THIS_MONTH", against = "NONE" } })).Data().GetProperty("vehicleFigure");
+        Assert.Equal(JsonValueKind.Null, alone.GetProperty("earlier").ValueKind);
+        Assert.Equal(JsonValueKind.Null, alone.GetProperty("currencies")[0].GetProperty("earlier").ValueKind);
+        // A mean: the last ten fill-ups' stored consumptions (6 and 5), too few before them to compare with.
+        var consumption = (await alice.Gql(figure, new { id, m = "AVERAGE_CONSUMPTION", p = new { kind = "LAST", unit = "FILL_UPS", count = 10 } })).Data().GetProperty("vehicleFigure");
+        Assert.Equal((5.5m, JsonValueKind.Null, "CONSUMPTION"), (consumption.GetProperty("value").GetProperty("recent").GetDecimal(), consumption.GetProperty("value").GetProperty("earlier").ValueKind, consumption.GetProperty("unit").GetString()));
+        // A point in time, without a period: the odometer, and the last fill-up with the counts.
+        var odometer = (await alice.Gql(figure, new { id, m = "ODOMETER" })).Data().GetProperty("vehicleFigure");
+        Assert.Equal((2000m, JsonValueKind.Null, "DISTANCE"), (odometer.GetProperty("value").GetProperty("recent").GetDecimal(), odometer.GetProperty("recent").ValueKind, odometer.GetProperty("unit").GetString()));
+        var last = (await alice.Gql(figure, new { id, m = "LAST_FILL_UP" })).Data().GetProperty("vehicleFigure").GetProperty("lastFillUp");
+        Assert.Equal((Day(monthStart), 3, 1), (last.GetProperty("date").GetString(), last.GetProperty("fillUps").GetInt32(), last.GetProperty("expenses").GetInt32()));
+
+        Assert.Equal("trend.invalid", (await alice.Gql(figure, new { id, m = "ODOMETER", p = new { kind = "THIS_MONTH" } })).ErrorKey()); // a point in time takes no period
+        Assert.Equal("trend.invalid", (await alice.Gql(figure, new { id, m = "TOTAL_SPEND" })).ErrorKey()); // a measure over a period needs one
+        Assert.Equal("trend.countRange", (await alice.Gql(figure, new { id, m = "FILL_UPS", p = new { kind = "LAST", unit = "DAYS", count = 0 } })).ErrorKey());
+        Assert.Equal("vehicle.notFound", (await bob.Gql(figure, new { id, m = "ODOMETER" })).ErrorKey());
+        // The trend figures' query stays as it was for an older client: it always compares, so no comparison is refused there.
+        const string trend = "query($id: UUID!, $p: TrendPeriodInput!) { vehicleTrend(vehicleId: $id, figure: SPENDING, period: $p) { recent { start } } }";
+        Assert.Equal("trend.invalid", (await alice.Gql(trend, new { id, p = new { kind = "THIS_MONTH", against = "NONE" } })).ErrorKey());
+        Assert.Equal(Day(monthStart), (await alice.Gql(trend, new { id, p = new { kind = "THIS_MONTH" } })).Data().GetProperty("vehicleTrend").GetProperty("recent").GetProperty("start").GetString());
+    }
+
+    [Fact]
     public async Task ATilesPeriod_IsSavedAndReadBack_AndATileWithoutOne_AsAnOlderClientSendsIt_StillSaves()
     {
         var (alice, _, _) = await Users();
@@ -263,6 +303,8 @@ public class DashboardApiTests : IDisposable
         // A period on a chart, or one that does not hold, is refused whole.
         Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "preset:monthlyCosts", x = 0, y = 0, w = 2, h = 8, period } } } })).ErrorKey());
         Assert.Equal("trend.wholeNeedsUnit", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "DAYS", count = 8, whole = true } } } } })).ErrorKey());
+        // A trend figure's tile always compares: one with no comparison would be saved and then never load (vehicleTrend refuses it).
+        Assert.Equal("dashboard.itemInvalid", (await alice.Gql(save, new { i = new { vehicleId = id, personal = true, hidden = Array.Empty<string>(), tiles = new object[] { new { id = "spendingTrend", x = 0, y = 0, w = 1, h = 4, period = new { kind = "LAST", unit = "MONTHS", count = 12, against = "NONE" } } } } })).ErrorKey());
     }
 
     [Fact]

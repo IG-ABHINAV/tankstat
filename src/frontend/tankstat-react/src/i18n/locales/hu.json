@@ -1387,6 +1387,7 @@
     },
     "period": {
       "thisYear": "Idén",
+      "thisMonth": "Ez a hónap",
       "since": "{{date}} óta",
       "last": {
         "days_one": "Utolsó nap",

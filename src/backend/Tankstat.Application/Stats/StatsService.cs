@@ -31,10 +31,26 @@ public sealed class StatsService(IVehicleRepository vehicles, IStatsRepository s
     {
         var today = Today;
         period = period.Validated(today);
-        if (!Enum.IsDefined(figure)) throw new DomainException("trend.invalid", "This period is not valid.");
+        // A trend figure always compares: a period without a comparison is a key figure's (vehicleFigure, #272), never an older client's.
+        if (!Enum.IsDefined(figure) || period.Against == TrendComparison.None) throw new DomainException("trend.invalid", "This period is not valid.");
         await RequireVisibleAsync(vehicleId, ct);
         var data = await stats.LoadAsync(vehicleId, ct);
         return StatsCalculator.Trend(data, figure, period, today, StatsCalculator.MainCurrency(data, today));
+    }
+
+    /// <summary>
+    /// A key figure (#272): <paramref name="measure"/> over <paramref name="period"/>, compared or not, or a point in time without one, checked
+    /// first (<see cref="TrendPeriod.Validated"/>; <c>trend.invalid</c> for an unknown measure, a period with a point in time or none with a
+    /// measure over one), in the main currency the summary headlines; <c>vehicle.notFound</c> for a vehicle that is not visible.
+    /// </summary>
+    public async Task<FigureData> FigureAsync(Guid vehicleId, FigureMeasure measure, TrendPeriod? period, CancellationToken ct)
+    {
+        var today = Today;
+        period = period?.Validated(today);
+        if (!Enum.IsDefined(measure) || measure.IsPointInTime() != period is null) throw new DomainException("trend.invalid", "This period is not valid.");
+        await RequireVisibleAsync(vehicleId, ct);
+        var data = await stats.LoadAsync(vehicleId, ct);
+        return StatsCalculator.Figure(data, measure, period, today, StatsCalculator.MainCurrency(data, today));
     }
 
     /// <summary>Null when the vehicle is not visible.</summary>

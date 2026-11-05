@@ -93,6 +93,11 @@ type Query {
     figure: TrendFigure!
     period: TrendPeriodInput!
   ): TrendFigureData! @cost(weight: "10")
+  vehicleFigure(
+    vehicleId: UUID!
+    measure: FigureMeasure!
+    period: TrendPeriodInput
+  ): FigureData! @cost(weight: "10")
   vehicleCharts(vehicleId: UUID!): [VehicleChart!]! @cost(weight: "10")
   uiSettings: UiSettingsInfo! @cost(weight: "10")
   offlineChanges(input: OfflineChangesInput!): OfflineChanges!
@@ -399,6 +404,15 @@ type Expense {
   schedules: [RecurringRef!]! @cost(weight: "10")
 }
 
+type FigureData {
+  recent: TrendWindow
+  earlier: TrendWindow
+  unit: ChartUnit
+  currencies: [CurrencyChange!]!
+  value: ValueChange
+  lastFillUp: LastFillUpFigure
+}
+
 type GridSettingsInfo {
   gridId: String!
   order: [String!]!
@@ -458,6 +472,12 @@ type ImportResultInfo {
 type InstanceInfo {
   generation: UUID!
   restorePoint: DateTime
+}
+
+type LastFillUpFigure {
+  date: LocalDate
+  fillUps: Int!
+  expenses: Int!
 }
 
 type LogAccessGrantInfo {
@@ -1459,6 +1479,22 @@ enum ExpenseSortField {
   DELETED_AT
 }
 
+enum FigureMeasure {
+  TOTAL_SPEND
+  FUEL_COST
+  EXPENSE_COST
+  FUEL_VOLUME
+  DISTANCE
+  AVERAGE_CONSUMPTION
+  AVERAGE_PRICE_PER_UNIT
+  FILL_UPS
+  AVERAGE_PRICE_PER_UNIT_BEFORE_DISCOUNT
+  COST_PER_DISTANCE
+  FUEL_COST_PER_DISTANCE
+  ODOMETER
+  LAST_FILL_UP
+}
+
 enum FuelType {
   PETROL
   DIESEL
@@ -1678,6 +1714,7 @@ enum TimeFormat {
 enum TrendComparison {
   BEFORE
   YEAR_EARLIER
+  NONE
 }
 
 enum TrendFigure {
@@ -1699,6 +1736,7 @@ enum TrendWindowKind {
   LAST
   SINCE
   THIS_YEAR
+  THIS_MONTH
 }
 
 enum UserDataDisposition {

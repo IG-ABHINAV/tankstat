@@ -99,3 +99,15 @@ public sealed record TrendWindow(DateOnly Start, DateOnly End, int FillUps);
 /// for Consumption, <see cref="Distance"/> for Distance (null for a vehicle without a reading).
 /// </summary>
 public sealed record TrendFigureData(TrendWindow Recent, TrendWindow Earlier, IReadOnlyList<CurrencyChange> Currencies, ConsumptionChange? Consumption, ValueChange? Distance);
+
+/// <summary>The last fill-up's date (null with none) and how many fill-ups and expenses the vehicle has, as the summary has them.</summary>
+public sealed record LastFillUpFigure(DateOnly? Date, int FillUps, int Expenses);
+
+/// <summary>
+/// A key figure (#272): a measure over a period, compared or not, or a point in time. <see cref="Recent"/> and <see cref="Earlier"/> are the
+/// windows (both null for a point in time, <see cref="Earlier"/> null without a comparison). Money, per distance and price per unit are in
+/// <see cref="Currencies"/> (per currency, never converted, the main one first); volume, distance, fill-ups, consumption and the odometer in
+/// <see cref="Value"/>; the last fill-up in <see cref="LastFillUp"/>. <see cref="Unit"/> is the chart's unit of the measure (the odometer's
+/// a distance), null for the last fill-up.
+/// </summary>
+public sealed record FigureData(TrendWindow? Recent, TrendWindow? Earlier, ChartUnit? Unit, IReadOnlyList<CurrencyChange> Currencies, ValueChange? Value, LastFillUpFigure? LastFillUp);

@@ -92,6 +92,17 @@ public class DashboardLayoutTests
         Assert.Equal("dashboard.itemInvalid", Key(() => new DashboardLayoutValues([Tile(id, w: 2, h: 8) with { Period = TrendPeriod.TenFillUps }], []).Checked(Today)));
 
     [Fact]
+    public void ATilesPeriod_AlwaysCompares_SoNoComparisonIsRefused()
+    {
+        // A trend figure's tile with no comparison would be saved and then refused by vehicleTrend on every load (#276).
+        var none = TrendPeriod.TwelveWholeMonths with { Against = TrendComparison.None };
+        Assert.Equal("dashboard.itemInvalid", Key(() => new DashboardLayoutValues([Tile("spendingTrend") with { Period = none }], []).Checked(Today)));
+        // This month, compared with the month before, is a trend figure's period like any other.
+        var thisMonth = new TrendPeriod(TrendWindowKind.ThisMonth);
+        Assert.Equal(thisMonth, new DashboardLayoutValues([Tile("spendingTrend") with { Period = thisMonth }], []).Checked(Today).Tiles[0].Period);
+    }
+
+    [Fact]
     public void ASince_IsCheckedAgainstTheSavesUtcDay()
     {
         var since = new TrendPeriod(TrendWindowKind.Since, Since: new DateOnly(2026, 11, 4));
