@@ -604,6 +604,7 @@ type OfflineChanges {
   next: String
   watermark: DateTime!
   resync: Boolean!
+  tyres: VehicleTyres
 }
 
 type OfflineSettingsInfo {
@@ -862,6 +863,8 @@ type SyncCurrent {
   refueling: Refueling
   expense: Expense
   schedule: RecurringExpenseInfo
+  tyreSet: TyreSet
+  tyreStretch: TyreStretch
   changedBy: UserRef @cost(weight: "10")
 }
 
@@ -1272,6 +1275,21 @@ input ChangeInput {
   removeExpensePhoto: RemoveLogPhotoInput
   setVehiclePicture: SetVehiclePictureInput
   removeVehiclePicture: UUID
+  addTyreSet: AddTyreSetInput
+  updateTyreSet: UpdateTyreSetInput
+  setTyreRoughDistance: SetTyreRoughDistanceInput
+  retireTyreSet: RetireTyreSetInput
+  unretireTyreSet: UUID
+  deleteTyreSet: UUID
+  restoreTyreSet: UUID
+  swapTyres: SwapTyresInput
+  changeTyrePositions: SwapTyresInput
+  addPastTyreSwaps: AddPastTyreSwapsInput
+  addTyreStretch: AddTyreStretchInput
+  updateTyreStretch: UpdateTyreStretchInput
+  deleteTyreStretch: UUID
+  restoreTyreStretch: UUID
+  setTyreLogDay: SetTyreLogDayInput
   base: String
 }
 
@@ -1431,6 +1449,11 @@ input RestoreBackupInput {
   passphrase: String
   identity: String
   code: String
+}
+
+input RetireTyreSetInput {
+  id: UUID!
+  day: LocalDate!
 }
 
 input SaveChartInput {
@@ -1991,6 +2014,21 @@ enum SyncChangeKind {
   REMOVE_EXPENSE_PHOTO
   SET_VEHICLE_PICTURE
   REMOVE_VEHICLE_PICTURE
+  ADD_TYRE_SET
+  UPDATE_TYRE_SET
+  SET_TYRE_ROUGH_DISTANCE
+  RETIRE_TYRE_SET
+  UNRETIRE_TYRE_SET
+  DELETE_TYRE_SET
+  RESTORE_TYRE_SET
+  SWAP_TYRES
+  CHANGE_TYRE_POSITIONS
+  ADD_PAST_TYRE_SWAPS
+  ADD_TYRE_STRETCH
+  UPDATE_TYRE_STRETCH
+  DELETE_TYRE_STRETCH
+  RESTORE_TYRE_STRETCH
+  SET_TYRE_LOG_DAY
 }
 
 enum SyncChangeStatus {

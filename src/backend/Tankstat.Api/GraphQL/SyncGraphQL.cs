@@ -10,6 +10,7 @@ using Tankstat.Application.Photos;
 using Tankstat.Application.Recurring;
 using Tankstat.Application.Refuelings;
 using Tankstat.Application.Sync;
+using Tankstat.Application.Tyres;
 using Tankstat.Application.Vehicles;
 using Tankstat.Application;
 using Tankstat.Domain.Access;
@@ -17,6 +18,7 @@ using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Photos;
 using Tankstat.Domain.Sync;
+using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Vehicles;
 using Tankstat.Domain;
 
@@ -37,7 +39,12 @@ public sealed record ChangeInput(
     AddVehicleInput? AddVehicle = null, UpdateVehicleInput? UpdateVehicle = null, Guid? DeleteVehicle = null, Guid? RestoreVehicle = null,
     AddLogPhotoInput? AddRefuelingPhoto = null, RemoveLogPhotoInput? RemoveRefuelingPhoto = null,
     AddLogPhotoInput? AddExpensePhoto = null, RemoveLogPhotoInput? RemoveExpensePhoto = null,
-    SetVehiclePictureInput? SetVehiclePicture = null, Guid? RemoveVehiclePicture = null, string? Base = null);
+    SetVehiclePictureInput? SetVehiclePicture = null, Guid? RemoveVehiclePicture = null,
+    AddTyreSetInput? AddTyreSet = null, UpdateTyreSetInput? UpdateTyreSet = null, SetTyreRoughDistanceInput? SetTyreRoughDistance = null,
+    RetireTyreSetInput? RetireTyreSet = null, Guid? UnretireTyreSet = null, Guid? DeleteTyreSet = null, Guid? RestoreTyreSet = null,
+    SwapTyresInput? SwapTyres = null, SwapTyresInput? ChangeTyrePositions = null, AddPastTyreSwapsInput? AddPastTyreSwaps = null,
+    AddTyreStretchInput? AddTyreStretch = null, UpdateTyreStretchInput? UpdateTyreStretch = null, Guid? DeleteTyreStretch = null, Guid? RestoreTyreStretch = null,
+    SetTyreLogDayInput? SetTyreLogDay = null, string? Base = null);
 
 /// <summary>A photo added to a saved log while offline: uploaded as a draft of the log's vehicle (<c>PUT /media/vehicles/{id}/photo-drafts</c>) just before.</summary>
 public sealed record AddLogPhotoInput(Guid LogId, Guid DraftId);
@@ -90,11 +97,12 @@ public enum SyncTargetState
 /// </summary>
 public sealed record SyncCurrent(
     SyncTargetState State, int Version, DateTimeOffset? ChangedAt, Guid? ChangedById, EntityChange? LastChange,
-    Vehicle? Vehicle, Refueling? Refueling, Expense? Expense, RecurringExpenseInfo? Schedule)
+    Vehicle? Vehicle, Refueling? Refueling, Expense? Expense, RecurringExpenseInfo? Schedule, TyreSet? TyreSet = null, TyreStretch? TyreStretch = null)
 {
     public static SyncCurrent From(SyncTarget t) => new(
         t.Trashed ? SyncTargetState.Trashed : SyncTargetState.Live, t.Entity.Version, t.Entity.ChangedAt, t.Entity.ChangedById, t.Entity.LastChange,
-        t.Entity as Vehicle, t.Entity as Refueling, t.Entity as Expense, t.Schedule is { } s ? RecurringExpenseInfo.From(s) : null);
+        t.Entity as Vehicle, t.Entity as Refueling, t.Entity as Expense, t.Schedule is { } s ? RecurringExpenseInfo.From(s) : null,
+        t.Entity as TyreSet, t.Entity as TyreStretch);
 }
 
 [ExtendObjectType<SyncCurrent>]
@@ -308,6 +316,110 @@ public sealed class SyncMutations
         }
     }
 
+    /// <summary>
+    /// A tyre change (#287), applied through <see cref="TyreService"/> like the mutation. An add names the id of what it creates: the set (and
+    /// the stretch a fitted set starts with), the stretch a swap or a past swap creates, so a change sent again changes nothing. Its answer is
+    /// the set or stretch it concerns, with its version after the change.
+    /// </summary>
+    private static SyncChangeRequest? Tyres(
+        ChangeInput c, SyncChangeServices services, int? version,
+        Func<SyncChangeKind, Guid?, Guid?, Func<CancellationToken, Task<AppliedChange>>, Func<CancellationToken, Task<Guid?>>?, SyncChangeRequest> make)
+    {
+        var tyres = services.Tyres;
+        static Guid Required(Guid? id, Guid change) =>
+            id is { } given && given != Guid.Empty ? given : throw new DomainException("sync.entityIdRequired", "An add sent by a device names the id it gave it.", new { Id = change });
+        async Task<AppliedChange> SetAnswer(Guid id, CancellationToken ct) =>
+            await tyres.FindSetAsync(id, ct) is { } set ? new AppliedChange(set.Id, set.Version, set.VehicleId) : new AppliedChange(id, null, null);
+        async Task<AppliedChange> StretchAnswer(Guid id, CancellationToken ct) =>
+            await tyres.FindStretchAsync(id, ct) is { } st ? new AppliedChange(st.Id, st.Version, st.VehicleId) : new AppliedChange(id, null, null);
+        SyncChangeRequest OnSet(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await SetAnswer(id, ct); }, services.TyreSet(id));
+        SyncChangeRequest OnStretch(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await StretchAnswer(id, ct); }, services.TyreStretch(id));
+
+        if (c.AddTyreSet is { } a)
+        {
+            var id = Required(a.Id, c.Id);
+            var input = a with { Id = id, StretchId = a.Fitted ? Required(a.StretchId, c.Id) : a.StretchId };
+            return make(SyncChangeKind.AddTyreSet, id, a.VehicleId, async ct => { await TyreChanges.Add(input, tyres, ct); return await SetAnswer(id, ct); }, null);
+        }
+        if (c.UpdateTyreSet is { } u) return OnSet(SyncChangeKind.UpdateTyreSet, u.Id, ct => TyreChanges.Update(u, tyres, ct, version));
+        if (c.SetTyreRoughDistance is { } r) return OnSet(SyncChangeKind.SetTyreRoughDistance, r.Id, ct => tyres.SetRoughAsync(r.Id, r.Distance, r.Until, ct, version));
+        if (c.RetireTyreSet is { } rt) return OnSet(SyncChangeKind.RetireTyreSet, rt.Id, ct => tyres.RetireAsync(rt.Id, rt.Day, ct, version));
+        if (c.UnretireTyreSet is { } ur) return OnSet(SyncChangeKind.UnretireTyreSet, ur, ct => tyres.UnretireAsync(ur, ct, version));
+        if (c.DeleteTyreSet is { } ds)
+            return make(SyncChangeKind.DeleteTyreSet, ds, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashSetAsync(ds, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.SetInTrashAsync(ds, ct) is null) throw; // in the trash already: nothing left to do
+                }
+                return await SetAnswer(ds, ct);
+            }, services.TyreSet(ds));
+        if (c.RestoreTyreSet is { } rs) return OnSet(SyncChangeKind.RestoreTyreSet, rs, ct => tyres.RestoreSetAsync(rs, ct, version));
+
+        if (c.SwapTyres is { } sw)
+        {
+            var id = Required(sw.StretchId, c.Id);
+            return make(SyncChangeKind.SwapTyres, id, sw.VehicleId, async ct =>
+            {
+                await tyres.SwapAsync(TyreChanges.Swap(sw), ct, id);
+                return new AppliedChange(id, null, sw.VehicleId);
+            }, null);
+        }
+        if (c.ChangeTyrePositions is { } cp)
+        {
+            var id = Required(cp.StretchId, c.Id);
+            return make(SyncChangeKind.ChangeTyrePositions, id, cp.VehicleId, async ct =>
+            {
+                await tyres.ChangePositionsAsync(TyreChanges.Swap(cp), ct, id);
+                return new AppliedChange(id, null, cp.VehicleId);
+            }, null);
+        }
+        if (c.AddPastTyreSwaps is { } ps)
+        {
+            var rows = ps with { Swaps = [.. ps.Swaps.Select(w => w with { StretchId = Required(w.StretchId, c.Id) })] };
+            return make(SyncChangeKind.AddPastTyreSwaps, rows.Swaps.FirstOrDefault()?.StretchId, ps.VehicleId, async ct =>
+            {
+                await TyreChanges.Past(rows, tyres, ct);
+                return new AppliedChange(rows.Swaps.FirstOrDefault()?.StretchId, null, ps.VehicleId);
+            }, null);
+        }
+        if (c.AddTyreStretch is { } ast)
+        {
+            var id = Required(ast.Id, c.Id);
+            return make(SyncChangeKind.AddTyreStretch, id, null, async ct => { await TyreChanges.AddStretch(ast with { Id = id }, tyres, ct); return await StretchAnswer(id, ct); },
+                services.TyreSet(ast.SetId));
+        }
+        if (c.UpdateTyreStretch is { } ust) return OnStretch(SyncChangeKind.UpdateTyreStretch, ust.Id, ct => TyreChanges.UpdateStretch(ust, tyres, ct, version));
+        if (c.DeleteTyreStretch is { } dst)
+            return make(SyncChangeKind.DeleteTyreStretch, dst, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashStretchAsync(dst, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.StretchInTrashAsync(dst, ct) is null) throw;
+                }
+                return await StretchAnswer(dst, ct);
+            }, services.TyreStretch(dst));
+        if (c.RestoreTyreStretch is { } rst) return OnStretch(SyncChangeKind.RestoreTyreStretch, rst, ct => tyres.RestoreStretchAsync(rst, ct, version));
+        if (c.SetTyreLogDay is { } day)
+            return make(SyncChangeKind.SetTyreLogDay, day.Id, day.VehicleId, async ct =>
+            {
+                var tyresNow = await tyres.SetLogDayAsync(day.VehicleId, day.Day, day.Odometer, day.Note, ct, day.Id);
+                var line = tyresNow.Days.FirstOrDefault(d => d.Day == day.Day);
+                return new AppliedChange(line?.Id ?? day.Id, line?.Version, day.VehicleId);
+            }, null);
+        return null;
+    }
+
     /// <param name="uploadedBy">Whose drafts a photo change takes: its sender's (null: the current user, who sends it).</param>
     private static SyncChangeRequest Request(ChangeInput c, SyncChangeServices services, Guid? uploadedBy = null)
     {
@@ -319,6 +431,9 @@ public sealed class SyncMutations
             c.AddRecurringExpense, c.UpdateRecurringExpense, c.DeleteRecurringExpense, c.MarkRecurringExpensesDone, c.AddVehicle, c.UpdateVehicle,
             c.DeleteVehicle, c.RestoreVehicle, c.AddRefuelingPhoto, c.RemoveRefuelingPhoto, c.AddExpensePhoto, c.RemoveExpensePhoto,
             c.SetVehiclePicture, c.RemoveVehiclePicture,
+            c.AddTyreSet, c.UpdateTyreSet, c.SetTyreRoughDistance, c.RetireTyreSet, c.UnretireTyreSet, c.DeleteTyreSet, c.RestoreTyreSet,
+            c.SwapTyres, c.ChangeTyrePositions, c.AddPastTyreSwaps, c.AddTyreStretch, c.UpdateTyreStretch, c.DeleteTyreStretch, c.RestoreTyreStretch,
+            c.SetTyreLogDay,
         }.Count(o => o is not null);
         if (set != 1) throw new DomainException("sync.oneOperationRequired", "A change carries exactly one operation.", new { c.Id });
         var payload = JsonSerializer.Serialize(c with { Base = null }, Json);
@@ -430,6 +545,8 @@ public sealed class SyncMutations
                 return new AppliedChange(rvp, null, rvp);
             });
 
+        if (Tyres(c, services, version, Make) is { } tyreChange) return tyreChange;
+
         var rv = c.RestoreVehicle!.Value;
         return Make(SyncChangeKind.RestoreVehicle, rv, rv, async ct => Of(await vehicles.RestoreAsync(rv, ct, version), v => v.Id, v => v.Version, v => v.Id));
     }
@@ -441,8 +558,13 @@ public sealed class SyncMutations
 /// </summary>
 public sealed class SyncChangeServices(
     VehicleService vehicles, RefuelingService refuelings, ExpenseService expenses, RecurringExpenseService recurring, LogPhotoService photos, ImageService images,
-    IOptionsSnapshot<VehicleDefaultsOptions> defaults, IRefuelingRepository refuelingRows, IExpenseRepository expenseRows, IRecurringExpenseRepository scheduleRows)
+    IOptionsSnapshot<VehicleDefaultsOptions> defaults, IRefuelingRepository refuelingRows, IExpenseRepository expenseRows, IRecurringExpenseRepository scheduleRows,
+    TyreService tyres, ITyreRepository tyreRows)
 {
+    public TyreService Tyres => tyres;
+    public Func<CancellationToken, Task<Guid?>> TyreSet(Guid id) => async ct => (await tyreRows.FindSetAsync(id, ct))?.VehicleId;
+    public Func<CancellationToken, Task<Guid?>> TyreStretch(Guid id) => async ct => (await tyreRows.FindStretchAsync(id, ct))?.VehicleId;
+
     public ImageService Images => images;
     public VehicleService Vehicles => vehicles;
     public RefuelingService Refuelings => refuelings;

@@ -28,6 +28,12 @@ export type AddLogPhotoInput = {
   logId: string;
 };
 
+export type AddPastTyreSwapsInput = {
+  replace?: boolean;
+  swaps: Array<PastTyreSwapInput>;
+  vehicleId: string;
+};
+
 export type AddRecurringExpenseInput = {
   category?: string | null | undefined;
   id?: string | null | undefined;
@@ -41,6 +47,34 @@ export type AddRecurringExpenseInput = {
   vehicleId: string;
   warnDays?: number | null | undefined;
   warnDistance?: number | null | undefined;
+};
+
+export type AddTyreSetInput = {
+  day: string;
+  fitted: boolean;
+  id?: string | null | undefined;
+  madeWeek?: number | null | undefined;
+  madeYear?: number | null | undefined;
+  name: string;
+  odometer?: number | null | undefined;
+  pairOneFront?: boolean | null | undefined;
+  replace?: boolean;
+  roughDistance?: number;
+  season: TyreSeason;
+  since: string;
+  size?: string | null | undefined;
+  stretchId?: string | null | undefined;
+  vehicleId: string;
+};
+
+export type AddTyreStretchInput = {
+  from: string;
+  id?: string | null | undefined;
+  odometerFrom?: number | null | undefined;
+  odometerUntil?: number | null | undefined;
+  pairOneFront?: boolean | null | undefined;
+  setId: string;
+  until?: string | null | undefined;
 };
 
 export type AddVehicleInput = {
@@ -74,13 +108,19 @@ export type BackupSettingsState =
 export type ChangeInput = {
   addExpense?: AddExpenseInput | null | undefined;
   addExpensePhoto?: AddLogPhotoInput | null | undefined;
+  addPastTyreSwaps?: AddPastTyreSwapsInput | null | undefined;
   addRecurringExpense?: AddRecurringExpenseInput | null | undefined;
   addRefuelingPhoto?: AddLogPhotoInput | null | undefined;
+  addTyreSet?: AddTyreSetInput | null | undefined;
+  addTyreStretch?: AddTyreStretchInput | null | undefined;
   addVehicle?: AddVehicleInput | null | undefined;
   base?: string | null | undefined;
+  changeTyrePositions?: SwapTyresInput | null | undefined;
   deleteExpense?: string | null | undefined;
   deleteRecurringExpense?: string | null | undefined;
   deleteRefueling?: string | null | undefined;
+  deleteTyreSet?: string | null | undefined;
+  deleteTyreStretch?: string | null | undefined;
   deleteVehicle?: string | null | undefined;
   expectedVersion?: number | null | undefined;
   id: string;
@@ -91,11 +131,20 @@ export type ChangeInput = {
   removeVehiclePicture?: string | null | undefined;
   restoreExpense?: string | null | undefined;
   restoreRefueling?: string | null | undefined;
+  restoreTyreSet?: string | null | undefined;
+  restoreTyreStretch?: string | null | undefined;
   restoreVehicle?: string | null | undefined;
+  retireTyreSet?: RetireTyreSetInput | null | undefined;
+  setTyreLogDay?: SetTyreLogDayInput | null | undefined;
+  setTyreRoughDistance?: SetTyreRoughDistanceInput | null | undefined;
   setVehiclePicture?: SetVehiclePictureInput | null | undefined;
+  swapTyres?: SwapTyresInput | null | undefined;
+  unretireTyreSet?: string | null | undefined;
   updateExpense?: UpdateExpenseInput | null | undefined;
   updateRecurringExpense?: UpdateRecurringExpenseInput | null | undefined;
   updateRefueling?: UpdateRefuelingInput | null | undefined;
+  updateTyreSet?: UpdateTyreSetInput | null | undefined;
+  updateTyreStretch?: UpdateTyreStretchInput | null | undefined;
   updateVehicle?: UpdateVehicleInput | null | undefined;
 };
 
@@ -391,6 +440,13 @@ export type OfflineVehicleWindowInput = {
   window: string;
 };
 
+export type PastTyreSwapInput = {
+  day: string;
+  odometer?: number | null | undefined;
+  setId: string;
+  stretchId?: string | null | undefined;
+};
+
 export type ReadingFieldName =
   | 'CURRENCY'
   | 'DATE'
@@ -472,6 +528,11 @@ export type RestoreBackupInput = {
   passphrase?: string | null | undefined;
 };
 
+export type RetireTyreSetInput = {
+  day: string;
+  id: string;
+};
+
 export type ReviewState =
   | 'AWAITING_PHOTOS'
   | 'INCOMPLETE'
@@ -512,6 +573,20 @@ export type SetLogAccessInput = {
   level: AccessLevel;
   userId: string;
   vehicleId: string;
+};
+
+export type SetTyreLogDayInput = {
+  day: string;
+  id?: string | null | undefined;
+  note?: string | null | undefined;
+  odometer?: number | null | undefined;
+  vehicleId: string;
+};
+
+export type SetTyreRoughDistanceInput = {
+  distance: number;
+  id: string;
+  until?: string | null | undefined;
 };
 
 export type SetVehiclePictureInput = {
@@ -564,15 +639,32 @@ export type SurfaceStyle =
   | 'OPAQUE'
   | 'TRANSPARENT';
 
+export type SwapTyresInput = {
+  day: string;
+  note?: string | null | undefined;
+  odometer?: number | null | undefined;
+  pairOneFront?: boolean | null | undefined;
+  replace?: boolean;
+  setId: string;
+  stretchId?: string | null | undefined;
+  vehicleId: string;
+};
+
 export type SyncChangeKind =
   | 'ADD_EXPENSE'
   | 'ADD_EXPENSE_PHOTO'
+  | 'ADD_PAST_TYRE_SWAPS'
   | 'ADD_RECURRING_EXPENSE'
   | 'ADD_REFUELING_PHOTO'
+  | 'ADD_TYRE_SET'
+  | 'ADD_TYRE_STRETCH'
   | 'ADD_VEHICLE'
+  | 'CHANGE_TYRE_POSITIONS'
   | 'DELETE_EXPENSE'
   | 'DELETE_RECURRING_EXPENSE'
   | 'DELETE_REFUELING'
+  | 'DELETE_TYRE_SET'
+  | 'DELETE_TYRE_STRETCH'
   | 'DELETE_VEHICLE'
   | 'LOG_REFUELING'
   | 'MARK_RECURRING_EXPENSES_DONE'
@@ -581,11 +673,20 @@ export type SyncChangeKind =
   | 'REMOVE_VEHICLE_PICTURE'
   | 'RESTORE_EXPENSE'
   | 'RESTORE_REFUELING'
+  | 'RESTORE_TYRE_SET'
+  | 'RESTORE_TYRE_STRETCH'
   | 'RESTORE_VEHICLE'
+  | 'RETIRE_TYRE_SET'
+  | 'SET_TYRE_LOG_DAY'
+  | 'SET_TYRE_ROUGH_DISTANCE'
   | 'SET_VEHICLE_PICTURE'
+  | 'SWAP_TYRES'
+  | 'UNRETIRE_TYRE_SET'
   | 'UPDATE_EXPENSE'
   | 'UPDATE_RECURRING_EXPENSE'
   | 'UPDATE_REFUELING'
+  | 'UPDATE_TYRE_SET'
+  | 'UPDATE_TYRE_STRETCH'
   | 'UPDATE_VEHICLE';
 
 export type SyncChangeStatus =
@@ -650,6 +751,11 @@ export type TrendWindowKind =
   | 'THIS_MONTH'
   | 'THIS_YEAR';
 
+export type TyreSeason =
+  | 'ALL_SEASON'
+  | 'SUMMER'
+  | 'WINTER';
+
 export type UpdateExpenseInput = {
   amount?: number | null | undefined;
   category?: string | null | undefined;
@@ -692,6 +798,25 @@ export type UpdateRefuelingInput = {
   odometer?: number | null | undefined;
   totalCost?: number | null | undefined;
   volume?: number | null | undefined;
+};
+
+export type UpdateTyreSetInput = {
+  id: string;
+  madeWeek?: number | null | undefined;
+  madeYear?: number | null | undefined;
+  name: string;
+  season: TyreSeason;
+  since: string;
+  size?: string | null | undefined;
+};
+
+export type UpdateTyreStretchInput = {
+  from: string;
+  id: string;
+  odometerFrom?: number | null | undefined;
+  odometerUntil?: number | null | undefined;
+  pairOneFront?: boolean | null | undefined;
+  until?: string | null | undefined;
 };
 
 export type UpdateUiSettingsInput = {

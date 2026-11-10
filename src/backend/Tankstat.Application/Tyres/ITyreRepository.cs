@@ -47,6 +47,12 @@ public interface ITyreRepository
 
     Task<TyreStretch?> FindStretchAsync(Guid id, CancellationToken ct);
 
+    /// <summary>The sets with these ids, the trash included (what a parked change concerns).</summary>
+    Task<IReadOnlyList<TyreSet>> ListSetsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
+
+    /// <summary>The stretches with these ids, the trash included.</summary>
+    Task<IReadOnlyList<TyreStretch>> ListStretchesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
+
     Task SaveAsync(TyreSave save, CancellationToken ct);
 
     /// <summary>The vehicle has a tyre set with a rough figure: its units are locked, like with logs.</summary>

@@ -47,7 +47,9 @@ internal sealed class OfflineFeedRepository(IDbContextFactory<AppDbContext> dbFa
     public async Task<IReadOnlyList<RemovedEntity>> RemovedSinceAsync(Guid vehicleId, DateTimeOffset since, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var tombstones = await db.Tombstones.AsNoTracking().Where(t => t.VehicleId == vehicleId && t.PurgedAt >= since)
+        // Tyre rows come whole with every first page (OfflinePage.Tyres), so their tombstones are not sent.
+        OfflineEntityType[] whole = [OfflineEntityType.TyreSet, OfflineEntityType.TyreStretch, OfflineEntityType.TyreLogDay];
+        var tombstones = await db.Tombstones.AsNoTracking().Where(t => t.VehicleId == vehicleId && t.PurgedAt >= since && !whole.Contains(t.EntityType))
             .Select(t => new { t.EntityType, t.EntityId }).Distinct().ToListAsync(ct);
         if (tombstones.Count == 0) return [];
         // A device may have added something with the same id again (a replayed add): what exists is not removed.

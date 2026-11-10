@@ -273,6 +273,19 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
+    /// <summary>The set when it is in the trash and the user may restore it, else null (a trash sent again finds it there).</summary>
+    public async Task<TyreSet?> SetInTrashAsync(Guid id, CancellationToken ct) =>
+        await tyres.FindSetAsync(id, ct) is { IsDeleted: true } set && await guard.ForVehicleAsync(set.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? set : null;
+
+    /// <summary>The stretch when it is in the trash and the user may restore it, else null.</summary>
+    public async Task<TyreStretch?> StretchInTrashAsync(Guid id, CancellationToken ct) =>
+        await tyres.FindStretchAsync(id, ct) is { IsDeleted: true } stretch && await guard.ForVehicleAsync(stretch.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? stretch : null;
+
+    /// <summary>The set as stored, the trash included (its version after a change), whoever may see it; for the sync's answers.</summary>
+    public Task<TyreSet?> FindSetAsync(Guid id, CancellationToken ct) => tyres.FindSetAsync(id, ct);
+
+    public Task<TyreStretch?> FindStretchAsync(Guid id, CancellationToken ct) => tyres.FindStretchAsync(id, ct);
+
     public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(int skip, int take, CancellationToken ct) =>
         await tyres.ListTrashAsync(await access.LogScopeAsync(AccessLevel.Edit, ct), Math.Max(0, skip), Math.Clamp(take, 1, 100), ct);
 

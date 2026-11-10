@@ -19,9 +19,10 @@ public sealed record OfflineChangesInput(Guid VehicleId, DateOnly? From, DateTim
 /// <param name="Next">Pass it as <c>after</c> for the next page; null when the download is complete.</param>
 /// <param name="Watermark">Pass it as <c>since</c> for the next download of this vehicle.</param>
 /// <param name="Resync">The last download is too old for what the server remembers: start afresh with a full download (nothing else came).</param>
+/// <param name="Tyres">The vehicle's tyres whole, with the server's figures, on the first page (kept as the <c>vehicleTyres</c> answer); null on the others.</param>
 public sealed record OfflineChanges(
     Vehicle Vehicle, IReadOnlyList<Refueling> Refuelings, IReadOnlyList<Expense> Expenses, IReadOnlyList<RecurringExpenseInfo> Recurring,
-    IReadOnlyList<RemovedEntity> Removed, string? Next, DateTimeOffset Watermark, bool Resync);
+    IReadOnlyList<RemovedEntity> Removed, string? Next, DateTimeOffset Watermark, bool Resync, Tankstat.Application.Tyres.TyreOverview? Tyres = null);
 
 /// <summary>A vehicle whose offline window differs from the user's default.</summary>
 public sealed record OfflineVehicleWindow(Guid VehicleId, string Window);
@@ -55,7 +56,7 @@ public sealed class OfflineQueries
     {
         var page = await feed.ChangesAsync(input.VehicleId, input.From, input.Since, input.After, input.Take, ct);
         return new OfflineChanges(page.Vehicle, page.Refuelings, page.Expenses, page.Recurring.Select(RecurringExpenseInfo.From).ToList(),
-            page.Removed, page.Next, page.Watermark, page.Resync);
+            page.Removed, page.Next, page.Watermark, page.Resync, page.Tyres);
     }
 
     /// <summary>What the current user's devices download for offline use (with authentication off: everyone's, the anonymous user's).</summary>

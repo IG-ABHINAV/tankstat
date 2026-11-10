@@ -16,6 +16,9 @@ public sealed record AddTyreSetInput(
     Guid VehicleId, string Name, TyreSeason Season, string? Size, DateOnly Since, int? MadeWeek, int? MadeYear, bool Fitted, DateOnly Day,
     long RoughDistance = 0, long? Odometer = null, bool? PairOneFront = null, bool Replace = false, Guid? Id = null, Guid? StretchId = null);
 
+/// <param name="Day">The device's today.</param>
+public sealed record RetireTyreSetInput(Guid Id, DateOnly Day);
+
 public sealed record UpdateTyreSetInput(Guid Id, string Name, TyreSeason Season, string? Size, DateOnly Since, int? MadeWeek, int? MadeYear);
 
 /// <param name="Until">The first day the rough figure does not cover, when accepting a suggestion; left out keeps it.</param>

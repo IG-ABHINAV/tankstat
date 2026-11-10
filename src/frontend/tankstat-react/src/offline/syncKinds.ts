@@ -1,8 +1,11 @@
 import type { ParkedChangeFieldsFragment, SyncChangeKind } from '../gql/generated.ts'
 import type { Change, ChangeAction, ChangeEntity } from './changes.ts'
 
+/** The kinds of tyre changes (#287): the server takes them already, this device sends them from #287's part 4 on, which maps them below. */
+type TyreSyncKind = Extract<SyncChangeKind, `${string}TYRE${string}`>
+
 /** What a change the server knows by its kind (LOG_REFUELING, ...) is on this device: the entity and the action, as the outbox says. */
-export const SYNC_KINDS: Record<SyncChangeKind, [ChangeEntity, ChangeAction]> = {
+export const SYNC_KINDS: Record<Exclude<SyncChangeKind, TyreSyncKind>, [ChangeEntity, ChangeAction]> = {
   LOG_REFUELING: ['refuelings', 'add'],
   UPDATE_REFUELING: ['refuelings', 'update'],
   DELETE_REFUELING: ['refuelings', 'trash'],
@@ -34,14 +37,15 @@ const fieldOf = (kind: SyncChangeKind) => kind.toLowerCase().replace(/_([a-z])/g
 export const syncKindKey = (entity: ChangeEntity, action: ChangeAction) => `sync.kinds.${entity}.${action}` as 'sync.kinds.refuelings.add'
 
 export const kindKeyOf = (kind: string): ReturnType<typeof syncKindKey> | null =>
-  kind in SYNC_KINDS ? syncKindKey(...SYNC_KINDS[kind as SyncChangeKind]) : null
+  kind in SYNC_KINDS ? syncKindKey(...SYNC_KINDS[kind as keyof typeof SYNC_KINDS]) : null
 
 /**
  * A change the server parked, as a change of this device (the inverse of `push.ts` `toChangeInput`), so it is named and shown like one
  * that waits here. `change` is the ChangeInput as the server keeps it (JSON; absent operations left out or null).
  */
 export function fromParked(parked: Pick<ParkedChangeFieldsFragment, 'id' | 'kind' | 'vehicleId' | 'targetId' | 'change' | 'receivedAt'> & { base?: string | null }): Change {
-  const [entity, action] = SYNC_KINDS[parked.kind]
+  // No device of this build sends a tyre change, so none is parked yet (part 4 maps them).
+  const [entity, action] = SYNC_KINDS[parked.kind as keyof typeof SYNC_KINDS]
   let envelope: Record<string, unknown> = {}
   try {
     envelope = JSON.parse(parked.change) as Record<string, unknown>

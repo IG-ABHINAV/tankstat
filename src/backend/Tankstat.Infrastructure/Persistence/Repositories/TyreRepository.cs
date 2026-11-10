@@ -29,6 +29,20 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         return await db.TyreStretches.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
     }
 
+    public async Task<IReadOnlyList<TyreSet>> ListSetsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.TyreSets.AsNoTracking().Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<TyreStretch>> ListStretchesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.TyreStretches.AsNoTracking().Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+    }
+
     /// <summary>
     /// One transaction. Rows let go of (a day's reading, a day left empty) are deleted in a second save: the context never saw them linked,
     /// so in one save it could delete a reading before the day stops referring to it, which the database refuses.

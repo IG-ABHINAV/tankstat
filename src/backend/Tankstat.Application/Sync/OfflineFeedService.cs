@@ -12,11 +12,11 @@ namespace Tankstat.Application.Sync;
 /// What a device downloads of a vehicle to show it offline, a page at a time. The first download of a vehicle (no <c>since</c>) brings
 /// the logs dated from the device's window (<c>from</c>, null for all), the trash included; every later one brings only the rows saved since
 /// the watermark of the one before, whatever their date, and what was removed for good meanwhile. The vehicle comes with every page, its
-/// schedules (with today's status) with the first. The vehicle's logs are seen with the View access to them.
+/// schedules (with today's status) and its tyres (whole, with their figures) with the first. The vehicle's logs are seen with the View access to them.
 /// </summary>
 public sealed class OfflineFeedService(
-    LogAccessGuard guard, IOfflineFeedRepository feed, RecurringExpenseService recurring, IOptionsSnapshot<SyncOptions> options, TimeProvider clock,
-    ILogger<OfflineFeedService> logger)
+    LogAccessGuard guard, IOfflineFeedRepository feed, RecurringExpenseService recurring, Tyres.TyreService tyres, IOptionsSnapshot<SyncOptions> options,
+    TimeProvider clock, ILogger<OfflineFeedService> logger)
 {
     public const int MaxTake = 200;
 
@@ -63,6 +63,7 @@ public sealed class OfflineFeedService(
             }).Encode()
             : null;
         var schedules = first ? await recurring.ListAsync(vehicleId, ct) : [];
+        var tyreOverview = first ? await tyres.OverviewAsync(vehicleId, ct) : null;
         var removed = first && cursor.Since is { } moment ? await feed.RemovedSinceAsync(vehicleId, moment - Overlap, ct) : [];
         // The trash is shown to those who may change the logs (Edit), like online: to anyone else a log in the trash is gone, so it is
         // sent as removed (a device that had it drops it), never with its values. Paging above went by every row, the trash included.
@@ -77,7 +78,7 @@ public sealed class OfflineFeedService(
 
         logger.LogDebug("Sent {Refuelings} refuelings, {Expenses} expenses and {Removed} removals of vehicle {VehicleId} ({Kind} download, {More})",
             sentRefuelings.Count, sentExpenses.Count, removed.Count, vehicleId, cursor.Since is null ? "full" : "later", next is null ? "complete" : "more to come");
-        return new OfflinePage(context.Vehicle, sentRefuelings, sentExpenses, schedules, removed, next, cursor.Watermark, Resync: false);
+        return new OfflinePage(context.Vehicle, sentRefuelings, sentExpenses, schedules, removed, next, cursor.Watermark, Resync: false, tyreOverview);
     }
 
     /// <summary>For vehicles the caller already got through an access check (a resolver of the vehicle).</summary>

@@ -90,7 +90,8 @@ describe('batches', () => {
 })
 
 describe('fromParked', () => {
-  const kindOf = (c: Change) => (Object.keys(SYNC_KINDS) as SyncChangeKind[]).find((k) => SYNC_KINDS[k][0] === c.entity && SYNC_KINDS[k][1] === c.action)!
+  const kindOf = (c: Change) =>
+    (Object.keys(SYNC_KINDS) as (keyof typeof SYNC_KINDS)[]).find((k) => SYNC_KINDS[k][0] === c.entity && SYNC_KINDS[k][1] === c.action)! as SyncChangeKind
   // What the server keeps: the ChangeInput as sent, with nulls for what was left out (an edited change is written back by the server).
   const asKept = (c: Change, nulls: boolean) => JSON.stringify(toChangeInput(c), (_, v: unknown) => (v === undefined ? (nulls ? null : undefined) : v))
 

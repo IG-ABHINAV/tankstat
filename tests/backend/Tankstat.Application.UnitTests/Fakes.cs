@@ -450,6 +450,12 @@ internal sealed class InMemoryTyres : ITyreRepository
 
     public Task<TyreStretch?> FindStretchAsync(Guid id, CancellationToken ct) => Task.FromResult(Stretches.FirstOrDefault(s => s.Id == id) is { } s ? Copy(s) : null);
 
+    public Task<IReadOnlyList<TyreSet>> ListSetsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<TyreSet>>([.. Sets.Where(s => ids.Contains(s.Id)).Select(Copy)]);
+
+    public Task<IReadOnlyList<TyreStretch>> ListStretchesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<TyreStretch>>([.. Stretches.Where(s => ids.Contains(s.Id)).Select(Copy)]);
+
     public Task SaveAsync(TyreSave save, CancellationToken ct)
     {
         static void Put<T>(List<T> list, T item, Func<T, Guid> id) where T : class
@@ -948,7 +954,7 @@ internal sealed class World
     public OfflineSettingsService OfflineSettings { get; }
     public InMemorySyncChanges SyncLedger { get; } = new();
     public SyncService Sync => new(SyncLedger, Vehicles, Access, new SyncOptions().Create(), Clock, Metrics, Log.For<SyncService>());
-    public SyncTargetService SyncTargets => new(Vehicles, Refuelings, Expenses, Recurring, RecurringService, Access);
+    public SyncTargetService SyncTargets => new(Vehicles, Refuelings, Expenses, Recurring, RecurringService, Tyres, Access);
     public ImportService Imports { get; }
     public OdometerService Odometer { get; }
     public ResourceSharingService Sharing { get; }
