@@ -8,8 +8,10 @@ import {
 } from '../gql/generated.ts'
 import { UPDATABLE, type Change, type ChangeEntity } from './changes.ts'
 
-/** The type and the fragment of the values a change of each entity can set (`graphql/conflicts.graphql`). */
-/** Tyre changes carry no base: they never fold, and a parked one is applied or discarded as it is. */
+/**
+ * The type and the fragment of the values a change of each entity can set (`graphql/conflicts.graphql`). Tyre changes carry no base: they
+ * never fold, and a parked one is applied or discarded as it is.
+ */
 const SHAPES: Record<Exclude<ChangeEntity, 'tyres'>, { typename: string; fragment: DocumentNode }> = {
   refuelings: { typename: 'Refueling', fragment: RefuelingChangeValuesFragmentDoc },
   expenses: { typename: 'Expense', fragment: ExpenseChangeValuesFragmentDoc },
@@ -30,10 +32,13 @@ export function valuesOf(entity: ChangeEntity, loaded: Record<string, unknown> |
   )
 }
 
-const withoutTypename = (value: unknown): unknown => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
-  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== '__typename'))
-}
+/** A value as GraphQL takes it in an input: no `__typename` anywhere (a value read back from the cache carries them). */
+export const withoutTypename = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutTypename)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== '__typename').map(([key, v]) => [key, withoutTypename(v)]))
+      : value
 
 /**
  * The values a change kept on this device is made from: the entry as this screen holds it (the cache, filled by the dialog that loaded it

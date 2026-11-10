@@ -7,6 +7,9 @@ import { outbox, type ChangeDraft } from './outbox.ts'
 
 export type Submitted<T> = { queued: true } | { queued: false; result: T }
 
+/** Whether a change of this vehicle is kept on the device rather than sent: the server is out of reach, or its changes wait (in order). */
+export const willKeep = (vehicleId: string) => !connectivity.reachable || outbox.vehicleIds().has(vehicleId)
+
 /**
  * Every change of a refuelling or an expense goes through here. Kept on the device (`outbox.ts`) while the server is out of reach, when the
  * vehicle already has changes waiting (they keep their order), or when the request fails for want of the server (with the same id: should
@@ -14,9 +17,6 @@ export type Submitted<T> = { queued: true } | { queued: false; result: T }
  * the server gave is the caller's to show. A kept change makes the screen ask again, so the device's own answers show it (`offlineLink.ts`).
  * A kept edit or trash takes along the values the entry had at the version it was made from (`base`), should the server park it.
  */
-/** Whether a change of this vehicle is kept on the device rather than sent: the server is out of reach, or its changes wait (in order). */
-export const willKeep = (vehicleId: string) => !connectivity.reachable || outbox.vehicleIds().has(vehicleId)
-
 export async function submitChange<T>(client: ApolloClient, change: ChangeDraft, send: () => Promise<T>): Promise<Submitted<T>> {
   // A change with photos kept on this device waits too: they reach the server as drafts right before it (`push.ts`).
   if (willKeep(change.vehicleId) || keptPhotosOf({ ...change, seq: 0, createdAt: 0 }).length > 0) return keepChange(client, change)

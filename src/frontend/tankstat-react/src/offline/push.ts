@@ -1,6 +1,7 @@
 import type { ApolloClient } from '@apollo/client'
 import { SyncChangesDocument, type ChangeInput, type SyncChangesMutation } from '../gql/generated.ts'
 import { createdBy, isKept, keptPhotosOf, tyreNeedsOf, type Change } from './changes.ts'
+import { withoutTypename } from './conflicts.ts'
 import { connectivity } from './connectivity.ts'
 import { deviceData } from './deviceData.ts'
 import { isConnectionFailure } from './errors.ts'
@@ -50,14 +51,6 @@ const FIELDS = {
   markRecurringExpensesDone: ['ids', 'date', 'odometer', 'amount', 'discount', 'currency', 'title', 'category', 'photoIds', 'expenseId'],
 } as const
 
-/** A value as GraphQL takes it in an input: no `__typename` anywhere (a value read back from the cache carries them). */
-const withoutTypenames = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map(withoutTypenames)
-    : value && typeof value === 'object'
-      ? Object.fromEntries(Object.entries(value).filter(([k]) => k !== '__typename').map(([k, v]) => [k, withoutTypenames(v)]))
-      : value
-
 const pick = (input: Record<string, unknown> | undefined, keys: readonly string[], extra: Record<string, unknown> = {}) =>
   Object.fromEntries(Object.entries({ ...input, ...extra }).filter(([k, v]) => keys.includes(k) && v !== undefined))
 
@@ -74,7 +67,7 @@ export function toChangeInput(c: Change, drafts: ReadonlyMap<string, string> = n
   const log = c.entity === 'expenses' ? 'Expense' : 'Refueling'
   // A tyre change is its mutation's input as the dialog sent it (a bare id where the mutation takes one), under its own field.
   if (c.entity === 'tyres' && isTyreAction(c.action))
-    return { ...envelope, [c.action]: BARE_ID.has(c.action) ? c.input?.id : withoutTypenames(c.input) } as ChangeInput
+    return { ...envelope, [c.action]: BARE_ID.has(c.action) ? c.input?.id : withoutTypename(c.input) } as ChangeInput
   switch (`${c.entity}:${c.action}`) {
     case 'refuelings:add': return op('logRefueling', { id: c.targetId, vehicleId: c.vehicleId })
     case 'refuelings:update': return op('updateRefueling', { id: c.targetId })
