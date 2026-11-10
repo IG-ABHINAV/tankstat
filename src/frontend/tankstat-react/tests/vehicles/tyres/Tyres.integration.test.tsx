@@ -85,6 +85,41 @@ it('swaps with the pairs exchanged, says the worked-out odometer, and asks once 
   expect(state.calls.SwapTyres[1].input).toMatchObject({ replace: true, stretchId: (state.calls.SwapTyres[0].input as { stretchId: string }).stretchId })
 })
 
+it('asks again when the day changes after the replace note, never replacing a day it did not name', async () => {
+  const { ui, state } = setup([summer, winter])
+  state.failNext.push({ key: 'tyres.swapExists', args: { date: '2026-06-01', set: 'Michelin Primacy 4' } })
+
+  await ui.click(await screen.findByRole('button', { name: 'Swap tyres' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Swap tyres' })
+  await typeDate(ui, await findDateField(/^Day/, dialog), '2026-06-01')
+  await ui.click(within(dialog).getByRole('button', { name: 'Swap tyres' }))
+  expect(await within(dialog).findByRole('button', { name: 'Replace the swap' })).toBeInTheDocument()
+
+  await typeDate(ui, await findDateField(/^Day/, dialog), '2026-06-02')
+  expect(within(dialog).queryByText(/This replaces the swap of/)).not.toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Swap tyres' }))
+
+  await waitFor(() => expect(state.calls.SwapTyres).toHaveLength(2))
+  expect(state.calls.SwapTyres[1].input).toMatchObject({ day: '2026-06-02', replace: false })
+})
+
+it('adds a set to storage by default once a set is on the car, though the car was bare when the tab opened', async () => {
+  const stored = { ...winter, onTheCar: false }
+  const { ui, state } = setup([stored])
+
+  await ui.click(await screen.findByRole('button', { name: 'Fit this set' }))
+  const swap = await screen.findByRole('dialog', { name: 'Swap tyres' })
+  state.sets = [{ ...stored, onTheCar: true }] // the server's answer: the set is on the car now
+  await ui.click(within(swap).getByRole('button', { name: 'Swap tyres' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Swap tyres' })).not.toBeInTheDocument())
+  expect(state.calls.SwapTyres).toHaveLength(1)
+  expect(await screen.findByRole('button', { name: 'Change positions' })).toBeInTheDocument()
+
+  await ui.click(await screen.findByRole('button', { name: 'Add a tyre set' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add a tyre set' })
+  expect(within(dialog).getByRole('radio', { name: 'In storage' })).toBeChecked()
+})
+
 it('takes past swaps from papers, a row each, a reading only where there is one', async () => {
   const { ui, state } = setup([summer, winter])
 
@@ -103,6 +138,20 @@ it('takes past swaps from papers, a row each, a reading only where there is one'
     { day: '2025-03-29', setId: 's1', odometer: 128_150, stretchId: UUID },
     { day: '2025-11-15', setId: 's1', odometer: null, stretchId: UUID },
   ])
+})
+
+it('asks again about past swaps once the rows change after the replace note', async () => {
+  const { ui, state } = setup([summer, winter])
+  state.failNext.push({ key: 'tyres.swapExists', args: { date: '2026-03-28', set: 'Michelin Primacy 4' } })
+
+  await ui.click(await screen.findByRole('button', { name: 'Add past swaps' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add past swaps' })
+  await typeDate(ui, await findDateField(/^Day/, dialog), '2026-03-28')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save swaps' }))
+  expect(await within(dialog).findByRole('button', { name: 'Replace the swap' })).toBeInTheDocument()
+
+  await ui.click(within(dialog).getByRole('button', { name: 'Add a row' }))
+  expect(within(dialog).getByRole('button', { name: 'Save swaps' })).toBeInTheDocument()
 })
 
 it('moves a stretch to the trash from the history, saying the day’s reading stays, and takes it back with Undo', async () => {

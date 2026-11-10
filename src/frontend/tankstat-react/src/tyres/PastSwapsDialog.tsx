@@ -49,7 +49,17 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
   const [error, setError] = useState<unknown>()
   const [busy, setBusy] = useState(false)
   const [replace, setReplace] = useState<string | null>(null)
-  const change = (key: string, values: Partial<Row>) => setRows((all) => all.map((r) => (r.key === key ? { ...r, ...values } : r)))
+  // A change of the rows asks about the days that have a swap afresh: the replace note named the rows as they were sent.
+  const edit = (next: (all: Row[]) => Row[]) => {
+    setRows(next)
+    setReplace(null)
+  }
+  const change = (key: string, values: Partial<Row>) => edit((all) => all.map((r) => (r.key === key ? { ...r, ...values } : r)))
+  const reset = () => {
+    setRows([fresh()])
+    setError(undefined)
+    setReplace(null)
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -82,15 +92,18 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
 
   return (
     <>
-      <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />
+      <DialogTrigger
+        trigger={trigger}
+        open={open}
+        onOpen={() => {
+          reset() // the sets may have changed since the dialog was mounted
+          setOpen(true)
+        }}
+      />
       <DialogFrame
         open={open}
         onClose={() => setOpen(false)}
-        onClosed={() => {
-          setRows([fresh()])
-          setError(undefined)
-          setReplace(null)
-        }}
+        onClosed={reset}
         busy={busy}
         maxWidth={620}
         title={t('tyres.dialogs.pastTitle')}
@@ -132,12 +145,12 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
                     </Field>
                   </Box>
                   <Box sx={{ gridColumn: { xs: 3, sm: 'auto' }, gridRow: { xs: 2, sm: 'auto' }, pb: { sm: 0.5 } }}>
-                    {rows.length > 1 && <IconAction label={t('tyres.dialogs.removeRow', { row: i + 1 })} onClick={() => setRows((all) => all.filter((r) => r.key !== row.key))}><X size={16} aria-hidden /></IconAction>}
+                    {rows.length > 1 && <IconAction label={t('tyres.dialogs.removeRow', { row: i + 1 })} onClick={() => edit((all) => all.filter((r) => r.key !== row.key))}><X size={16} aria-hidden /></IconAction>}
                   </Box>
                 </Box>
               ))}
               <Box>
-                <Button variant="soft" startIcon={<Plus size={16} aria-hidden />} disabled={rows.length >= MAX_PAST_SWAPS} onClick={() => setRows((all) => [...all, { ...fresh(), setId: all[all.length - 1]?.setId ?? '' }])}>
+                <Button variant="soft" startIcon={<Plus size={16} aria-hidden />} disabled={rows.length >= MAX_PAST_SWAPS} onClick={() => edit((all) => [...all, { ...fresh(), setId: all[all.length - 1]?.setId ?? '' }])}>
                   {t('tyres.dialogs.addRow')}
                 </Button>
               </Box>

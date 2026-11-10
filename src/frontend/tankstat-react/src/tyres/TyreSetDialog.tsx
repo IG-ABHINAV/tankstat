@@ -90,7 +90,14 @@ export function TyreSetDialog({ trigger, vehicleId, unit, fittedFirst }: { trigg
 
   return (
     <>
-      <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />
+      <DialogTrigger
+        trigger={trigger}
+        open={open}
+        onOpen={() => {
+          reset() // where the set goes follows whether a set is on the car now, not when the dialog was mounted
+          setOpen(true)
+        }}
+      />
       <DialogFrame open={open} onClose={() => setOpen(false)} onClosed={reset} busy={busy} maxWidth={520} title={t('tyres.dialogs.addTitle')} description={t('tyres.dialogs.addDescription')}>
         {open && (
           <Form onSubmit={submit} refusal={error}>
