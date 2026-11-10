@@ -44,9 +44,10 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
   const { t } = useTranslation()
   const unit = vehicle.units.distance
   const { data, error } = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, fetchPolicy: 'cache-and-network' })
-  const tyres = data?.vehicleTyres
-  if (error && !tyres) return <ErrorMessage error={error} />
-  if (!tyres) return <Loading />
+  if (error && !data?.vehicleTyres) return <ErrorMessage error={error} />
+  if (!data) return <Loading />
+  // Null for someone who may see the vehicle but not its logs: no tyres, as the Recurring tab shows no schedules then.
+  const tyres: Tyres = data.vehicleTyres ?? { vehicleId: vehicle.id, sets: [], days: [], readings: [], hasReadings: false }
 
   const live = tyres.sets.filter((s) => !s.set.isRetired)
   const onCar = live.filter((s) => s.onTheCar)

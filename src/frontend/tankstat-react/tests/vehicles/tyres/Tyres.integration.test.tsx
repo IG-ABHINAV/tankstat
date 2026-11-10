@@ -301,3 +301,11 @@ it('moves a set to the trash from its history, with Undo', async () => {
   await ui.click(await screen.findByRole('button', { name: 'Undo' }))
   await waitFor(() => expect(state.calls.RestoreTyreSet).toEqual([{ id: 's2' }]))
 })
+
+it('shows no tyres, not an endless wait, to someone who may see the vehicle but not its logs (the server answers null)', async () => {
+  setup([summer, winter])
+  server.use(graphql.query('VehicleTyres', () => HttpResponse.json({ data: { vehicleTyres: null } })))
+
+  expect(await screen.findByRole('heading', { name: 'No tyres yet' })).toBeInTheDocument()
+  expect(screen.queryByRole('status', { name: /Loading/ })).not.toBeInTheDocument()
+})
