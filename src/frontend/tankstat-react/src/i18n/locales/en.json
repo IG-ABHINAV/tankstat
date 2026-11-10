@@ -1086,7 +1086,8 @@
       "pastSwapsTooMany": "Enter at most {{max}} swaps at once.",
       "retireOnCar": "{{set}} is on the car: swap it off before retiring it.",
       "setNotFound": "This tyre set does not exist any more.",
-      "stretchNotFound": "This stretch does not exist any more."
+      "stretchNotFound": "This stretch does not exist any more.",
+      "stretchIdTwice": "Two of these swaps carry the same id. Enter each swap once."
     }
   },
   "a11y": {
