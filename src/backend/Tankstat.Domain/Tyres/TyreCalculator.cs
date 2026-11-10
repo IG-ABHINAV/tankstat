@@ -87,6 +87,8 @@ public static class TyreCalculator
         }
         var start = OdometerOn(sorted, from);
         var measure = StretchMeasure.Measured;
+        if (start is null && sorted[0].Date >= (until ?? latest.Date))
+            return new StretchDistance(0, false, StretchMeasure.NotMeasured); // the fuel log starts on its last day: no reading inside it
         if (start is null)
         {
             start = new OdometerOnDay(OdometerOn(sorted, sorted[0].Date)!.Value.Value, false);

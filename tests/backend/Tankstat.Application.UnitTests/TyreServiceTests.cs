@@ -39,8 +39,8 @@ public class TyreServiceTests
     {
         var summer = Guid.NewGuid();
         var winter = Guid.NewGuid();
-        await s.Tyres.AddSetAsync(new AddTyreSetInput(s.Car.Id, Summer(), Fitted: true, D(2026, 3, 28), null, true), default, summer);
-        var overview = await s.Tyres.AddSetAsync(new AddTyreSetInput(s.Car.Id, Winter(), Fitted: false, D(2026, 3, 28), null, null), default, winter);
+        await s.Tyres.AddSetAsync(new NewTyreSet(s.Car.Id, Summer(), Fitted: true, D(2026, 3, 28), null, true), default, summer);
+        var overview = await s.Tyres.AddSetAsync(new NewTyreSet(s.Car.Id, Winter(), Fitted: false, D(2026, 3, 28), null, null), default, winter);
         return (overview, summer, winter);
     }
 
@@ -89,7 +89,7 @@ public class TyreServiceTests
         var s = await Setup();
         var (_, summer, winter) = await TwoSets(s);
         var third = Guid.NewGuid();
-        await s.Tyres.AddSetAsync(new AddTyreSetInput(s.Car.Id, Winter(0) with { Name = "Nokian" }, false, D(2026, 9, 1), null, null), default, third);
+        await s.Tyres.AddSetAsync(new NewTyreSet(s.Car.Id, Winter(0) with { Name = "Nokian" }, false, D(2026, 9, 1), null, null), default, third);
         await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, null), default);
 
         var refused = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, third, D(2026, 9, 20), null, false, null, null), default));
@@ -224,7 +224,7 @@ public class TyreServiceTests
         var w = new World();
         w.Current.SignInAs(w.AddUser("alice@x.co"));
         var car = await w.VehicleService.AddAsync("Car", null, FuelType.Petrol, MeasurementUnits.Metric, default);
-        await w.TyreService.AddSetAsync(new AddTyreSetInput(car.Id, Summer(), false, D(2026, 9, 1), null, null), default);
+        await w.TyreService.AddSetAsync(new NewTyreSet(car.Id, Summer(), false, D(2026, 9, 1), null, null), default);
 
         var refused = await Assert.ThrowsAsync<DomainException>(() =>
             w.VehicleService.UpdateAsync(car.Id, "Car", null, FuelType.Petrol, MeasurementUnits.Create(DistanceUnit.Miles, VolumeUnit.Liters), default));
@@ -298,7 +298,7 @@ public class TyreServiceTests
     {
         var s = await Setup();
         await TwoSets(s); // the summer set went on on 28 Mar
-        var input = new AddTyreSetInput(s.Car.Id, Winter(0) with { Name = "Nokian" }, Fitted: true, D(2026, 3, 28), null, null);
+        var input = new NewTyreSet(s.Car.Id, Winter(0) with { Name = "Nokian" }, Fitted: true, D(2026, 3, 28), null, null);
 
         Assert.Equal("tyres.swapExists", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.AddSetAsync(input, default))).Key);
         var replaced = await s.Tyres.AddSetAsync(input with { Replace = true }, default);

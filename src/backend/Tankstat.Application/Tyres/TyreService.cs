@@ -16,7 +16,7 @@ public sealed record TyreSetInput(string Name, TyreSeason Season, string? Size, 
 /// <param name="Fitted">The set is on the car from <see cref="Day"/> (a swap that day); else it is in storage.</param>
 /// <param name="Day">The day tracking starts (the client's today); the rough figure stands for the time before it.</param>
 /// <param name="Replace">A fitted set on a day that has a swap replaces it (as <see cref="TyreSwapInput.Replace"/>).</param>
-public sealed record AddTyreSetInput(Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront, bool Replace = false);
+public sealed record NewTyreSet(Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront, bool Replace = false);
 
 /// <param name="Replace">A swap logged on that day already is replaced (its stretch goes to the trash) instead of refused.</param>
 public sealed record TyreSwapInput(Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note);
@@ -52,7 +52,7 @@ public sealed class TyreService(
 
     /// <param name="id">The set's id chosen by the client: an add sent again is answered with what it created.</param>
     /// <param name="stretchId">The id of the stretch a fitted set starts with.</param>
-    public async Task<TyreOverview> AddSetAsync(AddTyreSetInput input, CancellationToken ct, Guid? id = null, Guid? stretchId = null)
+    public async Task<TyreOverview> AddSetAsync(NewTyreSet input, CancellationToken ct, Guid? id = null, Guid? stretchId = null)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;

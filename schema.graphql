@@ -78,6 +78,11 @@ type Query {
   ): [Expense!]! @cost(weight: "10")
   expenseTrashCount: Int! @cost(weight: "10")
   expenseTrashDeletableCount: Int! @cost(weight: "10")
+  vehicleTyres(vehicleId: UUID!): VehicleTyres @cost(weight: "10")
+  tyreTrash(skip: Int! = 0, take: Int! = 50): [TyreTrashRow!]!
+    @cost(weight: "10")
+  tyreTrashCount: Int! @cost(weight: "10")
+  tyreTrashDeletableCount: Int! @cost(weight: "10")
   notifications(unreadOnly: Boolean! = false, skip: Int! = 0, take: Int! = 20): [NotificationInfo!]!
     @cost(weight: "10")
   notificationCount(unreadOnly: Boolean! = false): Int! @cost(weight: "10")
@@ -163,6 +168,25 @@ type Mutation {
   deleteRecurringExpense(id: UUID!): Boolean! @cost(weight: "10")
   markRecurringExpensesDone(input: MarkRecurringExpensesDoneInput!): MarkRecurringExpensesDonePayload!
     @cost(weight: "10")
+  addTyreSet(input: AddTyreSetInput!): VehicleTyres! @cost(weight: "10")
+  updateTyreSet(input: UpdateTyreSetInput!): VehicleTyres! @cost(weight: "10")
+  setTyreRoughDistance(input: SetTyreRoughDistanceInput!): VehicleTyres!
+    @cost(weight: "10")
+  swapTyres(input: SwapTyresInput!): VehicleTyres! @cost(weight: "10")
+  changeTyrePositions(input: SwapTyresInput!): VehicleTyres! @cost(weight: "10")
+  addPastTyreSwaps(input: AddPastTyreSwapsInput!): VehicleTyres!
+    @cost(weight: "10")
+  addTyreStretch(input: AddTyreStretchInput!): VehicleTyres! @cost(weight: "10")
+  updateTyreStretch(input: UpdateTyreStretchInput!): VehicleTyres!
+    @cost(weight: "10")
+  deleteTyreStretch(id: UUID!): VehicleTyres! @cost(weight: "10")
+  restoreTyreStretch(id: UUID!): VehicleTyres! @cost(weight: "10")
+  setTyreLogDay(input: SetTyreLogDayInput!): VehicleTyres! @cost(weight: "10")
+  retireTyreSet(id: UUID!, day: LocalDate!): VehicleTyres! @cost(weight: "10")
+  unretireTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
+  deleteTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
+  restoreTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
+  emptyTyreTrash: Int! @cost(weight: "10")
   markNotificationsRead(ids: [UUID!]): [NotificationInfo!]! @cost(weight: "10")
   confirmImport(input: ConfirmImportInput!): ImportResultInfo!
     @cost(weight: "10")
@@ -737,6 +761,12 @@ type RestorePointInfo {
   heldSince: DateTime
 }
 
+type RoughSuggestion {
+  distance: Long!
+  until: LocalDate!
+  measuredBefore: Long!
+}
+
 type SavedWidget {
   id: UUID!
   title: String!
@@ -785,6 +815,12 @@ type StorageSizesInfo {
   database: Long
   pictures: Long!
   photos: Long
+}
+
+type StretchDistance {
+  distance: Long!
+  approximate: Boolean!
+  measure: StretchMeasure!
 }
 
 type SyncChangeInfo {
@@ -908,6 +944,100 @@ type TrendWindow {
   start: LocalDate!
   end: LocalDate!
   fillUps: Int!
+}
+
+type TyreLogDay {
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  createdById: UUID!
+  day: LocalDate!
+  note: String
+  odometer: Long
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+}
+
+type TyreSet {
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  createdById: UUID!
+  name: String!
+  season: TyreSeason!
+  size: String
+  since: LocalDate!
+  madeWeek: Int
+  madeYear: Int
+  roughDistance: Long!
+  roughUntil: LocalDate
+  retiredOn: LocalDate
+  deletedAt: DateTime
+  isRetired: Boolean!
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+  createdBy: UserRef @cost(weight: "10")
+  changedBy: UserRef @cost(weight: "10")
+}
+
+type TyreSetFigures {
+  distance: Long!
+  approximate: Boolean!
+  measured: Long!
+  pairOneFront: Long!
+  pairOneRear: Long!
+  pairsUnknown: Long!
+  suggestion: RoughSuggestion
+}
+
+type TyreSetInfo {
+  set: TyreSet!
+  figures: TyreSetFigures!
+  stretches: [TyreStretchInfo!]!
+  onTheCar: Boolean!
+}
+
+type TyreStretch {
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  setId: UUID!
+  createdById: UUID!
+  from: LocalDate!
+  until: LocalDate
+  pairOneFront: Boolean
+  deletedAt: DateTime
+  isOpen: Boolean!
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+}
+
+type TyreStretchInfo {
+  stretch: TyreStretch!
+  distance: StretchDistance!
+}
+
+type TyreTrashRow {
+  kind: TyreTrashKind!
+  id: UUID!
+  vehicleId: UUID!
+  setName: String!
+  from: LocalDate
+  until: LocalDate
+  stretchCount: Int!
+  deletedAt: DateTime!
+  version: Int!
+  vehicle: Vehicle @cost(weight: "10")
+  canDelete: Boolean! @cost(weight: "10")
 }
 
 type UiSettingsInfo {
@@ -1034,6 +1164,13 @@ type VehicleSummary {
   trends: DashboardTrends!
 }
 
+type VehicleTyres {
+  vehicleId: UUID!
+  sets: [TyreSetInfo!]!
+  days: [TyreLogDay!]!
+  hasReadings: Boolean!
+}
+
 input AddExpenseInput {
   vehicleId: UUID!
   date: LocalDate!
@@ -1053,6 +1190,12 @@ input AddLogPhotoInput {
   draftId: UUID!
 }
 
+input AddPastTyreSwapsInput {
+  vehicleId: UUID!
+  swaps: [PastTyreSwapInput!]!
+  replace: Boolean! = false
+}
+
 input AddRecurringExpenseInput {
   vehicleId: UUID!
   title: String!
@@ -1065,6 +1208,34 @@ input AddRecurringExpenseInput {
   lastDoneOdometer: Long
   warnDays: Int
   warnDistance: Long
+  id: UUID
+}
+
+input AddTyreSetInput {
+  vehicleId: UUID!
+  name: String!
+  season: TyreSeason!
+  size: String
+  since: LocalDate!
+  madeWeek: Int
+  madeYear: Int
+  fitted: Boolean!
+  day: LocalDate!
+  roughDistance: Long! = 0
+  odometer: Long
+  pairOneFront: Boolean
+  replace: Boolean! = false
+  id: UUID
+  stretchId: UUID
+}
+
+input AddTyreStretchInput {
+  setId: UUID!
+  from: LocalDate!
+  until: LocalDate
+  pairOneFront: Boolean
+  odometerFrom: Long
+  odometerUntil: Long
   id: UUID
 }
 
@@ -1230,6 +1401,13 @@ input OfflineVehicleWindowInput {
   window: String!
 }
 
+input PastTyreSwapInput {
+  day: LocalDate!
+  setId: UUID!
+  odometer: Long
+  stretchId: UUID
+}
+
 input RemoveLogPhotoInput {
   logId: UUID!
   imageId: UUID!
@@ -1292,6 +1470,20 @@ input SetLogAccessInput {
   level: AccessLevel!
 }
 
+input SetTyreLogDayInput {
+  vehicleId: UUID!
+  day: LocalDate!
+  odometer: Long
+  note: String
+  id: UUID
+}
+
+input SetTyreRoughDistanceInput {
+  id: UUID!
+  distance: Long!
+  until: LocalDate
+}
+
 input SetupFinishInput {
   code: String!
   email: String
@@ -1303,6 +1495,17 @@ input SetupFinishInput {
 input SetVehiclePictureInput {
   vehicleId: UUID!
   draftId: UUID!
+}
+
+input SwapTyresInput {
+  vehicleId: UUID!
+  setId: UUID!
+  day: LocalDate!
+  pairOneFront: Boolean
+  replace: Boolean! = false
+  odometer: Long
+  note: String
+  stretchId: UUID
 }
 
 input SyncChangesInput {
@@ -1374,6 +1577,25 @@ input UpdateRefuelingInput {
   note: String
   missedPreviousFillUp: Boolean
   discount: Decimal
+}
+
+input UpdateTyreSetInput {
+  id: UUID!
+  name: String!
+  season: TyreSeason!
+  size: String
+  since: LocalDate!
+  madeWeek: Int
+  madeYear: Int
+}
+
+input UpdateTyreStretchInput {
+  id: UUID!
+  from: LocalDate!
+  until: LocalDate
+  pairOneFront: Boolean
+  odometerFrom: Long
+  odometerUntil: Long
 }
 
 input UpdateUiSettingsInput {
@@ -1734,6 +1956,12 @@ enum SortDirection {
   DESC
 }
 
+enum StretchMeasure {
+  MEASURED
+  FROM_FIRST_READING
+  NOT_MEASURED
+}
+
 enum SurfaceStyle {
   GLOSSY
   TRANSPARENT
@@ -1812,6 +2040,17 @@ enum TrendWindowKind {
   SINCE
   THIS_YEAR
   THIS_MONTH
+}
+
+enum TyreSeason {
+  SUMMER
+  WINTER
+  ALL_SEASON
+}
+
+enum TyreTrashKind {
+  SET
+  STRETCH
 }
 
 enum UserDataDisposition {

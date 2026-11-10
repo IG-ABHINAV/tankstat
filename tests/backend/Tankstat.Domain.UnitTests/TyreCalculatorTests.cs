@@ -52,6 +52,7 @@ public class TyreCalculatorTests
     {
         Assert.Equal(new StretchDistance(10_150, false, StretchMeasure.FromFirstReading), TyreCalculator.Distance(Log, D(2024, 4, 2), D(2025, 3, 29)));
         Assert.Equal(new StretchDistance(0, false, StretchMeasure.NotMeasured), TyreCalculator.Distance(Log, D(2023, 3, 25), D(2023, 11, 12)));
+        Assert.Equal(StretchMeasure.NotMeasured, TyreCalculator.Distance(Log, D(2024, 4, 2), D(2024, 6, 1)).Measure); // the log starts on its last day
     }
 
     [Fact]
