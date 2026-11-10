@@ -1,0 +1,208 @@
+using System.Text.Json;
+
+namespace Tankstat.Api.IntegrationTests;
+
+/// <summary>
+/// Tyre changes a device kept offline (#287), sent with <c>syncChanges</c> and applied anyway with <c>resolveSyncChange</c>, where the
+/// queue meets what someone else did meanwhile: nothing written over unseen, a retry's leniency only for a retry, the trash-once rule.
+/// </summary>
+[Collection(ApiCollection.Name)]
+public class TyreSyncTests : IDisposable
+{
+    private const string Sync = """
+        mutation($i: SyncChangesInput!) { syncChanges(input: $i) { applied parked results { id status entityId version reason { key args { name value } } } } }
+        """;
+    private const string Resolve = "mutation($i: ResolveSyncChangeInput!) { resolveSyncChange(input: $i) { id status } }";
+    private const string SwapOnline = "mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }";
+    private const string Tyres = """
+        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } stretches { stretch { id from until pairOneFront } } } days { id day odometer note version } } }
+        """;
+
+    private readonly TestApp _app = TestApp.Standalone();
+
+    public void Dispose() => _app.Dispose();
+
+    private static async Task<JsonElement> Send(HttpClient c, params object[] changes) =>
+        (await c.Gql(Sync, new { i = new { changes } })).Data().GetProperty("syncChanges");
+
+    private static (string? Status, string? Key) Result(JsonElement sent, int index = 0)
+    {
+        var r = sent.GetProperty("results")[index];
+        return (r.GetProperty("status").GetString(), r.GetProperty("reason").ValueKind == JsonValueKind.Null ? null : r.GetProperty("reason").GetProperty("key").GetString());
+    }
+
+    private static string? Key(JsonElement response) =>
+        response.TryGetProperty("errors", out var errors) ? errors[0].GetProperty("extensions").GetProperty("key").GetString() : null;
+
+    private static async Task<JsonElement> TyresOf(HttpClient c, string car) => (await c.Gql(Tyres, new { v = car })).Data().GetProperty("vehicleTyres");
+
+    private static JsonElement[] StretchesOf(JsonElement tyres, string set) =>
+        [.. tyres.GetProperty("sets").EnumerateArray().Single(s => s.GetProperty("set").GetProperty("id").GetString() == set).GetProperty("stretches").EnumerateArray()
+            .Select(x => x.GetProperty("stretch"))];
+
+    /// <summary>Alice's car: the summer set on since 28 Mar 2026 (pair 1 at the front), the winter set in storage; Bob an editor of its logs.</summary>
+    private static async Task<(TwoUsers People, string Car, string Summer, string Winter, string SummerStretch)> Car(TestApp app)
+    {
+        var people = await app.Users();
+        var (car, summer, winter, stretch) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        var made = await Send(people.Alice,
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Octavia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = summer, stretchId = stretch, vehicleId = car, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = true, day = "2026-03-28", pairOneFront = true } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = winter, vehicleId = car, name = "Continental", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } });
+        Assert.Equal(3, made.GetProperty("applied").GetInt32());
+        await people.Alice.Gql("mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }", new { i = new { vehicleId = car, userId = people.BobId, level = "EDIT" } });
+        return (people, car, summer, winter, stretch);
+    }
+
+    [Fact]
+    public async Task ADayLineMadeWithoutTheLineAnotherDeviceLogged_IsParked_NotWrittenOverIt_UntilAppliedAnyway()
+    {
+        var (people, car, _, winter, _) = await Car(_app);
+        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, note = "Garage", stretchId = Guid.NewGuid() } });
+        var change = Guid.NewGuid().ToString();
+
+        // Made offline before that swap reached the device: a line of its own for the day.
+        var sent = await Send(people.Alice, new { id = change, setTyreLogDay = new { vehicleId = car, day = "2026-09-20", note = "Pressure checked", id = Guid.NewGuid() } });
+
+        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(sent));
+        var line = (await TyresOf(people.Alice, car)).GetProperty("days")[0];
+        Assert.Equal((148_200L, "Garage"), (line.GetProperty("odometer").GetInt64(), line.GetProperty("note").GetString()));
+
+        // Whoever decides may still apply it, on purpose: it goes over the line it did not know.
+        var applied = (await people.Alice.Gql(Resolve, new { i = new { id = change, action = "APPLY" } })).Data().GetProperty("resolveSyncChange");
+        Assert.Equal("APPLIED", applied.GetProperty("status").GetString());
+        line = (await TyresOf(people.Alice, car)).GetProperty("days")[0];
+        Assert.Equal((JsonValueKind.Null, "Pressure checked"), (line.GetProperty("odometer").ValueKind, line.GetProperty("note").GetString()));
+    }
+
+    [Fact]
+    public async Task ADayLineChange_NamingTheLineAndItsVersion_IsApplied_AndOneMadeFromAnOlderVersionIsParked()
+    {
+        var (people, car, _, winter, _) = await Car(_app);
+        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, stretchId = Guid.NewGuid() } });
+        var line = (await TyresOf(people.Alice, car)).GetProperty("days")[0];
+        var (id, version) = (line.GetProperty("id").GetString(), line.GetProperty("version").GetInt32());
+
+        var edit = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, setTyreLogDay = new { vehicleId = car, day = "2026-09-20", odometer = 148_300, id } });
+        var stale = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, setTyreLogDay = new { vehicleId = car, day = "2026-09-20", odometer = 148_400, id } });
+
+        Assert.Equal(("APPLIED", null), Result(edit));
+        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(stale));
+        Assert.Equal(148_300, (await TyresOf(people.Alice, car)).GetProperty("days")[0].GetProperty("odometer").GetInt64());
+    }
+
+    [Fact]
+    public async Task ASwapOntoASetOnTheCarSinceEarlier_IsParked_UnlessItsPairsAreAsAsked_WhichARetryOfAJoinedSwapIs()
+    {
+        var (people, car, _, winter, _) = await Car(_app);
+        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-10-28", pairOneFront = true, stretchId = Guid.NewGuid() } });
+        var late = Guid.NewGuid().ToString();
+
+        var otherPairs = await Send(people.Alice, new { id = late, swapTyres = new { vehicleId = car, setId = winter, day = "2026-11-02", pairOneFront = false, odometer = 149_000, stretchId = Guid.NewGuid() } });
+        var asAsked = await Send(people.Alice, new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = winter, day = "2026-11-02", pairOneFront = true, stretchId = Guid.NewGuid() } });
+        var fromPapers = await Send(people.Alice, new { id = Guid.NewGuid(), addPastTyreSwaps = new { vehicleId = car, swaps = new object[] { new { day = "2026-11-03", setId = winter, stretchId = Guid.NewGuid() } } } });
+
+        Assert.Equal(("PARKED", "tyres.alreadyOnCar"), Result(otherPairs)); // a swap of its own that came too late: its pairs are not dropped
+        Assert.Equal(("APPLIED", null), Result(asAsked));
+        Assert.Equal(("PARKED", "tyres.alreadyOnCar"), Result(fromPapers));
+        var stretch = Assert.Single(StretchesOf(await TyresOf(people.Alice, car), winter));
+        Assert.Equal(("2026-10-28", true), (stretch.GetProperty("from").GetString(), stretch.GetProperty("pairOneFront").GetBoolean()));
+        Assert.Empty((await TyresOf(people.Alice, car)).GetProperty("days").EnumerateArray()); // the parked swap's reading was not written either
+
+        // Applied anyway it is no retry: refused as online.
+        Assert.Equal("tyres.alreadyOnCar", Key(await people.Alice.Gql(Resolve, new { i = new { id = late, action = "APPLY" } })));
+    }
+
+    [Fact]
+    public async Task ATrashOfAStretch_WhoseSetWasTrashedMeanwhile_IsApplied_ThereIsNothingLeftToDo()
+    {
+        var (people, car, summer, _, stretch) = await Car(_app);
+        await people.Alice.Gql("mutation($id: UUID!) { deleteTyreSet(id: $id) { vehicleId } }", new { id = summer });
+
+        var sent = await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreStretch = stretch });
+
+        Assert.Equal(("APPLIED", null), Result(sent));
+        Assert.Equal(car, (await people.Alice.Gql("{ tyreTrash(skip: 0, take: 10) { vehicle { id } } }")).Data().GetProperty("tyreTrash")[0].GetProperty("vehicle").GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task PositionsAlreadyAsAsked_AreRefusedOnline_AndARetrysAnswerOnlyFromTheQueue()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        object Same() => new { vehicleId = car, setId = summer, day = "2026-03-28", pairOneFront = true, stretchId = Guid.NewGuid() };
+
+        var online = await people.Alice.Gql("mutation($i: SwapTyresInput!) { changeTyrePositions(input: $i) { vehicleId } }", new { i = Same() });
+        var queued = await Send(people.Alice, new { id = Guid.NewGuid(), changeTyrePositions = Same() });
+
+        Assert.Equal("tyres.positionsUnchanged", Key(online));
+        Assert.Equal(("APPLIED", null), Result(queued));
+    }
+
+    [Fact]
+    public async Task AParkedChangeOfAStretchOfATrashedSet_IsInTheTrash_ForAnEditorAndTheOwner_AndUnseenOnceTheSendersAccessEnds()
+    {
+        var (people, car, summer, _, stretch) = await Car(_app);
+        var parked = await Send(people.Bob, new { id = Guid.NewGuid(), expectedVersion = 99, updateTyreStretch = new { id = stretch, from = "2026-03-28", pairOneFront = false } });
+        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(parked));
+        await people.Alice.Gql("mutation($id: UUID!) { deleteTyreSet(id: $id) { vehicleId } }", new { id = summer });
+        const string current = "{ parkedChanges { kind current { state tyreStretch { from } } } }";
+
+        var editor = (await people.Bob.Gql(current)).Data().GetProperty("parkedChanges")[0].GetProperty("current");
+        await people.Alice.Gql("mutation($i: SetLogAccessInput!) { setVehicleLogAccess(input: $i) }", new { i = new { vehicleId = car, userId = people.BobId, level = "NONE" } });
+        var ended = (await people.Bob.Gql(current)).Data().GetProperty("parkedChanges")[0].GetProperty("current");
+        var owner = (await people.Alice.Gql(current)).Data().GetProperty("parkedChanges")[0].GetProperty("current");
+
+        Assert.Equal(("TRASHED", "2026-03-28"), (editor.GetProperty("state").GetString(), editor.GetProperty("tyreStretch").GetProperty("from").GetString()));
+        Assert.Equal(JsonValueKind.Null, ended.ValueKind); // his access ended: his change is still his, nothing of what is there now
+        Assert.Equal("TRASHED", owner.GetProperty("state").GetString());
+    }
+
+    [Fact]
+    public async Task PastSwaps_AreAtMost25_AndTwoRowsWithOneId_AreRefusedWithAKey_SoTheChangeIsParked()
+    {
+        var (people, car, _, winter, _) = await Car(_app);
+        var many = Enumerable.Range(0, 26).Select(i => new { day = new DateOnly(2024, 1, 1).AddDays(i * 7).ToString("yyyy-MM-dd"), setId = winter, stretchId = Guid.NewGuid() }).ToArray();
+        var twice = Guid.NewGuid();
+
+        var tooMany = await people.Alice.Gql("mutation($i: AddPastTyreSwapsInput!) { addPastTyreSwaps(input: $i) { vehicleId } }", new { i = new { vehicleId = car, swaps = many } });
+        var sameId = await Send(people.Alice, new
+        {
+            id = Guid.NewGuid(),
+            addPastTyreSwaps = new { vehicleId = car, swaps = new object[] { new { day = "2025-03-29", setId = winter, stretchId = twice }, new { day = "2025-11-15", setId = winter, stretchId = twice } } },
+        });
+
+        Assert.Equal("tyres.pastSwapsTooMany", Key(tooMany));
+        Assert.Equal(("PARKED", "tyres.stretchIdTwice"), Result(sameId));
+    }
+
+    [Fact]
+    public async Task TheTyreTrash_IsCountedForAnEditor_ButEmptiedOnlyByWhoeverMayDelete()
+    {
+        var (people, _, _, _, stretch) = await Car(_app);
+        await people.Alice.Gql("mutation($id: UUID!) { deleteTyreStretch(id: $id) { vehicleId } }", new { id = stretch });
+        const string counts = "{ tyreTrashCount tyreTrashDeletableCount }";
+
+        var alice = (await people.Alice.Gql(counts)).Data();
+        var bob = (await people.Bob.Gql(counts)).Data();
+
+        Assert.Equal((1, 1), (alice.GetProperty("tyreTrashCount").GetInt32(), alice.GetProperty("tyreTrashDeletableCount").GetInt32()));
+        Assert.Equal((1, 0), (bob.GetProperty("tyreTrashCount").GetInt32(), bob.GetProperty("tyreTrashDeletableCount").GetInt32()));
+    }
+
+    [Fact]
+    public async Task AParkedStretchApplied_WithASetOfAnotherVehicle_IsRefused_AsAnotherChange()
+    {
+        var (people, _, summer, _, _) = await Car(_app);
+        var (other, otherSet) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        await Send(people.Alice,
+            new { id = Guid.NewGuid(), addVehicle = new { id = other, name = "Fabia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = otherSet, vehicleId = other, name = "Nokian", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } });
+        var (change, stretch) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        var parked = await Send(people.Alice, new { id = change, addTyreStretch = new { id = stretch, setId = summer, from = "2026-04-01", until = "2026-05-01" } });
+        Assert.Equal(("PARKED", "tyres.setOnTwice"), Result(parked)); // the summer set is on the car then already
+
+        var moved = await people.Alice.Gql(Resolve, new { i = new { id = change, action = "APPLY", change = new { id = change, addTyreStretch = new { id = stretch, setId = otherSet, from = "2026-04-01", until = "2026-05-01" } } } });
+
+        Assert.Equal("sync.kindMismatch", Key(moved));
+    }
+}

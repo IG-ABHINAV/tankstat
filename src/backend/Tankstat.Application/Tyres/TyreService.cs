@@ -116,7 +116,7 @@ public sealed class TyreService(
     }
 
     /// <param name="stretchId">The id of the stretch the swap creates, if it creates one: a swap sent again finds it and changes nothing.</param>
-    /// <param name="repeat">Sent from a device's queue (the sync): the set already on the car that day is a retry's answer, not an error.</param>
+    /// <param name="repeat">Sent from a device's queue (the sync): the set already on the car that day with the pairs asked for is a retry's answer, not an error.</param>
     public async Task<TyreOverview> SwapAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null, bool repeat = false)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
@@ -134,7 +134,9 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    public async Task<TyreOverview> ChangePositionsAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null)
+    /// <param name="repeat">Sent from a device's queue (the sync): pairs already as asked on the day their stretch began are a retry's answer.
+    /// Online, they are <c>tyres.positionsUnchanged</c>.</param>
+    public async Task<TyreOverview> ChangePositionsAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null, bool repeat = false)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
@@ -144,7 +146,7 @@ public sealed class TyreService(
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
-        save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, stretchId, repeatable: stretchId is not null));
+        save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, stretchId, repeatable: repeat));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
         await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -160,6 +162,9 @@ public sealed class TyreService(
         if (rows.Count == 0) throw new DomainException("tyres.pastSwapsRequired", "Enter at least one swap.");
         if (rows.Count > MaxPastSwaps)
             throw new DomainException("tyres.pastSwapsTooMany", $"Enter at most {MaxPastSwaps} swaps at once.", new { Max = MaxPastSwaps });
+        // Each row creates a stretch of its own: two with one id could never both be saved (refused, so a device's change is parked, not stuck).
+        if (rows.Where(r => r.StretchId is not null).GroupBy(r => r.StretchId).Any(g => g.Count() > 1))
+            throw new DomainException("tyres.stretchIdTwice", "Two of these swaps carry the same id.");
         var book = await tyres.LoadAsync(vehicle.Id, ct);
         async Task<bool> Repeat()
         {
@@ -241,8 +246,10 @@ public sealed class TyreService(
     /// <summary>Sets or clears the tyre log's reading and note of a day; a day left with neither is deleted (the reading too, for good).</summary>
     /// <param name="id">The id of the day's line when this creates it (the client's); the id of another day's line is refused.</param>
     /// <param name="expectedVersion">The version of the day's line the change was made from, when it has one (see <see cref="VersionCheck"/>).</param>
+    /// <param name="strict">Sent from a device's queue: a change naming a line by an id the server does not know was made without the day's
+    /// line, which another device logged meanwhile, so it is refused as made from another version (parked), never written over it.</param>
     public async Task<TyreOverview> SetLogDayAsync(
-        Guid vehicleId, DateOnly day, long? odometerValue, string? note, CancellationToken ct, Guid? id = null, int? expectedVersion = null)
+        Guid vehicleId, DateOnly day, long? odometerValue, string? note, CancellationToken ct, Guid? id = null, int? expectedVersion = null, bool strict = false)
     {
         var vehicle = await EditableVehicleAsync(vehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
@@ -255,8 +262,12 @@ public sealed class TyreService(
             ClientIds.Repeat(found, found.VehicleId == vehicle.Id && found.Day == day, given);
             return true;
         }
-        await Repeat(); // found here, it is simply the line this change edits
-        if (book.Days.FirstOrDefault(d => d.Day == day) is { } existing) VersionCheck.Require(expectedVersion, existing.Version);
+        var known = await Repeat(); // found here, it is simply the line this change edits
+        if (book.Days.FirstOrDefault(d => d.Day == day) is { } existing)
+        {
+            if (strict && id is not null && !known) VersionCheck.Require(0, existing.Version); // made when the day had no line (0: none)
+            VersionCheck.Require(expectedVersion, existing.Version);
+        }
         var save = new TyreSave();
         await SetDayAsync(vehicle, book, save, day, odometerValue, note, keepNote: false, by, ct, clear: true, id: id);
         // Only an add of the line can be the same change twice; an edit that lost a race is refused as one.
@@ -313,9 +324,13 @@ public sealed class TyreService(
     public async Task<TyreSet?> SetInTrashAsync(Guid id, CancellationToken ct) =>
         await tyres.FindSetAsync(id, ct) is { IsDeleted: true } set && await guard.ForVehicleAsync(set.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? set : null;
 
-    /// <summary>The stretch when it is in the trash and the user may restore it, else null.</summary>
+    /// <summary>The stretch when it is in the trash (on its own, or with its set) and the user may restore it, else null.</summary>
     public async Task<TyreStretch?> StretchInTrashAsync(Guid id, CancellationToken ct) =>
-        await tyres.FindStretchAsync(id, ct) is { IsDeleted: true } stretch && await guard.ForVehicleAsync(stretch.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? stretch : null;
+        await tyres.FindStretchAsync(id, ct) is { } stretch
+        && (stretch.IsDeleted || await tyres.FindSetAsync(stretch.SetId, ct) is { IsDeleted: true })
+        && await guard.ForVehicleAsync(stretch.VehicleId, ct) is { Level: >= AccessLevel.Edit }
+            ? stretch
+            : null;
 
     public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(int skip, int take, CancellationToken ct) =>
         await tyres.ListTrashAsync(await access.LogScopeAsync(AccessLevel.Edit, ct), Math.Max(0, skip), Math.Clamp(take, 1, 100), ct);

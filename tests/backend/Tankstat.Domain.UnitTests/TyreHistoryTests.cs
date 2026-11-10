@@ -121,7 +121,10 @@ public class TyreHistoryTests
         Assert.Equal([winter], changes.Changed);
         Assert.False(winter.PairOneFront);
         Assert.Equal("tyres.alreadyOnCar", Key(() => history.Swap(_winter, D(2026, 11, 20), null, false, Owner, Now)));
-        Assert.False(history.Swap(_winter, D(2026, 11, 20), null, false, Owner, Now, repeatable: true).Any); // a retry: nothing to do
+        Assert.False(history.Swap(_winter, D(2026, 11, 20), false, false, Owner, Now, repeatable: true).Any); // a retry, the pairs as asked: nothing to do
+        // Other pairs are a swap of its own that came too late, even from the queue: its pairs would be lost.
+        Assert.Equal("tyres.alreadyOnCar", Key(() => history.Swap(_winter, D(2026, 11, 20), true, false, Owner, Now, repeatable: true)));
+        Assert.Equal("tyres.alreadyOnCar", Key(() => history.Swap(_winter, D(2026, 11, 20), null, false, Owner, Now, repeatable: true)));
 
         history.Swap(_winter, D(2026, 11, 10), null, false, Owner, Now, pairsGiven: false); // from papers: the pairs stay
         Assert.False(winter.PairOneFront);

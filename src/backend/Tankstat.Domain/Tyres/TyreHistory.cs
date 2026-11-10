@@ -52,7 +52,9 @@ public sealed class TyreHistory
     /// </summary>
     /// <param name="id">The id of the stretch it creates, if it creates one (the client's, so a retry is idempotent).</param>
     /// <param name="pairsGiven">False for a swap from papers, which says nothing about the pairs: the set's own stretch of that day keeps its own.</param>
-    /// <param name="repeatable">The change carries a client id, so it may be a retry: the set already on the car that day is the answer, not an error.</param>
+    /// <param name="repeatable">Sent from a device's queue, so it may be a retry of a swap that joined the set's stretch (the join kept no id to
+    /// find): the set already on the car that day with the pairs asked for is the answer, not an error. With other pairs it is a swap of its
+    /// own that came too late, refused as online.</param>
     public TyreChanges Swap(
         TyreSet set, DateOnly day, bool? pairOneFront, bool replace, Guid by, DateTimeOffset now, Guid? id = null, bool pairsGiven = true, bool repeatable = false)
     {
@@ -63,7 +65,7 @@ public sealed class TyreHistory
         {
             if (covering.From != day)
             {
-                if (repeatable) return changes; // a retry of a swap that joined this stretch to an earlier one
+                if (repeatable && covering.PairOneFront == pairOneFront) return changes; // a retry of a swap that joined this stretch to an earlier one
                 throw new DomainException("tyres.alreadyOnCar", "This tyre set is already on the car that day.", new { Set = set.Name, From = Iso(covering.From) });
             }
             if (pairsGiven && covering.Update(covering.From, covering.Until, pairOneFront, by)) changes.Change(covering);
@@ -120,8 +122,8 @@ public sealed class TyreHistory
     /// The set on the car on <paramref name="day"/> changes its pairs from that day: on the day its stretch began, in place; otherwise the
     /// stretch ends that day and a new one begins with the new pairs.
     /// </summary>
-    /// <param name="repeatable">The change carries a client id, so it may be a retry: one applied in place on the day its stretch began leaves
-    /// nothing with that id to find, and the pairs already as asked are its answer, not an error.</param>
+    /// <param name="repeatable">Sent from a device's queue, so it may be a retry: one applied in place on the day its stretch began leaves
+    /// nothing with its id to find, and the pairs already as asked are its answer, not an error. Online they are <c>tyres.positionsUnchanged</c>.</param>
     public TyreChanges ChangePositions(TyreSet set, DateOnly day, bool? pairOneFront, Guid by, Guid? id = null, bool repeatable = false)
     {
         var changes = new TyreChanges();
