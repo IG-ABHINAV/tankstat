@@ -5,15 +5,16 @@ import { snapshotKey } from '../offline/snapshotPolicy.ts'
 import { noTyres, replayTyres } from './replay.ts'
 import type { Tyres } from './tyres.ts'
 
-const NONE: ReadonlySet<string> = new Set()
+const NONE: ReadonlyMap<string, 'new' | 'changed'> = new Map()
 
 /**
- * The sets of a vehicle that tyre changes waiting on this device touched (#287, Q3): the same replay the device's answer is made by, over
- * the server's last answer kept here, so the tab marks those cards *Changed · not synced* and says their figures are updated once synced.
+ * The sets of a vehicle that tyre changes waiting on this device touched (#287, Q3), each `new` (added here) or `changed`: the same replay
+ * the device's answer is made by, over the server's last answer kept here, so the tab marks those cards *New · not synced* or *Changed ·
+ * not synced* and says their figures are updated once synced.
  */
-export function usePendingTyres(vehicleId: string): ReadonlySet<string> {
+export function usePendingTyres(vehicleId: string): ReadonlyMap<string, 'new' | 'changed'> {
   const count = usePendingCount()
-  const [touched, setTouched] = useState<ReadonlySet<string>>(NONE)
+  const [touched, setTouched] = useState<ReadonlyMap<string, 'new' | 'changed'>>(NONE)
   useEffect(() => {
     let live = true
     const waiting = outbox.changes.filter((c) => c.entity === 'tyres' && c.vehicleId === vehicleId)
@@ -22,7 +23,10 @@ export function usePendingTyres(vehicleId: string): ReadonlySet<string> {
       .catch(() => undefined)
       .then((kept) => {
         const base = (kept?.data as { vehicleTyres?: Tyres | null } | undefined)?.vehicleTyres ?? noTyres(vehicleId)
-        if (live) setTouched(waiting.length === 0 ? NONE : replayTyres(base, waiting).touched)
+        if (!live) return
+        if (waiting.length === 0) return setTouched(NONE)
+        const replayed = replayTyres(base, waiting)
+        setTouched(new Map([...replayed.touched].map((id) => [id, replayed.added.has(id) ? 'new' : 'changed'] as const)))
       })
     return () => {
       live = false

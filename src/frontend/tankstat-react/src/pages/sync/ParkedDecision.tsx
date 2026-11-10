@@ -14,7 +14,7 @@ import { SurfaceTable } from '../../components/SurfaceTable.tsx'
 import { ResolveSyncChangeDocument, SessionDocument, type ParkedChangeFieldsFragment, type ResolveSyncChangeInput } from '../../gql/generated.ts'
 import { useFormat } from '../../i18n/format.ts'
 import { useErrorText, useReasonText } from '../../i18n/errors.ts'
-import type { Change } from '../../offline/changes.ts'
+import { createdBy, type Change } from '../../offline/changes.ts'
 import { changedOnServer, currentValues, merge, situationOf, type Current } from '../../offline/conflicts.ts'
 import { toChangeInput, unblockAdd } from '../../offline/push.ts'
 import { canForce } from '../../offline/syncKinds.ts'
@@ -138,8 +138,10 @@ export function ParkedActions({ parked, change, label, onResolved }: { parked: P
   const run = async (input: Omit<ResolveSyncChangeInput, 'id'>) => {
     try {
       await resolve({ variables: { input: { id: parked.id, ...input } }, refetchQueries: ['ParkedChanges'], awaitRefetchQueries: true })
-      // Decided: what was made on it here (when it was an add) may go to the server now.
-      void unblockAdd(parked.targetId ?? '').catch(() => undefined)
+      // Decided: what was made on it here (when it was an add, or a tyre change that created sets and stretches) may go to the server now.
+      void (async () => {
+        for (const id of new Set([parked.targetId ?? '', ...createdBy(change)])) await unblockAdd(id) // one at a time: each rewrites the list
+      })().catch(() => undefined)
       void client.refetchQueries({ include: 'active' }).catch(() => undefined)
       onResolved(t(input.action === 'APPLY' ? 'sync.appliedNow' : 'sync.discarded'))
     } catch (error) {

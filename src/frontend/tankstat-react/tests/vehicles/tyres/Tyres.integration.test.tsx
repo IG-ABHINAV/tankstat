@@ -327,3 +327,24 @@ it('moves a stretch to the trash while offline, and Undo takes the kept change b
   expect(state.calls.DeleteTyreStretch).toBeUndefined()
   expect(state.calls.RestoreTyreStretch).toBeUndefined()
 })
+
+it('a change of the stretch a waiting swap cut is kept without the version the server will have moved on from', async () => {
+  const { ui } = setup([summer, winter])
+  await screen.findByRole('article', { name: 'Continental WinterContact' })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(screen.getByRole('button', { name: 'Swap tyres' }))
+  await ui.click(within(await screen.findByRole('dialog', { name: 'Swap tyres' })).getByRole('button', { name: 'Swap tyres' }))
+  await screen.findByText('Saved on this device · syncs when online.')
+  const summerCard = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
+  await waitFor(() => expect(within(summerCard).getByText('Changed · not synced')).toBeInTheDocument())
+
+  await ui.click(within(summerCard).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Michelin Primacy 4' })
+  await ui.click(within(history).getByRole('button', { name: 'Move to the trash' }))
+  await ui.click(within(await screen.findByRole('alertdialog', { name: 'Move to the trash?' })).getByRole('button', { name: 'Move to the trash' }))
+
+  await waitFor(() => expect(outbox.changes).toHaveLength(2))
+  expect(outbox.changes[1]).toMatchObject({ action: 'deleteTyreStretch', input: { id: 'r1' }, expectedVersion: null })
+})

@@ -85,3 +85,44 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
     expect(replayTyres(noTyres('v1'), []).tyres.sets).toEqual([])
   })
 })
+
+describe('every other tyre change, shown as the server will make it', () => {
+  const after = (c: Change) => replayTyres(base, [c])
+  const winter = (r: ReturnType<typeof after>) => r.tyres.sets.find((s) => s.set.id === 's2')!
+  const summer = (r: ReturnType<typeof after>) => r.tyres.sets.find((s) => s.set.id === 's1')!
+
+  it.each([
+    ['updateTyreSet', { id: 's2', name: 'Continental TS 870', season: 'ALL_SEASON', size: '205/55 R16', since: '2023-03-01', madeWeek: 5, madeYear: 2023 }, (r: ReturnType<typeof after>) => expect(winter(r).set).toMatchObject({ name: 'Continental TS 870', season: 'ALL_SEASON', size: '205/55 R16', madeWeek: 5, version: 0 })],
+    ['setTyreRoughDistance', { id: 's2', distance: 12_000, until: '2025-11-15' }, (r: ReturnType<typeof after>) => expect(winter(r).set).toMatchObject({ roughDistance: 12_000, roughUntil: '2025-11-15' })],
+    ['retireTyreSet', { id: 's2', day: '2026-11-10' }, (r: ReturnType<typeof after>) => expect(winter(r).set).toMatchObject({ isRetired: true, retiredOn: '2026-11-10' })],
+    ['changeTyrePositions', { vehicleId: 'v1', setId: 's1', day: '2026-06-01', pairOneFront: false, replace: false, stretchId: 'p1' }, (r: ReturnType<typeof after>) =>
+      expect(summer(r).stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until, x.stretch.pairOneFront, x.stretch.version])).toEqual([
+        ['p1', '2026-06-01', null, false, 0],
+        ['r1', '2026-03-28', '2026-06-01', true, 0], // changed here: sent again without the version the server will have moved on from
+      ])],
+    ['addPastTyreSwaps', { vehicleId: 'v1', replace: false, swaps: [{ day: '2025-04-01', setId: 's1', odometer: 120_000, stretchId: 'q1' }, { day: '2025-01-10', setId: 's2', odometer: null, stretchId: 'q0' }] }, (r: ReturnType<typeof after>) => {
+      expect(winter(r).stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until])).toEqual([['r2', '2025-11-15', '2026-03-28'], ['q0', '2025-01-10', '2025-04-01']])
+      expect(summer(r).stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until])).toEqual([['r1', '2026-03-28', null], ['q1', '2025-04-01', '2025-11-15']])
+      expect(r.tyres.days).toMatchObject([{ day: '2025-04-01', odometer: 120_000 }])
+    }],
+    ['addTyreStretch', { id: 'a1', setId: 's2', from: '2024-11-09', until: '2025-03-29', pairOneFront: null, odometerFrom: 110_000, odometerUntil: null }, (r: ReturnType<typeof after>) =>
+      expect(winter(r).stretches.map((x) => x.stretch.id)).toEqual(['r2', 'a1'])],
+    ['updateTyreStretch', { id: 'r2', from: '2025-11-01', until: '2026-03-28', pairOneFront: false, odometerFrom: null, odometerUntil: null }, (r: ReturnType<typeof after>) =>
+      expect(winter(r).stretches[0].stretch).toMatchObject({ from: '2025-11-01', pairOneFront: false, version: 0 })],
+    ['deleteTyreStretch', { id: 'r2' }, (r: ReturnType<typeof after>) => expect(winter(r).stretches).toEqual([])],
+    ['unretireTyreSet', { id: 's2' }, (r: ReturnType<typeof after>) => expect(winter(r).set.isRetired).toBe(false)],
+    ['restoreTyreSet', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.tyres.sets).toHaveLength(2)], // the trash is the server's: shown once synced
+    ['restoreTyreStretch', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.touched.size).toBe(0)],
+  ] as const)('%s', (action, input, check) => {
+    const replayed = after(change(action, input))
+    expect(replayed.skipped).toEqual([])
+    check(replayed)
+  })
+
+  it('a set or stretch untouched keeps the server’s version, so a change of it is checked against it', () => {
+    const r = after(change('setTyreLogDay', { vehicleId: 'v1', day: '2026-06-01', odometer: 143_000, note: null }))
+    expect(summer(r).set.version).toBe(2)
+    expect(summer(r).stretches[0].stretch.version).toBe(3)
+    expect(r.added.size).toBe(0)
+  })
+})

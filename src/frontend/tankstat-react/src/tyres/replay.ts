@@ -13,6 +13,8 @@ export interface Replayed {
   tyres: Tyres
   /** The sets whose details or time on the car the waiting changes changed (or added). */
   touched: Set<string>
+  /** The sets the waiting changes added (not in the server's answer). */
+  added: Set<string>
   /** The waiting changes that no longer fit (what they were made on is gone, or a rule now refuses them): left out, never thrown. */
   skipped: string[]
 }
@@ -175,25 +177,33 @@ function apply(m: Model, c: Change, vehicleId: string) {
 const sameStretch = (a: StretchState | undefined, b: StretchState) => !!a && a.from === b.from && a.until === b.until && a.pairOneFront === b.pairOneFront && a.setId === b.setId
 
 /** The model as the answer the Tabs tab reads, in the server's order (`TyreService` `Overview`). */
-function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string> } {
+/**
+ * A set or stretch a waiting change has changed already carries no version (0, as one added here): the server bumps it once that change is
+ * applied, so a later change of it is sent without one (`useTyreMutation`), never parked for a version this device knew before.
+ */
+function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string>; added: Set<string> } {
   const before = modelOf(base)
   const baseDistance = new Map(base.sets.flatMap((s) => s.stretches.map((x) => [x.stretch.id, x] as const)))
   const baseSet = new Map(base.sets.map((s) => [s.set.id, s] as const))
   const touched = new Set<string>()
+  const added = new Set<string>()
   const sets = m.sets.map((info): SetInfo => {
     const id = info.set.id
     const own = m.stretches.filter((x) => x.setId === id).sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))
     const was = before.stretches.filter((x) => x.setId === id)
     const prior = baseSet.get(id)
-    if (!prior || own.length !== was.length || own.some((x) => !sameStretch(was.find((w) => w.id === x.id), x)) || JSON.stringify(prior.set) !== JSON.stringify(info.set)) touched.add(id)
+    const detailsChanged = !!prior && JSON.stringify({ ...prior.set, version: 0 }) !== JSON.stringify({ ...info.set, version: 0 })
+    if (!prior) added.add(id)
+    if (!prior || detailsChanged || own.length !== was.length || own.some((x) => !sameStretch(was.find((w) => w.id === x.id), x))) touched.add(id)
     return {
       ...info,
+      set: detailsChanged ? { ...info.set, version: 0 } : info.set,
       onTheCar: own.some((x) => x.until === null),
       stretches: own.map((x) => {
         const kept = baseDistance.get(x.id)
         const unchanged = kept && sameStretch(before.stretches.find((w) => w.id === x.id), x)
         return named<SetInfo['stretches'][number]>('TyreStretchInfo', {
-          stretch: named<SetInfo['stretches'][number]['stretch']>('TyreStretch', { id: x.id, setId: id, from: x.from, until: x.until, pairOneFront: x.pairOneFront, version: kept?.stretch.version ?? 0 }),
+          stretch: named<SetInfo['stretches'][number]['stretch']>('TyreStretch', { id: x.id, setId: id, from: x.from, until: x.until, pairOneFront: x.pairOneFront, version: unchanged ? kept.stretch.version : 0 }),
           distance: unchanged ? kept.distance : UNMEASURED,
         })
       }),
@@ -203,7 +213,7 @@ function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string> }
   sets.sort((a, b) => Number(a.set.isRetired) - Number(b.set.isRetired) || collator.compare(a.set.name, b.set.name) || (a.set.id < b.set.id ? -1 : 1))
   const days = [...m.days].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
   const readings = [...m.readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  return { tyres: { ...base, sets, days, readings, hasReadings: readings.length > 0 }, touched }
+  return { tyres: { ...base, sets, days, readings, hasReadings: readings.length > 0 }, touched, added }
 }
 
 /** One tyre change over the vehicle's tyres as they are shown: what the device checks before it keeps the change (the server's refusals). */
@@ -226,8 +236,7 @@ export function replayTyres(base: Tyres, changes: readonly Change[]): Replayed {
       skipped.push(change.id) // no longer fits: the server will say why once it is sent
     }
   }
-  const { tyres, touched } = answerOf(base, m)
-  return { tyres, touched, skipped }
+  return { ...answerOf(base, m), skipped }
 }
 
 /** The answer of a vehicle the server has no tyres of yet as far as this device knows (added here, or never downloaded): nothing. */

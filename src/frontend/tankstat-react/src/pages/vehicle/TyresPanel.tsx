@@ -89,7 +89,7 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
       unit={unit}
       canLog={canLog}
       canSwap={stored.length > 0 || !info.onTheCar}
-      pending={pending.has(info.set.id)}
+      pending={pending.get(info.set.id) ?? null}
     />
   )
   return (
@@ -157,7 +157,7 @@ function SetCard({
   unit: DistanceUnit
   canLog: boolean
   canSwap: boolean
-  pending: boolean
+  pending: 'new' | 'changed' | null
 }) {
   const { t } = useTranslation()
   const format = useFormat()
@@ -193,7 +193,7 @@ function SetCard({
             {set.size}
           </Typography>
         )}
-        {pending && <Chip size="small" className="tk-fade" icon={<CloudUpload size={14} aria-hidden />} label={t(set.version === 0 ? 'offline.pending.new' : 'offline.pending.changed')} />}
+        {pending && <Chip size="small" className="tk-fade" icon={<CloudUpload size={14} aria-hidden />} label={t(`offline.pending.${pending}`)} />}
       </Stack>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         {set.isRetired && set.retiredOn
