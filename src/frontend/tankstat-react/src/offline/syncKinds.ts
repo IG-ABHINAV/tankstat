@@ -1,11 +1,9 @@
 import type { ParkedChangeFieldsFragment, SyncChangeKind } from '../gql/generated.ts'
 import type { Change, ChangeAction, ChangeEntity } from './changes.ts'
-
-/** The kinds of tyre changes (#287): the server takes them already, this device sends them from #287's part 4 on, which maps them below. */
-type TyreSyncKind = Extract<SyncChangeKind, `${string}TYRE${string}`>
+import { isTyreAction, tyreTarget } from './tyreChanges.ts'
 
 /** What a change the server knows by its kind (LOG_REFUELING, ...) is on this device: the entity and the action, as the outbox says. */
-export const SYNC_KINDS: Record<Exclude<SyncChangeKind, TyreSyncKind>, [ChangeEntity, ChangeAction]> = {
+export const SYNC_KINDS: Record<SyncChangeKind, [ChangeEntity, ChangeAction]> = {
   LOG_REFUELING: ['refuelings', 'add'],
   UPDATE_REFUELING: ['refuelings', 'update'],
   DELETE_REFUELING: ['refuelings', 'trash'],
@@ -28,6 +26,22 @@ export const SYNC_KINDS: Record<Exclude<SyncChangeKind, TyreSyncKind>, [ChangeEn
   REMOVE_EXPENSE_PHOTO: ['expenses', 'removePhoto'],
   SET_VEHICLE_PICTURE: ['vehicles', 'setPicture'],
   REMOVE_VEHICLE_PICTURE: ['vehicles', 'removePicture'],
+  // A tyre change's action is the field it is sent as (#287).
+  ADD_TYRE_SET: ['tyres', 'addTyreSet'],
+  UPDATE_TYRE_SET: ['tyres', 'updateTyreSet'],
+  SET_TYRE_ROUGH_DISTANCE: ['tyres', 'setTyreRoughDistance'],
+  RETIRE_TYRE_SET: ['tyres', 'retireTyreSet'],
+  UNRETIRE_TYRE_SET: ['tyres', 'unretireTyreSet'],
+  DELETE_TYRE_SET: ['tyres', 'deleteTyreSet'],
+  RESTORE_TYRE_SET: ['tyres', 'restoreTyreSet'],
+  SWAP_TYRES: ['tyres', 'swapTyres'],
+  CHANGE_TYRE_POSITIONS: ['tyres', 'changeTyrePositions'],
+  ADD_PAST_TYRE_SWAPS: ['tyres', 'addPastTyreSwaps'],
+  ADD_TYRE_STRETCH: ['tyres', 'addTyreStretch'],
+  UPDATE_TYRE_STRETCH: ['tyres', 'updateTyreStretch'],
+  DELETE_TYRE_STRETCH: ['tyres', 'deleteTyreStretch'],
+  RESTORE_TYRE_STRETCH: ['tyres', 'restoreTyreStretch'],
+  SET_TYRE_LOG_DAY: ['tyres', 'setTyreLogDay'],
 }
 
 /** The ChangeInput field of each kind (LOG_REFUELING: logRefueling). */
@@ -44,7 +58,6 @@ export const kindKeyOf = (kind: string): ReturnType<typeof syncKindKey> | null =
  * that waits here. `change` is the ChangeInput as the server keeps it (JSON; absent operations left out or null).
  */
 export function fromParked(parked: Pick<ParkedChangeFieldsFragment, 'id' | 'kind' | 'vehicleId' | 'targetId' | 'change' | 'receivedAt'> & { base?: string | null }): Change {
-  // No device of this build sends a tyre change, so none is parked yet (part 4 maps them).
   const [entity, action] = SYNC_KINDS[parked.kind as keyof typeof SYNC_KINDS]
   let envelope: Record<string, unknown> = {}
   try {
@@ -53,8 +66,12 @@ export function fromParked(parked: Pick<ParkedChangeFieldsFragment, 'id' | 'kind
     // shown by its kind alone
   }
   const operation = envelope[fieldOf(parked.kind)]
-  const input = operation && typeof operation === 'object' ? (operation as Record<string, unknown>) : undefined
-  const targetId = parked.targetId ?? (typeof input?.id === 'string' ? input.id : typeof operation === 'string' ? operation : parked.id)
+  // A tyre change that takes a bare id is kept on the device as `{ id }` (`tyreChanges.ts`).
+  const bareTyreId = entity === 'tyres' && typeof operation === 'string'
+  const input = operation && typeof operation === 'object' ? (operation as Record<string, unknown>) : bareTyreId ? { id: operation } : undefined
+  const targetId =
+    parked.targetId ??
+    (isTyreAction(action) ? tyreTarget(action, input) || parked.id : typeof input?.id === 'string' ? input.id : typeof operation === 'string' ? operation : parked.id)
   const base = baseOfParked(parked.base)
   return {
     id: parked.id,

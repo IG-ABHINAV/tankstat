@@ -1,11 +1,12 @@
 import type { ApolloClient } from '@apollo/client'
 import { SyncChangesDocument, type ChangeInput, type SyncChangesMutation } from '../gql/generated.ts'
-import { isKept, keptPhotosOf, type Change } from './changes.ts'
+import { createdBy, isKept, keptPhotosOf, tyreNeedsOf, type Change } from './changes.ts'
 import { connectivity } from './connectivity.ts'
 import { deviceData } from './deviceData.ts'
 import { isConnectionFailure } from './errors.ts'
 import { keptPhotos } from './keptPhotos.ts'
 import { outbox } from './outbox.ts'
+import { BARE_ID, isTyreAction } from './tyreChanges.ts'
 
 /** Changes per request (the server takes at most 200). */
 export const CHUNK_SIZE = 20
@@ -49,6 +50,14 @@ const FIELDS = {
   markRecurringExpensesDone: ['ids', 'date', 'odometer', 'amount', 'discount', 'currency', 'title', 'category', 'photoIds', 'expenseId'],
 } as const
 
+/** A value as GraphQL takes it in an input: no `__typename` anywhere (a value read back from the cache carries them). */
+const withoutTypenames = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutTypenames)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).filter(([k]) => k !== '__typename').map(([k, v]) => [k, withoutTypenames(v)]))
+      : value
+
 const pick = (input: Record<string, unknown> | undefined, keys: readonly string[], extra: Record<string, unknown> = {}) =>
   Object.fromEntries(Object.entries({ ...input, ...extra }).filter(([k, v]) => keys.includes(k) && v !== undefined))
 
@@ -63,6 +72,9 @@ export function toChangeInput(c: Change, drafts: ReadonlyMap<string, string> = n
     : {}
   const op = (name: keyof typeof FIELDS, extra: Record<string, unknown> = {}) => ({ ...envelope, [name]: pick(c.input, FIELDS[name], { ...photoIds, ...extra }) }) as ChangeInput
   const log = c.entity === 'expenses' ? 'Expense' : 'Refueling'
+  // A tyre change is its mutation's input as the dialog sent it (a bare id where the mutation takes one), under its own field.
+  if (c.entity === 'tyres' && isTyreAction(c.action))
+    return { ...envelope, [c.action]: BARE_ID.has(c.action) ? c.input?.id : withoutTypenames(c.input) } as ChangeInput
   switch (`${c.entity}:${c.action}`) {
     case 'refuelings:add': return op('logRefueling', { id: c.targetId, vehicleId: c.vehicleId })
     case 'refuelings:update': return op('updateRefueling', { id: c.targetId })
@@ -109,7 +121,7 @@ export async function unblockAdd(id: string, device: typeof deviceData = deviceD
 }
 
 /** What a change needs the server to have first: the vehicle it was made on, or the schedule it changes or marks done, when added here. */
-const needs = (c: Change): string[] => [c.vehicleId, ...(c.entity === 'recurring' ? [c.targetId, ...(c.targetIds ?? [])] : [])]
+const needs = (c: Change): string[] => [c.vehicleId, ...(c.entity === 'recurring' ? [c.targetId, ...(c.targetIds ?? [])] : []), ...tyreNeedsOf(c)]
 
 /**
  * The order the server gets the changes in: the vehicles added here first (everything else may be made on them), then the rest as it was
@@ -129,7 +141,7 @@ export function batches(changes: readonly Change[], size = CHUNK_SIZE): Change[]
       addsIn.clear()
     }
     current.push(change)
-    if (change.action === 'add') addsIn.add(change.targetId)
+    for (const id of createdBy(change)) addsIn.add(id)
   }
   if (current.length > 0) out.push(current)
   return out
@@ -224,7 +236,7 @@ export function createPushEngine({ client, device = deviceData, pull, chunkSize 
         answered.push(change.id)
         if (result.status === 'PARKED') {
           parked.push({ change, key: result.reason?.key ?? '', args: Object.fromEntries((result.reason?.args ?? []).map((a) => [a.name, a.value])) })
-          if (change.action === 'add') blocked.add(change.targetId)
+          for (const id of createdBy(change)) blocked.add(id)
         }
       }
     }
