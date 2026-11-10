@@ -44,14 +44,15 @@ paths:
   - **The policies:** `VehicleTyres` is kept, `TyreTrash` online only.
   - **The kinds:** the device sends no tyre change yet; `syncKinds.ts` leaves the tyre kinds out until part 4.
 - **UI:**
-  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details`. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
+  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details*. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
   - **The dialogs** in `src/tyres/`:
     - `TyreSetDialog` (add);
     - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);
     - `PastSwapsDialog`;
     - `HistoryDialog`, with the stretch form and `RoughDialog`.
-  - **Mutations:** each goes through `useTyreMutation`, which writes the answer into `VehicleTyres` and refetches `VehicleDetails` and `LogDefaults`.
-  - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`.
+  - **Mutations:** each goes through `useTyreMutation`, which writes the answer into `VehicleTyres` at once and refetches `VehicleTyres` (so the device's kept answer follows), `VehicleDetails` and `LogDefaults`.
+  - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`; changing the day, the set or the rows asks afresh.
+  - **Opening:** a dialog that keeps state while closed (add set, swap, past swaps) sets it afresh when it opens, from the tyres as they are then.
   - **The Trash page:** a *Tyres* tab, `TyreTrash`.
   - **Texts:** `tyres.*`, `trash.tyres.*` and `errors.tyres.*` in English and Hungarian.
 - **Tests:**
