@@ -28,7 +28,7 @@ import { SwapDialog } from '../../tyres/SwapDialog.tsx'
 import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
 import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
 import { OfflineNote } from '../../components/OfflineNote.tsx'
-import { isLocalLine } from '../../tyres/replay.ts'
+import { isLocalLine, noTyres } from '../../tyres/replay.ts'
 import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from '../../tyres/tyres.ts'
 
 const SEASON_ICON: Record<TyreSeason, ReactNode> = {
@@ -46,10 +46,11 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
   const { t } = useTranslation()
   const unit = vehicle.units.distance
   const { data, error } = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, fetchPolicy: 'cache-and-network' })
-  const tyres = data?.vehicleTyres
   const pending = usePendingTyres(vehicle.id)
-  if (error && !tyres) return <ErrorMessage error={error} />
-  if (!tyres) return <Loading />
+  if (error && !data?.vehicleTyres) return <ErrorMessage error={error} />
+  if (!data) return <Loading />
+  // Null for someone who may see the vehicle but not its logs: no tyres, as the Recurring tab shows no schedules then.
+  const tyres: Tyres = data.vehicleTyres ?? noTyres(vehicle.id)
 
   const live = tyres.sets.filter((s) => !s.set.isRetired)
   const onCar = live.filter((s) => s.onTheCar)
@@ -276,7 +277,10 @@ function SetCard({
   )
 }
 
-/** A line per day a set went on (from the stretches) and per day with only a reading left (its stretches in the trash), newest first. */
+/**
+ * A line per day a set went on (from the stretches) and per day with only a reading or a note left (its stretches in the trash), newest
+ * first. A day's note shows on its line; a line with a reading or a note has the pencil, which edits or clears both (the owner's choice).
+ */
 function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: string; unit: DistanceUnit; canLog: boolean }) {
   const { t } = useTranslation()
   const format = useFormat()
@@ -291,7 +295,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
       lines.set(key, { day: s.stretch.from, title: t('tyres.onTheCarLine', { set: info.set.name }), sub: pairs })
     }
   for (const d of tyres.days)
-    if (![...lines.values()].some((l) => l.day === d.day)) lines.set(`${d.day}|`, { day: d.day, title: t('tyres.readingOnly'), sub: d.note ?? '' })
+    if (![...lines.values()].some((l) => l.day === d.day)) lines.set(`${d.day}|`, { day: d.day, title: d.odometer != null ? t('tyres.readingOnly') : t('tyres.noteOnly'), sub: '' })
   const sortedLines = [...lines.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
 
   return (
@@ -320,12 +324,19 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                       {line.sub}
                     </Typography>
                   )}
+                  {day?.note && (
+                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                      {day.note}
+                    </Typography>
+                  )}
                   <Typography variant="caption" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
                     {format.date(line.day)} · {odometer}
                     {day?.odometer != null && ` · ${t('tyres.readingTyped')}`}
                   </Typography>
                 </Box>
-                {canLog && day?.odometer != null && <ReadingDialog vehicleId={vehicleId} unit={unit} tyres={tyres} day={line.day} lineId={day.id} value={day.odometer} note={day.note ?? null} />}
+                {canLog && day && (day.odometer != null || day.note) && (
+                  <ReadingDialog vehicleId={vehicleId} unit={unit} tyres={tyres} day={line.day} lineId={day.id} value={day.odometer ?? null} note={day.note ?? null} />
+                )}
               </Box>
             )
           })}
@@ -335,11 +346,10 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
   )
 }
 
-/** The reading typed with a swap on a day: one of the car's readings, changed here or removed for good (#287 Q1). */
 /**
- * A tyre log day's reading. The change names the line (its id, and through it its version, `useTyreMutation`), so one made from a line the
- * server has since changed is parked, never written over it; a line a waiting change wrote on this device has no id the server knows yet,
- * so it is sent without one.
+ * A tyre log day's reading and note: edited, the reading removed (the note stays), or both cleared, which removes the line. The change
+ * names the line (its id, and through it its version, `useTyreMutation`), so one made from a line the server has since changed is parked,
+ * never written over it; a line a waiting change wrote on this device has no id the server knows yet, so it is sent without one.
  */
 function ReadingDialog({
   vehicleId,
@@ -355,7 +365,7 @@ function ReadingDialog({
   tyres: Tyres
   day: string
   lineId: string
-  value: number
+  value: number | null
   note: string | null
 }) {
   const { t } = useTranslation()
@@ -376,11 +386,11 @@ function ReadingDialog({
           ? t('tyres.odoHint.beforeOnly', { next: t('tyres.readingOn', { value: words.distance(next.value), date: format.date(next.date) }) })
           : undefined
 
-  const save = async (odometer: number | null) => {
+  const save = async (odometer: number | null, nextNote: string | null) => {
     setBusy(true)
     setError(undefined)
     try {
-      const saved = await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note, ...(isLocalLine(lineId) ? {} : { id: lineId }) } })
+      const saved = await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note: nextNote, ...(isLocalLine(lineId) ? {} : { id: lineId }) } })
       setOpen(false)
       notify.saved(saved, t('toast.saved'))
     } catch (err) {
@@ -391,7 +401,8 @@ function ReadingDialog({
   }
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    void save(wholeOrNull(String(new FormData(e.currentTarget).get('odometer') ?? '')))
+    const form = new FormData(e.currentTarget)
+    void save(wholeOrNull(String(form.get('odometer') ?? '')), String(form.get('note') ?? '').trim() || null)
   }
 
   return (
@@ -410,22 +421,27 @@ function ReadingDialog({
           <Form onSubmit={submit} refusal={error}>
             <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
-              <Field name="odometer" label={t('tyres.fields.odometerPlain', { unit: words.unitShort })} hint={hint} required invalid={wholeInvalid(t('forms.numberInvalid'))}>
-                <FieldInput inputMode="numeric" autoComplete="off" defaultValue={String(value)} />
+              <Field name="odometer" label={t('tyres.fields.odometerPlain', { unit: words.unitShort })} hint={hint} invalid={wholeInvalid(t('forms.numberInvalid'))}>
+                <FieldInput inputMode="numeric" autoComplete="off" defaultValue={value == null ? '' : String(value)} />
+              </Field>
+              <Field name="note" label={t('tyres.fields.note')} hint={t('tyres.dialogs.lineClearHint')}>
+                <FieldInput maxLength={500} autoComplete="off" defaultValue={note ?? ''} />
               </Field>
               {error !== undefined && <ErrorMessage error={error} />}
               <DialogButtons>
-                <ConfirmDialog
-                  trigger={
-                    <Button variant="soft" color="error" startIcon={<Trash2 size={16} aria-hidden />} sx={{ mr: 'auto' }}>
-                      {t('tyres.dialogs.removeReading')}
-                    </Button>
-                  }
-                  title={t('tyres.dialogs.removeReadingTitle')}
-                  description={t('tyres.dialogs.removeReadingText', { date: format.date(day), value: words.distance(value) })}
-                  confirmLabel={t('tyres.dialogs.removeReading')}
-                  onConfirm={() => void save(null)}
-                />
+                {value != null && (
+                  <ConfirmDialog
+                    trigger={
+                      <Button variant="soft" color="error" startIcon={<Trash2 size={16} aria-hidden />} sx={{ mr: 'auto' }}>
+                        {t('tyres.dialogs.removeReading')}
+                      </Button>
+                    }
+                    title={t('tyres.dialogs.removeReadingTitle')}
+                    description={t('tyres.dialogs.removeReadingText', { date: format.date(day), value: words.distance(value) })}
+                    confirmLabel={t('tyres.dialogs.removeReading')}
+                    onConfirm={() => void save(null, note)}
+                  />
+                )}
                 <DialogCancel />
                 <Button type="submit" disabled={busy}>
                   {t('tyres.dialogs.save')}

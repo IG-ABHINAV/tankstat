@@ -120,7 +120,14 @@ export function SwapDialog({
   const front = pairsNow === false ? 2 : 1
   return (
     <>
-      <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />
+      <DialogTrigger
+        trigger={trigger}
+        open={open}
+        onOpen={() => {
+          reset() // the tyres may have changed since the dialog was mounted (a set fitted, pairs recorded, another day)
+          setOpen(true)
+        }}
+      />
       <DialogFrame
         open={open}
         onClose={() => setOpen(false)}
@@ -143,11 +150,19 @@ export function SwapDialog({
                   onChange={(value) => {
                     setChosen(value)
                     setMode('same')
+                    setReplace(null) // the replace note named the swap of the day as it was sent
                   }}
                 />
               )}
               <Field name="day" label={t('tyres.fields.day')} hint={rotate ? undefined : t('tyres.fields.dayHint')} required>
-                <FieldDate disableFuture value={day} onChange={setDay} />
+                <FieldDate
+                  disableFuture
+                  value={day}
+                  onChange={(next) => {
+                    setDay(next)
+                    setReplace(null) // asked for another day: that day's swap is asked about afresh
+                  }}
+                />
               </Field>
               <Field name="odometer" label={t('tyres.fields.odometer', { unit: words.unitShort })} hint={words.odometerText(tyres.readings, day)} invalid={wholeInvalid(t('forms.numberInvalid'))}>
                 <FieldInput inputMode="numeric" autoComplete="off" />

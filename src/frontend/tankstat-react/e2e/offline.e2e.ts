@@ -146,7 +146,7 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), sh
   await expect(page.getByRole('heading', { name: 'Retired' })).toBeVisible()
 
   // The day's reading corrected in the tyre log.
-  await page.getByRole('button', { name: /^Edit the reading of/ }).click()
+  await page.getByRole('button', { name: /^Edit the reading and note of/ }).click()
   const reading = page.getByRole('dialog', { name: /^Reading of/ })
   await reading.getByLabel(/^Odometer/).fill('1550')
   await reading.getByRole('button', { name: 'Save' }).click()

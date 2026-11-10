@@ -158,6 +158,7 @@ public class TyreRepositoryTests
         var rows = await repo.ListTrashAsync(OwnerScope.All, 0, 10, default);
         Assert.Equal([(TyreTrashKind.Set, "Pirelli", 1), (TyreTrashKind.Stretch, "Michelin", 0)], rows.Select(r => (r.Kind, r.SetName, r.StretchCount)));
         Assert.Equal((D(2026, 3, 28), (DateOnly?)null), (rows[1].From, rows[1].Until));
+        Assert.Equal([TyreTrashKind.Stretch, TyreTrashKind.Set], (await repo.ListTrashAsync(OwnerScope.All, 0, 10, default, descending: false)).Select(r => r.Kind));
         Assert.Equal(2, await repo.CountTrashAsync(OwnerScope.All, default));
         Assert.Single(await repo.ListTrashAsync(OwnerScope.All, 1, 10, default));
         Assert.Equal(0, await repo.CountTrashAsync(OwnerScope.Of([Guid.NewGuid()]), default));

@@ -3,7 +3,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
@@ -285,12 +285,12 @@ function TyreTrash({ run, setNotice }: Shared) {
   const [restoreSet] = useMutation(RestoreTyreSetDocument, tyreRefetch)
   const [restoreStretch] = useMutation(RestoreTyreStretchDocument, tyreRefetch)
   const [emptyTrash] = useMutation(EmptyTyreTrashDocument, tyreRefetch)
-  const what = (r: TyreRow) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName }))
+  const what = useCallback((r: TyreRow) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName })), [t])
 
   const columns = useMemo<GridColumn<TyreRow, TyreTrashQueryVariables, TyreTrashSortField>[]>(() => {
     const none = t('common.none')
     return [
-      { id: 'what', label: 'trash.tyres.what', hideable: false, mobile: true, cell: (r) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName })) },
+      { id: 'what', label: 'trash.tyres.what', hideable: false, mobile: true, cell: what },
       {
         id: 'when',
         label: 'trash.tyres.when',
@@ -306,7 +306,7 @@ function TyreTrash({ run, setNotice }: Shared) {
       { id: 'vehicle', label: 'columns.vehicle', cell: (r) => r.vehicle?.name ?? none },
       { id: 'deletedAt', label: 'columns.deletedAt', mobile: true, sortField: 'DELETED_AT', cell: (r) => format.dateTime(r.deletedAt) },
     ]
-  }, [t, format])
+  }, [t, format, what])
 
   return (
     <ServerGrid

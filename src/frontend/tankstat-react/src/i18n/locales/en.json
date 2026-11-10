@@ -2525,7 +2525,7 @@
     "beforeLog": "before the fuel log",
     "readingTyped": "reading typed here",
     "readingOnly": "Reading typed with a swap",
-    "editReading": "Edit the reading of {{date}}",
+    "editReading": "Edit the reading and note of {{date}}",
     "viewOnly": "You can see these tyres. Only someone who may log for this vehicle can change them.",
     "noReading": "Only the rough figure so far. The time on the car is measured once the car has a reading after it went on: log a refuelling or an expense with the odometer.",
     "roughNote": "Its history now reaches further back, so the rough figure only stands for the time before {{date}}.",
@@ -2646,7 +2646,8 @@
       "retireSet": "Retire set",
       "editSet": "Edit set",
       "editDescription": "Correct the set’s own details. Where it is and what it ran come from its history.",
-      "saveChanges": "Save changes"
+      "saveChanges": "Save changes",
+      "lineClearHint": "With neither a reading nor a note, the line is removed."
     },
     "toast": {
       "swapped": "Saved. {{set}} is on the car from {{date}}.",
@@ -2656,6 +2657,7 @@
       "trashed": "Moved to the trash."
     },
     "noneOnCar": "No set is on the car. Fit one from storage.",
-    "updatedOnSync": "updated once synced"
+    "updatedOnSync": "updated once synced",
+    "noteOnly": "Note"
   }
 }

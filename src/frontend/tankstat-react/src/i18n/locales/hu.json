@@ -2525,7 +2525,7 @@
     "beforeLog": "a tankolási napló előtt",
     "readingTyped": "itt rögzített állás",
     "readingOnly": "Cseréhez rögzített kilométeróra-állás",
-    "editReading": "A(z) {{date}} napi állás szerkesztése",
+    "editReading": "A(z) {{date}} napi állás és megjegyzés szerkesztése",
     "viewOnly": "Láthatod ezeket a gumikat, de csak az módosíthatja őket, aki rögzíthet ennél a járműnél.",
     "noReading": "Egyelőre csak a becsült táv. Az autón töltött időt az app akkor méri, ha a felszerelés után van kilométeróra-állás: rögzíts tankolást vagy költséget a kilométeróra-állással.",
     "roughNote": "Az előzményei már korábbra nyúlnak, így a becsült táv csak a(z) {{date}} előtti időre vonatkozik.",
@@ -2646,7 +2646,8 @@
       "retireSet": "Szett kivonása",
       "editSet": "Szett szerkesztése",
       "editDescription": "A szett saját adatainak javítása. Hogy hol van és mennyit futott, az előzményeiből adódik.",
-      "saveChanges": "Módosítások mentése"
+      "saveChanges": "Módosítások mentése",
+      "lineClearHint": "Állás és megjegyzés nélkül a sor törlődik."
     },
     "toast": {
       "swapped": "Mentve. A(z) {{set}} {{date}} óta az autón van.",
@@ -2656,6 +2657,7 @@
       "trashed": "A kukába került."
     },
     "noneOnCar": "Nincs szett az autón. Szerelj fel egyet a tároltak közül.",
-    "updatedOnSync": "szinkronizálás után frissül"
+    "updatedOnSync": "szinkronizálás után frissül",
+    "noteOnly": "Megjegyzés"
   }
 }

@@ -49,14 +49,15 @@ paths:
   - **Waiting to sync:** `sync.kinds.tyres.*`, named by the set and day; no Edit (the owner's decision); a swap parked with `tyres.swapExists` offers *Replace the swap* (`resolveSyncChange` with `replace: true`) in place of *Apply anyway*. Rows found on the device after a restore (`foundRows.ts`) leave tyres out.
   - **UI offline:** `OfflineNote` atop the tyre dialogs; `useTyreToasts` says a kept save is saved on the device, and its Undo takes a kept change back instead of sending the opposite one.
 - **UI:**
-  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details`. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
+  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details*. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading or note stayed, the day's note shown on its line (the owner's choice in #297's review); a line with a reading or a note has the pencil, *Reading of {date}*, which edits both: *Remove the reading* keeps the note, and saving neither removes the line (a note-only line is titled *Note*).
   - **The dialogs** in `src/tyres/`:
     - `TyreSetDialog` (add; with `edit`, a set's own details, opened by *Edit set* in its history: no *Where are they now?* or *These tyres are new*);
     - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);
     - `PastSwapsDialog`;
     - `HistoryDialog`, with the stretch form and `RoughDialog`.
-  - **Mutations:** each goes through `useTyreMutation`, which, when sent, writes the answer into `VehicleTyres` and asks `VehicleTyres`, `VehicleDetails` and `LogDefaults` again.
-  - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`.
+  - **Mutations:** each goes through `useTyreMutation`, which, when sent, writes the answer into `VehicleTyres` at once and asks `VehicleTyres` (so the device's kept answer follows), `VehicleDetails` and `LogDefaults` again.
+  - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`; changing the day, the set or the rows asks afresh.
+  - **Opening:** a dialog that keeps state while closed (add set, swap, past swaps) sets it afresh when it opens, from the tyres as they are then (the edit form from the set it edits).
   - **The Trash page:** a *Tyres* tab, `TyreTrash`.
   - **Texts:** `tyres.*`, `trash.tyres.*` and `errors.tyres.*` in English and Hungarian.
 - **Tests:**
