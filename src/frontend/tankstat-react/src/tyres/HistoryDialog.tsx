@@ -30,6 +30,7 @@ import { useFormat } from '../i18n/format.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { TyreSetDialog } from './TyreSetDialog.tsx'
 import { OfflineNote } from '../components/OfflineNote.tsx'
+import { todayIso } from '../forms/dates.ts'
 import { type Tyres, type TyreSetInfo, type TyreStretchInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 /**
@@ -392,7 +393,7 @@ export function RoughDialog({
     setError(undefined)
     try {
       const saved = await run(SetTyreRoughDistanceDocument, {
-        input: { id: info.set.id, distance: wholeOrNull(String(form.get('rough') ?? '')) ?? 0, until: suggestion?.until ?? (info.set.roughUntil ? null : measuredFrom) },
+        input: { id: info.set.id, distance: wholeOrNull(String(form.get('rough') ?? '')) ?? 0, until: suggestion?.until ?? (info.set.roughUntil ? null : (measuredFrom ?? todayIso())) }, // the device's day: kept, it is sent later
       })
       setOpen(false)
       notify.saved(saved, t('toast.saved'))

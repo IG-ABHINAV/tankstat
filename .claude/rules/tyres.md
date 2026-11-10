@@ -26,7 +26,8 @@ paths:
   - **A second swap on a day** (another set's stretch starts then) is `tyres.swapExists` (args `date`, `set`) unless `replace`; replacing trashes that stretch. The same set on its own first day only sets its pairs.
   - **Change positions:** in place on the stretch's first day, else it splits.
   - **The checks** after every change: `tyres.setOnTwice`, `tyres.twoSetsAtOnce`, `tyres.setRetired`; `tyres.restoreConflict` while restoring. *In use since* is month-level and limits nothing.
-  - **The retry flags:** `pairsGiven: false` (from papers) leaves a set's pairs; `repeatable` (the sync path only) answers a set already on the car as a retry.
+  - **The retry flags:** `pairsGiven: false` (from papers) leaves a set's pairs; `repeatable` (from the queue only, never online or applied anyway: `SyncGraphQL`'s `resolving`) answers a set already on the car that day with the pairs asked for as a retry (a joined swap kept no id), with other pairs `tyres.alreadyOnCar`; for a change of positions, pairs already as asked on the stretch's first day.
+  - **A day's line from the queue** (`SetLogDayAsync`'s `strict`): one named by an id the server does not know while the day has a line was made without it, parked with `sync.versionMismatch`; the device names a server-known line by its id and version, and a line its own waiting change wrote by neither (`replay.ts` `isLocalLine`).
 - **The service:** `TyreService`.
   - **Access:** the logs' rules through `LogAccessGuard`.
   - **Saves:** every change checked and saved in one transaction (`ITyreRepository.SaveAsync`: rows let go of deleted in a second save).

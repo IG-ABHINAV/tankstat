@@ -28,6 +28,7 @@ import { SwapDialog } from '../../tyres/SwapDialog.tsx'
 import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
 import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
 import { OfflineNote } from '../../components/OfflineNote.tsx'
+import { isLocalLine } from '../../tyres/replay.ts'
 import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from '../../tyres/tyres.ts'
 
 const SEASON_ICON: Record<TyreSeason, ReactNode> = {
@@ -324,7 +325,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                     {day?.odometer != null && ` · ${t('tyres.readingTyped')}`}
                   </Typography>
                 </Box>
-                {canLog && day?.odometer != null && <ReadingDialog vehicleId={vehicleId} unit={unit} tyres={tyres} day={line.day} value={day.odometer} note={day.note ?? null} />}
+                {canLog && day?.odometer != null && <ReadingDialog vehicleId={vehicleId} unit={unit} tyres={tyres} day={line.day} lineId={day.id} value={day.odometer} note={day.note ?? null} />}
               </Box>
             )
           })}
@@ -335,7 +336,28 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
 }
 
 /** The reading typed with a swap on a day: one of the car's readings, changed here or removed for good (#287 Q1). */
-function ReadingDialog({ vehicleId, unit, tyres, day, value, note }: { vehicleId: string; unit: DistanceUnit; tyres: Tyres; day: string; value: number; note: string | null }) {
+/**
+ * A tyre log day's reading. The change names the line (its id, and through it its version, `useTyreMutation`), so one made from a line the
+ * server has since changed is parked, never written over it; a line a waiting change wrote on this device has no id the server knows yet,
+ * so it is sent without one.
+ */
+function ReadingDialog({
+  vehicleId,
+  unit,
+  tyres,
+  day,
+  lineId,
+  value,
+  note,
+}: {
+  vehicleId: string
+  unit: DistanceUnit
+  tyres: Tyres
+  day: string
+  lineId: string
+  value: number
+  note: string | null
+}) {
   const { t } = useTranslation()
   const format = useFormat()
   const notify = useTyreToasts()
@@ -358,7 +380,7 @@ function ReadingDialog({ vehicleId, unit, tyres, day, value, note }: { vehicleId
     setBusy(true)
     setError(undefined)
     try {
-      const saved = await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note } })
+      const saved = await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note, ...(isLocalLine(lineId) ? {} : { id: lineId }) } })
       setOpen(false)
       notify.saved(saved, t('toast.saved'))
     } catch (err) {

@@ -39,15 +39,18 @@ const actionOf = (document: DocumentNode): TyreAction => {
 
 const SET_ACTIONS = new Set<TyreAction>(['updateTyreSet', 'setTyreRoughDistance', 'retireTyreSet', 'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet'])
 const STRETCH_ACTIONS = new Set<TyreAction>(['updateTyreStretch', 'deleteTyreStretch', 'restoreTyreStretch'])
+const DAY_ACTIONS = new Set<TyreAction>(['setTyreLogDay'])
 
-/** The version of the set or stretch a change is made on, as the tab shows it; none for one added here (version 0) or not shown. */
+/** The version of the set, stretch or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
 function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: Record<string, unknown>): number | null {
   const sets = shown?.sets ?? []
   const version = SET_ACTIONS.has(action)
     ? sets.find((s) => s.set.id === input.id)?.set.version
     : STRETCH_ACTIONS.has(action)
       ? sets.flatMap((s) => s.stretches).find((x) => x.stretch.id === input.id)?.stretch.version
-      : undefined
+      : DAY_ACTIONS.has(action)
+        ? shown?.days.find((d) => d.id === input.id)?.version
+        : undefined
   return version ? version : null
 }
 

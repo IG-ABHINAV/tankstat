@@ -56,13 +56,20 @@ const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const num = (v: unknown) => (typeof v === 'number' ? v : null)
 const day = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null)
 
-/** A reading typed with a change: the tyre log's line for that day (its note kept), and a reading of the car on that day. */
+/** The id the device gives a tyre log line a waiting change wrote: not one the server knows, so a change of that line names none. */
+const LOCAL_LINE = 'local:'
+export const isLocalLine = (id: string) => id.startsWith(LOCAL_LINE)
+
+/**
+ * A reading typed with a change: the tyre log's line for that day (its note kept), and a reading of the car on that day. A line it changes
+ * has version 0 from then on, so a later change of it goes without the version the server will have moved on from.
+ */
 function typed(m: Model, vehicleId: string, on: string | null, odometer: number | null, note?: unknown) {
   if (!on || (odometer === null && note === undefined)) return
   const existing = m.days.find((d) => d.day === on)
   const next: Day = existing
-    ? { ...existing, odometer: odometer ?? existing.odometer, note: note === undefined ? existing.note : ((note as string | null) ?? null) }
-    : named<Day>('TyreLogDay', { id: `local:${vehicleId}:${on}`, day: on, odometer, note: (note as string | null | undefined) ?? null, version: 0 })
+    ? { ...existing, odometer: odometer ?? existing.odometer, note: note === undefined ? existing.note : ((note as string | null) ?? null), version: 0 }
+    : named<Day>('TyreLogDay', { id: `${LOCAL_LINE}${vehicleId}:${on}`, day: on, odometer, note: (note as string | null | undefined) ?? null, version: 0 })
   m.days = [...m.days.filter((d) => d !== existing), next]
   if (odometer !== null) m.readings = [...m.readings.filter((r) => r.date !== on || r.value > odometer), ...(m.readings.some((r) => r.date === on && r.value > odometer) ? [] : [named('OdometerPoint', { date: on, value: odometer })])]
 }
