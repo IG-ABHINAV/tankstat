@@ -133,8 +133,8 @@ export function createPullEngine({
     sameAccount()
     await device.keep(snapshotKey('VehicleDetails', { id: vehicleId }), { vehicle: page.vehicle })
     await device.keep(snapshotKey('RecurringExpenses', { vehicleId }), { vehicle: { __typename: 'Vehicle', id: vehicleId, recurring: page.recurring } })
-    // The vehicle's tyres, whole on the first page (#287): the Tyres tab's answer (none when the reader may not see them).
-    if (page.tyres) await device.keep(snapshotKey('VehicleTyres', { vehicleId }), { vehicleTyres: page.tyres })
+    // The vehicle's tyres, whole on the first page (#287): the Tyres tab's answer, null when the reader may not see them (any kept before goes).
+    await device.keep(snapshotKey('VehicleTyres', { vehicleId }), { vehicleTyres: page.tyres ?? null })
   }
 
   /** Stores a page's logs; one that moved out of the window (dated before its start) is removed instead. */

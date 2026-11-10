@@ -58,6 +58,19 @@ it('a first download keeps the logs of the window page by page, and the answers 
   expect((page!.refuelings as { id: string }[]).map((r) => r.id)).toEqual(['b', 'c'])
 })
 
+it('tyres the reader may no longer see go from the device with the next download (#287)', async () => {
+  feed.add('a', '2026-09-01')
+  const pull = engine(50)
+  await pull.run()
+  expect((await deviceData.read(snapshotKey('VehicleTyres', { vehicleId: 'v1' })))?.data).toMatchObject({ vehicleTyres: { vehicleId: 'v1' } })
+
+  feed.later()
+  feed.hideTyres()
+  await pull.run()
+
+  expect((await deviceData.read(snapshotKey('VehicleTyres', { vehicleId: 'v1' })))?.data).toEqual({ vehicleTyres: null })
+})
+
 it('a later download brings only what changed since, whatever its date, and what was removed for good', async () => {
   for (const [id, date] of [['a', '2026-09-01'], ['b', '2026-09-15'], ['c', '2026-10-01']]) feed.add(id, date)
   const pull = engine(50)

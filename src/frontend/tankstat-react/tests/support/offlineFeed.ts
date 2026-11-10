@@ -27,6 +27,7 @@ export function fakeFeed() {
   let resyncNext = false
   let failAfter: number | null = null
   let refuseCursors = false
+  let tyresHidden = false
   let onAsk: ((n: number) => Promise<void> | void) | null = null
 
   const touch = (row: FeedRow) => (row.updatedAt = clock += 1000)
@@ -78,7 +79,7 @@ export function fakeFeed() {
             expenses: [],
             recurring: input.after ? [] : [schedule(input.vehicleId)],
             // A vehicle's tyres, whole on the first page (#287).
-            tyres: input.after ? null : { __typename: 'VehicleTyres', vehicleId: input.vehicleId, hasReadings: false, readings: [], days: [], sets: [] },
+            tyres: input.after || tyresHidden ? null : { __typename: 'VehicleTyres', vehicleId: input.vehicleId, hasReadings: false, readings: [], days: [], sets: [] },
             removed: !input.after && cursor.since !== null ? removed.filter((t) => t.vehicleId === input.vehicleId && t.at >= cursor.since! - OVERLAP).map((t) => ({ __typename: 'RemovedEntity', type: t.type, id: t.id })) : [],
             next: more ? btoa(JSON.stringify({ ...cursor, skip: cursor.skip + input.take })) : null,
             watermark: new Date(cursor.watermark).toISOString(),
@@ -115,6 +116,8 @@ export function fakeFeed() {
     /** A cursor of an older server version: refused, the device must start that download afresh. */
     refuseCursors: () => (refuseCursors = true),
     acceptCursors: () => (refuseCursors = false),
+    /** The reader may no longer see the vehicle's logs: its tyres come as null on the first page too. */
+    hideTyres: () => (tyresHidden = true),
     /** Runs before the n-th request is answered (something happening while a page is on its way). */
     onAsk: (hook: (n: number) => Promise<void> | void) => (onAsk = hook),
   }
