@@ -18,8 +18,8 @@ import { AddPastTyreSwapsDocument, type DistanceUnit } from '../gql/generated.ts
 import { useFormat } from '../i18n/format.ts'
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
 import { uuidV4 } from '../offline/uuid.ts'
-import { useToast } from '../toast/toastContext.ts'
-import { keyedOf, useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull, type Tyres } from './tyres.ts'
+import { OfflineNote } from '../components/OfflineNote.tsx'
+import { keyedOf, type Tyres, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 /** The server's limit (`TyreService.MaxPastSwaps`): one change of a device's queue must fit the sync's ledger. */
 export const MAX_PAST_SWAPS = 25
@@ -39,7 +39,7 @@ interface Row {
 export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: ReactNode; vehicleId: string; unit: DistanceUnit; tyres: Tyres }) {
   const { t } = useTranslation()
   const format = useFormat()
-  const { toast } = useToast()
+  const notify = useTyreToasts()
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
@@ -57,7 +57,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
     setBusy(true)
     setError(undefined)
     try {
-      await run(AddPastTyreSwapsDocument, {
+      const saved = await run(AddPastTyreSwapsDocument, {
         input: {
           vehicleId,
           replace: replace !== null,
@@ -65,7 +65,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
         },
       })
       setOpen(false)
-      toast(t('tyres.toast.pastSaved', { count: rows.length }))
+      notify.saved(saved, t('tyres.toast.pastSaved', { count: rows.length }))
     } catch (err) {
       const keyed = keyedOf(err)
       if (keyed?.key === 'tyres.swapExists' && replace === null) {
@@ -98,6 +98,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
       >
         {open && (
           <Form onSubmit={submit} refusal={error}>
+            <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
               {rows.map((row, i) => (
                 <Box

@@ -41,7 +41,7 @@ async function localIds(vehicleId = 'v1') {
 const generationIs = (generation: () => string) =>
   graphql.query('ServerGeneration', () => HttpResponse.json({ data: { session: { __typename: 'Session', instance: { __typename: 'InstanceInfo', generation: generation() } } } }))
 
-it('a first download keeps the logs of the window page by page, and the answers of the vehicle page and the home page', async () => {
+it('a first download keeps the logs of the window page by page, and the answers of the vehicle page (its tyres too) and the home page', async () => {
   for (const [id, date] of [['a', '2026-09-01'], ['b', '2026-09-15'], ['c', '2026-10-01'], ['d', '2026-08-10'], ['e', '2026-10-05']]) feed.add(id, date)
   feed.add('old', '2026-05-01') // before the window
 
@@ -52,6 +52,7 @@ it('a first download keeps the logs of the window page by page, and the answers 
   expect(feed.asked[0]).toMatchObject({ vehicleId: 'v1', from: '2026-08-07' })
   expect((await deviceData.read(snapshotKey('VehicleDetails', { id: 'v1' })))?.data).toMatchObject({ vehicle: { id: 'v1' } })
   expect((await deviceData.read(snapshotKey('RecurringExpenses', { vehicleId: 'v1' })))?.data).toMatchObject({ vehicle: { recurring: [{ id: 's-v1' }] } })
+  expect((await deviceData.read(snapshotKey('VehicleTyres', { vehicleId: 'v1' })))?.data).toMatchObject({ vehicleTyres: { vehicleId: 'v1', sets: [] } })
   expect((await deviceData.read(snapshotKey('Welcome', { search: null, skip: 0, take: 24 })))?.data).toMatchObject({ myVehicles: [{ id: 'v1' }], vehicleTotal: 1 })
   const page = await answerLocally(await deviceData.rows(), 'Refuelings', { vehicleId: 'v1', orderBy: 'DATE', direction: 'ASC', skip: 2, take: 2 })
   expect((page!.refuelings as { id: string }[]).map((r) => r.id)).toEqual(['b', 'c'])

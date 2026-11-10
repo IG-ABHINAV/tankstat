@@ -2636,6 +2636,7 @@
       "retired": "Retired, with its history.",
       "trashed": "Moved to the trash."
     },
-    "noneOnCar": "No set is on the car. Fit one from storage."
+    "noneOnCar": "No set is on the car. Fit one from storage.",
+    "updatedOnSync": "updated once synced"
   }
 }

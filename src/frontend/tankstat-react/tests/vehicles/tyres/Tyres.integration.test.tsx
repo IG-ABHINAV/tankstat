@@ -1,10 +1,12 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
 import { graphql } from '../../support/graphql.ts'
-import { server } from '../../support/server.ts'
+import { answered, server } from '../../support/server.ts'
+import { connectivity } from '../../../src/offline/connectivity.ts'
+import { outbox } from '../../../src/offline/outbox.ts'
 import { fakeExpenseBackend, fakeVehicle, gqlError, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { UUID } from '../../support/ids.ts'
 import { fakeTyres, tyreSummer, tyreWinter, type FakeTyreSet } from '../../support/tyres.ts'
@@ -274,4 +276,54 @@ it('corrects a set’s own details from its history, without where it is or what
       { input: { id: 's2', name: 'Continental TS 870', season: 'ALL_SEASON', size: '205/55 R16', since: '2023-03-25', madeWeek: 5, madeYear: 2023 } },
     ]),
   )
+})
+
+it('swaps while the server is out of reach: kept on the device, shown done and marked, a second swap that day asked about first (#287 Q3)', async () => {
+  const { ui, state } = setup([summer, winter])
+  await screen.findByRole('article', { name: 'Continental WinterContact' })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(screen.getByRole('button', { name: 'Swap tyres' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Swap tyres' })
+  expect(within(dialog).getByText(/You are offline\. What you save is kept on this device/)).toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Swap tyres' }))
+
+  expect(await screen.findByText('Saved on this device · syncs when online.')).toBeInTheDocument()
+  expect(state.calls.SwapTyres).toBeUndefined()
+  expect(outbox.changes).toMatchObject([{ entity: 'tyres', action: 'swapTyres', vehicleId: 'v1', targetId: UUID, input: { setId: 's2', replace: false, stretchId: UUID } }])
+  const winterCard = await screen.findByRole('article', { name: 'Continental WinterContact' })
+  await waitFor(() => expect(within(winterCard).getByText('Changed · not synced')).toBeInTheDocument())
+  expect(within(winterCard).getByText('updated once synced')).toBeInTheDocument()
+  expect(within(winterCard).getByRole('button', { name: 'Swap tyres' })).toBeInTheDocument() // on the car now
+  expect(within(screen.getByRole('article', { name: 'Michelin Primacy 4' })).getByText('Changed · not synced')).toBeInTheDocument()
+
+  // The same day again: the device asks, as the server would, then keeps the replacing swap.
+  await ui.click(within(winterCard).getByRole('button', { name: 'Swap tyres' }))
+  const again = await screen.findByRole('dialog', { name: 'Swap tyres' })
+  await ui.click(within(again).getByRole('button', { name: 'Swap tyres' }))
+  expect(await within(again).findByText(/This replaces the swap of .* \(Continental WinterContact went on\)/)).toBeInTheDocument()
+  await ui.click(within(again).getByRole('button', { name: 'Replace the swap' }))
+  await waitFor(() => expect(outbox.changes).toHaveLength(2))
+  expect(outbox.changes[1]).toMatchObject({ action: 'swapTyres', input: { setId: 's1', replace: true } })
+  await waitFor(() => expect(within(screen.getByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Swap tyres' })).toBeInTheDocument())
+  expect(state.calls.SwapTyres).toBeUndefined()
+})
+
+it('moves a stretch to the trash while offline, and Undo takes the kept change back instead of sending a restore', async () => {
+  const { ui, state } = setup([summer, winter])
+  await ui.click(within(await screen.findByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Continental WinterContact' })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(within(history).getByRole('button', { name: 'Move to the trash' }))
+  await ui.click(within(await screen.findByRole('alertdialog', { name: 'Move to the trash?' })).getByRole('button', { name: 'Move to the trash' }))
+  await waitFor(() => expect(outbox.changes).toMatchObject([{ action: 'deleteTyreStretch', input: { id: 'r2' }, expectedVersion: 1 }]))
+  expect(await screen.findByText('Saved on this device · syncs when online.')).toBeInTheDocument()
+  await ui.click(await screen.findByRole('button', { name: 'Undo', hidden: true })) // the history dialog is still open over the page
+
+  await waitFor(() => expect(outbox.changes).toEqual([]))
+  expect(state.calls.DeleteTyreStretch).toBeUndefined()
+  expect(state.calls.RestoreTyreStretch).toBeUndefined()
 })

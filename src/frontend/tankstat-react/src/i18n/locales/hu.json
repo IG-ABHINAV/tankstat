@@ -2636,6 +2636,7 @@
       "retired": "Kivonva, az előzményeivel együtt.",
       "trashed": "A kukába került."
     },
-    "noneOnCar": "Nincs szett az autón. Szerelj fel egyet a tároltak közül."
+    "noneOnCar": "Nincs szett az autón. Szerelj fel egyet a tároltak közül.",
+    "updatedOnSync": "szinkronizálás után frissül"
   }
 }

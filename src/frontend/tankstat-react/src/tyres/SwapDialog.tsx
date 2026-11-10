@@ -17,9 +17,9 @@ import { FieldInput } from '../forms/FieldInput.tsx'
 import { Form } from '../forms/Form.tsx'
 import { ChangeTyrePositionsDocument, SwapTyresDocument, type DistanceUnit } from '../gql/generated.ts'
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
-import { useToast } from '../toast/toastContext.ts'
 import { useFormat } from '../i18n/format.ts'
-import { keyedOf, useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull, type Tyres, type TyreSetInfo } from './tyres.ts'
+import { OfflineNote } from '../components/OfflineNote.tsx'
+import { keyedOf, type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 type Mode = 'same' | 'cross' | 'unsure'
 
@@ -53,7 +53,7 @@ export function SwapDialog({
 }) {
   const { t } = useTranslation()
   const format = useFormat()
-  const { toast } = useToast()
+  const notify = useTyreToasts()
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
@@ -105,10 +105,9 @@ export function SwapDialog({
         note: text('note') || null,
         stretchId,
       }
-      if (rotate) await run(ChangeTyrePositionsDocument, { input })
-      else await run(SwapTyresDocument, { input })
+      const saved = rotate ? await run(ChangeTyrePositionsDocument, { input }) : await run(SwapTyresDocument, { input })
       setOpen(false)
-      toast(rotate ? t('toast.saved') : t('tyres.toast.swapped', { set: info?.set.name ?? '', date: format.date(input.day) }))
+      notify.saved(saved, rotate ? t('toast.saved') : t('tyres.toast.swapped', { set: info?.set.name ?? '', date: format.date(input.day) }))
     } catch (err) {
       const keyed = keyedOf(err)
       if (keyed?.key === 'tyres.swapExists' && replace === null) setReplace({ date: format.date(String(keyed.args.date)), set: String(keyed.args.set) })
@@ -133,6 +132,7 @@ export function SwapDialog({
       >
         {open && (
           <Form onSubmit={submit} refusal={error}>
+            <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
               {!rotate && (
                 <LabeledSelect

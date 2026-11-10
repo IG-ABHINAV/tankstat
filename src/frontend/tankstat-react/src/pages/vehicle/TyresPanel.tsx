@@ -5,7 +5,7 @@ import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { Archive, ArrowLeftRight, ArrowUpDown, CircleDot, History, Pencil, Plus, Snowflake, Sun, Trash2 } from 'lucide-react'
+import { Archive, ArrowLeftRight, ArrowUpDown, CircleDot, CloudUpload, History, Pencil, Plus, Snowflake, Sun, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx'
@@ -21,13 +21,14 @@ import { Form } from '../../forms/Form.tsx'
 import { RetireTyreSetDocument, SetTyreLogDayDocument, UnretireTyreSetDocument, VehicleTyresDocument, type DistanceUnit, type TyreSeason } from '../../gql/generated.ts'
 import { useFormat } from '../../i18n/format.ts'
 import { ErrorMessage } from '../../messages.tsx'
-import { useToast } from '../../toast/toastContext.ts'
 import { HistoryDialog, RoughDialog } from '../../tyres/HistoryDialog.tsx'
 import { neighbours, odometerOn, sortedReadings } from '../../tyres/odometer.ts'
 import { PastSwapsDialog } from '../../tyres/PastSwapsDialog.tsx'
 import { SwapDialog } from '../../tyres/SwapDialog.tsx'
 import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
-import { useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull, type Tyres, type TyreSetInfo } from '../../tyres/tyres.ts'
+import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
+import { OfflineNote } from '../../components/OfflineNote.tsx'
+import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from '../../tyres/tyres.ts'
 
 const SEASON_ICON: Record<TyreSeason, ReactNode> = {
   SUMMER: <Sun size={14} aria-hidden />,
@@ -45,6 +46,7 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
   const unit = vehicle.units.distance
   const { data, error } = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, fetchPolicy: 'cache-and-network' })
   const tyres = data?.vehicleTyres
+  const pending = usePendingTyres(vehicle.id)
   if (error && !tyres) return <ErrorMessage error={error} />
   if (!tyres) return <Loading />
 
@@ -78,7 +80,18 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
       </Stack>
     )
 
-  const card = (info: TyreSetInfo) => <SetCard key={info.set.id} info={info} tyres={tyres} vehicleId={vehicle.id} unit={unit} canLog={canLog} canSwap={stored.length > 0 || !info.onTheCar} />
+  const card = (info: TyreSetInfo) => (
+    <SetCard
+      key={info.set.id}
+      info={info}
+      tyres={tyres}
+      vehicleId={vehicle.id}
+      unit={unit}
+      canLog={canLog}
+      canSwap={stored.length > 0 || !info.onTheCar}
+      pending={pending.has(info.set.id)}
+    />
+  )
   return (
     <Stack sx={{ gap: 2 }}>
       {!canLog && (
@@ -128,11 +141,28 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function SetCard({ info, tyres, vehicleId, unit, canLog, canSwap }: { info: TyreSetInfo; tyres: Tyres; vehicleId: string; unit: DistanceUnit; canLog: boolean; canSwap: boolean }) {
+/** A set's card; `pending`: a change waiting on this device touched it (shown done, its figures the server's to work out once synced). */
+function SetCard({
+  info,
+  tyres,
+  vehicleId,
+  unit,
+  canLog,
+  canSwap,
+  pending,
+}: {
+  info: TyreSetInfo
+  tyres: Tyres
+  vehicleId: string
+  unit: DistanceUnit
+  canLog: boolean
+  canSwap: boolean
+  pending: boolean
+}) {
   const { t } = useTranslation()
   const format = useFormat()
   const words = useTyreWords(unit)
-  const { undoable } = useToast()
+  const notify = useTyreToasts()
   const run = useTyreMutation(vehicleId)
   const [error, setError] = useState<unknown>()
   const { set, figures } = info
@@ -144,8 +174,8 @@ function SetCard({ info, tyres, vehicleId, unit, canLog, canSwap }: { info: Tyre
   const retire = async () => {
     setError(undefined)
     try {
-      await run(RetireTyreSetDocument, { id: set.id, day: todayIso() })
-      undoable(t('tyres.toast.retired'), () => run(UnretireTyreSetDocument, { id: set.id }))
+      const saved = await run(RetireTyreSetDocument, { id: set.id, day: todayIso() })
+      notify.undoable(saved, t('tyres.toast.retired'), () => run(UnretireTyreSetDocument, { id: set.id }))
     } catch (err) {
       setError(err)
     }
@@ -163,12 +193,17 @@ function SetCard({ info, tyres, vehicleId, unit, canLog, canSwap }: { info: Tyre
             {set.size}
           </Typography>
         )}
+        {pending && <Chip size="small" className="tk-fade" icon={<CloudUpload size={14} aria-hidden />} label={t(set.version === 0 ? 'offline.pending.new' : 'offline.pending.changed')} />}
       </Stack>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         {set.isRetired && set.retiredOn
           ? t('tyres.retiredOn', { date: format.date(set.retiredOn) })
           : open
-            ? t('tyres.onSince', { date: format.date(open.stretch.from), distance: words.distance(open.distance.distance, open.distance.approximate), pairs: words.pairs(open.stretch.pairOneFront) })
+            ? t('tyres.onSince', {
+                date: format.date(open.stretch.from),
+                distance: pending ? t('tyres.updatedOnSync') : words.distance(open.distance.distance, open.distance.approximate),
+                pairs: words.pairs(open.stretch.pairOneFront),
+              })
             : t('tyres.storedLast', { pairs: words.pairs(last?.pairOneFront) })}
       </Typography>
       <Box component="dl" sx={{ m: 0, display: 'flex', flexWrap: 'wrap', gap: '6px 24px' }}>
@@ -177,7 +212,7 @@ function SetCard({ info, tyres, vehicleId, unit, canLog, canSwap }: { info: Tyre
             {t('tyres.distance')}
           </Typography>
           <Typography component="dd" variant="body1" sx={{ m: 0, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-            {words.distance(figures.distance, figures.approximate)}
+            {pending ? t('tyres.updatedOnSync') : words.distance(figures.distance, figures.approximate)}
           </Typography>
         </Box>
         <Box>
@@ -303,7 +338,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
 function ReadingDialog({ vehicleId, unit, tyres, day, value, note }: { vehicleId: string; unit: DistanceUnit; tyres: Tyres; day: string; value: number; note: string | null }) {
   const { t } = useTranslation()
   const format = useFormat()
-  const { toast } = useToast()
+  const notify = useTyreToasts()
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
@@ -323,9 +358,9 @@ function ReadingDialog({ vehicleId, unit, tyres, day, value, note }: { vehicleId
     setBusy(true)
     setError(undefined)
     try {
-      await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note } })
+      const saved = await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note } })
       setOpen(false)
-      toast(t('toast.saved'))
+      notify.saved(saved, t('toast.saved'))
     } catch (err) {
       setError(err)
     } finally {
@@ -351,6 +386,7 @@ function ReadingDialog({ vehicleId, unit, tyres, day, value, note }: { vehicleId
       <DialogFrame open={open} onClose={() => setOpen(false)} onClosed={() => setError(undefined)} busy={busy} maxWidth={460} title={t('tyres.dialogs.readingTitle', { date: format.date(day) })} description={t('tyres.dialogs.readingText')}>
         {open && (
           <Form onSubmit={submit} refusal={error}>
+            <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
               <Field name="odometer" label={t('tyres.fields.odometerPlain', { unit: words.unitShort })} hint={hint} required invalid={wholeInvalid(t('forms.numberInvalid'))}>
                 <FieldInput inputMode="numeric" autoComplete="off" defaultValue={String(value)} />

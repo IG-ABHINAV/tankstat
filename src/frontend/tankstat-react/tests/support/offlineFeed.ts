@@ -61,7 +61,7 @@ export function fakeFeed() {
         : { from: input.since ? null : (input.from ?? null), since: input.since ? Date.parse(input.since) : null, watermark: clock, skip: 0 }
       if (cursor.since !== null && resyncNext) {
         resyncNext = false
-        return HttpResponse.json({ data: { offlineChanges: { __typename: 'OfflineChanges', vehicle: vehicle(input.vehicleId), refuelings: [], expenses: [], recurring: [], removed: [], next: null, watermark: new Date(clock).toISOString(), resync: true } } })
+        return HttpResponse.json({ data: { offlineChanges: { __typename: 'OfflineChanges', vehicle: vehicle(input.vehicleId), refuelings: [], expenses: [], recurring: [], tyres: null, removed: [], next: null, watermark: new Date(clock).toISOString(), resync: true } } })
       }
       const matching = rows
         .filter((r) => r.vehicleId === input.vehicleId && r.kind === 'refuelings')
@@ -77,6 +77,8 @@ export function fakeFeed() {
             refuelings: pageRows.map(refueling),
             expenses: [],
             recurring: input.after ? [] : [schedule(input.vehicleId)],
+            // A vehicle's tyres, whole on the first page (#287).
+            tyres: input.after ? null : { __typename: 'VehicleTyres', vehicleId: input.vehicleId, hasReadings: false, readings: [], days: [], sets: [] },
             removed: !input.after && cursor.since !== null ? removed.filter((t) => t.vehicleId === input.vehicleId && t.at >= cursor.since! - OVERLAP).map((t) => ({ __typename: 'RemovedEntity', type: t.type, id: t.id })) : [],
             next: more ? btoa(JSON.stringify({ ...cursor, skip: cursor.skip + input.take })) : null,
             watermark: new Date(cursor.watermark).toISOString(),

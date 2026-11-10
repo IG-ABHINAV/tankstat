@@ -29,8 +29,8 @@ import {
 import { useFormat } from '../i18n/format.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { TyreSetDialog } from './TyreSetDialog.tsx'
-import { useToast } from '../toast/toastContext.ts'
-import { useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull, type Tyres, type TyreSetInfo, type TyreStretchInfo } from './tyres.ts'
+import { OfflineNote } from '../components/OfflineNote.tsx'
+import { type Tyres, type TyreSetInfo, type TyreStretchInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 /**
  * A set's history (#287): its figures (the distance and how it is made up, each pair's front and rear share) and every stretch on the car
@@ -57,7 +57,7 @@ export function HistoryDialog({
   const words = useTyreWords(unit)
   const stretchDistance = useStretchDistance(unit)
   const readingText = useReadingText(unit)
-  const { undoable } = useToast()
+  const notify = useTyreToasts()
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
   const [error, setError] = useState<unknown>()
@@ -69,8 +69,8 @@ export function HistoryDialog({
   const trashStretch = async (stretch: TyreStretchInfo['stretch']) => {
     setError(undefined)
     try {
-      await run(DeleteTyreStretchDocument, { id: stretch.id })
-      undoable(t('tyres.toast.trashed'), () => run(RestoreTyreStretchDocument, { id: stretch.id }))
+      const saved = await run(DeleteTyreStretchDocument, { id: stretch.id })
+      notify.undoable(saved, t('tyres.toast.trashed'), () => run(RestoreTyreStretchDocument, { id: stretch.id }))
     } catch (err) {
       setError(err)
     }
@@ -179,9 +179,9 @@ export function HistoryDialog({
                   onConfirm={() =>
                     void (async () => {
                       try {
-                        await run(DeleteTyreSetDocument, { id: set.id })
+                        const saved = await run(DeleteTyreSetDocument, { id: set.id })
                         setOpen(false)
-                        undoable(t('tyres.toast.trashed'), () => run(RestoreTyreSetDocument, { id: set.id }))
+                        notify.undoable(saved, t('tyres.toast.trashed'), () => run(RestoreTyreSetDocument, { id: set.id }))
                       } catch (err) {
                         setError(err)
                       }
@@ -260,7 +260,7 @@ function StretchDialog({
   stretch?: TyreStretchInfo['stretch']
 }) {
   const { t } = useTranslation()
-  const { toast } = useToast()
+  const notify = useTyreToasts()
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
@@ -285,10 +285,11 @@ function StretchDialog({
     setBusy(true)
     setError(undefined)
     try {
-      if (stretch) await run(UpdateTyreStretchDocument, { input: { id: stretch.id, ...values } })
-      else await run(AddTyreStretchDocument, { input: { id, setId, ...values } })
+      const saved = stretch
+        ? await run(UpdateTyreStretchDocument, { input: { id: stretch.id, ...values } })
+        : await run(AddTyreStretchDocument, { input: { id, setId, ...values } })
       setOpen(false)
-      toast(t('toast.saved'))
+      notify.saved(saved, t('toast.saved'))
     } catch (err) {
       setError(err)
     } finally {
@@ -315,6 +316,7 @@ function StretchDialog({
       >
         {open && (
           <Form onSubmit={submit} refusal={error}>
+            <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
               <Field name="from" label={t('tyres.fields.from')} required>
                 <FieldDate disableFuture value={from} onChange={setFrom} />
@@ -374,7 +376,7 @@ export function RoughDialog({
 }) {
   const { t } = useTranslation()
   const format = useFormat()
-  const { toast } = useToast()
+  const notify = useTyreToasts()
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
@@ -389,9 +391,11 @@ export function RoughDialog({
     setBusy(true)
     setError(undefined)
     try {
-      await run(SetTyreRoughDistanceDocument, { input: { id: info.set.id, distance: wholeOrNull(String(form.get('rough') ?? '')) ?? 0, until: suggestion?.until ?? (info.set.roughUntil ? null : measuredFrom) } })
+      const saved = await run(SetTyreRoughDistanceDocument, {
+        input: { id: info.set.id, distance: wholeOrNull(String(form.get('rough') ?? '')) ?? 0, until: suggestion?.until ?? (info.set.roughUntil ? null : measuredFrom) },
+      })
       setOpen(false)
-      toast(t('toast.saved'))
+      notify.saved(saved, t('toast.saved'))
     } catch (err) {
       setError(err)
     } finally {
@@ -405,6 +409,7 @@ export function RoughDialog({
       <DialogFrame open={open} onClose={() => setOpen(false)} onClosed={() => setError(undefined)} busy={busy} maxWidth={460} title={t('tyres.dialogs.roughTitle')} description={info.set.name}>
         {open && (
           <Form onSubmit={submit} refusal={error}>
+            <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
               <Typography variant="body2">
                 {since ? t('tyres.dialogs.roughText', { date: format.date(since), measured: words.distance(info.figures.measured) }) : t('tyres.dialogs.roughTextAll')}

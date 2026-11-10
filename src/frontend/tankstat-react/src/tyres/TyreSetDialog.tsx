@@ -18,9 +18,9 @@ import { Form } from '../forms/Form.tsx'
 import { AddTyreSetDocument, UpdateTyreSetDocument, type DistanceUnit, type TyreSeason } from '../gql/generated.ts'
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
 import { useFormat } from '../i18n/format.ts'
-import { useToast } from '../toast/toastContext.ts'
 import { madeText, parseMade } from './odometer.ts'
-import { keyedOf, useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull, type TyreSet } from './tyres.ts'
+import { OfflineNote } from '../components/OfflineNote.tsx'
+import { keyedOf, type TyreSet, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 const SEASONS: TyreSeason[] = ['SUMMER', 'WINTER', 'ALL_SEASON']
 
@@ -43,7 +43,7 @@ export function TyreSetDialog({
   edit?: TyreSet
 }) {
   const { t } = useTranslation()
-  const { toast } = useToast()
+  const notify = useTyreToasts()
   const format = useFormat()
   const [open, setOpen] = useDialogState()
   const id = useClientId(open)
@@ -74,14 +74,14 @@ export function TyreSetDialog({
     setError(undefined)
     try {
       if (edit) {
-        await run(UpdateTyreSetDocument, {
+        const saved = await run(UpdateTyreSetDocument, {
           input: { id: edit.id, name: text('name'), season, size: text('size') || null, since: text('since'), madeWeek: made?.week ?? null, madeYear: made?.year ?? null },
         })
         setOpen(false)
-        toast(t('toast.saved'))
+        notify.saved(saved, t('toast.saved'))
         return
       }
-      await run(AddTyreSetDocument, {
+      const saved = await run(AddTyreSetDocument, {
         input: {
           id,
           stretchId: where === 'car' ? stretchId : null,
@@ -99,7 +99,7 @@ export function TyreSetDialog({
         },
       })
       setOpen(false)
-      toast(t('toast.saved'))
+      notify.saved(saved, t('toast.saved'))
     } catch (err) {
       const keyed = keyedOf(err)
       if (keyed?.key === 'tyres.swapExists' && replace === null) setReplace({ date: format.date(String(keyed.args.date)), set: String(keyed.args.set) })
@@ -123,6 +123,7 @@ export function TyreSetDialog({
       >
         {open && (
           <Form onSubmit={submit} refusal={error}>
+            <OfflineNote />
             <Stack sx={{ gap: 1.5 }}>
               <Field name="name" label={t('tyres.fields.name')} hint={t('tyres.fields.nameHint')} required>
                 <FieldInput maxLength={80} autoComplete="off" defaultValue={edit?.name} />
