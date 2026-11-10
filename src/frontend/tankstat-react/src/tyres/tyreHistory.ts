@@ -31,6 +31,15 @@ export class TyreRuleError extends Error {
 
 const covers = (s: StretchState, day: string) => s.from <= day && (s.until === null || s.until > day)
 
+/** The stretches a change created or changed: those of `after` not in `before` as they were. */
+function moved(before: readonly StretchState[], after: readonly StretchState[]): ReadonlySet<string> {
+  const changed = (x: StretchState) => {
+    const was = before.find((b) => b.id === x.id)
+    return !was || was.from !== x.from || was.until !== x.until || was.pairOneFront !== x.pairOneFront
+  }
+  return new Set(after.filter(changed).map((x) => x.id))
+}
+
 /**
  * Puts a set on the car on a day (the server's `TyreHistory.Swap`): what covers that day ends there; the set runs until the stretch it cut
  * would have ended, else the next start; a second swap on a day is refused unless `replace`; the set's stretches that meet with the same
@@ -48,7 +57,7 @@ export function swap(
   if (covering?.setId === setId) {
     if (covering.from !== day) throw new TyreRuleError('tyres.alreadyOnCar', { set: set.name, from: covering.from })
     if (pairsGiven) covering.pairOneFront = pairOneFront
-    return checked(sets, live)
+    return checked(sets, live, moved(stretches, live))
   }
   let until: string | null
   if (covering && covering.from === day) {
@@ -61,14 +70,15 @@ export function swap(
   } else until = live.filter((s) => s.from > day).map((s) => s.from).sort()[0] ?? null
 
   const before = live.find((s) => s.setId === setId && s.until === day && s.pairOneFront === pairOneFront)
-  const after = until !== null ? live.find((s) => s.setId === setId && s.from === until && s.pairOneFront === pairOneFront) : undefined
+  // Into a gap, never the set's next stretch: that one began with a swap of its own (only one this swap cut or replaced is carried on).
+  const after = covering && until !== null ? live.find((s) => s.setId === setId && s.from === until && s.pairOneFront === pairOneFront) : undefined
   if (before && after) {
     before.until = after.until
     live = live.filter((s) => s !== after)
   } else if (before) before.until = until
   else if (after) after.from = day
   else live.push({ id, setId, from: day, until, pairOneFront })
-  return checked(sets, live)
+  return checked(sets, live, moved(stretches, live))
 }
 
 /** The set on the car on a day changes its pairs from that day (`TyreHistory.ChangePositions`). */
@@ -82,19 +92,20 @@ export function changePositions(
   if (covering.pairOneFront === pairOneFront) throw new TyreRuleError('tyres.positionsUnchanged')
   if (covering.from === day) {
     covering.pairOneFront = pairOneFront
-    return checked(sets, live)
+    return checked(sets, live, moved(stretches, live))
   }
   const until = covering.until
   covering.until = day
   live.push({ id, setId, from: day, until, pairOneFront })
-  return checked(sets, live)
+  return checked(sets, live, moved(stretches, live))
 }
 
 /**
  * Every stretch fits (`TyreHistory.Check`, and the stretch's own rule that it lasts a day): a set never twice at once, never two whole sets at
- * once, none of a retired set past the day it was retired.
+ * once, none of a retired set past the day it was retired. `moving`: the stretches the change adds, edits or moves (an overlap names the
+ * other one, the one already on the car then).
  */
-export function checked(sets: readonly SetState[], stretches: StretchState[]): StretchState[] {
+export function checked(sets: readonly SetState[], stretches: StretchState[], moving?: ReadonlySet<string>): StretchState[] {
   const ordered = [...stretches].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
   for (const s of ordered) {
     const set = sets.find((x) => x.id === s.setId)
@@ -104,7 +115,9 @@ export function checked(sets: readonly SetState[], stretches: StretchState[]): S
   for (let i = 0; i + 1 < ordered.length; i++) {
     const [a, b] = [ordered[i], ordered[i + 1]]
     if (a.until !== null && b.from >= a.until) continue
-    const args = { set: sets.find((x) => x.id === b.setId)?.name ?? '', from: b.from, until: b.until }
+    // An overlap names the stretch already on the car, not the one the change adds, edits or moves.
+    const other = moving?.has(b.id) && !moving.has(a.id) ? a : b
+    const args = { set: sets.find((x) => x.id === other.setId)?.name ?? '', from: other.from, until: other.until }
     throw new TyreRuleError(a.setId === b.setId ? 'tyres.setOnTwice' : 'tyres.twoSetsAtOnce', args)
   }
   return stretches

@@ -139,7 +139,12 @@ function apply(m: Model, c: Change, vehicleId: string) {
     case 'addTyreStretch': {
       setOf(m, input.setId)
       if (m.stretches.some((x) => x.id === input.id)) return
-      m.stretches = checked(states(m), [...m.stretches, { id: str(input.id) || c.id, setId: str(input.setId), from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null }])
+      const id = str(input.id) || c.id
+      m.stretches = checked(
+        states(m),
+        [...m.stretches, { id, setId: str(input.setId), from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null }],
+        new Set([id]),
+      )
       typed(m, vehicleId, day(input.from), num(input.odometerFrom))
       typed(m, vehicleId, day(input.until), num(input.odometerUntil))
       return
@@ -148,7 +153,11 @@ function apply(m: Model, c: Change, vehicleId: string) {
       const old = m.stretches.find((x) => x.id === input.id)
       if (!old) throw new TyreRuleError('tyres.stretchNotFound')
       if (day(input.until) !== null && str(input.until) <= str(input.from)) throw new TyreRuleError('tyres.untilBeforeFrom', { from: str(input.from), until: str(input.until) })
-      m.stretches = checked(states(m), m.stretches.map((x) => (x === old ? { ...old, from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null } : x)))
+      m.stretches = checked(
+        states(m),
+        m.stretches.map((x) => (x === old ? { ...old, from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null } : x)),
+        new Set([old.id]),
+      )
       typed(m, vehicleId, day(input.from), num(input.odometerFrom))
       typed(m, vehicleId, day(input.until), num(input.odometerUntil))
       return

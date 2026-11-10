@@ -70,7 +70,8 @@ public class TyreSwapContractTests
                     history.ChangePositions(SetOf(positions), Day(positions.GetProperty("day")), Pairs(positions.GetProperty("pairOneFront")), Owner, IdOf("new"));
                     break;
                 default:
-                    history.Check();
+                    var moving = c.TryGetProperty("moving", out var ids) ? ids.EnumerateArray().Select(m => stretches.Single(s => s.Id == IdOf(m.GetString()!))).ToList() : null;
+                    history.Check(moving);
                     break;
             }
         }

@@ -9,6 +9,7 @@ interface Case {
   stretches: { id: string; set: string; from: string; until: string | null; pairOneFront: boolean | null }[]
   swap?: { set: string; day: string; pairOneFront: boolean | null; replace: boolean; pairsGiven: boolean }
   positions?: { set: string; day: string; pairOneFront: boolean | null }
+  moving?: string[]
   expect?: Case['stretches']
   error?: { key: string; args: Record<string, string | null> }
 }
@@ -22,7 +23,7 @@ describe('the tyre history follows the contract the server keeps', () => {
     const run = () => {
       if (c.op === 'swap') return swap(c.sets, stretches, c.swap!.set, c.swap!.day, c.swap!.pairOneFront, { id: 'new', replace: c.swap!.replace, pairsGiven: c.swap!.pairsGiven })
       if (c.op === 'positions') return changePositions(c.sets, stretches, c.positions!.set, c.positions!.day, c.positions!.pairOneFront, 'new')
-      return checked(c.sets, stretches)
+      return checked(c.sets, stretches, c.moving ? new Set(c.moving) : undefined)
     }
     if (c.error) {
       let thrown: unknown

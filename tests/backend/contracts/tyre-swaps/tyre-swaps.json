@@ -1,5 +1,5 @@
 {
-  "_comment": "The rules of a vehicle's tyre history (#287): a swap, a change of positions and the checks every change passes, read by the server (Domain TyreSwapContractTests, over TyreHistory) and by the device (frontend TyreHistory.unit, over src/tyres/tyreHistory.ts), so a tyre change made offline shows as the server will make it. 'new' is the id of the stretch an operation creates; 'expect' lists the live stretches after it, by first day; 'error' is the refusal, its key and its args.",
+  "_comment": "The rules of a vehicle's tyre history (#287): a swap, a change of positions and the checks every change passes, read by the server (Domain TyreSwapContractTests, over TyreHistory) and by the device (frontend TyreHistory.unit, over src/tyres/tyreHistory.ts), so a tyre change made offline shows as the server will make it. 'new' is the id of the stretch an operation creates; 'expect' lists the live stretches after it, by first day; 'error' is the refusal, its key and its args; 'moving' lists the stretches a check is about (added, edited or restored), so an overlap names the other one.",
   "cases": [
     {
       "name": "a swap ends what is on the car and puts the set on",
@@ -325,7 +325,7 @@
       "op": "swap"
     },
     {
-      "name": "the set joins its stretch that starts where it ends",
+      "name": "a swap into a gap never joins the set’s next stretch: that one began with a swap of its own",
       "sets": [
         {
           "id": "summer",
@@ -361,9 +361,90 @@
       },
       "expect": [
         {
+          "id": "new",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2026-03-28",
+          "pairOneFront": true
+        },
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2026-03-28",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "op": "swap"
+    },
+    {
+      "name": "a swap that cuts a stretch joins the set’s stretch that follows it",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "stretches": [
+        {
           "id": "a1",
           "set": "summer",
           "from": "2025-04-01",
+          "until": "2025-11-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": "2026-04-01",
+          "pairOneFront": null
+        },
+        {
+          "id": "a2",
+          "set": "summer",
+          "from": "2026-04-01",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "swap": {
+        "replace": false,
+        "pairsGiven": true,
+        "set": "summer",
+        "day": "2026-01-15",
+        "pairOneFront": true
+      },
+      "expect": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-11-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": "2026-01-15",
+          "pairOneFront": null
+        },
+        {
+          "id": "a2",
+          "set": "summer",
+          "from": "2026-01-15",
           "until": null,
           "pairOneFront": true
         }
@@ -980,6 +1061,55 @@
           "set": "Continental WinterContact",
           "from": "2025-11-01",
           "until": "2026-03-28"
+        }
+      },
+      "op": "check"
+    },
+    {
+      "name": "an overlap names the stretch already on the car, not the one being added or moved",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "stretches": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": null,
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": "2026-03-28",
+          "pairOneFront": null
+        }
+      ],
+      "check": true,
+      "moving": [
+        "b1"
+      ],
+      "error": {
+        "key": "tyres.twoSetsAtOnce",
+        "args": {
+          "set": "Michelin Primacy 4",
+          "from": "2025-04-01",
+          "until": null
         }
       },
       "op": "check"
