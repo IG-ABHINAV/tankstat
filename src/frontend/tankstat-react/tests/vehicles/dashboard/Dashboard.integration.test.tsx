@@ -209,7 +209,7 @@ it('lists the saved widgets, marks shared ones, and while customizing gives ever
   expect(shared.getByText('Bob')).toBeInTheDocument()
   // Outside Customize a tile shows only its content: the table button, nothing that changes it.
   expect(screen.queryByRole('button', { name: /^(Edit|Customize|Remove) / })).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Fuel by month as a table' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: 'Fuel by month as a table' })).toBeInTheDocument() // once its data is in
 
   await customize(ui)
   expect(screen.getByRole('button', { name: 'Edit Fuel by month' })).toBeInTheDocument()
@@ -1212,7 +1212,7 @@ it("has no accessibility violations: the dashboard, and a chart's table in its d
   await screen.findByRole('heading', { name: 'Shared one' })
   await check(document.body)
 
-  await ui.click(within(await cardOf('Monthly costs')).getByRole('button', { name: 'Monthly costs as a table' }))
+  await ui.click(await within(await cardOf('Monthly costs')).findByRole('button', { name: 'Monthly costs as a table' }))
   await screen.findByRole('dialog', { name: 'Monthly costs' })
   await check(document.body)
 })
