@@ -1948,6 +1948,23 @@
         "update": "Changed recurring expense",
         "trash": "Recurring expense to delete",
         "markDone": "Marked as done"
+      },
+      "tyres": {
+        "addTyreSet": "New tyre set",
+        "updateTyreSet": "Changed tyre set",
+        "setTyreRoughDistance": "Rough figure of a tyre set",
+        "retireTyreSet": "Tyre set retired",
+        "unretireTyreSet": "Tyre set back from retirement",
+        "deleteTyreSet": "Tyre set to the trash",
+        "restoreTyreSet": "Tyre set back from the trash",
+        "swapTyres": "Tyre swap",
+        "changeTyrePositions": "Tyre positions changed",
+        "addPastTyreSwaps": "Past tyre swaps",
+        "addTyreStretch": "New stretch of a tyre set",
+        "updateTyreStretch": "Changed stretch of a tyre set",
+        "deleteTyreStretch": "Stretch of a tyre set to the trash",
+        "restoreTyreStretch": "Stretch of a tyre set back from the trash",
+        "setTyreLogDay": "Reading in the tyre log"
       }
     },
     "remove": "Remove the change",
@@ -2066,7 +2083,8 @@
       "restoreWithChange": "Restore it with your change",
       "restoreWithChangeDescription": "It comes back from the trash with the values of this change.",
       "leaveInTrash": "Leave it in the trash",
-      "leaveInTrashDescription": "It stays in the trash; this change is dropped for good."
+      "leaveInTrashDescription": "It stays in the trash; this change is dropped for good.",
+      "replaceSwapDescription": "Sends the swap again so that it takes the place of the swap already logged that day. That swap's stretch moves to the trash."
     },
     "merge": {
       "bothChanged": "Changed on both sides.",

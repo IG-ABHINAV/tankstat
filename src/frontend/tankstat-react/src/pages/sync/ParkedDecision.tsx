@@ -224,8 +224,15 @@ export function ParkedActions({ parked, change, label, onResolved }: { parked: P
       ]
       break
     default: {
+      // A swap another device's swap got to first (#287): sent again, it takes that one's place, as the dialog offers online.
+      const replaces = change.entity === 'tyres' && parked.reason?.key === 'tyres.swapExists' && !!change.input && 'replace' in change.input
       buttons = [
-        canForce(parked.reason?.key, bySender, parked.current) && (
+        replaces &&
+          action(t('tyres.dialogs.replaceSwap'), t('sync.conflict.replaceSwapDescription'), {
+            action: 'APPLY',
+            change: toChangeInput({ ...change, input: { ...change.input, replace: true } }),
+          }),
+        !replaces && canForce(parked.reason?.key, bySender, parked.current) && (
           <ConfirmDialog
             key="apply"
             trigger={

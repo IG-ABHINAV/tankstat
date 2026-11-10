@@ -1948,6 +1948,23 @@
         "update": "Módosított ismétlődő kiadás",
         "trash": "Törlendő ismétlődő kiadás",
         "markDone": "Elvégzettnek jelölve"
+      },
+      "tyres": {
+        "addTyreSet": "Új gumiszett",
+        "updateTyreSet": "Módosított gumiszett",
+        "setTyreRoughDistance": "Gumiszett becsült távja",
+        "retireTyreSet": "Kivont gumiszett",
+        "unretireTyreSet": "Visszavett gumiszett",
+        "deleteTyreSet": "Gumiszett a kukába",
+        "restoreTyreSet": "Gumiszett vissza a kukából",
+        "swapTyres": "Gumicsere",
+        "changeTyrePositions": "Gumik helycseréje",
+        "addPastTyreSwaps": "Korábbi gumicserék",
+        "addTyreStretch": "Gumiszett új időszaka",
+        "updateTyreStretch": "Gumiszett módosított időszaka",
+        "deleteTyreStretch": "Gumiszett időszaka a kukába",
+        "restoreTyreStretch": "Gumiszett időszaka vissza a kukából",
+        "setTyreLogDay": "Kilométeróra-állás a gumik naplójában"
       }
     },
     "remove": "Módosítás eltávolítása",
@@ -2066,7 +2083,8 @@
       "restoreWithChange": "Visszaállítás a módosításoddal",
       "restoreWithChangeDescription": "Visszakerül a kukából, ennek a módosításnak az értékeivel.",
       "leaveInTrash": "Maradjon a kukában",
-      "leaveInTrashDescription": "A kukában marad; ez a módosítás végleg elvész."
+      "leaveInTrashDescription": "A kukában marad; ez a módosítás végleg elvész.",
+      "replaceSwapDescription": "Újra elküldi a cserét, így az a már rögzített aznapi csere helyére kerül. Annak az időszaka a kukába kerül."
     },
     "merge": {
       "bothChanged": "Mindkét helyen módosult.",
