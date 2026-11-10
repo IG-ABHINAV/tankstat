@@ -48,7 +48,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
   const [rows, setRows] = useState<Row[]>(() => [fresh()])
   const [error, setError] = useState<unknown>()
   const [busy, setBusy] = useState(false)
-  const [replace, setReplace] = useState<{ date: string; set: string } | null>(null)
+  const [replace, setReplace] = useState<string | null>(null)
   const change = (key: string, values: Partial<Row>) => setRows((all) => all.map((r) => (r.key === key ? { ...r, ...values } : r)))
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -68,7 +68,12 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
       toast(t('tyres.toast.pastSaved', { count: rows.length }))
     } catch (err) {
       const keyed = keyedOf(err)
-      if (keyed?.key === 'tyres.swapExists' && replace === null) setReplace({ date: format.date(String(keyed.args.date)), set: String(keyed.args.set) })
+      if (keyed?.key === 'tyres.swapExists' && replace === null) {
+        // Every row on a day another set went on is replaced, not only the one the server named.
+        const starts = new Set(tyres.sets.flatMap((s) => s.stretches.map((x) => x.stretch.from)))
+        const clashing = [...new Set(rows.map((r) => r.day).filter((d) => starts.has(d)))].sort()
+        setReplace((clashing.length > 0 ? clashing : [String(keyed.args.date)]).map(format.date).join(', '))
+      }
       else setError(err)
     } finally {
       setBusy(false)
@@ -139,7 +144,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                 {t('tyres.dialogs.pastHint', { date: tyres.readings[0] ? format.date(tyres.readings[0].date) : '' })}
               </Typography>
-              {replace && <WarningMessage>{t('tyres.dialogs.replaceNote', replace)}</WarningMessage>}
+              {replace && <WarningMessage>{t('tyres.dialogs.replaceDays', { days: replace })}</WarningMessage>}
               {error !== undefined && <ErrorMessage error={error} />}
               <DialogButtons>
                 <DialogCancel />

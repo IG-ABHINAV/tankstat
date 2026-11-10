@@ -17,6 +17,7 @@ import { FieldInput } from '../forms/FieldInput.tsx'
 import { Form } from '../forms/Form.tsx'
 import { AddTyreSetDocument, type DistanceUnit, type TyreSeason } from '../gql/generated.ts'
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
+import { useFormat } from '../i18n/format.ts'
 import { useToast } from '../toast/toastContext.ts'
 import { parseMade } from './odometer.ts'
 import { keyedOf, useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
@@ -30,6 +31,7 @@ const SEASONS: TyreSeason[] = ['SUMMER', 'WINTER', 'ALL_SEASON']
 export function TyreSetDialog({ trigger, vehicleId, unit, fittedFirst }: { trigger: ReactNode; vehicleId: string; unit: DistanceUnit; fittedFirst: boolean }) {
   const { t } = useTranslation()
   const { toast } = useToast()
+  const format = useFormat()
   const [open, setOpen] = useDialogState()
   const id = useClientId(open)
   const stretchId = useClientId(open)
@@ -79,7 +81,7 @@ export function TyreSetDialog({ trigger, vehicleId, unit, fittedFirst }: { trigg
       toast(t('toast.saved'))
     } catch (err) {
       const keyed = keyedOf(err)
-      if (keyed?.key === 'tyres.swapExists' && replace === null) setReplace({ date: String(keyed.args.date), set: String(keyed.args.set) })
+      if (keyed?.key === 'tyres.swapExists' && replace === null) setReplace({ date: format.date(String(keyed.args.date)), set: String(keyed.args.set) })
       else setError(err)
     } finally {
       setBusy(false)

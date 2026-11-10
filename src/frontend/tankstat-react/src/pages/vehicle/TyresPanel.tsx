@@ -88,7 +88,9 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
       )}
       <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0,1fr)', md: 'minmax(0,1.1fr) minmax(0,1fr)' }, alignItems: 'start' }}>
         <Stack sx={{ gap: 2.5, minWidth: 0 }}>
-          <Section title={t('tyres.onCar')}>{onCar.length > 0 ? onCar.map(card) : <Typography variant="body2" sx={{ color: 'text.secondary' }}>—</Typography>}</Section>
+          <Section title={t('tyres.onCar')}>
+            {onCar.length > 0 ? onCar.map(card) : <Typography variant="body2" sx={{ color: 'text.secondary' }}>{t('tyres.noneOnCar')}</Typography>}
+          </Section>
           {stored.length > 0 && <Section title={t('tyres.inStorage')}>{stored.map(card)}</Section>}
           {canLog && (
             <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>

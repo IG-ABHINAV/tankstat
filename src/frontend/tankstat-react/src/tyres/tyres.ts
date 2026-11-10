@@ -23,7 +23,7 @@ export function useTyreMutation(vehicleId: string) {
   const client = useApolloClient()
   return useCallback(
     async <TData extends Record<string, unknown>, TVars extends Record<string, unknown>>(document: TypedDocumentNode<TData, TVars>, variables: TVars) => {
-      const result = await client.mutate({ mutation: document, variables, refetchQueries: ['VehicleDetails', 'LogDefaults'] })
+      const result = await client.mutate({ mutation: document, variables, refetchQueries: ['VehicleTyres', 'VehicleDetails', 'LogDefaults'] }) // VehicleTyres asked again so the device's kept answer follows
       const answer = result.data ? (Object.values(result.data)[0] as Tyres | undefined) : undefined
       if (answer && typeof answer === 'object' && 'sets' in answer)
         client.writeQuery({ query: VehicleTyresDocument, variables: { vehicleId }, data: { vehicleTyres: answer } })

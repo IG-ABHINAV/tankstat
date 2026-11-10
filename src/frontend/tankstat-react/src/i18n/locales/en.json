@@ -2587,7 +2587,7 @@
       "rotateDescription": "The pairs of the set on the car change places from a day.",
       "pastTitle": "Add past swaps",
       "pastDescription": "One row per swap: the day and the set that went on. What was on the car that day comes off.",
-      "pastHint": "A reading is optional. Left empty, the app works the car's odometer out for that day from the fuel log, between the two nearest readings, and marks the distance ≈. It is never saved as a reading.",
+      "pastHint": "A reading is optional. Left empty, the app works the car's odometer out for that day from the fuel log, between the two nearest readings, and marks the distance ≈. It is never saved as a reading. Days before {{date}}, where the fuel log starts, cannot be measured: the rough figure stands for them.",
       "addRow": "Add a row",
       "removeRow": "Remove row {{row}}",
       "rowLabel": "Swap {{row}}",
@@ -2632,6 +2632,7 @@
       "pastSaved_other": "Saved {{count}} swaps. Check the rough figures.",
       "retired": "Retired, with its history.",
       "trashed": "Moved to the trash."
-    }
+    },
+    "noneOnCar": "No set is on the car. Fit one from storage."
   }
 }

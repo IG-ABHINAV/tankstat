@@ -2587,7 +2587,7 @@
       "rotateDescription": "Az autón lévő szett párjai egy naptól helyet cserélnek.",
       "pastTitle": "Korábbi cserék felvétele",
       "pastDescription": "Cserénként egy sor: a nap és a felkerült szett. Ami aznap az autón volt, lekerül.",
-      "pastHint": "A kilométeróra-állás nem kötelező. Üresen hagyva az app a tankolási naplóból, a két legközelebbi állás között számolja ki az aznapi állást, és a távot ≈ jellel jelöli. Állásként sosem menti el.",
+      "pastHint": "A kilométeróra-állás nem kötelező. Üresen hagyva az app a tankolási naplóból, a két legközelebbi állás között számolja ki az aznapi állást, és a távot ≈ jellel jelöli. Állásként sosem menti el. A tankolási napló kezdete ({{date}}) előtti napokat nem lehet mérni: azokat a becsült táv fedi.",
       "addRow": "Sor hozzáadása",
       "removeRow": "A(z) {{row}}. sor eltávolítása",
       "rowLabel": "{{row}}. csere",
@@ -2632,6 +2632,7 @@
       "pastSaved_other": "{{count}} csere mentve. Ellenőrizd a becsült távokat.",
       "retired": "Kivonva, az előzményeivel együtt.",
       "trashed": "A kukába került."
-    }
+    },
+    "noneOnCar": "Nincs szett az autón. Szerelj fel egyet a tároltak közül."
   }
 }

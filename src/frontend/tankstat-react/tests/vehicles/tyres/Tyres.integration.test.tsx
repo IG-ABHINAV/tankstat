@@ -168,3 +168,87 @@ it('lists trashed sets and stretches on the Trash page, says why a restore is re
   await ui.click(screen.getByRole('button', { name: 'Restore Set: Pirelli Cinturato' }))
   await waitFor(() => expect(calls.RestoreTyreSet).toEqual([{ id: 's9' }]))
 })
+
+it('changes the positions of the set on the car: front and rear exchanged from a day', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(await screen.findByRole('button', { name: 'Change positions' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Change positions' })
+  expect(within(dialog).getByText(/Now: pair 1 at the front\./)).toBeInTheDocument()
+  expect(within(dialog).getByRole('radio', { name: 'Front ↔ rear' })).toBeChecked()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save positions' }))
+
+  await waitFor(() => expect(state.calls.ChangeTyrePositions).toHaveLength(1))
+  expect(state.calls.ChangeTyrePositions[0].input).toMatchObject({ setId: 's1', pairOneFront: false, stretchId: UUID })
+})
+
+it('adds a stretch to a set’s history with its first day’s reading, and edits one', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Continental WinterContact' })
+  await ui.click(within(history).getByRole('button', { name: 'Add a stretch' }))
+  const add = await screen.findByRole('dialog', { name: 'Add a stretch' })
+  await typeDate(ui, await findDateField(/First day on the car/, add), '2024-11-09')
+  await typeDate(ui, await findDateField(/Day it came off/, add), '2025-03-29')
+  await ui.type(within(add).getByLabelText(/^Odometer on the first day/), '118500')
+  await ui.click(within(add).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(state.calls.AddTyreStretch).toHaveLength(1))
+  expect(state.calls.AddTyreStretch[0].input).toMatchObject({ id: UUID, setId: 's2', from: '2024-11-09', until: '2025-03-29', pairOneFront: null, odometerFrom: 118_500 })
+
+  await ui.click(within(history).getByRole('button', { name: 'Edit' }))
+  const edit = await screen.findByRole('dialog', { name: 'Edit stretch' })
+  await ui.click(within(edit).getByRole('combobox', { name: 'Pairs' }))
+  await ui.click(screen.getByRole('option', { name: 'pair 2 at the front' }))
+  await ui.click(within(edit).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(state.calls.UpdateTyreStretch).toHaveLength(1))
+  expect(state.calls.UpdateTyreStretch[0].input).toMatchObject({ id: 'r2', from: '2025-11-15', until: '2026-03-28', pairOneFront: false, odometerFrom: null })
+})
+
+it('suggests a new rough figure once the history reaches back, and saves it with the day it now stands for', async () => {
+  const { ui, state } = setup([{ ...summer, suggestion: { distance: 12_900, until: '2025-03-29', measuredBefore: 20_000 } }, winter])
+
+  const card = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
+  expect(within(card).getByText(/the rough figure only stands for the time before/)).toBeInTheDocument()
+  await ui.click(within(card).getByRole('button', { name: 'Check the rough figure' }))
+  const dialog = await screen.findByRole('dialog', { name: 'The rough figure' })
+  expect(within(dialog).getByLabelText(/^Driven before that/)).toHaveValue('12900')
+  expect(within(dialog).getByText(/It was 32,900 km and stood for more time\. 12,900 km keeps the total as it was\./)).toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.SetTyreRoughDistance).toEqual([{ input: { id: 's1', distance: 12_900, until: '2025-03-29' } }]))
+})
+
+it('edits the reading of a tyre log day, and removes it for good after asking', async () => {
+  const { ui, state } = setup([summer, winter], { days: [{ day: '2026-03-28', odometer: 141_000, note: 'At the garage' }] })
+
+  await ui.click(await screen.findByRole('button', { name: /^Edit the reading of/ }))
+  const dialog = await screen.findByRole('dialog', { name: /^Reading of/ })
+  expect(within(dialog).getByText(/Between 140,000 km on .* and 147,000 km on .*\./)).toBeInTheDocument()
+  const field = within(dialog).getByLabelText(/^Odometer/)
+  await ui.clear(field)
+  await ui.type(field, '141200')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(state.calls.SetTyreLogDay).toEqual([{ input: { vehicleId: 'v1', day: '2026-03-28', odometer: 141_200, note: 'At the garage' } }]))
+
+  await ui.click(await screen.findByRole('button', { name: /^Edit the reading of/ }))
+  await ui.click(within(await screen.findByRole('dialog', { name: /^Reading of/ })).getByRole('button', { name: 'Remove the reading' }))
+  await ui.click(within(await screen.findByRole('alertdialog', { name: 'Remove the reading?' })).getByRole('button', { name: 'Remove the reading' }))
+  await waitFor(() => expect(state.calls.SetTyreLogDay).toHaveLength(2))
+  expect(state.calls.SetTyreLogDay[1]).toEqual({ input: { vehicleId: 'v1', day: '2026-03-28', odometer: null, note: 'At the garage' } })
+})
+
+it('moves a set to the trash from its history, with Undo', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Continental WinterContact' })
+  await ui.click(within(history).getByRole('button', { name: 'Move the set to the trash' }))
+  const confirm = await screen.findByRole('alertdialog', { name: 'Move the set to the trash?' })
+  expect(confirm).toHaveTextContent(/goes to the trash with its stretches/)
+  await ui.click(within(confirm).getByRole('button', { name: 'Move to the trash' }))
+
+  await waitFor(() => expect(state.calls.DeleteTyreSet).toEqual([{ id: 's2' }]))
+  await ui.click(await screen.findByRole('button', { name: 'Undo' }))
+  await waitFor(() => expect(state.calls.RestoreTyreSet).toEqual([{ id: 's2' }]))
+})

@@ -59,7 +59,8 @@ export function SwapDialog({
   const [open, setOpen] = useDialogState()
   const stretchId = useClientId(open)
   const choices = tyres.sets.filter((s) => !s.set.isRetired && (rotate ? s.onTheCar : !s.onTheCar))
-  const [chosen, setChosen] = useState(setId ?? choices[0]?.set.id ?? '')
+  const [picked, setChosen] = useState(setId ?? choices[0]?.set.id ?? '')
+  const chosen = choices.some((s) => s.set.id === picked) ? picked : (choices[0]?.set.id ?? '')
   const info = tyres.sets.find((s) => s.set.id === chosen)
   const base = pairsOf(info, rotate)
   const known = base !== null

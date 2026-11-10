@@ -4,7 +4,7 @@ import { gqlError } from './mocks.tsx'
 
 // A vehicle's tyres (#287) as the server answers them; the fake records what was sent and answers with the state it was given.
 export type FakeTyreStretch = { id: string; setId: string; from: string; until: string | null; pairOneFront: boolean | null; distance: number; measure?: string }
-export type FakeTyreSet = { id: string; name: string; season: string; roughDistance: number; onTheCar: boolean; isRetired?: boolean; stretches: FakeTyreStretch[] }
+export type FakeTyreSet = { id: string; name: string; season: string; roughDistance: number; onTheCar: boolean; isRetired?: boolean; stretches: FakeTyreStretch[]; suggestion?: { distance: number; until: string; measuredBefore: number } }
 
 export const tyreSummer: FakeTyreSet = {
   id: 's1', name: 'Michelin Primacy 4', season: 'SUMMER', roughDistance: 32_900, onTheCar: true,
@@ -36,7 +36,8 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
       },
       figures: {
         __typename: 'TyreSetFigures', distance: s.roughDistance + s.stretches.reduce((a, x) => a + x.distance, 0), approximate: true,
-        measured: s.stretches.reduce((a, x) => a + x.distance, 0), pairOneFront: s.stretches.reduce((a, x) => a + x.distance, 0), pairOneRear: 0, pairsUnknown: 0, suggestion: null,
+        measured: s.stretches.reduce((a, x) => a + x.distance, 0), pairOneFront: s.stretches.reduce((a, x) => a + x.distance, 0), pairOneRear: 0, pairsUnknown: 0,
+        suggestion: s.suggestion ? { __typename: 'RoughSuggestion', ...s.suggestion } : null,
       },
       stretches: s.stretches.map((x) => ({
         __typename: 'TyreStretchInfo',
@@ -62,6 +63,11 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
     mutation('RestoreTyreStretch', 'restoreTyreStretch'),
     mutation('SetTyreLogDay', 'setTyreLogDay'),
     mutation('RetireTyreSet', 'retireTyreSet'),
+    mutation('AddTyreStretch', 'addTyreStretch'),
+    mutation('UpdateTyreStretch', 'updateTyreStretch'),
+    mutation('SetTyreRoughDistance', 'setTyreRoughDistance'),
+    mutation('DeleteTyreSet', 'deleteTyreSet'),
+    mutation('RestoreTyreSet', 'restoreTyreSet'),
   ]
   return { state, handlers }
 }

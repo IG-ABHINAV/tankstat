@@ -387,7 +387,7 @@ export function RoughDialog({
     setBusy(true)
     setError(undefined)
     try {
-      await run(SetTyreRoughDistanceDocument, { input: { id: info.set.id, distance: wholeOrNull(String(form.get('rough') ?? '')) ?? 0, until: suggestion?.until ?? null } })
+      await run(SetTyreRoughDistanceDocument, { input: { id: info.set.id, distance: wholeOrNull(String(form.get('rough') ?? '')) ?? 0, until: suggestion?.until ?? (info.set.roughUntil ? null : measuredFrom) } })
       setOpen(false)
       toast(t('toast.saved'))
     } catch (err) {
