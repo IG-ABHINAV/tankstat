@@ -159,7 +159,7 @@ it('edits an expense starting from its real values, and the odometer can be clea
 
 it('keeps a discount with the amount paid: shown in its column on request, back in the edit dialog, cleared when emptied', async () => {
   const { ui, state } = setup(fakeVehicle(), [fakeExpense({ id: 'e4', title: 'Tyres', amount: 18800, discount: 1200, currency: 'HUF' })])
-  await screen.findByText('Tyres')
+  await screen.findByRole('gridcell', { name: 'Tyres' }) // the expense's row, not the vehicle's Tyres tab of the same name
   expect(state.requests.at(-1)).toMatchObject({ withDiscount: false }) // hidden by default, so never asked for
 
   await ui.click(screen.getByRole('button', { name: 'Columns' }))
