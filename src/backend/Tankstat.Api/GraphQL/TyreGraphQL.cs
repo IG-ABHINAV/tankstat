@@ -129,7 +129,7 @@ public sealed class TyreQueries
     /// <summary>A vehicle's tyre sets, their stretches and the tyre log's days; null when the vehicle cannot be seen.</summary>
     public Task<TyreOverview?> GetVehicleTyres(Guid vehicleId, [Service] TyreService tyres, CancellationToken ct) => tyres.OverviewAsync(vehicleId, ct);
 
-    /// <summary>The trashed tyre sets and the trashed stretches of sets not in the trash, newest first.</summary>
+    /// <summary>The trashed tyre sets and the trashed stretches of sets not in the trash, by when they were trashed (newest first by default).</summary>
     public Task<IReadOnlyList<TyreTrashRow>> GetTyreTrash(
         [Service] TyreService tyres, CancellationToken ct,
         TyreTrashSortField orderBy = TyreTrashSortField.DeletedAt, Tankstat.Domain.SortDirection direction = Tankstat.Domain.SortDirection.Desc,

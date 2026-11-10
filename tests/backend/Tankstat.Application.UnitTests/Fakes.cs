@@ -492,11 +492,11 @@ internal sealed class InMemoryTyres : ITyreRepository
         Sets.Where(s => s.IsDeleted && scope.Contains(s.OwnerId, s.VehicleId))
             .Select(s => new TyreTrashRow(TyreTrashKind.Set, s.Id, s.VehicleId, s.Name, null, null, Stretches.Count(x => x.SetId == s.Id && !x.IsDeleted), s.DeletedAt!.Value, s.Version))
             .Concat(Stretches.Where(x => x.IsDeleted && scope.Contains(x.OwnerId, x.VehicleId) && Sets.Any(s => s.Id == x.SetId && !s.IsDeleted))
-                .Select(x => new TyreTrashRow(TyreTrashKind.Stretch, x.Id, x.VehicleId, Sets.First(s => s.Id == x.SetId).Name, x.From, x.Until, 0, x.DeletedAt!.Value, x.Version)))
-            .OrderByDescending(r => r.DeletedAt).ThenBy(r => r.Id);
+                .Select(x => new TyreTrashRow(TyreTrashKind.Stretch, x.Id, x.VehicleId, Sets.First(s => s.Id == x.SetId).Name, x.From, x.Until, 0, x.DeletedAt!.Value, x.Version)));
 
+    // As the repository orders it: by when it was trashed either way, then always by id.
     public Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct, bool descending = true) =>
-        Task.FromResult<IReadOnlyList<TyreTrashRow>>([.. (descending ? Trash(scope) : Trash(scope).Reverse()).Skip(skip).Take(take)]);
+        Task.FromResult<IReadOnlyList<TyreTrashRow>>([.. (descending ? Trash(scope).OrderByDescending(r => r.DeletedAt) : Trash(scope).OrderBy(r => r.DeletedAt)).ThenBy(r => r.Id).Skip(skip).Take(take)]);
 
     public Task<int> CountTrashAsync(OwnerScope scope, CancellationToken ct) => Task.FromResult(Trash(scope).Count());
 
