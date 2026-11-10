@@ -115,7 +115,7 @@ public sealed class TyreSet : IOwned, ISoftDeletable, ISynced
         Bump(EntityChange.Edited, by);
     }
 
-    /// <summary>Sets the rough figure and the first day it does not cover (both checked by the caller against the stretches).</summary>
+    /// <summary>Sets the rough figure and the first day it does not cover (the caller picks that day: never in the future, by default before the set's first stretch).</summary>
     public void SetRough(long roughDistance, DateOnly? roughUntil, Guid? by = null)
     {
         RequireLive();
