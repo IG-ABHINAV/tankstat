@@ -32,8 +32,15 @@ public sealed record TyreStretchView(TyreStretch Stretch, StretchDistance Distan
 /// <summary>A set with its figures and its live stretches (none while it is in the trash).</summary>
 public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyList<TyreStretchView> Stretches, bool OnTheCar);
 
-/// <summary>A vehicle's tyres as the Tyres tab shows them: the sets that are not in the trash and the tyre log's days.</summary>
-public sealed record TyreOverview(Guid VehicleId, IReadOnlyList<TyreSetView> Sets, IReadOnlyList<TyreLogDay> Days, bool HasReadings);
+/// <summary>
+/// A vehicle's tyres as the Tyres tab shows them: the sets that are not in the trash and the tyre log's days, with the vehicle's readings
+/// (date and value, by date), so a client works out the odometer of a day as <see cref="TyreCalculator.OdometerOn"/> does (a form's hint, a
+/// log line), never saving it.
+/// </summary>
+public sealed record TyreOverview(Guid VehicleId, IReadOnlyList<TyreSetView> Sets, IReadOnlyList<TyreLogDay> Days, IReadOnlyList<ReadingPoint> Readings)
+{
+    public bool HasReadings => Readings.Count > 0;
+}
 
 /// <summary>
 /// A vehicle's tyre sets and their time on the car (#287). They follow the access rules of the vehicle's logs (<see cref="LogAccessGuard"/>):
@@ -107,7 +114,8 @@ public sealed class TyreService(
     }
 
     /// <param name="stretchId">The id of the stretch the swap creates, if it creates one: a swap sent again finds it and changes nothing.</param>
-    public async Task<TyreOverview> SwapAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null)
+    /// <param name="repeat">Sent from a device's queue (the sync): the set already on the car that day is a retry's answer, not an error.</param>
+    public async Task<TyreOverview> SwapAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null, bool repeat = false)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
@@ -116,7 +124,7 @@ public sealed class TyreService(
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
-        save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId, repeatable: stretchId is not null));
+        save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId, repeatable: repeat));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
         await SaveAsync(save, ct);
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
@@ -139,11 +147,15 @@ public sealed class TyreService(
     }
 
     /// <summary>Swaps from papers, applied in day order, all or nothing. Two on one day are refused; one on a day that has a swap follows <paramref name="replace"/>.</summary>
-    public async Task<TyreOverview> AddPastSwapsAsync(Guid vehicleId, IReadOnlyList<TyrePastSwap> rows, bool replace, CancellationToken ct)
+    public const int MaxPastSwaps = 25; // one change of a device's queue must fit the ledger's payload
+
+    public async Task<TyreOverview> AddPastSwapsAsync(Guid vehicleId, IReadOnlyList<TyrePastSwap> rows, bool replace, CancellationToken ct, bool repeat = false)
     {
         var vehicle = await EditableVehicleAsync(vehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         if (rows.Count == 0) throw new DomainException("tyres.pastSwapsRequired", "Enter at least one swap.");
+        if (rows.Count > MaxPastSwaps)
+            throw new DomainException("tyres.pastSwapsTooMany", $"Enter at most {MaxPastSwaps} swaps at once.", new { Max = MaxPastSwaps });
         var book = await tyres.LoadAsync(vehicle.Id, ct);
         if (rows.Any(r => Repeated(book, r.StretchId, vehicle.Id, by))) return Overview(vehicle.Id, book);
         var day = rows.GroupBy(r => r.Day).FirstOrDefault(g => g.Count() > 1)?.Key;
@@ -154,7 +166,7 @@ public sealed class TyreService(
         foreach (var row in rows.OrderBy(r => r.Day))
         {
             RequireNotFuture(row.Day);
-            save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.StretchId, pairsGiven: false, repeatable: row.StretchId is not null));
+            save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.StretchId, pairsGiven: false, repeatable: repeat));
             if (row.Odometer is not null) await SetDayAsync(vehicle, book, save, row.Day, row.Odometer, note: null, keepNote: true, by, ct);
         }
         await SaveAsync(save, ct);
@@ -281,11 +293,6 @@ public sealed class TyreService(
     public async Task<TyreStretch?> StretchInTrashAsync(Guid id, CancellationToken ct) =>
         await tyres.FindStretchAsync(id, ct) is { IsDeleted: true } stretch && await guard.ForVehicleAsync(stretch.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? stretch : null;
 
-    /// <summary>The set as stored, the trash included (its version after a change), whoever may see it; for the sync's answers.</summary>
-    public Task<TyreSet?> FindSetAsync(Guid id, CancellationToken ct) => tyres.FindSetAsync(id, ct);
-
-    public Task<TyreStretch?> FindStretchAsync(Guid id, CancellationToken ct) => tyres.FindStretchAsync(id, ct);
-
     public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(int skip, int take, CancellationToken ct) =>
         await tyres.ListTrashAsync(await access.LogScopeAsync(AccessLevel.Edit, ct), Math.Max(0, skip), Math.Clamp(take, 1, 100), ct);
 
@@ -318,7 +325,7 @@ public sealed class TyreService(
                     [.. own.Select(s => new TyreStretchView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen));
             })
             .ToList();
-        return new TyreOverview(vehicleId, sets, [.. book.Days.OrderByDescending(d => d.Day)], book.Readings.Count > 0);
+        return new TyreOverview(vehicleId, sets, [.. book.Days.OrderByDescending(d => d.Day)], book.Readings);
     }
 
     private static TyreHistory History(Vehicle vehicle, TyreBook book, TyreSet? extra = null) =>

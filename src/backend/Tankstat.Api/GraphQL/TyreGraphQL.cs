@@ -33,7 +33,7 @@ public sealed record SwapTyresInput(
 
 public sealed record PastTyreSwapInput(DateOnly Day, Guid SetId, long? Odometer = null, Guid? StretchId = null);
 
-/// <param name="Swaps">One per day (two on one day are refused), applied in day order, all or nothing.</param>
+/// <param name="Swaps">One per day (two on one day are refused), 1 to 25, applied in day order, all or nothing.</param>
 public sealed record AddPastTyreSwapsInput(Guid VehicleId, IReadOnlyList<PastTyreSwapInput> Swaps, bool Replace = false);
 
 /// <param name="OdometerFrom">A reading for the first day, kept on that day's tyre log line; left out leaves the day as it is.</param>
@@ -83,7 +83,16 @@ public sealed class TyreLogDayType : ObjectType<TyreLogDay>
 /// <summary>A vehicle's tyres as the Tyres tab shows them, with every distance worked out on read.</summary>
 public sealed class VehicleTyresType : ObjectType<TyreOverview>
 {
-    protected override void Configure(IObjectTypeDescriptor<TyreOverview> descriptor) => descriptor.Name("VehicleTyres");
+    protected override void Configure(IObjectTypeDescriptor<TyreOverview> descriptor)
+    {
+        descriptor.Name("VehicleTyres");
+        descriptor.Field(o => o.Readings).Description("The vehicle's odometer readings by date (the highest of a day decides), to work out the odometer of a day as the server does.");
+    }
+}
+
+public sealed class ReadingPointType : ObjectType<ReadingPoint>
+{
+    protected override void Configure(IObjectTypeDescriptor<ReadingPoint> descriptor) => descriptor.Name("OdometerPoint");
 }
 
 public sealed class TyreSetViewType : ObjectType<TyreSetView>
@@ -183,8 +192,8 @@ internal static class TyreChanges
     public static Task<TyreOverview> Update(UpdateTyreSetInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
         tyres.UpdateSetAsync(i.Id, new TyreSetInput(i.Name, i.Season, i.Size, i.Since, i.MadeWeek, i.MadeYear), ct, version);
 
-    public static Task<TyreOverview> Past(AddPastTyreSwapsInput i, TyreService tyres, CancellationToken ct) =>
-        tyres.AddPastSwapsAsync(i.VehicleId, [.. i.Swaps.Select(s => new TyrePastSwap(s.Day, s.SetId, s.Odometer, s.StretchId))], i.Replace, ct);
+    public static Task<TyreOverview> Past(AddPastTyreSwapsInput i, TyreService tyres, CancellationToken ct, bool repeat = false) =>
+        tyres.AddPastSwapsAsync(i.VehicleId, [.. i.Swaps.Select(s => new TyrePastSwap(s.Day, s.SetId, s.Odometer, s.StretchId))], i.Replace, ct, repeat);
 
     public static Task<TyreOverview> AddStretch(AddTyreStretchInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddStretchAsync(i.SetId, new TyreStretchInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, i.Id);

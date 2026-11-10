@@ -306,7 +306,7 @@ public class TyreServiceTests
     }
 
     [Fact]
-    public async Task ReplacingWithTheSetThatCameOff_SentAgain_ChangesNothing()
+    public async Task ReplacingWithTheSetThatCameOff_SentAgainByTheSync_ChangesNothing()
     {
         var s = await Setup();
         var (_, summer, winter) = await TwoSets(s);
@@ -314,9 +314,12 @@ public class TyreServiceTests
         var again = new TyreSwapInput(s.Car.Id, summer, D(2026, 9, 20), true, true, null, null);
         var id = Guid.NewGuid();
 
-        var first = await s.Tyres.SwapAsync(again, default, id); // the summer stretch is joined again: no stretch gets the id
+        var first = await s.Tyres.SwapAsync(again, default, id, repeat: true); // the summer stretch is joined again: no stretch gets the id
         var saves = s.W.Tyres.Saves;
-        var second = await s.Tyres.SwapAsync(again, default, id);
+        var second = await s.Tyres.SwapAsync(again, default, id, repeat: true); // the sync sends it again
+
+        // Online, the same swap is the person's mistake: the set is on the car that day already.
+        Assert.Equal("tyres.alreadyOnCar", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.SwapAsync(again with { Replace = false }, default, Guid.NewGuid()))).Key);
 
         Assert.True(Set(first, summer).OnTheCar);
         Assert.Single(Set(second, summer).Stretches);

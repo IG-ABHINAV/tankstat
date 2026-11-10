@@ -329,9 +329,9 @@ public sealed class SyncMutations
         static Guid Required(Guid? id, Guid change) =>
             id is { } given && given != Guid.Empty ? given : throw new DomainException("sync.entityIdRequired", "An add sent by a device names the id it gave it.", new { Id = change });
         async Task<AppliedChange> SetAnswer(Guid id, CancellationToken ct) =>
-            await tyres.FindSetAsync(id, ct) is { } set ? new AppliedChange(set.Id, set.Version, set.VehicleId) : new AppliedChange(id, null, null);
+            await services.TyreSetRow(id, ct) is { } set ? new AppliedChange(set.Id, set.Version, set.VehicleId) : new AppliedChange(id, null, null);
         async Task<AppliedChange> StretchAnswer(Guid id, CancellationToken ct) =>
-            await tyres.FindStretchAsync(id, ct) is { } st ? new AppliedChange(st.Id, st.Version, st.VehicleId) : new AppliedChange(id, null, null);
+            await services.TyreStretchRow(id, ct) is { } st ? new AppliedChange(st.Id, st.Version, st.VehicleId) : new AppliedChange(id, null, null);
         SyncChangeRequest OnSet(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
             make(kind, id, null, async ct => { await apply(ct); return await SetAnswer(id, ct); }, services.TyreSet(id));
         SyncChangeRequest OnStretch(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
@@ -367,7 +367,7 @@ public sealed class SyncMutations
             var id = Required(sw.StretchId, c.Id);
             return make(SyncChangeKind.SwapTyres, id, sw.VehicleId, async ct =>
             {
-                await tyres.SwapAsync(TyreChanges.Swap(sw), ct, id);
+                await tyres.SwapAsync(TyreChanges.Swap(sw), ct, id, repeat: true);
                 return new AppliedChange(id, null, sw.VehicleId);
             }, null);
         }
@@ -385,7 +385,7 @@ public sealed class SyncMutations
             var rows = ps with { Swaps = [.. ps.Swaps.Select(w => w with { StretchId = Required(w.StretchId, c.Id) })] };
             return make(SyncChangeKind.AddPastTyreSwaps, rows.Swaps.FirstOrDefault()?.StretchId, ps.VehicleId, async ct =>
             {
-                await TyreChanges.Past(rows, tyres, ct);
+                await TyreChanges.Past(rows, tyres, ct, repeat: true);
                 return new AppliedChange(rows.Swaps.FirstOrDefault()?.StretchId, null, ps.VehicleId);
             }, null);
         }
@@ -564,6 +564,11 @@ public sealed class SyncChangeServices(
     public TyreService Tyres => tyres;
     public Func<CancellationToken, Task<Guid?>> TyreSet(Guid id) => async ct => (await tyreRows.FindSetAsync(id, ct))?.VehicleId;
     public Func<CancellationToken, Task<Guid?>> TyreStretch(Guid id) => async ct => (await tyreRows.FindStretchAsync(id, ct))?.VehicleId;
+
+    /// <summary>A set's or stretch's version after a change was applied (the change itself checked the access).</summary>
+    public Task<TyreSet?> TyreSetRow(Guid id, CancellationToken ct) => tyreRows.FindSetAsync(id, ct);
+
+    public Task<TyreStretch?> TyreStretchRow(Guid id, CancellationToken ct) => tyreRows.FindStretchAsync(id, ct);
 
     public ImageService Images => images;
     public VehicleService Vehicles => vehicles;

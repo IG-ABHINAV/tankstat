@@ -595,6 +595,11 @@ type NotificationRefInfo {
   id: UUID!
 }
 
+type OdometerPoint {
+  date: LocalDate!
+  value: Long!
+}
+
 type OfflineChanges {
   vehicle: Vehicle!
   refuelings: [Refueling!]!
@@ -1168,6 +1173,8 @@ type VehicleSummary {
 }
 
 type VehicleTyres {
+  "The vehicle's odometer readings by date (the highest of a day decides), to work out the odometer of a day as the server does."
+  readings: [OdometerPoint!]!
   vehicleId: UUID!
   sets: [TyreSetInfo!]!
   days: [TyreLogDay!]!

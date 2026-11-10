@@ -81,6 +81,7 @@ do
         .AddType<TyreStretchType>()
         .AddType<TyreLogDayType>()
         .AddType<VehicleTyresType>()
+        .AddType<ReadingPointType>()
         .AddType<TyreSetViewType>()
         .AddType<TyreStretchViewType>()
         .AddTypeExtension<TyreSetExtensions>()
