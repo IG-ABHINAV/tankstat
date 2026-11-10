@@ -25,6 +25,7 @@ using Tankstat.Application.Stats;
 using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
+using Tankstat.Application.Tyres;
 
 namespace Tankstat.Application;
 
@@ -90,6 +91,7 @@ public static class DependencyInjection
         services.AddScoped<RefuelingService>();
         services.AddScoped<ExpenseService>();
         services.AddScoped<RecurringExpenseService>();
+        services.AddScoped<TyreService>();
         services.AddScoped<StatsService>();
         services.AddScoped<ChartService>();
         services.AddScoped<DashboardService>();
