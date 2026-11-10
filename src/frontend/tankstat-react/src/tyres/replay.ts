@@ -62,13 +62,14 @@ export const isLocalLine = (id: string) => id.startsWith(LOCAL_LINE)
 
 /**
  * A reading typed with a change: the tyre log's line for that day (its note kept), and a reading of the car on that day. A line it changes
- * has version 0 from then on, so a later change of it goes without the version the server will have moved on from.
+ * has version 0 from then on, so a later change of it goes without the version the server will have moved on from. `clear`: a null reading
+ * clears the line's (the tyre log's own edit, as the server's `clear`), else it leaves it.
  */
-function typed(m: Model, vehicleId: string, on: string | null, odometer: number | null, note?: unknown) {
+function typed(m: Model, vehicleId: string, on: string | null, odometer: number | null, note?: unknown, clear = false) {
   if (!on || (odometer === null && note === undefined)) return
   const existing = m.days.find((d) => d.day === on)
   const next: Day = existing
-    ? { ...existing, odometer: odometer ?? existing.odometer, note: note === undefined ? existing.note : ((note as string | null) ?? null), version: 0 }
+    ? { ...existing, odometer: clear ? odometer : (odometer ?? existing.odometer), note: note === undefined ? existing.note : ((note as string | null) ?? null), version: 0 }
     : named<Day>('TyreLogDay', { id: `${LOCAL_LINE}${vehicleId}:${on}`, day: on, odometer, note: (note as string | null | undefined) ?? null, version: 0 })
   m.days = [...m.days.filter((d) => d !== existing), next]
   if (odometer !== null) m.readings = [...m.readings.filter((r) => r.date !== on || r.value > odometer), ...(m.readings.some((r) => r.date === on && r.value > odometer) ? [] : [named('OdometerPoint', { date: on, value: odometer })])]
@@ -86,7 +87,7 @@ function apply(m: Model, c: Change, vehicleId: string) {
         onTheCar: false,
         set: named<SetInfo['set']>('TyreSet', {
           id: str(input.id), vehicleId, name: str(input.name), season: input.season as SetInfo['set']['season'], size: (input.size as string | null) ?? null,
-          since: str(input.since), madeWeek: num(input.madeWeek), madeYear: num(input.madeYear), roughDistance: rough, roughUntil: null, retiredOn: null, isRetired: false, version: 0,
+          since: str(input.since), madeWeek: num(input.madeWeek), madeYear: num(input.madeYear), roughDistance: rough, roughUntil: rough > 0 ? day(input.day) : null, retiredOn: null, isRetired: false, version: 0,
         }),
         figures: named<SetInfo['figures']>('TyreSetFigures', { distance: rough, approximate: rough > 0, measured: 0, pairOneFront: 0, pairOneRear: 0, pairsUnknown: 0, suggestion: null }),
         stretches: [],
@@ -104,17 +105,23 @@ function apply(m: Model, c: Change, vehicleId: string) {
     }
     case 'setTyreRoughDistance': {
       const s = setOf(m, input.id)
-      s.set = { ...s.set, roughDistance: num(input.distance) ?? 0, roughUntil: day(input.until) }
+      // Without a day it keeps the one it had, else the set's first stretch (the server's `SetRoughAsync`; `RoughDialog` sends a day then).
+      const first = m.stretches.filter((x) => x.setId === s.set.id).map((x) => x.from).sort()[0]
+      s.set = { ...s.set, roughDistance: num(input.distance) ?? 0, roughUntil: day(input.until) ?? s.set.roughUntil ?? first ?? null }
       return
     }
     case 'retireTyreSet': {
       const s = setOf(m, input.id)
-      if (m.stretches.some((x) => x.setId === s.set.id && x.until === null)) throw new TyreRuleError('tyres.retireOnCar', { set: s.set.name })
+      const on = str(input.day)
+      // On the car that day or later (the server's `RetireAsync`): no stretch of it may run past the day it is retired.
+      if (m.stretches.some((x) => x.setId === s.set.id && (x.until === null || x.until > on))) throw new TyreRuleError('tyres.retireOnCar', { set: s.set.name })
+      if (s.set.isRetired) throw new TyreRuleError('tyres.alreadyRetired')
       s.set = { ...s.set, retiredOn: day(input.day), isRetired: true }
       return
     }
     case 'unretireTyreSet': {
       const s = setOf(m, input.id)
+      if (!s.set.isRetired) throw new TyreRuleError('tyres.notRetired')
       s.set = { ...s.set, retiredOn: null, isRetired: false }
       return
     }
@@ -178,10 +185,11 @@ function apply(m: Model, c: Change, vehicleId: string) {
       const existing = m.days.find((d) => d.day === on)
       const odometer = num(input.odometer)
       const note = (input.note as string | null | undefined) ?? null
-      // Cleared, the line goes with its reading (as clearing an expense's odometer); a reading typed here was the day's own.
-      if (odometer === null && !note) m.days = m.days.filter((d) => d !== existing)
-      else typed(m, vehicleId, on, odometer, note)
+      // The reading it replaces goes first (one typed lower would otherwise stay as the day's highest); a reading typed here was the day's own.
       if (existing?.odometer != null && existing.odometer !== odometer) m.readings = m.readings.filter((r) => !(r.date === on && r.value === existing.odometer))
+      // Cleared, the line goes with its reading (as clearing an expense's odometer); a reading cleared with the note kept leaves the line without one.
+      if (odometer === null && !note) m.days = m.days.filter((d) => d !== existing)
+      else typed(m, vehicleId, on, odometer, note, true)
       return
     }
     case 'restoreTyreSet':
@@ -192,9 +200,8 @@ function apply(m: Model, c: Change, vehicleId: string) {
 
 const sameStretch = (a: StretchState | undefined, b: StretchState) => !!a && a.from === b.from && a.until === b.until && a.pairOneFront === b.pairOneFront && a.setId === b.setId
 
-/** The model as the answer the Tabs tab reads, in the server's order (`TyreService` `Overview`). */
 /**
- * A set or stretch a waiting change has changed already carries no version (0, as one added here): the server bumps it once that change is
+ * The model as the answer the Tyres tab reads, in the server's order (`TyreService` `Overview`). A set or stretch a waiting change has changed already carries no version (0, as one added here): the server bumps it once that change is
  * applied, so a later change of it is sent without one (`useTyreMutation`), never parked for a version this device knew before.
  */
 function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string>; added: Set<string> } {

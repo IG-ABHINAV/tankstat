@@ -84,6 +84,35 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
     expect(cleared.readings.map((r) => r.date)).toEqual(['2026-03-01'])
     expect(replayTyres(noTyres('v1'), []).tyres.sets).toEqual([])
   })
+
+  it('a day’s reading cleared with its note kept leaves the line without it; one typed lower takes the place of the one it corrects', () => {
+    const withDay = replayTyres(base, [change('setTyreLogDay', { vehicleId: 'v1', day: '2026-06-01', odometer: 143_000, note: 'Pressure checked' })]).tyres
+
+    const noteOnly = replayTyres(withDay, [change('setTyreLogDay', { vehicleId: 'v1', day: '2026-06-01', id: withDay.days[0].id, odometer: null, note: 'Pressure checked' })]).tyres
+    expect(noteOnly.days).toMatchObject([{ day: '2026-06-01', odometer: null, note: 'Pressure checked' }]) // as the server's `clear`
+    expect(noteOnly.readings.map((r) => r.date)).toEqual(['2026-03-01'])
+
+    const lower = replayTyres(withDay, [change('setTyreLogDay', { vehicleId: 'v1', day: '2026-06-01', id: withDay.days[0].id, odometer: 142_500, note: 'Pressure checked' })]).tyres
+    expect(lower.days).toMatchObject([{ day: '2026-06-01', odometer: 142_500 }])
+    expect(lower.readings).toMatchObject([{ date: '2026-03-01', value: 140_000 }, { date: '2026-06-01', value: 142_500 }])
+  })
+
+  it('a rough figure saved without a day keeps the one it had; one added with the set stands until the day it was added', () => {
+    const rough = { ...base, sets: base.sets.map((s) => (s.set.id === 's2' ? { ...s, set: { ...s.set, roughDistance: 8000, roughUntil: '2025-11-15' } } : s)) }
+    const kept = replayTyres(rough, [change('setTyreRoughDistance', { id: 's2', distance: 9000, until: null })]).tyres
+    expect(kept.sets.find((s) => s.set.id === 's2')!.set).toMatchObject({ roughDistance: 9000, roughUntil: '2025-11-15' })
+
+    const added = replayTyres(base, [change('addTyreSet', { id: 'n', vehicleId: 'v1', name: 'Nokian', season: 'WINTER', since: '2024-11-01', fitted: false, day: '2026-11-10', roughDistance: 15_000, replace: false })]).tyres
+    expect(added.sets.find((s) => s.set.id === 'n')!.set).toMatchObject({ roughDistance: 15_000, roughUntil: '2026-11-10' })
+  })
+
+  it('retiring refuses a set whose stretch runs past the day, as the server does; back from retirement only a retired one', () => {
+    expect(() => applyTyreChange(base, change('retireTyreSet', { id: 's2', day: '2026-03-01' }))).toThrow(expect.objectContaining({ key: 'tyres.retireOnCar' }))
+    expect(() => applyTyreChange(base, change('unretireTyreSet', { id: 's2' }))).toThrow(expect.objectContaining({ key: 'tyres.notRetired' }))
+    const back = replayTyres(base, [change('retireTyreSet', { id: 's2', day: '2026-11-10' }), change('unretireTyreSet', { id: 's2' })])
+    expect(back.skipped).toEqual([])
+    expect(back.tyres.sets.find((s) => s.set.id === 's2')!.set).toMatchObject({ isRetired: false, retiredOn: null })
+  })
 })
 
 describe('every other tyre change, shown as the server will make it', () => {
@@ -110,7 +139,6 @@ describe('every other tyre change, shown as the server will make it', () => {
     ['updateTyreStretch', { id: 'r2', from: '2025-11-01', until: '2026-03-28', pairOneFront: false, odometerFrom: null, odometerUntil: null }, (r: ReturnType<typeof after>) =>
       expect(winter(r).stretches[0].stretch).toMatchObject({ from: '2025-11-01', pairOneFront: false, version: 0 })],
     ['deleteTyreStretch', { id: 'r2' }, (r: ReturnType<typeof after>) => expect(winter(r).stretches).toEqual([])],
-    ['unretireTyreSet', { id: 's2' }, (r: ReturnType<typeof after>) => expect(winter(r).set.isRetired).toBe(false)],
     ['restoreTyreSet', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.tyres.sets).toHaveLength(2)], // the trash is the server's: shown once synced
     ['restoreTyreStretch', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.touched.size).toBe(0)],
   ] as const)('%s', (action, input, check) => {
