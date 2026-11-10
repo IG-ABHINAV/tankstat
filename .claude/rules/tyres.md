@@ -44,7 +44,7 @@ paths:
   - **The policies:** `VehicleTyres` is kept, `TyreTrash` online only.
   - **The kinds:** the device sends no tyre change yet; `syncKinds.ts` leaves the tyre kinds out until part 4.
 - **UI:**
-  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details*. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
+  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details*. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading or note stayed, the day's note shown on its line (the owner's choice in #297's review); a line with a reading or a note has the pencil, *Reading of {date}*, which edits both: *Remove the reading* keeps the note, and saving neither removes the line (a note-only line is titled *Note*).
   - **The dialogs** in `src/tyres/`:
     - `TyreSetDialog` (add);
     - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);

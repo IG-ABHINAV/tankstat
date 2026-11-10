@@ -271,7 +271,7 @@ it('suggests a new rough figure once the history reaches back, and saves it with
 it('edits the reading of a tyre log day, and removes it for good after asking', async () => {
   const { ui, state } = setup([summer, winter], { days: [{ day: '2026-03-28', odometer: 141_000, note: 'At the garage' }] })
 
-  await ui.click(await screen.findByRole('button', { name: /^Edit the reading of/ }))
+  await ui.click(await screen.findByRole('button', { name: /^Edit the reading and note of/ }))
   const dialog = await screen.findByRole('dialog', { name: /^Reading of/ })
   expect(within(dialog).getByText(/Between 140,000 km on .* and 147,000 km on .*\./)).toBeInTheDocument()
   const field = within(dialog).getByLabelText(/^Odometer/)
@@ -280,7 +280,7 @@ it('edits the reading of a tyre log day, and removes it for good after asking', 
   await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(state.calls.SetTyreLogDay).toEqual([{ input: { vehicleId: 'v1', day: '2026-03-28', odometer: 141_200, note: 'At the garage' } }]))
 
-  await ui.click(await screen.findByRole('button', { name: /^Edit the reading of/ }))
+  await ui.click(await screen.findByRole('button', { name: /^Edit the reading and note of/ }))
   await ui.click(within(await screen.findByRole('dialog', { name: /^Reading of/ })).getByRole('button', { name: 'Remove the reading' }))
   await ui.click(within(await screen.findByRole('alertdialog', { name: 'Remove the reading?' })).getByRole('button', { name: 'Remove the reading' }))
   await waitFor(() => expect(state.calls.SetTyreLogDay).toHaveLength(2))
@@ -308,4 +308,30 @@ it('shows no tyres, not an endless wait, to someone who may see the vehicle but 
 
   expect(await screen.findByRole('heading', { name: 'No tyres yet' })).toBeInTheDocument()
   expect(screen.queryByRole('status', { name: /Loading/ })).not.toBeInTheDocument()
+})
+
+it('shows a day’s note on its line, and a line left with only a note can be edited or cleared, which removes it', async () => {
+  const { ui, state } = setup([summer, winter], {
+    days: [
+      { day: '2026-03-28', odometer: 141_000, note: 'At the garage' },
+      { day: '2025-06-01', odometer: null, note: 'Pressure checked' },
+    ],
+  })
+
+  const log = await screen.findByRole('region', { name: 'Tyre log' })
+  const swapLine = within(log).getByText('Michelin Primacy 4: on the car').closest('li')!
+  expect(swapLine).toHaveTextContent('At the garage')
+  const noteLine = within(log).getByText('Pressure checked').closest('li')!
+  expect(noteLine).toHaveTextContent(/^Note/)
+  expect(noteLine).not.toHaveTextContent('reading typed here')
+
+  await ui.click(within(noteLine as HTMLElement).getByRole('button', { name: /^Edit the reading and note of Jun 1, 2025/ }))
+  const dialog = await screen.findByRole('dialog', { name: /^Reading of/ })
+  expect(within(dialog).getByLabelText(/^Odometer/)).toHaveValue('')
+  expect(within(dialog).queryByRole('button', { name: 'Remove the reading' })).not.toBeInTheDocument() // there is none
+  expect(within(dialog).getByText('With neither a reading nor a note, the line is removed.')).toBeInTheDocument()
+  await ui.clear(within(dialog).getByLabelText(/^Note/))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.SetTyreLogDay).toEqual([{ input: { vehicleId: 'v1', day: '2025-06-01', odometer: null, note: null } }]))
 })
