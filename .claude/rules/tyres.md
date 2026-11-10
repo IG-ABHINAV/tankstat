@@ -1,0 +1,63 @@
+---
+paths:
+  - "src/backend/**/Tyres/**"
+  - "**/*Tyre*"
+  - "src/frontend/tankstat-react/src/tyres/**"
+  - "src/frontend/tankstat-react/src/pages/vehicle/TyresPanel.tsx"
+  - "src/frontend/tankstat-react/src/graphql/tyres.graphql"
+  - "src/frontend/tankstat-react/tests/vehicles/tyres/**"
+  - "src/frontend/tankstat-react/e2e/tyres.e2e.ts"
+---
+
+# Tyres
+
+- **The model (#287, parts 1–4 of #286):** `Domain/Tyres`.
+  - `TyreSet` (name, season, size, *in use since*, made week and year, the rough figure `RoughDistance` with `RoughUntil`, the first day it does not cover; retired; trashed).
+  - `TyreStretch` (a set's time on the car: `From`, `Until` the day it came off, null while on; `PairOneFront` true/false/null for a whole set's pairs; at least one day; vehicle and owner denormalized, the only cascading key the set's: a key to the vehicle as well would give SQL Server two cascade paths).
+  - `TyreLogDay` (one per vehicle and day, owning the `OdometerReading` typed with a swap, a past swap or a stretch, and a note; never trashed: cleared it is deleted, the reading with it, as clearing an expense's odometer).
+  - All three are `ISynced` and `OfflineEntityType`s; `SyncChangeKind` has a kind per mutation.
+- **Worked out on read, nothing stored:** `TyreCalculator` (pure).
+  - **The odometer of a day:** that day's highest reading, else a straight line between the nearest readings (approximate), after the latest reading the latest (approximate), before the first unknown.
+  - **A stretch's distance:** both stretches of a boundary day use the same value. A stretch still on the car ends at the latest reading, exactly. One before the fuel log counts from its first reading or is `NotMeasured`. Never below 0.
+  - **A set's figures:** the rough figure plus its stretches, front and rear per pair, and `RoughSuggestion` once stretches measure time `RoughUntil` stood for. The suggestion is shown, never applied by itself.
+  - **The device's port:** `src/tyres/odometer.ts`, checked on the same cases by `TyreOdometer.unit` (the readings come with `vehicleTyres.readings`). It only words hints and log lines.
+- **The rules:** `TyreHistory` (pure).
+  - **A swap on a day:** what covers that day ends there; the set runs until the stretch it cut would have ended, else the next start. The set's stretches join when they meet with the same pairs.
+  - **A second swap on a day** (another set's stretch starts then) is `tyres.swapExists` (args `date`, `set`) unless `replace`; replacing trashes that stretch. The same set on its own first day only sets its pairs.
+  - **Change positions:** in place on the stretch's first day, else it splits.
+  - **The checks** after every change: `tyres.setOnTwice`, `tyres.twoSetsAtOnce`, `tyres.setRetired`; `tyres.restoreConflict` while restoring. *In use since* is month-level and limits nothing.
+  - **The retry flags:** `pairsGiven: false` (from papers) leaves a set's pairs; `repeatable` (the sync path only) answers a set already on the car as a retry.
+- **The service:** `TyreService`.
+  - **Access:** the logs' rules through `LogAccessGuard`.
+  - **Saves:** every change checked and saved in one transaction (`ITyreRepository.SaveAsync`: rows let go of deleted in a second save).
+  - **Readings:** each typed reading is validated by `OdometerService`, the day's own excluded, and the readings of one change must not fall in day order (`odometer.belowPrevious`).
+  - **Client ids:** a set's, its first stretch's, a swap's and a past swap's stretch, so a change sent again changes nothing.
+  - **Past swaps:** at most 25 per change (`tyres.pastSwapsTooMany`), so one fits the sync ledger.
+  - **Retiring:** only a set in storage (`tyres.retireOnCar`).
+  - **The trash:** a trashed set hides its stretches and brings back only those not trashed on their own.
+  - **The units lock:** a rough figure locks the vehicle's units (`vehicle.unitsLocked`).
+  - **The tyre trash:** one query over both kinds (`TyreRepository.Trash`, `Concat`, checked to translate on the four providers in `OfflineFeedTranslationTests`). It is purged through the change tracker for tombstones.
+  - **Users:** `UserDataRepository` moves the tyre rows with a user; a vehicle's purge takes them through the cascade.
+- **GraphQL:** `vehicleTyres(vehicleId)` (`VehicleTyres`: `TyreSetInfo` with figures and stretches with distances, the days, `readings`), `tyreTrash` with its counts (`orderBy: DELETED_AT`, `direction`), and a mutation per change answering with the vehicle's tyres.
+- **Offline (server side):** the feed's first page carries the vehicle's tyres whole (`offlineChanges.tyres`) and no tyre tombstones. A parked tyre change tells its set or stretch as it is now (`SyncCurrent.tyreSet` / `tyreStretch`).
+- **The device (part 3):**
+  - **The policies:** `VehicleTyres` is kept, `TyreTrash` online only.
+  - **The kinds:** the device sends no tyre change yet; `syncKinds.ts` leaves the tyre kinds out until part 4.
+- **UI:**
+  - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details`. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
+  - **The dialogs** in `src/tyres/`:
+    - `TyreSetDialog` (add);
+    - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);
+    - `PastSwapsDialog`;
+    - `HistoryDialog`, with the stretch form and `RoughDialog`.
+  - **Mutations:** each goes through `useTyreMutation`, which writes the answer into `VehicleTyres` and refetches `VehicleDetails` and `LogDefaults`.
+  - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`.
+  - **The Trash page:** a *Tyres* tab, `TyreTrash`.
+  - **Texts:** `tyres.*`, `trash.tyres.*` and `errors.tyres.*` in English and Hungarian.
+- **Tests:**
+  - Domain: `TyreCalculatorTests`, `TyreHistoryTests`.
+  - Application: `TyreServiceTests` (`InMemoryTyres` copies rows in and out, as a database would).
+  - Infrastructure: `TyreRepositoryTests`, on SQLite.
+  - API: `TyreGraphQLTests` (every mutation), `SyncGraphQLTests` (every change kind once), `OfflineFeedApiTests`, and the contract rows.
+  - Frontend: `tests/vehicles/tyres` (the fake in `tests/support/tyres.ts`) and `AccessibilityTyres`.
+  - Real browser: `e2e/tyres.e2e.ts`.
