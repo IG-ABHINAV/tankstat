@@ -41,4 +41,8 @@ it('the add set, past swaps and history dialogs are labelled and free of violati
   await ui.click(within(screen.getByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'History' }))
   await screen.findByRole('dialog', { name: 'Michelin Primacy 4' })
   await check(document.body)
+
+  await ui.click(within(screen.getByRole('dialog', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Edit set' }))
+  await screen.findByRole('dialog', { name: 'Edit tyre set' })
+  await check(document.body)
 })

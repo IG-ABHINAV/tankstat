@@ -28,6 +28,7 @@ import {
 } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
 import { ErrorMessage } from '../messages.tsx'
+import { TyreSetDialog } from './TyreSetDialog.tsx'
 import { useToast } from '../toast/toastContext.ts'
 import { useTyreMutation, useTyreWords, wholeInvalid, wholeOrNull, type Tyres, type TyreSetInfo, type TyreStretchInfo } from './tyres.ts'
 
@@ -164,6 +165,7 @@ export function HistoryDialog({
             {error !== undefined && <ErrorMessage error={error} />}
             {canLog && (
               <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+                <TyreSetDialog vehicleId={vehicleId} unit={unit} edit={set} trigger={<Button variant="soft" startIcon={<Pencil size={16} aria-hidden />}>{t('tyres.dialogs.editSet')}</Button>} />
                 <StretchDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} trigger={<Button variant="soft" startIcon={<Plus size={16} aria-hidden />}>{t('tyres.dialogs.stretchAdd')}</Button>} />
                 <ConfirmDialog
                   trigger={

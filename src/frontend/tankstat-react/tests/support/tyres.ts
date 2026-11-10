@@ -68,6 +68,7 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
     mutation('SetTyreRoughDistance', 'setTyreRoughDistance'),
     mutation('DeleteTyreSet', 'deleteTyreSet'),
     mutation('RestoreTyreSet', 'restoreTyreSet'),
+    mutation('UpdateTyreSet', 'updateTyreSet'),
   ]
   return { state, handlers }
 }

@@ -46,7 +46,7 @@ paths:
 - **UI:**
   - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details`. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
   - **The dialogs** in `src/tyres/`:
-    - `TyreSetDialog` (add);
+    - `TyreSetDialog` (add; with `edit`, a set's own details, opened by *Edit set* in its history: no *Where are they now?* or *These tyres are new*);
     - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);
     - `PastSwapsDialog`;
     - `HistoryDialog`, with the stretch form and `RoughDialog`.

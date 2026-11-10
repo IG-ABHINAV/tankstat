@@ -2624,7 +2624,10 @@
       "savePositions": "Helycsere mentése",
       "saveSwaps": "Cserék mentése",
       "save": "Mentés",
-      "retireSet": "Szett kivonása"
+      "retireSet": "Szett kivonása",
+      "editSet": "Szett szerkesztése",
+      "editDescription": "A szett saját adatainak javítása. Hogy hol van és mennyit futott, az előzményeiből adódik.",
+      "saveChanges": "Módosítások mentése"
     },
     "toast": {
       "swapped": "Mentve. A(z) {{set}} {{date}} óta az autón van.",

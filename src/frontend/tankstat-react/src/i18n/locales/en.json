@@ -2624,7 +2624,10 @@
       "savePositions": "Save positions",
       "saveSwaps": "Save swaps",
       "save": "Save",
-      "retireSet": "Retire set"
+      "retireSet": "Retire set",
+      "editSet": "Edit set",
+      "editDescription": "Correct the set’s own details. Where it is and what it ran come from its history.",
+      "saveChanges": "Save changes"
     },
     "toast": {
       "swapped": "Saved. {{set}} is on the car from {{date}}.",

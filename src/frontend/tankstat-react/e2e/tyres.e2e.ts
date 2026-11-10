@@ -107,5 +107,16 @@ test('adds two sets, swaps with the pairs, enters a past swap, and brings a tras
   await expect(page.getByRole('row').filter({ hasText: 'Michelin Primacy 4: on the car' })).toHaveCount(1)
   await openVehicle(page, vehicle.id, 'tyres')
   await page.getByRole('article', { name: 'Michelin Primacy 4' }).getByRole('button', { name: 'History' }).click()
-  await expect(page.getByRole('dialog', { name: 'Michelin Primacy 4' }).getByRole('listitem').filter({ hasText: /Jan 20, 2026/ })).toBeVisible()
+  const back = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
+  await expect(back.getByRole('listitem').filter({ hasText: /Jan 20, 2026/ })).toBeVisible()
+
+  // The set's own details corrected from its history: its size.
+  await back.getByRole('button', { name: 'Edit set' }).click()
+  const details = page.getByRole('dialog', { name: 'Edit tyre set' })
+  await details.getByLabel('Size').fill('205/55 R16 91V')
+  await expectSoundLayout(page)
+  await details.getByRole('button', { name: 'Save changes' }).click()
+  await expect(details).toBeHidden()
+  await back.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByRole('article', { name: 'Michelin Primacy 4' })).toContainText('205/55 R16 91V')
 })

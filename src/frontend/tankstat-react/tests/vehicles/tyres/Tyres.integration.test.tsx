@@ -252,3 +252,26 @@ it('moves a set to the trash from its history, with Undo', async () => {
   await ui.click(await screen.findByRole('button', { name: 'Undo' }))
   await waitFor(() => expect(state.calls.RestoreTyreSet).toEqual([{ id: 's2' }]))
 })
+
+it('corrects a set’s own details from its history, without where it is or what it ran', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  await ui.click(within(await screen.findByRole('dialog', { name: 'Continental WinterContact' })).getByRole('button', { name: 'Edit set' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit tyre set' })
+  expect(within(dialog).getByLabelText(/^Name/)).toHaveValue('Continental WinterContact')
+  expect(within(dialog).getByLabelText(/^Made/)).toHaveValue('0523')
+  expect(within(dialog).queryByText('Where are they now?')).not.toBeInTheDocument()
+  expect(within(dialog).queryByLabelText('These tyres are new')).not.toBeInTheDocument()
+  await ui.clear(within(dialog).getByLabelText(/^Name/))
+  await ui.type(within(dialog).getByLabelText(/^Name/), 'Continental TS 870')
+  await ui.click(within(dialog).getByRole('radio', { name: 'All-season' }))
+  await ui.type(within(dialog).getByLabelText(/^Size/), '205/55 R16')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+  await waitFor(() =>
+    expect(state.calls.UpdateTyreSet).toEqual([
+      { input: { id: 's2', name: 'Continental TS 870', season: 'ALL_SEASON', size: '205/55 R16', since: '2023-03-25', madeWeek: 5, madeYear: 2023 } },
+    ]),
+  )
+})
