@@ -1,9 +1,20 @@
 ---
 name: review
-description: Review a GitHub pull request - only one that carries neither `reviewing` nor `reviewed`, claim it with the `reviewing` label, review it with the built-in `code-review` skill (its effort levels, `--fix` and `--max-findings` passed on) and report the findings to the user (posted on the PR only with `--comment`, inline, or `--summarize`, one summary comment), then approve it when no required change is left (with `--comment` and one open: changes requested; on the `gh` account's own PR a label instead), label it `reviewed` and release the claim. Reads the related issues (and checks one the user names against the PR), consults the advisor on every question and asks the user, with the context, when it gives no clear answer. Use when asked to review a PR (`/review 99`, `/review next max --fix`, "review the next PR"). Changes the PR's code only with `--fix`, on the PR's branch in the main checkout.
+description: Review a GitHub pull request - only one that carries neither `reviewing` nor `reviewed`, claim it with the `reviewing` label, review it with `code-review` (Claude Code's built-in skill, or the same review by hand in other agents; its effort levels, `--fix` and `--max-findings` passed on) and report the findings to the user (posted on the PR only with `--comment`, inline, or `--summarize`, one summary comment), then approve it when no required change is left (with `--comment` and one open: changes requested; on the `gh` account's own PR a label instead), label it `reviewed` and release the claim. Reads the related issues (and checks one the user names against the PR), consults the advisor on every question and asks the user, with the context, when it gives no clear answer. Use when asked to review a PR (`/review 99`, `/review next max --fix`, "review the next PR"). Changes the PR's code only with `--fix`, on the PR's branch in the main checkout.
 ---
 
 # Review a pull request
+
+## Tools in any agent
+
+This skill works in any coding agent that reads `SKILL.md` files (Claude Code from `.claude/skills/`, others from `.agents/skills/`, the same files). Where it names a capability, use your agent's equivalent:
+
+- **The advisor:** a second opinion from a stronger reviewer that sees the whole session (Claude Code: the `advisor` tool; elsewhere a reviewer model or subagent your agent offers, given the task, what you found and the question). Without one, say so once and go on with your own judgement; the user still takes every decision this skill gives them.
+- **Asking the user:** a question that stands on its own, with the options and your recommendation first, answered by picking one or writing their own (Claude Code: `AskUserQuestion`; elsewhere a message with numbered options, then wait for the answer).
+- **The code review:** Claude Code's built-in `code-review` skill, with its effort levels, `--max-findings`, `--fix` and `--comment`. Elsewhere, review the diff yourself at the depth the level asks for (from a few high-confidence findings at `low` to every finding, some uncertain, at `max`), apply fixes only with `--fix`, and post inline comments only with `--comment`. `ultra` exists only in Claude Code and only the user can launch it.
+- **Code lookups:** the LSP where your agent has one (Claude Code: the `LSP` tool), grep otherwise.
+- **No second checkout:** no `git worktree` and no isolated copy of the repository (Claude Code: `EnterWorktree`) unless the user asks for one.
+- **The project's rules** apply to every agent: CLAUDE.md from *Toolchain and commands* on, the `.claude/rules/` file of each area, and the attribution lines CLAUDE.md names (use your own tool's line in place of "Generated with Claude Code"). Where this skill says "memory", that is Claude Code's memory; other agents skip it.
 
 ## Arguments
 
@@ -26,12 +37,12 @@ By default **nothing is posted on the PR**: the findings are reported to the use
 
 ## Throughout: the advisor on every question
 
-**Whenever a question comes up, consult the `advisor` tool first**, before asking the user or deciding on your own. That covers every point where this skill says to ask (another agent's claim, a named draft, `--fix` on a fork or a Dependabot PR, a working tree that is not clean, a branch that moved or cannot be fast-forwarded, a rejected push, an issue the user named that does not fit the PR, an argument you do not know). It also covers the questions of the review itself: whether a finding is real, its severity, whether it goes against what a related issue agreed, and under `--fix` whether to fix a finding or leave it. Make the work durable first (a commit when one is due), then ask it.
+**Whenever a question comes up, consult the advisor first**, before asking the user or deciding on your own. That covers every point where this skill says to ask (another agent's claim, a named draft, `--fix` on a fork or a Dependabot PR, a working tree that is not clean, a branch that moved or cannot be fast-forwarded, a rejected push, an issue the user named that does not fit the PR, an argument you do not know). It also covers the questions of the review itself: whether a finding is real, its severity, whether it goes against what a related issue agreed, and under `--fix` whether to fix a finding or leave it. Make the work durable first (a commit when one is due), then ask it.
 
 - **A clear answer:** follow it, and say in the report what was asked and what the advisor answered. When it contradicts what you found in the code, the tests or an issue, say so in a further call instead of switching silently.
 - **No clear answer** (it weighs both ways, says the choice is the user's, or still conflicts with your evidence after that further call): **ask the user, with the context**, since they may not see the steps before the question. Say what the question is and what you found (file:line, issue and PR numbers, commits, test output), give the options and what each leads to, and include the advisor's view.
 - **The rules are not questions:** the advisor cannot clear what this skill forbids doing on your own (stashing, committing or throwing away uncommitted changes, a force push or a rebase after a rejected push, changing code without `--fix`, a commit on a Dependabot branch). There its answer only shapes the question, and the user decides.
-- If the session has no `advisor` tool, or it fails, tell the user once, then ask them where the skill says to ask and use your own judgement for the rest.
+- If your agent has no advisor, or it fails, tell the user once, then ask them where the skill says to ask and use your own judgement for the rest.
 
 ## 0. Gate: is it open and free?
 
@@ -65,7 +76,7 @@ The label comes off again at the end (step 4b), after `reviewed` went on. If you
 
 ## 3. Review
 
-Invoke the built-in `code-review` skill on the PR: `code-review` with the argument `N`, plus the level, `--max-findings`, `--fix` and `--comment` exactly as the user gave them (`--comment` only when the user typed it). It does the review itself; follow its instructions. With `--fix`, check out the PR's branch as section 3b says **first** and invoke it there, so the fixes land in the PR's branch and nowhere else.
+Run the code review on the PR (see *Tools in any agent*): `code-review` with the argument `N`, plus the level, `--max-findings`, `--fix` and `--comment` exactly as the user gave them (`--comment` only when the user typed it). It does the review itself; follow its instructions. With `--fix`, check out the PR's branch as section 3b says **first** and invoke it there, so the fixes land in the PR's branch and nowhere else.
 
 With `--summarize`, then add one summary comment on the PR (`gh pr comment N`): the head commit reviewed, the level, how many findings and of what kind, anything checked by hand (and how), whether you see something blocking, without `--comment` every finding itself (file:line, what goes wrong and when, its severity), and with `--fix` which findings were fixed (the commits) and which were left and why. When there are no findings, say so. Without `--summarize`, post no comment of your own.
 
@@ -73,7 +84,7 @@ Without `--fix`, **never change the PR's code**: no commits, no pushes. Applying
 
 ## 3b. `--fix`: the PR's branch in the main checkout
 
-**No git worktree** (`git worktree add`, `EnterWorktree`) unless the user asks for one: one agent works at a time, and the LSP indexes only the main checkout.
+**No second checkout** (see *Tools in any agent*) unless the user asks for one: one agent works at a time, and the LSP indexes only the main checkout.
 
 1. **The working tree must be clean:** `git status -sb`. Uncommitted changes are never stashed, committed or thrown away on your own: tell the user and ask what to do.
 2. `git fetch origin <headRefName>` and check that `origin/<headRefName>` is the `headRefOid` noted in step 2; if it moved, the review is of the new head: say so and note it again.
