@@ -344,14 +344,14 @@ it('every tab has its panel, but only the open one is filled', async () => {
   const details = await screen.findByRole('tab', { name: /Details/, selected: true })
 
   const panels = screen.getAllByRole('tabpanel', { hidden: true })
-  expect(panels).toHaveLength(6)
+  expect(panels).toHaveLength(7)
   for (const tab of screen.getAllByRole('tab')) expect(document.getElementById(tab.getAttribute('aria-controls')!)).toHaveAttribute('aria-labelledby', tab.id)
   expect(panels.filter((p) => !p.hidden)).toEqual([document.getElementById(details.getAttribute('aria-controls')!)])
   expect(panels.filter((p) => p.hidden).every((p) => p.childElementCount === 0)).toBe(true)
 
   details.focus()
   await ui.keyboard('{ArrowLeft}') // the arrow keys choose, as before
-  expect(await screen.findByRole('tab', { name: /Recurring/, selected: true })).toBeInTheDocument()
+  expect(await screen.findByRole('tab', { name: /Tyres/, selected: true })).toBeInTheDocument()
 })
 
 it('explains an unknown or inaccessible vehicle', async () => {

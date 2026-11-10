@@ -20,6 +20,13 @@ import {
   RestoreRefuelingDocument,
   RestoreVehicleDocument,
   TrashDocument,
+  EmptyTyreTrashDocument,
+  RestoreTyreSetDocument,
+  RestoreTyreStretchDocument,
+  TyreTrashDocument,
+  type TyreTrashQuery,
+  type TyreTrashQueryVariables,
+  type TyreTrashSortField,
   type ExpenseSortField,
   type ExpenseTrashQuery,
   type ExpenseTrashQueryVariables,
@@ -41,6 +48,7 @@ import { uuidV4 } from '../offline/uuid.ts'
 type VehicleRow = TrashQuery['trash'][number]
 type LogRow = RefuelingTrashQuery['refuelingTrash'][number]
 type ExpenseRow = ExpenseTrashQuery['expenseTrash'][number]
+type TyreRow = TyreTrashQuery['tyreTrash'][number]
 
 const refetch = { refetchQueries: ['Vehicles', 'Trash', 'Refuelings', 'RefuelingTrash', 'Expenses', 'ExpenseTrash', 'VehicleDetails'], awaitRefetchQueries: true }
 
@@ -49,7 +57,7 @@ export function TrashPage() {
   usePageTitle(t('trash.title'))
   const [params, setParams] = useSearchParams()
   const requested = params.get('tab')
-  const tab = requested === 'refuelings' || requested === 'expenses' ? requested : 'vehicles'
+  const tab = requested === 'refuelings' || requested === 'expenses' || requested === 'tyres' ? requested : 'vehicles'
   const [actionError, setActionError] = useState<unknown>()
   const [notice, setNotice] = useState<ReactNode>()
 
@@ -81,6 +89,7 @@ export function TrashPage() {
           { value: 'vehicles', label: t('trash.tabs.vehicles'), content: () => <VehicleTrash run={run} setNotice={setNotice} /> },
           { value: 'refuelings', label: t('trash.tabs.refuelings'), content: () => <RefuelingTrash run={run} setNotice={setNotice} /> },
           { value: 'expenses', label: t('trash.tabs.expenses'), content: () => <ExpenseTrash run={run} setNotice={setNotice} /> },
+          { value: 'tyres', label: t('trash.tabs.tyres'), content: () => <TyreTrash run={run} setNotice={setNotice} /> },
         ]}
       />
     </section>
@@ -258,6 +267,72 @@ function ExpenseTrash({ run, setNotice }: Shared) {
       )}
       actions={(r) => (
         <Button variant="soft" aria-label={t('trash.restoreAria', { name: r.title })} onClick={() => void run(() => restoreLog('expenses', r, () => restore({ variables: { id: r.id } })))}>
+          {t('trash.restore')}
+        </Button>
+      )}
+    />
+  )
+}
+
+/**
+ * Tyre sets and stretches in the trash (#287): a set comes back with its stretches, a stretch alone; a restore that no longer fits the
+ * history is refused with the server's reason (`tyres.restoreConflict`), shown in the page's alert. Online only until #287's part 4.
+ */
+function TyreTrash({ run, setNotice }: Shared) {
+  const { t } = useTranslation()
+  const format = useFormat()
+  const tyreRefetch = { refetchQueries: ['TyreTrash', 'VehicleTyres'], awaitRefetchQueries: true }
+  const [restoreSet] = useMutation(RestoreTyreSetDocument, tyreRefetch)
+  const [restoreStretch] = useMutation(RestoreTyreStretchDocument, tyreRefetch)
+  const [emptyTrash] = useMutation(EmptyTyreTrashDocument, tyreRefetch)
+  const what = (r: TyreRow) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName }))
+
+  const columns = useMemo<GridColumn<TyreRow, TyreTrashQueryVariables, TyreTrashSortField>[]>(() => {
+    const none = t('common.none')
+    return [
+      { id: 'what', label: 'trash.tyres.what', hideable: false, mobile: true, cell: (r) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName })) },
+      {
+        id: 'when',
+        label: 'trash.tyres.when',
+        cell: (r) =>
+          r.kind === 'SET'
+            ? t('trash.tyres.withStretches', { count: r.stretchCount })
+            : r.from && r.until
+              ? t('trash.tyres.range', { from: format.date(r.from), until: format.date(r.until) })
+              : r.from
+                ? t('trash.tyres.rangeOpen', { from: format.date(r.from) })
+                : none,
+      },
+      { id: 'vehicle', label: 'columns.vehicle', cell: (r) => r.vehicle?.name ?? none },
+      { id: 'deletedAt', label: 'columns.deletedAt', mobile: true, sortField: 'DELETED_AT', cell: (r) => format.dateTime(r.deletedAt) },
+    ]
+  }, [t, format])
+
+  return (
+    <ServerGrid
+      gridId="tyre-trash"
+      caption={t('trash.tabs.tyres')}
+      query={TyreTrashDocument}
+      select={(d) => ({ rows: d.tyreTrash, total: d.tyreTrashCount })}
+      rowKey={(r) => r.id}
+      columns={columns}
+      defaultSort={{ column: 'deletedAt', direction: 'DESC' }}
+      emptyText={t('trash.tyresEmpty')}
+      toolbar={({ total, data }) => (
+        <EmptyButton
+          total={total}
+          deletable={data?.tyreTrashDeletableCount ?? 0}
+          title={t('trash.emptyTitle')}
+          description={t('trash.tyreDescription', { count: total })}
+          onConfirm={() => void run(async () => setNotice(t('trash.emptiedTyres', { count: (await emptyTrash()).data?.emptyTyreTrash ?? 0 })))}
+        />
+      )}
+      actions={(r) => (
+        <Button
+          variant="soft"
+          aria-label={t('trash.restoreAria', { name: what(r) })}
+          onClick={() => void run(() => (r.kind === 'SET' ? restoreSet({ variables: { id: r.id } }) : restoreStretch({ variables: { id: r.id } })))}
+        >
           {t('trash.restore')}
         </Button>
       )}

@@ -22,6 +22,7 @@ const POLICIES: Record<string, SnapshotPolicy> = {
   ChartData: 'keep',
   VehicleFigure: 'keep', // a key figure (#272), answered by the device for a vehicle added there
   RecurringExpenses: 'keep',
+  VehicleTyres: 'keep', // a vehicle's tyres (#287): shown offline as the server last said them, never worked out on the device
   Refuelings: 'keep',
   RefuelingDetails: 'keep',
   RefuelingTrash: 'keep',
@@ -48,6 +49,7 @@ const POLICIES: Record<string, SnapshotPolicy> = {
   SetupRestorePoints: 'onlineOnly',
   SetupBackupDetails: 'onlineOnly',
   Trash: 'onlineOnly',
+  TyreTrash: 'onlineOnly', // like the vehicles' trash until #287's part 4 keeps tyres on the device
   ArrangeVehicles: 'onlineOnly',
   LogAccess: 'onlineOnly',
   ImportTargets: 'onlineOnly',
