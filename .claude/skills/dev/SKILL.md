@@ -7,6 +7,17 @@ description: Implement a triaged GitHub issue - refuse one that is not `triaged`
 
 The argument is an issue number.
 
+## Tools in any agent
+
+This skill works in any coding agent that reads `SKILL.md` files (Claude Code from `.claude/skills/`, others from `.agents/skills/`, the same files). Where it names a capability, use your agent's equivalent:
+
+- **The advisor:** a second opinion from a stronger reviewer that sees the whole session (Claude Code: the `advisor` tool; elsewhere a reviewer model or subagent your agent offers, given the task, what you found and the question). Without one, say so once and go on with your own judgement; the user still takes every decision this skill gives them.
+- **Asking the user:** a question that stands on its own, with the options and your recommendation first, answered by picking one or writing their own (Claude Code: `AskUserQuestion`; elsewhere a message with numbered options, then wait for the answer).
+- **A clickable mockup or diagram page:** one self-contained HTML page the user opens and clicks through, never in the repository (Claude Code: an Artifact, after loading `artifact-design`, and `artifact-diagramming` for diagrams; elsewhere an HTML file in a scratch folder outside the repository, its path given to the user). Republishing it keeps its link or path.
+- **Code lookups:** the LSP where your agent has one (Claude Code: the `LSP` tool), grep otherwise.
+- **No second checkout:** no `git worktree` and no isolated copy of the repository (Claude Code: `EnterWorktree`) unless the user asks for one.
+- **The project's rules** apply to every agent: CLAUDE.md from *Toolchain and commands* on, the `.claude/rules/` file of each area, and the attribution lines CLAUDE.md names (use your own tool's line in place of "Generated with Claude Code"). Where this skill says "memory", that is Claude Code's memory; other agents skip it.
+
 ## 0. Gate: is it triaged, and is it free?
 
 `gh issue view N --json labels,state`.
@@ -25,14 +36,14 @@ The argument is an issue number.
 
 ### The advisor before every decision
 
-During the development, **consult the `advisor` tool before every decision**, and then regularly: before choosing how to read the plan or where it no longer fits (section 1), before the base and the branch (section 2), before each design or implementation choice and each change of approach (section 3), when a test fails in a way you did not expect or you are stuck, and before declaring the work done (section 6). Make the work durable first (files written, a commit when one is due), then ask. Weigh its advice; when it contradicts what you found in the code or the tests, say so in a further call instead of switching silently. If the session has no `advisor` tool, or it fails, tell the user once and go on with your own judgement (questions for the user still go to the user).
+During the development, **consult the advisor before every decision**, and then regularly: before choosing how to read the plan or where it no longer fits (section 1), before the base and the branch (section 2), before each design or implementation choice and each change of approach (section 3), when a test fails in a way you did not expect or you are stuck, and before declaring the work done (section 6). Make the work durable first (files written, a commit when one is due), then ask. Weigh its advice; when it contradicts what you found in the code or the tests, say so in a further call instead of switching silently. If your agent has no advisor, or it fails, tell the user once and go on with your own judgement (questions for the user still go to the user).
 
 ### Questions go to the user
 
 When a question comes up that the handoff, the code, CLAUDE.md and the rules do not answer, **ask the user** instead of choosing yourself. Examples: the plan does not fit the code any more, two readings of an acceptance criterion, a behaviour, wording or default the triage did not settle, something that grows the scope, a trade-off the user would notice. The advisor is asked first and its view goes into the question, but it does not take the decision. A decision the handoff records as the user's is not reopened.
 
-- Ask as the `triage` skill does (its section *Throughout: the advisor, the user's decisions, UI and process questions*, `.claude/skills/triage/SKILL.md`): `AskUserQuestion` standing on its own, with the context (what you found, file:line, the handoff's words, test output), every option with what it leads to, your recommendation first, and a path of the user's own allowed (*Other*).
-- **Mockups and diagrams are welcome**, built the same way (an Artifact, the file in the scratchpad, never in the repository): a **clickable mockup** of the options for a UI question, and **diagrams** (flow, sequence, state, timeline, whatever explains it), with a clickable walk-through when it helps, for a question about a process. As in triage, a UI question is not done until the user says so explicitly; ask the next questions it opens until then.
+- Ask as the `triage` skill does (its section *Throughout: the advisor, the user's decisions, UI and process questions*, `.claude/skills/triage/SKILL.md`): a question to the user standing on its own, with the context (what you found, file:line, the handoff's words, test output), every option with what it leads to, your recommendation first, and a path of the user's own allowed (*Other*).
+- **Mockups and diagrams are welcome**, built the same way (a clickable mockup or diagram page, outside the repository): a **clickable mockup** of the options for a UI question, and **diagrams** (flow, sequence, state, timeline, whatever explains it), with a clickable walk-through when it helps, for a question about a process. As in triage, a UI question is not done until the user says so explicitly; ask the next questions it opens until then.
 - Before asking, make the work durable (commit and push what is done, section 5), so nothing is lost while the question waits. Go on with the parts the answer does not touch; wait with the ones it does.
 - Record each answer in the PR description and in a comment on the issue (the question, the options, the user's choice), like a deviation from the plan.
 
@@ -45,7 +56,7 @@ When a question comes up that the handoff, the code, CLAUDE.md and the rules do 
 
 ## 2. A branch off the latest main, in the main checkout
 
-Every fix, feature or other piece of work gets a **new branch in the main checkout** (the repository folder itself). **No git worktree** (`git worktree add`, `EnterWorktree`) unless the user asks for one: one agent works at a time, and the LSP indexes only the main checkout.
+Every fix, feature or other piece of work gets a **new branch in the main checkout** (the repository folder itself). **No second checkout** (see *Tools in any agent*) unless the user asks for one: one agent works at a time, and the LSP indexes only the main checkout.
 
 1. **The working tree must be clean:** `git status -sb`. Uncommitted changes (the previous task's or the user's) are never stashed, committed or thrown away on your own: tell the user and ask what to do.
 2. **The base, fresh from the remote.** By default the latest `main`: `git fetch origin main`. **When the user names another branch** (a stacked PR built on an open one, a release branch), that branch is the base instead: `git fetch origin <base>`, and the PR targets it. Never choose another base on your own.
