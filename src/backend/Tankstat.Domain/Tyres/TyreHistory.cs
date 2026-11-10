@@ -46,7 +46,9 @@ public sealed class TyreHistory
     /// Puts <paramref name="set"/> on the car on <paramref name="day"/>. What is on the car that day comes off; the set stays on until the
     /// next stretch that starts after that day (or until the one it replaced would have come off). A second swap on a day that has one
     /// (another set's stretch starts that day) is refused with <c>tyres.swapExists</c> unless <paramref name="replace"/>: then that stretch
-    /// goes to the trash first. The same set on the day it went on only sets its pairs. Stretches of the set that meet are joined.
+    /// goes to the trash first. The same set on the day it went on only sets its pairs. The set's stretch that ends that day is carried on;
+    /// its stretch that starts where the one this swap cuts or replaces would have ended is joined to the new one (nothing else was on the
+    /// car between them). Into a gap, a swap never joins the set's next stretch: that one began with a swap of its own, which stays recorded.
     /// </summary>
     /// <param name="id">The id of the stretch it creates, if it creates one (the client's, so a retry is idempotent).</param>
     /// <param name="pairsGiven">False for a swap from papers, which says nothing about the pairs: the set's own stretch of that day keeps its own.</param>
@@ -86,7 +88,7 @@ public sealed class TyreHistory
         else until = _live.Where(s => s.From > day).Select(s => (DateOnly?)s.From).Min();
 
         var before = _live.FirstOrDefault(s => s.SetId == set.Id && s.Until == day && s.PairOneFront == pairOneFront);
-        var after = until is { } u ? _live.FirstOrDefault(s => s.SetId == set.Id && s.From == u && s.PairOneFront == pairOneFront) : null;
+        var after = covering is not null && until is { } u ? _live.FirstOrDefault(s => s.SetId == set.Id && s.From == u && s.PairOneFront == pairOneFront) : null;
         if (before is not null && after is not null)
         {
             before.Update(before.From, after.Until, pairOneFront, by);
@@ -118,12 +120,18 @@ public sealed class TyreHistory
     /// The set on the car on <paramref name="day"/> changes its pairs from that day: on the day its stretch began, in place; otherwise the
     /// stretch ends that day and a new one begins with the new pairs.
     /// </summary>
-    public TyreChanges ChangePositions(TyreSet set, DateOnly day, bool? pairOneFront, Guid by, Guid? id = null)
+    /// <param name="repeatable">The change carries a client id, so it may be a retry: one applied in place on the day its stretch began leaves
+    /// nothing with that id to find, and the pairs already as asked are its answer, not an error.</param>
+    public TyreChanges ChangePositions(TyreSet set, DateOnly day, bool? pairOneFront, Guid by, Guid? id = null, bool repeatable = false)
     {
         var changes = new TyreChanges();
         var covering = _live.FirstOrDefault(s => s.SetId == set.Id && s.From <= day && (s.Until is null || s.Until > day))
             ?? throw new DomainException("tyres.notOnCar", "This tyre set is not on the car that day.", new { Set = set.Name, Date = Iso(day) });
-        if (covering.PairOneFront == pairOneFront) throw new DomainException("tyres.positionsUnchanged", "The positions are the same as they were.");
+        if (covering.PairOneFront == pairOneFront)
+        {
+            if (repeatable && covering.From == day) return changes;
+            throw new DomainException("tyres.positionsUnchanged", "The positions are the same as they were.");
+        }
         if (covering.From == day)
         {
             covering.Update(day, covering.Until, pairOneFront, by);
@@ -144,7 +152,7 @@ public sealed class TyreHistory
     {
         var created = TyreStretch.Create(_ownerId, by, _vehicleId, set.Id, from, until, pairOneFront, id);
         _live.Add(created);
-        Check();
+        Check([created]);
         return created;
     }
 
@@ -153,16 +161,16 @@ public sealed class TyreHistory
     {
         if (!_live.Contains(stretch)) throw new DomainException("tyres.stretchTrashedCannotEdit", "A stretch in the trash cannot be changed; restore it first.");
         var changed = stretch.Update(from, until, pairOneFront, by);
-        Check();
+        Check([stretch]);
         return changed;
     }
 
     /// <summary>Brings back a stretch (alone, or the live stretches of a set coming back from the trash): refused, with the reason, when it no longer fits.</summary>
-    public void CheckRestored(IEnumerable<TyreStretch> restored)
+    public void CheckRestored(IReadOnlyCollection<TyreStretch> restored)
     {
         foreach (var s in restored)
             if (!_live.Contains(s)) _live.Add(s);
-        Check(restoring: true);
+        Check(restored, restoring: true);
     }
 
     /// <summary>
@@ -170,7 +178,8 @@ public sealed class TyreHistory
     /// <c>tyres.restoreConflict</c> while restoring), and a retired set's ends by the day it was retired (<c>tyres.setRetired</c>). "In use since"
     /// is month-level, so a stretch may start before it.
     /// </summary>
-    public void Check(bool restoring = false)
+    /// <param name="moving">The stretches the change adds, edits or restores: an overlap names the other one, the one already on the car then.</param>
+    public void Check(IReadOnlyCollection<TyreStretch>? moving = null, bool restoring = false)
     {
         var ordered = _live.OrderBy(s => s.From).ToList();
         foreach (var s in ordered)
@@ -184,7 +193,8 @@ public sealed class TyreHistory
         {
             var (a, b) = (ordered[i], ordered[i + 1]);
             if (b.From >= (a.Until ?? DateOnly.MaxValue)) continue;
-            var args = new { Set = _sets[b.SetId].Name, From = Iso(b.From), Until = b.Until is { } u ? Iso(u) : null };
+            var other = moving?.Contains(b) == true && moving?.Contains(a) != true ? a : b;
+            var args = new { Set = _sets[other.SetId].Name, From = Iso(other.From), Until = other.Until is { } u ? Iso(u) : null };
             if (restoring) throw new DomainException("tyres.restoreConflict", "It cannot be restored as it is: another stretch is on the car then.", args);
             if (a.SetId == b.SetId) throw new DomainException("tyres.setOnTwice", "This tyre set is on the car then already.", args);
             throw new DomainException("tyres.twoSetsAtOnce", "Another tyre set is on the car then.", args);
@@ -193,7 +203,7 @@ public sealed class TyreHistory
 
     private TyreChanges Checked(TyreChanges changes)
     {
-        Check();
+        Check([.. changes.Created, .. changes.Changed]);
         return changes;
     }
 
