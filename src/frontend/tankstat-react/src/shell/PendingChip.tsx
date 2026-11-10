@@ -27,7 +27,7 @@ export function PendingChip({ parked: askParked, compact = false }: { parked: bo
       // On a phone only the number shows (the navigation says the rest); the link's name is the whole sentence either way.
       label={compact ? (waiting ? count : notApplied) : text}
       aria-label={compact ? text : undefined}
-      sx={{ minHeight: 44, flexShrink: 0 }}
+      sx={{ minHeight: 44, minWidth: 44, flexShrink: 0 }} // a 44 px touch target, its number alone too
     />
   )
 }

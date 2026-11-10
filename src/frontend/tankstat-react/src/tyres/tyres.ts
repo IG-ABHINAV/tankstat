@@ -64,7 +64,8 @@ export function useTyreMutation(vehicleId: string) {
   return useCallback(
     async <TData extends Record<string, unknown>, TVars extends Record<string, unknown>>(document: TypedDocumentNode<TData, TVars>, variables: TVars): Promise<TyreSaved> => {
       const action = actionOf(document)
-      const input = ('input' in variables ? variables.input : { id: variables.id }) as Record<string, unknown>
+      // The mutation's input; one that takes its values as variables (a retire's id and day, a bare id) keeps them all.
+      const input = ('input' in variables ? variables.input : { ...variables }) as Record<string, unknown>
       const shown = client.readQuery({ query: VehicleTyresDocument, variables: { vehicleId } })?.vehicleTyres
       const changeId = uuidV4()
       const draft = { id: changeId, entity: 'tyres' as const, action, vehicleId, targetId: tyreTarget(action, input), input, expectedVersion: versionOf(shown, action, input) }

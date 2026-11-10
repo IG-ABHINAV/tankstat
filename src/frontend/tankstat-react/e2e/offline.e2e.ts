@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
+import { expectSoundLayout } from './support/layout.ts'
 
 // Working without the server: the device downloads a vehicle, the browser goes offline, a refuelling is kept on the device, and it
 // reaches the server once the browser is back online. Only in-app navigation while offline (the address bar would need the server).
@@ -96,7 +97,7 @@ test('signs out while offline: warns of the change not sent, deletes it, and the
 })
 
 
-test('keeps tyre changes made offline, shows them done, and sends them in order when the server is back (#287)', async ({ page, context }) => {
+test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), shows them done, and sends them in order when the server is back (#287)', async ({ page, context }) => {
   // The download and the poll below may take 30 s each on a busy runner: more than the default for the whole test.
   test.setTimeout(120_000)
   await signInAsNewUser(page)
@@ -123,11 +124,13 @@ test('keeps tyre changes made offline, shows them done, and sends them in order 
   const swap = page.getByRole('dialog', { name: 'Swap tyres' })
   await expect(swap.getByText(/^You are offline\./)).toBeVisible()
   await swap.getByLabel(/^Odometer/).fill('1500')
+  await expectSoundLayout(page)
   await swap.getByRole('button', { name: 'Swap tyres' }).click()
   await expect(swap).toBeHidden()
   await expect(page.getByText('Saved on this device · syncs when online.')).toBeVisible()
   await expect(winter.getByText('Changed · not synced')).toBeVisible()
   await expect(winter.getByRole('button', { name: 'Swap tyres' })).toBeVisible() // on the car now
+  await expectSoundLayout(page) // the tab with its marks
 
   // The stretch the swap cut, moved to the trash: made on what a waiting change changed.
   await summer.getByRole('button', { name: 'History' }).click()
@@ -137,6 +140,11 @@ test('keeps tyre changes made offline, shows them done, and sends them in order 
   await expect(history.getByRole('listitem')).toHaveCount(0)
   await history.getByRole('button', { name: 'Cancel' }).click()
 
+  // The set that came off, retired: a change with its day.
+  await summer.getByRole('button', { name: 'Retire' }).click()
+  await page.getByRole('alertdialog', { name: 'Retire this set?' }).getByRole('button', { name: 'Retire set' }).click()
+  await expect(page.getByRole('heading', { name: 'Retired' })).toBeVisible()
+
   // The day's reading corrected in the tyre log.
   await page.getByRole('button', { name: /^Edit the reading of/ }).click()
   const reading = page.getByRole('dialog', { name: /^Reading of/ })
@@ -145,17 +153,17 @@ test('keeps tyre changes made offline, shows them done, and sends them in order 
   await expect(reading).toBeHidden()
 
   await context.setOffline(false)
-  // Once the server answers again the device sends the three changes in order: every one applied, none parked.
-  type Tyres = { vehicleTyres: { sets: { onTheCar: boolean; set: { name: string }; stretches: { stretch: { from: string } }[] }[]; days: { day: string; odometer: number | null }[] } }
+  // Once the server answers again the device sends the four changes in order: every one applied, none parked.
+  type Tyres = { vehicleTyres: { sets: { onTheCar: boolean; set: { name: string; isRetired: boolean }; stretches: { stretch: { from: string } }[] }[]; days: { day: string; odometer: number | null }[] } }
   await expect
     .poll(
       async () => {
-        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { name } stretches { stretch { from } } } days { day odometer } } }', { v: vehicle.id })
-        return { sets: vehicleTyres.sets.map((s) => [s.set.name, s.onTheCar, s.stretches.length]), days: vehicleTyres.days }
+        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { name isRetired } stretches { stretch { from } } } days { day odometer } } }', { v: vehicle.id })
+        return { sets: vehicleTyres.sets.map((s) => [s.set.name, s.onTheCar, s.set.isRetired, s.stretches.length]), days: vehicleTyres.days }
       },
       { timeout: 60_000 },
     )
-    .toEqual({ sets: [['Continental WinterContact', true, 1], ['Michelin Primacy 4', false, 0]], days: [{ day: day(0), odometer: 1550 }] })
+    .toEqual({ sets: [['Continental WinterContact', true, false, 1], ['Michelin Primacy 4', false, true, 0]], days: [{ day: day(0), odometer: 1550 }] })
   expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
   await expect(winter.getByText('Changed · not synced')).toBeHidden()
 })

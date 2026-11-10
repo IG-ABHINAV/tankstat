@@ -348,3 +348,17 @@ it('a change of the stretch a waiting swap cut is kept without the version the s
   await waitFor(() => expect(outbox.changes).toHaveLength(2))
   expect(outbox.changes[1]).toMatchObject({ action: 'deleteTyreStretch', input: { id: 'r1' }, expectedVersion: null })
 })
+
+it('retires a set while offline with the day it was retired, kept as the server takes it', async () => {
+  const { ui, state } = setup([summer, winter])
+  const card = await screen.findByRole('article', { name: 'Continental WinterContact' })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(within(card).getByRole('button', { name: 'Retire' }))
+  await ui.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Retire set' }))
+
+  await waitFor(() => expect(outbox.changes).toMatchObject([{ action: 'retireTyreSet', targetId: 's2', input: { id: 's2', day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }, expectedVersion: 1 }]))
+  expect(state.calls.RetireTyreSet).toBeUndefined()
+  expect(await screen.findByRole('heading', { name: 'Retired' })).toBeInTheDocument()
+})
