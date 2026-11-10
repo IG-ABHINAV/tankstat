@@ -456,8 +456,19 @@ internal sealed class InMemoryTyres : ITyreRepository
     public Task<IReadOnlyList<TyreStretch>> ListStretchesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<TyreStretch>>([.. Stretches.Where(s => ids.Contains(s.Id)).Select(Copy)]);
 
-    public Task SaveAsync(TyreSave save, CancellationToken ct)
+    public Task<TyreLogDay?> FindDayAsync(Guid id, CancellationToken ct) => Task.FromResult(Days.FirstOrDefault(d => d.Id == id) is { } d ? CopyDay(d) : null);
+
+    /// <summary>Runs just before a save, as another request saving at the same moment would (a test puts the same add's rows here).</summary>
+    public Action<TyreSave>? MeanwhileBeforeSave { get; set; }
+
+    public Task<bool> SaveAsync(TyreSave save, CancellationToken ct)
     {
+        MeanwhileBeforeSave?.Invoke(save);
+        MeanwhileBeforeSave = null;
+        // As the database's primary keys: an add whose id is there by now saves nothing.
+        if (save.AddedSets.Any(s => Sets.Any(x => x.Id == s.Id)) || save.AddedStretches.Any(s => Stretches.Any(x => x.Id == s.Id))
+            || save.AddedDays.Any(d => Days.Any(x => x.Id == d.Id)))
+            return Task.FromResult(false);
         static void Put<T>(List<T> list, T item, Func<T, Guid> id) where T : class
         {
             list.RemoveAll(x => id(x) == id(item));
@@ -472,7 +483,7 @@ internal sealed class InMemoryTyres : ITyreRepository
         }
         foreach (var d in save.RemovedDays) Days.RemoveAll(x => x.Id == d.Id);
         Saves++;
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task<bool> HasRoughFiguresAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Sets.Any(s => s.VehicleId == vehicleId && s.RoughDistance > 0));

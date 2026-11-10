@@ -413,7 +413,7 @@ public sealed class SyncMutations
         if (c.SetTyreLogDay is { } day)
             return make(SyncChangeKind.SetTyreLogDay, day.Id, day.VehicleId, async ct =>
             {
-                var tyresNow = await tyres.SetLogDayAsync(day.VehicleId, day.Day, day.Odometer, day.Note, ct, day.Id);
+                var tyresNow = await tyres.SetLogDayAsync(day.VehicleId, day.Day, day.Odometer, day.Note, ct, day.Id, version);
                 var line = tyresNow.Days.FirstOrDefault(d => d.Day == day.Day);
                 return new AppliedChange(line?.Id ?? day.Id, line?.Version, day.VehicleId);
             }, null);

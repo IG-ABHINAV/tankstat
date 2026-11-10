@@ -59,7 +59,13 @@ public interface ITyreRepository
     /// <summary>The stretches with these ids, the trash included.</summary>
     Task<IReadOnlyList<TyreStretch>> ListStretchesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
 
-    Task SaveAsync(TyreSave save, CancellationToken ct);
+    Task<TyreLogDay?> FindDayAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Saves one change in one transaction. False when a set, stretch or day it adds could not be inserted because a row with its id is
+    /// there by now (the same add, saved by another request at once): nothing is saved, as with <c>AddOnceAsync</c>.
+    /// </summary>
+    Task<bool> SaveAsync(TyreSave save, CancellationToken ct);
 
     /// <summary>The vehicle has a tyre set with a rough figure: its units are locked, like with logs.</summary>
     Task<bool> HasRoughFiguresAsync(Guid vehicleId, CancellationToken ct);
