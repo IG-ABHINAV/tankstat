@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.EntityFrameworkCore;
 using Tankstat.Application.Access;
 using Tankstat.Application.Tyres;
@@ -29,11 +30,42 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         return await db.TyreStretches.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
     }
 
+    public async Task<TyreLogDay?> FindDayAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.TyreLogDays.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct);
+    }
+
     /// <summary>
     /// One transaction. Rows let go of (a day's reading, a day left empty) are deleted in a second save: the context never saw them linked,
-    /// so in one save it could delete a reading before the day stops referring to it, which the database refuses.
+    /// so in one save it could delete a reading before the day stops referring to it, which the database refuses. An insert that fails
+    /// because a row with one of the added ids is there by now is the same add saved at once by another request (see <c>AddOnceAsync</c>):
+    /// rolled back and answered false; any other failure is rethrown as it was.
     /// </summary>
-    public async Task SaveAsync(TyreSave save, CancellationToken ct)
+    public async Task<bool> SaveAsync(TyreSave save, CancellationToken ct)
+    {
+        ExceptionDispatchInfo failure;
+        try
+        {
+            await SaveInOneAsync(save, ct);
+            return true;
+        }
+        catch (DbUpdateException e) when (e is not DbUpdateConcurrencyException && save.AddedSets.Count + save.AddedStretches.Count + save.AddedDays.Count > 0)
+        {
+            failure = ExceptionDispatchInfo.Capture(e);
+        }
+        var sets = save.AddedSets.Select(s => s.Id).ToList();
+        var stretches = save.AddedStretches.Select(s => s.Id).ToList();
+        var days = save.AddedDays.Select(d => d.Id).ToList();
+        await using var check = await dbFactory.CreateDbContextAsync(ct); // a fresh context: the failed one still holds the inserts
+        if (await check.TyreSets.AnyAsync(s => sets.Contains(s.Id), ct) || await check.TyreStretches.AnyAsync(s => stretches.Contains(s.Id), ct)
+            || await check.TyreLogDays.AnyAsync(d => days.Contains(d.Id), ct))
+            return false;
+        failure.Throw();
+        return false; // not reached
+    }
+
+    private async Task SaveInOneAsync(TyreSave save, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);

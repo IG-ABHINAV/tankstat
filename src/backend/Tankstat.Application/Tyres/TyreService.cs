@@ -56,14 +56,11 @@ public sealed class TyreService(
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
-        if (id is { } given && await tyres.FindSetAsync(given, ct) is { } existing)
-        {
-            ClientIds.Repeat(existing, existing.VehicleId == vehicle.Id && existing.CreatedById == by, given);
-            return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
-        }
+        var book = await tyres.LoadAsync(vehicle.Id, ct);
+        async Task<bool> Repeat() => await RepeatedSetAsync(id, vehicle.Id, by, ct) | await RepeatedAsync(book, stretchId, vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         RequireNotFuture(input.Day);
         RequireNotFuture(input.Set.Since);
-        var book = await tyres.LoadAsync(vehicle.Id, ct);
         var set = TyreSet.Create(vehicle.OwnerId, by, vehicle.Id, input.Set.Name, input.Set.Season, input.Set.Size, input.Set.Since, input.Set.MadeWeek, input.Set.MadeYear,
             input.Set.RoughDistance, input.Set.RoughDistance > 0 ? input.Day : null, id);
         var save = new TyreSave();
@@ -74,7 +71,7 @@ public sealed class TyreService(
             save.Take(history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId));
             await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, note: null, keepNote: true, by, ct);
         }
-        await SaveAsync(save, ct);
+        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added tyre set {SetId} to vehicle {VehicleId}", by, set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -94,12 +91,17 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <summary>Sets the rough figure; <paramref name="until"/> (accepting a suggestion) moves the first day it does not cover.</summary>
+    /// <summary>
+    /// Sets the rough figure; <paramref name="until"/> (accepting a suggestion) moves the first day it does not cover. Without one it keeps
+    /// the day it had, else it covers the time before the set's first stretch (today when it has none), never time already measured.
+    /// </summary>
     public async Task<TyreOverview> SetRoughAsync(Guid id, long distance, DateOnly? until, CancellationToken ct, int? expectedVersion = null)
     {
-        var (vehicle, set, _) = await EditableSetAsync(id, ct);
+        var (vehicle, set, book) = await EditableSetAsync(id, ct);
         VersionCheck.Require(expectedVersion, set.Version);
-        set.SetRough(distance, until ?? set.RoughUntil ?? Today, (await access.RequirePrincipalAsync(ct)).Id);
+        if (until is { } given) RequireNotFuture(given);
+        var first = book.Stretches.Where(s => s.SetId == id && !s.IsDeleted).Select(s => (DateOnly?)s.From).Min();
+        set.SetRough(distance, until ?? set.RoughUntil ?? first ?? Today, (await access.RequirePrincipalAsync(ct)).Id);
         var save = new TyreSave();
         save.ChangedSets.Add(set);
         await SaveAsync(save, ct);
@@ -112,13 +114,14 @@ public sealed class TyreService(
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        if (Repeated(book, stretchId, vehicle.Id, by)) return Overview(vehicle.Id, book);
+        Task<bool> Repeat() => RepeatedAsync(book, stretchId, vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
         save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId, repeatable: stretchId is not null));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
-        await SaveAsync(save, ct);
+        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -128,13 +131,14 @@ public sealed class TyreService(
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        if (Repeated(book, stretchId, vehicle.Id, by)) return Overview(vehicle.Id, book);
+        Task<bool> Repeat() => RepeatedAsync(book, stretchId, vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
-        save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, stretchId));
+        save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, stretchId, repeatable: stretchId is not null));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
-        await SaveAsync(save, ct);
+        await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -145,7 +149,13 @@ public sealed class TyreService(
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         if (rows.Count == 0) throw new DomainException("tyres.pastSwapsRequired", "Enter at least one swap.");
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        if (rows.Any(r => Repeated(book, r.StretchId, vehicle.Id, by))) return Overview(vehicle.Id, book);
+        async Task<bool> Repeat()
+        {
+            var repeated = false;
+            foreach (var row in rows) repeated |= await RepeatedAsync(book, row.StretchId, vehicle.Id, by, ct);
+            return repeated;
+        }
+        if (await Repeat()) return Overview(vehicle.Id, book);
         var day = rows.GroupBy(r => r.Day).FirstOrDefault(g => g.Count() > 1)?.Key;
         if (day is { } twice)
             throw new DomainException("tyres.pastSwapsSameDay", "Two swaps on one day: one day holds one swap.", new { Date = twice.ToString("yyyy-MM-dd") });
@@ -157,7 +167,7 @@ public sealed class TyreService(
             save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.StretchId, pairsGiven: false, repeatable: row.StretchId is not null));
             if (row.Odometer is not null) await SetDayAsync(vehicle, book, save, row.Day, row.Odometer, note: null, keepNote: true, by, ct);
         }
-        await SaveAsync(save, ct);
+        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added {Count} past tyre swaps to vehicle {VehicleId}", by, rows.Count, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -166,12 +176,13 @@ public sealed class TyreService(
     {
         var (vehicle, set, book) = await EditableSetAsync(setId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
-        if (Repeated(book, id, vehicle.Id, by)) return Overview(vehicle.Id, book);
+        Task<bool> Repeat() => RepeatedAsync(book, id, vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, book);
         RequireDays(input);
         var save = new TyreSave();
         save.AddedStretches.Add(History(vehicle, book).Add(set, input.From, input.Until, input.PairOneFront, by, id));
         await StretchReadingsAsync(vehicle, book, save, input, by, ct);
-        await SaveAsync(save, ct);
+        await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -216,15 +227,28 @@ public sealed class TyreService(
     }
 
     /// <summary>Sets or clears the tyre log's reading and note of a day; a day left with neither is deleted (the reading too, for good).</summary>
-    public async Task<TyreOverview> SetLogDayAsync(Guid vehicleId, DateOnly day, long? odometerValue, string? note, CancellationToken ct, Guid? id = null)
+    /// <param name="id">The id of the day's line when this creates it (the client's); the id of another day's line is refused.</param>
+    /// <param name="expectedVersion">The version of the day's line the change was made from, when it has one (see <see cref="VersionCheck"/>).</param>
+    public async Task<TyreOverview> SetLogDayAsync(
+        Guid vehicleId, DateOnly day, long? odometerValue, string? note, CancellationToken ct, Guid? id = null, int? expectedVersion = null)
     {
         var vehicle = await EditableVehicleAsync(vehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         RequireNotFuture(day);
         var book = await tyres.LoadAsync(vehicle.Id, ct);
+        // A line with that id is this day's (the change edits it, or the same add got there first), else it is someone else's id.
+        async Task<bool> Repeat()
+        {
+            if (id is not { } given || await tyres.FindDayAsync(given, ct) is not { } found) return false;
+            ClientIds.Repeat(found, found.VehicleId == vehicle.Id && found.Day == day, given);
+            return true;
+        }
+        await Repeat(); // found here, it is simply the line this change edits
+        if (book.Days.FirstOrDefault(d => d.Day == day) is { } existing) VersionCheck.Require(expectedVersion, existing.Version);
         var save = new TyreSave();
         await SetDayAsync(vehicle, book, save, day, odometerValue, note, keepNote: false, by, ct, clear: true, id: id);
-        await SaveAsync(save, ct);
+        // Only an add of the line can be the same change twice; an edit that lost a race is refused as one.
+        await SaveOnceAsync(save, save.AddedDays.Count > 0 ? Repeat : () => Task.FromResult(false), ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -268,7 +292,7 @@ public sealed class TyreService(
         VersionCheck.Require(expectedVersion, set.Version);
         set.Restore((await access.RequirePrincipalAsync(ct)).Id);
         var history = new TyreHistory(vehicle.OwnerId, vehicle.Id, book.Sets, book.Stretches);
-        history.CheckRestored([]); // the set's own live stretches now count again
+        history.CheckRestored([.. history.Live.Where(s => s.SetId == id)]); // the set's own live stretches now count again
         await SaveSetAsync(set, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -311,10 +335,22 @@ public sealed class TyreService(
     private static TyreHistory History(Vehicle vehicle, TyreBook book, TyreSet? extra = null) =>
         new(vehicle.OwnerId, vehicle.Id, extra is null ? book.Sets : [.. book.Sets, extra], book.Stretches);
 
-    /// <summary>A change that creates a stretch with this id came again: it was applied already (same creator and vehicle), else the id is taken.</summary>
-    private static bool Repeated(TyreBook book, Guid? id, Guid vehicleId, Guid by)
+    /// <summary>
+    /// A change that creates a stretch with this id came again: it was applied already (same creator and vehicle), else the id is taken
+    /// (<c>sync.idTaken</c>), looked up beyond the vehicle too.
+    /// </summary>
+    private async Task<bool> RepeatedAsync(TyreBook book, Guid? id, Guid vehicleId, Guid by, CancellationToken ct)
     {
-        if (id is not { } given || book.Stretches.FirstOrDefault(s => s.Id == given) is not { } existing) return false;
+        if (id is not { } given) return false;
+        if ((book.Stretches.FirstOrDefault(s => s.Id == given) ?? await tyres.FindStretchAsync(given, ct)) is not { } existing) return false;
+        ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
+        return true;
+    }
+
+    /// <summary>The same for an added set.</summary>
+    private async Task<bool> RepeatedSetAsync(Guid? id, Guid vehicleId, Guid by, CancellationToken ct)
+    {
+        if (id is not { } given || await tyres.FindSetAsync(given, ct) is not { } existing) return false;
         ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
         return true;
     }
@@ -335,16 +371,17 @@ public sealed class TyreService(
         if (value is { } v) await odometer.ValidateAsync(vehicle.Id, day, v, exceptReadingId: existing?.OdometerReadingId, ct);
         if (existing is null)
         {
-            if (value is null && note is null) return;
             var created = TyreLogDay.Create(vehicle.OwnerId, by, vehicle.Id, day, value, note, id);
+            if (created.IsEmpty) return; // created only for a reading or a note (a blank one is none)
             save.AddedDays.Add(created);
             if (created.OdometerReading is { } reading) save.AddedReadings.Add(reading);
             return;
         }
+        var version = existing.Version;
         var (added, removed) = existing.Update(value ?? (clear ? null : existing.Odometer), keepNote ? existing.Note : note, by);
         if (added is not null) save.AddedReadings.Add(added);
         if (removed is not null) save.RemovedReadings.Add(removed);
-        if (save.AddedDays.Contains(existing)) return;
+        if (save.AddedDays.Contains(existing) || existing.Version == version) return; // nothing changed: the line is not written again
         if (existing.IsEmpty) save.RemovedDays.Add(existing);
         else if (!save.ChangedDays.Contains(existing)) save.ChangedDays.Add(existing);
     }
@@ -375,7 +412,29 @@ public sealed class TyreService(
     private async Task SaveAsync(TyreSave save, CancellationToken ct)
     {
         RequireRising(save);
-        await tyres.SaveAsync(save, ct);
+        if (!await tyres.SaveAsync(save, ct))
+            throw new InvalidOperationException("A tyre change without client ids clashed on an id."); // not reached: only a client's id is chosen twice
+    }
+
+    /// <summary>
+    /// Saves a change that may create rows with the client's ids. The same change sent twice at once passes the id lookups twice; the one
+    /// whose insert then loses (the repository says so) or whose conditional update loses to the other's runs <paramref name="repeat"/>
+    /// again, which answers it as the repeat it is (or refuses an id that is someone else's). False: answered as a repeat, nothing saved.
+    /// </summary>
+    private async Task<bool> SaveOnceAsync(TyreSave save, Func<Task<bool>> repeat, CancellationToken ct)
+    {
+        RequireRising(save);
+        try
+        {
+            if (await tyres.SaveAsync(save, ct)) return true;
+        }
+        catch (KeyedException e) when (e.Key == "sync.versionMismatch")
+        {
+            if (await repeat()) return false;
+            throw;
+        }
+        if (await repeat()) return false;
+        throw new InvalidOperationException("A tyre row's id was taken meanwhile, and not by this change."); // the repository found the id there
     }
 
     private async Task SaveSetAsync(TyreSet set, CancellationToken ct)
