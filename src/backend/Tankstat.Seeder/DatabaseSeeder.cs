@@ -6,7 +6,7 @@ using Tankstat.Infrastructure.Persistence;
 namespace Tankstat.Seeder;
 
 /// <param name="Expenses">Every expense: the visits of the recurring expenses and the one-off ones.</param>
-public sealed record SeedResult(int Vehicles, int Trashed, int Refuelings, int Recurring = 0, int Notifications = 0, int Expenses = 0);
+public sealed record SeedResult(int Vehicles, int Trashed, int Refuelings, int Recurring = 0, int Notifications = 0, int Expenses = 0, int TyreSets = 0);
 
 /// <summary>Deletes, creates and migrates the database, then inserts the generated data in batches.</summary>
 public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, DataGenerator generator)
@@ -23,7 +23,7 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             await db.Database.MigrateAsync(ct);
         }
 
-        int vehicles = 0, trashed = 0, refuelings = 0, recurring = 0, expenses = 0;
+        int vehicles = 0, trashed = 0, refuelings = 0, recurring = 0, expenses = 0, tyreSets = 0;
         var notified = new List<Vehicle>();
         foreach (var batch in generator.Generate(options).Chunk(BatchVehicles))
         {
@@ -33,6 +33,8 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             db.RecurringExpenses.AddRange(batch.SelectMany(b => b.Recurring));
             db.Expenses.AddRange(batch.SelectMany(b => b.Expenses));
             db.RecurringCompletions.AddRange(batch.SelectMany(b => b.Completions));
+            db.TyreSets.AddRange(batch.SelectMany(b => b.TyreSets ?? []));
+            db.TyreStretches.AddRange(batch.SelectMany(b => b.TyreStretches ?? []));
             await db.SaveChangesAsync(ct);
 
             vehicles += batch.Count(b => !b.Vehicle.IsDeleted);
@@ -40,6 +42,7 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             refuelings += batch.Sum(b => b.Refuelings.Count);
             recurring += batch.Sum(b => b.Recurring.Count);
             expenses += batch.Sum(b => b.Expenses.Count);
+            tyreSets += batch.Sum(b => b.TyreSets?.Count ?? 0);
             notified.AddRange(batch.Select(b => b.Vehicle).Where(v => !v.IsDeleted).Take(NotifiedVehicles - notified.Count));
         }
 
@@ -49,6 +52,6 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             db.Notifications.AddRange(notifications);
             await db.SaveChangesAsync(ct);
         }
-        return new SeedResult(vehicles, trashed, refuelings, recurring, notifications.Count, expenses);
+        return new SeedResult(vehicles, trashed, refuelings, recurring, notifications.Count, expenses, tyreSets);
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Time.Testing;
 using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Odometers;
+using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Vehicles;
 using Tankstat.Seeder;
 
@@ -13,6 +14,28 @@ public class DataGeneratorTests
 
     private static List<GeneratedVehicle> Generate(int vehicles = 30, int trashed = 7, IntRange? refuelings = null, int seed = 42) =>
         new DataGenerator(Clock).Generate(new SeedOptions(vehicles, trashed, refuelings ?? new IntRange(5, 25), seed, true, null, null)).ToList();
+
+    [Fact]
+    public void EveryVehicleWithALog_HasASummerAndAWinterSet_SwappedEachSpringAndAutumn_ByTheHistorysRules()
+    {
+        var generated = Generate(vehicles: 12, trashed: 3, refuelings: new IntRange(15, 30));
+
+        Assert.All(generated.Where(g => g.Vehicle.IsDeleted), g => Assert.Empty(g.TyreSets ?? []));
+        Assert.All(generated.Where(g => !g.Vehicle.IsDeleted), g =>
+        {
+            var sets = g.TyreSets!;
+            Assert.Equal([TyreSeason.Summer, TyreSeason.Winter], sets.Select(s => s.Season));
+            Assert.All(sets, s => Assert.Equal(g.Vehicle.Id, s.VehicleId));
+            var stretches = g.TyreStretches!.OrderBy(s => s.From).ToList();
+            Assert.Equal(g.Refuelings.Min(r => r.Date), stretches[0].From); // from the log's first day: the rough figure stands for before
+            Assert.Single(stretches, s => s.Until is null); // one set on the car today
+            Assert.All(stretches.Zip(stretches.Skip(1)), p => Assert.Equal(p.First.Until, p.Second.From)); // one after the other, never two at once
+            Assert.All(stretches.Zip(stretches.Skip(1)), p => Assert.NotEqual(p.First.SetId, p.Second.SetId)); // summer and winter take turns
+            Assert.All(stretches, s => Assert.NotNull(s.PairOneFront));
+            Assert.All(stretches.Skip(1), s => Assert.True(s.From.Month is 3 or 4 or 10 or 11, $"a swap around April or November, not {s.From}"));
+            new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, stretches).Check(); // the app's own checks pass
+        });
+    }
 
     [Fact]
     public void AFifthOfTheFillUps_CarryADiscount_TakenOffWhatWasPaid()
