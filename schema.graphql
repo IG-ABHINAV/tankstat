@@ -1615,6 +1615,9 @@ enum OfflineEntityType {
   REFUELING
   EXPENSE
   RECURRING_EXPENSE
+  TYRE_SET
+  TYRE_STRETCH
+  TYRE_LOG_DAY
 }
 
 enum ReadingFieldName {

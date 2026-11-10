@@ -381,6 +381,9 @@ export type OfflineEntityType =
   | 'EXPENSE'
   | 'RECURRING_EXPENSE'
   | 'REFUELING'
+  | 'TYRE_LOG_DAY'
+  | 'TYRE_SET'
+  | 'TYRE_STRETCH'
   | 'VEHICLE';
 
 export type OfflineVehicleWindowInput = {
