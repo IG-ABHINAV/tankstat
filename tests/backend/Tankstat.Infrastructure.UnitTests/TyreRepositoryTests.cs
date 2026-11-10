@@ -88,6 +88,29 @@ public class TyreRepositoryTests
     }
 
     [Fact]
+    public async Task TheSameAdd_SavedTwice_IsAnsweredFalse_AndSavesNothingOfTheSecond()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        var (set, stretch, _) = await SetOnTheCar(db, car, odometer: null);
+        // The second request built the same stretch (same id) and a day line of its own.
+        var again = TyreStretch.Create(car.OwnerId, car.OwnerId, car.Id, set.Id, stretch.From, null, true, stretch.Id);
+        var day = TyreLogDay.Create(car.OwnerId, car.OwnerId, car.Id, D(2026, 9, 1), 150_000, null);
+        var save = new TyreSave();
+        save.AddedStretches.Add(again);
+        save.AddedDays.Add(day);
+        save.AddedReadings.Add(day.OdometerReading!);
+
+        Assert.False(await repo.SaveAsync(save, default));
+
+        var book = await repo.LoadAsync(car.Id, default);
+        Assert.Single(book.Stretches);
+        Assert.DoesNotContain(book.Days, d => d.Day == D(2026, 9, 1)); // rolled back as a whole
+        Assert.Empty(book.Readings);
+    }
+
+    [Fact]
     public async Task AStaleStretch_IsNotSaved()
     {
         await using var db = Database();

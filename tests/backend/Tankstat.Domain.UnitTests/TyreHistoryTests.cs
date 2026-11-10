@@ -49,6 +49,26 @@ public class TyreHistoryTests
     }
 
     [Fact]
+    public void ASwapIntoAGap_NeverJoinsTheSetsNextStretch_SoTheSwapThatBeganItStaysRecorded()
+    {
+        // Summer fitted on 28 Mar 2026 without pairs, then the papers: summer on 5 Apr 2025, winter on 15 Nov 2025 (oldest first).
+        var fitted = S(_summer, D(2026, 3, 28), null);
+        var history = History(fitted);
+
+        var april = Assert.Single(history.Swap(_summer, D(2025, 4, 5), null, false, Owner, Now, pairsGiven: false).Created);
+        Assert.Equal((D(2025, 4, 5), (DateOnly?)D(2026, 3, 28)), (april.From, april.Until)); // fitted keeps its own start
+        Assert.Equal(D(2026, 3, 28), fitted.From);
+
+        var winter = Assert.Single(history.Swap(_winter, D(2025, 11, 15), null, false, Owner, Now, pairsGiven: false).Created);
+
+        Assert.Equal(
+            [(_summer.Id, D(2025, 4, 5), (DateOnly?)D(2025, 11, 15)), (_winter.Id, D(2025, 11, 15), D(2026, 3, 28)), (_summer.Id, D(2026, 3, 28), null)],
+            history.Live.OrderBy(s => s.From).Select(s => (s.SetId, s.From, s.Until)));
+        Assert.Equal(_summer.Id, history.Covering(D(2026, 10, 1))!.SetId); // summer is still the set on the car
+        Assert.Equal(D(2026, 3, 28), winter.Until);
+    }
+
+    [Fact]
     public void Swap_InsideAStretch_EndsItThere_AndRunsUntilItWouldHaveEnded()
     {
         var summer = S(_summer, D(2025, 3, 29), D(2025, 11, 15));
@@ -120,6 +140,32 @@ public class TyreHistoryTests
         Assert.Equal(true, created.PairOneFront);
         Assert.Equal("tyres.positionsUnchanged", Key(() => history.ChangePositions(_summer, D(2026, 8, 1), true, Owner)));
         Assert.Equal("tyres.notOnCar", Key(() => history.ChangePositions(_winter, D(2026, 8, 1), true, Owner)));
+    }
+
+    [Fact]
+    public void ChangePositions_InPlace_SentAgain_IsItsOwnAnswer()
+    {
+        var summer = S(_summer, D(2026, 3, 28), null, true);
+        var history = History(summer);
+        history.ChangePositions(_summer, D(2026, 3, 28), false, Owner, Guid.NewGuid(), repeatable: true); // on its first day: no new stretch
+
+        Assert.False(history.ChangePositions(_summer, D(2026, 3, 28), false, Owner, Guid.NewGuid(), repeatable: true).Any);
+        Assert.Equal("tyres.positionsUnchanged", Key(() => history.ChangePositions(_summer, D(2026, 3, 28), false, Owner)));
+        Assert.Equal("tyres.positionsUnchanged", Key(() => history.ChangePositions(_summer, D(2026, 7, 1), false, Owner, Guid.NewGuid(), repeatable: true)));
+    }
+
+    [Fact]
+    public void AConflict_NamesTheStretchAlreadyOnTheCar_NotTheOneBeingAddedOrRestored()
+    {
+        var summer = S(_summer, D(2026, 3, 28), null);
+        var history = History(summer);
+
+        var refused = Assert.Throws<DomainException>(() => history.Add(_winter, D(2026, 9, 20), D(2026, 10, 1), null, Owner));
+
+        Assert.Equal(("tyres.twoSetsAtOnce", "Michelin Primacy 4", "2026-03-28"), (refused.Key, refused.Args["set"], refused.Args["from"]));
+        var winter = S(_winter, D(2026, 9, 20), null);
+        var restoring = Assert.Throws<DomainException>(() => History(summer, winter).CheckRestored([winter]));
+        Assert.Equal(("tyres.restoreConflict", "Michelin Primacy 4"), (restoring.Key, restoring.Args["set"]));
     }
 
     [Fact]
