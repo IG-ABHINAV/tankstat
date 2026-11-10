@@ -352,17 +352,18 @@ public class TyreServiceTests
     }
 
     [Fact]
-    public async Task ChangingPositionsOnTheFirstDay_SentAgain_IsAnsweredWithoutAnError()
+    public async Task ChangingPositionsOnTheFirstDay_SentAgainFromTheQueue_IsAnsweredWithoutAnError_ButOnlineIsUnchanged()
     {
         var s = await Setup();
         var (_, summer, _) = await TwoSets(s); // on since 28 Mar, pair 1 at the front
         var id = Guid.NewGuid();
         var input = new TyreSwapInput(s.Car.Id, summer, D(2026, 3, 28), false, false, null, null);
 
-        await s.Tyres.ChangePositionsAsync(input, default, id);
-        var again = await s.Tyres.ChangePositionsAsync(input, default, id);
+        await s.Tyres.ChangePositionsAsync(input, default, id, repeat: true);
+        var again = await s.Tyres.ChangePositionsAsync(input, default, id, repeat: true);
 
         Assert.Equal(false, Set(again, summer).Stretches.Single().Stretch.PairOneFront);
+        Assert.Equal("tyres.positionsUnchanged", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.ChangePositionsAsync(input, default, Guid.NewGuid()))).Key);
     }
 
     [Fact]

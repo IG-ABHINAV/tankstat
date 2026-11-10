@@ -20,7 +20,7 @@ export function useRowSyncStates(entity: ChangeEntity): (id: string) => RowSyncS
     const byTarget = new Map<string, ParkedChangeFieldsFragment>()
     for (const p of parked ?? []) {
       const change = fromParked(p)
-      if (change.entity !== entity) continue
+      if (!change || change.entity !== entity) continue
       for (const id of change.action === 'markDone' ? (change.targetIds ?? []) : [change.targetId]) if (!byTarget.has(id)) byTarget.set(id, p)
     }
     return byTarget
