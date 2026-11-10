@@ -130,8 +130,11 @@ public sealed class TyreQueries
     public Task<TyreOverview?> GetVehicleTyres(Guid vehicleId, [Service] TyreService tyres, CancellationToken ct) => tyres.OverviewAsync(vehicleId, ct);
 
     /// <summary>The trashed tyre sets and the trashed stretches of sets not in the trash, newest first.</summary>
-    public Task<IReadOnlyList<TyreTrashRow>> GetTyreTrash([Service] TyreService tyres, CancellationToken ct, int skip = 0, int take = 50) =>
-        tyres.ListTrashAsync(skip, take, ct);
+    public Task<IReadOnlyList<TyreTrashRow>> GetTyreTrash(
+        [Service] TyreService tyres, CancellationToken ct,
+        TyreTrashSortField orderBy = TyreTrashSortField.DeletedAt, Tankstat.Domain.SortDirection direction = Tankstat.Domain.SortDirection.Desc,
+        int skip = 0, int take = 50) =>
+        tyres.ListTrashAsync(skip, take, ct, direction == Tankstat.Domain.SortDirection.Desc);
 
     public Task<int> GetTyreTrashCount([Service] TyreService tyres, CancellationToken ct) => tyres.CountTrashAsync(ct);
 

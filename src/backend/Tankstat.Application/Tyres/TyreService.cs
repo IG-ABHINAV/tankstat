@@ -293,8 +293,8 @@ public sealed class TyreService(
     public async Task<TyreStretch?> StretchInTrashAsync(Guid id, CancellationToken ct) =>
         await tyres.FindStretchAsync(id, ct) is { IsDeleted: true } stretch && await guard.ForVehicleAsync(stretch.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? stretch : null;
 
-    public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(int skip, int take, CancellationToken ct) =>
-        await tyres.ListTrashAsync(await access.LogScopeAsync(AccessLevel.Edit, ct), Math.Max(0, skip), Math.Clamp(take, 1, 100), ct);
+    public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(int skip, int take, CancellationToken ct, bool descending = true) =>
+        await tyres.ListTrashAsync(await access.LogScopeAsync(AccessLevel.Edit, ct), Math.Max(0, skip), Math.Clamp(take, 1, 100), ct, descending);
 
     public async Task<int> CountTrashAsync(CancellationToken ct) => await tyres.CountTrashAsync(await access.LogScopeAsync(AccessLevel.Edit, ct), ct);
 

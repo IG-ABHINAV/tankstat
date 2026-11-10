@@ -76,10 +76,12 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         return await db.TyreSets.AnyAsync(s => s.VehicleId == vehicleId && s.RoughDistance > 0, ct);
     }
 
-    public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct)
+    public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct, bool descending = true)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var rows = await Trash(db, scope).OrderByDescending(r => r.DeletedAt).ThenBy(r => r.Id).Skip(skip).Take(take).ToListAsync(ct);
+        var trash = Trash(db, scope);
+        var ordered = descending ? trash.OrderByDescending(r => r.DeletedAt) : trash.OrderBy(r => r.DeletedAt);
+        var rows = await ordered.ThenBy(r => r.Id).Skip(skip).Take(take).ToListAsync(ct);
         return [.. rows.Select(r => new TyreTrashRow(r.IsSet ? TyreTrashKind.Set : TyreTrashKind.Stretch, r.Id, r.VehicleId, r.SetName, r.From, r.Until, r.StretchCount, r.DeletedAt, r.Version))];
     }
 

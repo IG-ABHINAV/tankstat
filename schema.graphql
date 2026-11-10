@@ -79,8 +79,12 @@ type Query {
   expenseTrashCount: Int! @cost(weight: "10")
   expenseTrashDeletableCount: Int! @cost(weight: "10")
   vehicleTyres(vehicleId: UUID!): VehicleTyres @cost(weight: "10")
-  tyreTrash(skip: Int! = 0, take: Int! = 50): [TyreTrashRow!]!
-    @cost(weight: "10")
+  tyreTrash(
+    orderBy: TyreTrashSortField! = DELETED_AT
+    direction: SortDirection! = DESC
+    skip: Int! = 0
+    take: Int! = 50
+  ): [TyreTrashRow!]! @cost(weight: "10")
   tyreTrashCount: Int! @cost(weight: "10")
   tyreTrashDeletableCount: Int! @cost(weight: "10")
   notifications(unreadOnly: Boolean! = false, skip: Int! = 0, take: Int! = 20): [NotificationInfo!]!
@@ -2096,6 +2100,10 @@ enum TyreSeason {
 enum TyreTrashKind {
   SET
   STRETCH
+}
+
+enum TyreTrashSortField {
+  DELETED_AT
 }
 
 enum UserDataDisposition {

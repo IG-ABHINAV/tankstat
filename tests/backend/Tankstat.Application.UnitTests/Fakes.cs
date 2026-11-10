@@ -484,8 +484,8 @@ internal sealed class InMemoryTyres : ITyreRepository
                 .Select(x => new TyreTrashRow(TyreTrashKind.Stretch, x.Id, x.VehicleId, Sets.First(s => s.Id == x.SetId).Name, x.From, x.Until, 0, x.DeletedAt!.Value, x.Version)))
             .OrderByDescending(r => r.DeletedAt).ThenBy(r => r.Id);
 
-    public Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<TyreTrashRow>>([.. Trash(scope).Skip(skip).Take(take)]);
+    public Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct, bool descending = true) =>
+        Task.FromResult<IReadOnlyList<TyreTrashRow>>([.. (descending ? Trash(scope) : Trash(scope).Reverse()).Skip(skip).Take(take)]);
 
     public Task<int> CountTrashAsync(OwnerScope scope, CancellationToken ct) => Task.FromResult(Trash(scope).Count());
 

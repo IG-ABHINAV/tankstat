@@ -39,6 +39,12 @@ public enum TyreTrashKind
     Stretch,
 }
 
+/// <summary>What the Tyres tab of the Trash page sorts by: when a row was moved to the trash (then the id).</summary>
+public enum TyreTrashSortField
+{
+    DeletedAt,
+}
+
 public interface ITyreRepository
 {
     Task<TyreBook> LoadAsync(Guid vehicleId, CancellationToken ct);
@@ -58,8 +64,8 @@ public interface ITyreRepository
     /// <summary>The vehicle has a tyre set with a rough figure: its units are locked, like with logs.</summary>
     Task<bool> HasRoughFiguresAsync(Guid vehicleId, CancellationToken ct);
 
-    /// <summary>Newest first (then by id), <paramref name="skip"/>/<paramref name="take"/> over both kinds.</summary>
-    Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct);
+    /// <summary>By when it was trashed (<paramref name="descending"/>: newest first), then by id; <paramref name="skip"/>/<paramref name="take"/> over both kinds.</summary>
+    Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct, bool descending = true);
 
     Task<int> CountTrashAsync(OwnerScope scope, CancellationToken ct);
 

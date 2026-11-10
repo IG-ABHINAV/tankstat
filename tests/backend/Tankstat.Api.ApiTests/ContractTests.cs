@@ -258,6 +258,7 @@ public class ContractTests
     [InlineData("TyreSeason", "SUMMER", "WINTER", "ALL_SEASON")]
     [InlineData("StretchMeasure", "MEASURED", "FROM_FIRST_READING", "NOT_MEASURED")]
     [InlineData("TyreTrashKind", "SET", "STRETCH")]
+    [InlineData("TyreTrashSortField", "DELETED_AT")]
     [InlineData("SyncResolveAction", "APPLY", "DISCARD")]
     [InlineData("SettingsGroup", "AUTH", "SMTP", "DEFAULTS", "NOTIFICATIONS", "SYNC", "PHOTO_READING", "BACKUPS", "LOGGING", "TELEMETRY")]
     [InlineData("SettingKind", "TEXT", "MULTILINE", "INTEGER", "DECIMAL", "BOOLEAN", "CHOICE", "LIST", "SECRET", "DAYS")]
