@@ -40,9 +40,13 @@ paths:
   - **Users:** `UserDataRepository` moves the tyre rows with a user; a vehicle's purge takes them through the cascade.
 - **GraphQL:** `vehicleTyres(vehicleId)` (`VehicleTyres`: `TyreSetInfo` with figures and stretches with distances, the days, `readings`), `tyreTrash` with its counts (`orderBy: DELETED_AT`, `direction`), and a mutation per change answering with the vehicle's tyres.
 - **Offline (server side):** the feed's first page carries the vehicle's tyres whole (`offlineChanges.tyres`) and no tyre tombstones. A parked tyre change tells its set or stretch as it is now (`SyncCurrent.tyreSet` / `tyreStretch`).
-- **The device (part 3):**
-  - **The policies:** `VehicleTyres` is kept, `TyreTrash` online only.
-  - **The kinds:** the device sends no tyre change yet; `syncKinds.ts` leaves the tyre kinds out until part 4.
+- **The device:**
+  - **The policies:** `VehicleTyres` is kept (and kept from the feed's first page by `pull.ts`), `TyreTrash` online only.
+  - **Changes offline (part 4, the owner's Q3: shown done, marked):** every tyre mutation goes through `useTyreMutation` → `submitChange` (entity `tyres`, the action the mutation's field, the input the mutation's own, a bare id as `{ id }`; `offline/tyreChanges.ts` says what each targets, creates and needs). Before one is kept the device checks it with `tyres/replay.ts` `applyTyreChange` over what the tab shows (the server's refusal as a `TyreRuleError`, which `keyedOf` and `useErrorText` read, so `tyres.swapExists` asks before it waits). They never fold; a change taken back takes along what was made on what it created; `push.ts` sends one after what it needs, as its own `ChangeInput` field; all 15 kinds are in `SYNC_KINDS`.
+  - **The device's answer:** `localResolvers` `VehicleTyres` (`waitingFor` while the vehicle's changes wait) is `replayTyres` over the kept answer, in `seq` order, a change that no longer fits left out; what only the server works out stays as it was for what did not change (a new or changed stretch's distance `NOT_MEASURED`), and a set or stretch a waiting change changed has version 0, so the next change of it goes without a version. `usePendingTyres` (the same replay) marks the touched cards *New* / *Changed · not synced* and their distances *updated once synced*. `LogDefaults` and an added vehicle's odometer figure count the tyre log's readings.
+  - **The port of the rules:** `tyres/tyreHistory.ts`, pinned to `TyreHistory` by `tests/backend/contracts/tyre-swaps/tyre-swaps.json` (`TyreSwapContractTests`, `TyreHistory.unit`): change one, change the other and the cases.
+  - **Waiting to sync:** `sync.kinds.tyres.*`, named by the set and day; no Edit (the owner's decision); a swap parked with `tyres.swapExists` offers *Replace the swap* (`resolveSyncChange` with `replace: true`) in place of *Apply anyway*. Rows found on the device after a restore (`foundRows.ts`) leave tyres out.
+  - **UI offline:** `OfflineNote` atop the tyre dialogs; `useTyreToasts` says a kept save is saved on the device, and its Undo takes a kept change back instead of sending the opposite one.
 - **UI:**
   - **The tab:** `pages/vehicle/TyresPanel.tsx` (lazy), between *Recurring* and *Details`. It shows the sets on the car, in storage and retired, and the tyre log, a line per day a set went on or a reading stayed (its pencil opens *Reading of {date}*).
   - **The dialogs** in `src/tyres/`:
@@ -50,7 +54,7 @@ paths:
     - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);
     - `PastSwapsDialog`;
     - `HistoryDialog`, with the stretch form and `RoughDialog`.
-  - **Mutations:** each goes through `useTyreMutation`, which writes the answer into `VehicleTyres` and refetches `VehicleDetails` and `LogDefaults`.
+  - **Mutations:** each goes through `useTyreMutation`, which, when sent, writes the answer into `VehicleTyres` and asks `VehicleTyres`, `VehicleDetails` and `LogDefaults` again.
   - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`.
   - **The Trash page:** a *Tyres* tab, `TyreTrash`.
   - **Texts:** `tyres.*`, `trash.tyres.*` and `errors.tyres.*` in English and Hungarian.
@@ -59,5 +63,6 @@ paths:
   - Application: `TyreServiceTests` (`InMemoryTyres` copies rows in and out, as a database would).
   - Infrastructure: `TyreRepositoryTests`, on SQLite.
   - API: `TyreGraphQLTests` (every mutation), `SyncGraphQLTests` (every change kind once), `OfflineFeedApiTests`, and the contract rows.
-  - Frontend: `tests/vehicles/tyres` (the fake in `tests/support/tyres.ts`) and `AccessibilityTyres`.
-  - Real browser: `e2e/tyres.e2e.ts`.
+  - Frontend: `tests/vehicles/tyres` (the fake in `tests/support/tyres.ts`; `TyreHistory.unit`, `TyreReplay.unit`, the offline cases in `Tyres.integration`), `tests/offline/TyreChanges.unit`, the Sync page's tyre case in `SyncPage.integration`, and `AccessibilityTyres`.
+  - Real browser: `e2e/tyres.e2e.ts`, and the offline flow in `e2e/offline.e2e.ts`.
+  - The Seeder: `DataGeneratorTests` (two sets per vehicle, by the history's checks).
