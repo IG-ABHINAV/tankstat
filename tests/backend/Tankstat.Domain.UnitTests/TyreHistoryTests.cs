@@ -101,6 +101,10 @@ public class TyreHistoryTests
         Assert.Equal([winter], changes.Changed);
         Assert.False(winter.PairOneFront);
         Assert.Equal("tyres.alreadyOnCar", Key(() => history.Swap(_winter, D(2026, 11, 20), null, false, Owner, Now)));
+        Assert.False(history.Swap(_winter, D(2026, 11, 20), null, false, Owner, Now, repeatable: true).Any); // a retry: nothing to do
+
+        history.Swap(_winter, D(2026, 11, 10), null, false, Owner, Now, pairsGiven: false); // from papers: the pairs stay
+        Assert.False(winter.PairOneFront);
     }
 
     [Fact]
@@ -119,12 +123,12 @@ public class TyreHistoryTests
     }
 
     [Fact]
-    public void Check_RefusesOverlaps_EarlyStarts_AndRetiredSetsOnTheCar()
+    public void Check_RefusesOverlaps_AndRetiredSetsOnTheCar()
     {
         Assert.Equal("tyres.twoSetsAtOnce", Key(() => History(S(_summer, D(2026, 3, 1), D(2026, 5, 1)), S(_winter, D(2026, 4, 1), null)).Check()));
         Assert.Equal("tyres.setOnTwice", Key(() => History(S(_summer, D(2026, 3, 1), null), S(_summer, D(2026, 4, 1), D(2026, 5, 1))).Check()));
         Assert.Equal("tyres.restoreConflict", Key(() => History(S(_summer, D(2026, 3, 1), null), S(_winter, D(2026, 4, 1), D(2026, 5, 1))).Check(restoring: true)));
-        Assert.Equal("tyres.beforeSince", Key(() => History(S(_summer, D(2023, 2, 1), D(2023, 3, 5))).Check()));
+        History(S(_summer, D(2023, 2, 1), D(2023, 3, 5))).Check(); // "in use since" is month-level: a stretch may start before it
         History(S(_summer, D(2026, 3, 1), D(2026, 5, 1)), S(_winter, D(2026, 5, 1), null)).Check(); // touching days are fine
 
         _summer.Retire(D(2026, 6, 1));

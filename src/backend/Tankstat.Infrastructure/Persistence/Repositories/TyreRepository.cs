@@ -90,12 +90,12 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
     }
 
     /// <summary>The trashed sets, and the trashed stretches of sets not in the trash, in one query (each projected to the same shape).</summary>
-    private static IQueryable<TrashRow> Trash(AppDbContext db, OwnerScope scope)
+    internal static IQueryable<TrashRow> Trash(AppDbContext db, OwnerScope scope)
     {
         var sets = db.TyreSets.Where(s => s.DeletedAt != null).InScope(scope, s => s.VehicleId)
             .Select(s => new TrashRow
             {
-                IsSet = true, Id = s.Id, VehicleId = s.VehicleId, SetName = s.Name, From = null, Until = null,
+                IsSet = true, Id = s.Id, VehicleId = s.VehicleId, SetName = s.Name, From = (DateOnly?)null, Until = (DateOnly?)null,
                 StretchCount = db.TyreStretches.Count(x => x.SetId == s.Id && x.DeletedAt == null), DeletedAt = s.DeletedAt!.Value, Version = s.Version,
             });
         var stretches = db.TyreStretches.Where(x => x.DeletedAt != null).InScope(scope, x => x.VehicleId)
@@ -107,7 +107,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         return sets.Concat(stretches);
     }
 
-    private sealed class TrashRow
+    internal sealed class TrashRow
     {
         public bool IsSet { get; init; }
         public Guid Id { get; init; }

@@ -18,7 +18,7 @@ public sealed class TyreChanges
 /// <summary>
 /// The rules of a vehicle's tyre history (#287), over its live sets and their live stretches: a swap or a change of positions on any day,
 /// today or in the past, and the checks every change must pass (nothing on the car twice, never two whole sets at once, nothing after a set
-/// was retired or before it was in use). Pure: it changes the stretch entities it was given and says which; the device ports the same rules
+/// was retired). Pure: it changes the stretch entities it was given and says which; the device ports the same rules
 /// (the swap contract in <c>tests/backend/contracts/tyre-swaps</c>).
 /// </summary>
 public sealed class TyreHistory
@@ -49,7 +49,10 @@ public sealed class TyreHistory
     /// goes to the trash first. The same set on the day it went on only sets its pairs. Stretches of the set that meet are joined.
     /// </summary>
     /// <param name="id">The id of the stretch it creates, if it creates one (the client's, so a retry is idempotent).</param>
-    public TyreChanges Swap(TyreSet set, DateOnly day, bool? pairOneFront, bool replace, Guid by, DateTimeOffset now, Guid? id = null)
+    /// <param name="pairsGiven">False for a swap from papers, which says nothing about the pairs: the set's own stretch of that day keeps its own.</param>
+    /// <param name="repeatable">The change carries a client id, so it may be a retry: the set already on the car that day is the answer, not an error.</param>
+    public TyreChanges Swap(
+        TyreSet set, DateOnly day, bool? pairOneFront, bool replace, Guid by, DateTimeOffset now, Guid? id = null, bool pairsGiven = true, bool repeatable = false)
     {
         var changes = new TyreChanges();
         if (set.IsRetired) throw new DomainException("tyres.setRetired", "A retired tyre set cannot go on the car.", new { Set = set.Name });
@@ -57,8 +60,11 @@ public sealed class TyreHistory
         if (covering?.SetId == set.Id)
         {
             if (covering.From != day)
+            {
+                if (repeatable) return changes; // a retry of a swap that joined this stretch to an earlier one
                 throw new DomainException("tyres.alreadyOnCar", "This tyre set is already on the car that day.", new { Set = set.Name, From = Iso(covering.From) });
-            if (covering.Update(covering.From, covering.Until, pairOneFront, by)) changes.Change(covering);
+            }
+            if (pairsGiven && covering.Update(covering.From, covering.Until, pairOneFront, by)) changes.Change(covering);
             return Checked(changes);
         }
         DateOnly? until;
@@ -161,8 +167,8 @@ public sealed class TyreHistory
 
     /// <summary>
     /// Every live stretch fits: it does not overlap another of its set (<c>tyres.setOnTwice</c>) or of another set (<c>tyres.twoSetsAtOnce</c>;
-    /// <c>tyres.restoreConflict</c> while restoring), starts on or after its set's <see cref="TyreSet.Since"/> (<c>tyres.beforeSince</c>), and
-    /// a retired set's ends by the day it was retired (<c>tyres.setRetired</c>).
+    /// <c>tyres.restoreConflict</c> while restoring), and a retired set's ends by the day it was retired (<c>tyres.setRetired</c>). "In use since"
+    /// is month-level, so a stretch may start before it.
     /// </summary>
     public void Check(bool restoring = false)
     {
@@ -170,8 +176,6 @@ public sealed class TyreHistory
         foreach (var s in ordered)
         {
             var set = _sets[s.SetId];
-            if (s.From < set.Since)
-                throw new DomainException("tyres.beforeSince", "A stretch cannot start before the set was in use.", new { Set = set.Name, Since = Iso(set.Since) });
             if (set.RetiredOn is { } retired && (s.Until is null || s.Until > retired))
                 throw new DomainException("tyres.setRetired", "A retired tyre set cannot go on the car.", new { Set = set.Name });
         }

@@ -230,4 +230,96 @@ public class TyreServiceTests
             w.VehicleService.UpdateAsync(car.Id, "Car", null, FuelType.Petrol, MeasurementUnits.Create(DistanceUnit.Miles, VolumeUnit.Liters), default));
         Assert.Equal("vehicle.unitsLocked", refused.Key);
     }
+
+    [Fact]
+    public async Task ChangingPositions_SplitsTheStretch_AndTheSameDayAgainChangesItInPlace()
+    {
+        var s = await Setup();
+        var (_, summer, _) = await TwoSets(s);
+
+        var split = await s.Tyres.ChangePositionsAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), false, false, null, null), default, Guid.NewGuid());
+        Assert.Equal([(D(2026, 6, 1), (bool?)false), (D(2026, 3, 28), true)], Set(split, summer).Stretches.Select(x => (x.Stretch.From, x.Stretch.PairOneFront)));
+
+        var again = await s.Tyres.ChangePositionsAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, false, null, null), default);
+        Assert.Equal(2, Set(again, summer).Stretches.Count);
+        Assert.Equal(true, Set(again, summer).Stretches[0].Stretch.PairOneFront);
+    }
+
+    [Fact]
+    public async Task AStretch_TypedWithItsReadings_KeepsThemOnItsDays_AndReadingsOfOneChangeMustNotFall()
+    {
+        var s = await Setup();
+        var (_, _, winter) = await TwoSets(s);
+
+        var added = await s.Tyres.AddStretchAsync(winter, new TyreStretchInput(D(2025, 11, 15), D(2026, 2, 20), null, 132_000, 139_500), default, Guid.NewGuid());
+        Assert.Equal([(D(2026, 2, 20), (long?)139_500), (D(2025, 11, 15), 132_000)], added.Days.Select(d => (d.Day, d.Odometer)));
+        var stretch = Set(added, winter).Stretches.Single().Stretch;
+        Assert.Equal(7_500, Set(added, winter).Stretches.Single().Distance.Distance);
+
+        var edited = await s.Tyres.UpdateStretchAsync(stretch.Id, new TyreStretchInput(D(2025, 11, 20), D(2026, 2, 20), true, null, null), default, stretch.Version);
+        Assert.Equal((D(2025, 11, 20), (bool?)true), (Set(edited, winter).Stretches.Single().Stretch.From, Set(edited, winter).Stretches.Single().Stretch.PairOneFront));
+
+        // Each reading fits the stored ones (none between them), but not each other: refused.
+        var falling = await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.AddStretchAsync(winter, new TyreStretchInput(D(2024, 11, 10), D(2025, 3, 30), null, 131_000, 120_000), default));
+        Assert.Equal("odometer.belowPrevious", falling.Key);
+    }
+
+    [Fact]
+    public async Task TheRoughFigure_CanBeChanged_AndItsSuggestionAccepted()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        var withPast = await s.Tyres.AddPastSwapsAsync(s.Car.Id, [new(D(2025, 11, 15), winter, null), new(D(2026, 3, 1), summer, null)], false, default);
+        var suggestion = Set(withPast, summer).Figures.Suggestion!;
+
+        var accepted = await s.Tyres.SetRoughAsync(summer, suggestion.Distance, suggestion.Until, default);
+
+        Assert.Equal((suggestion.Distance, (DateOnly?)suggestion.Until), (Set(accepted, summer).Set.RoughDistance, Set(accepted, summer).Set.RoughUntil));
+        Assert.Null(Set(accepted, summer).Figures.Suggestion);
+    }
+
+    [Fact]
+    public async Task ASet_IsUpdated_RetiredAndTakenBack()
+    {
+        var s = await Setup();
+        var (_, _, winter) = await TwoSets(s);
+
+        var updated = await s.Tyres.UpdateSetAsync(winter, Winter() with { Name = "Continental TS 870", Size = "205/55 R16" }, default);
+        Assert.Equal(("Continental TS 870", "205/55 R16"), (Set(updated, winter).Set.Name, Set(updated, winter).Set.Size));
+
+        await s.Tyres.RetireAsync(winter, D(2026, 10, 1), default);
+        var back = await s.Tyres.UnretireAsync(winter, default);
+        Assert.False(Set(back, winter).Set.IsRetired);
+    }
+
+    [Fact]
+    public async Task AFittedSet_OnADayThatHasASwap_ReplacesIt_WhenAsked()
+    {
+        var s = await Setup();
+        await TwoSets(s); // the summer set went on on 28 Mar
+        var input = new AddTyreSetInput(s.Car.Id, Winter(0) with { Name = "Nokian" }, Fitted: true, D(2026, 3, 28), null, null);
+
+        Assert.Equal("tyres.swapExists", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.AddSetAsync(input, default))).Key);
+        var replaced = await s.Tyres.AddSetAsync(input with { Replace = true }, default);
+        Assert.True(replaced.Sets.Single(x => x.Set.Name == "Nokian").OnTheCar);
+    }
+
+    [Fact]
+    public async Task ReplacingWithTheSetThatCameOff_SentAgain_ChangesNothing()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), true, false, null, null), default);
+        var again = new TyreSwapInput(s.Car.Id, summer, D(2026, 9, 20), true, true, null, null);
+        var id = Guid.NewGuid();
+
+        var first = await s.Tyres.SwapAsync(again, default, id); // the summer stretch is joined again: no stretch gets the id
+        var saves = s.W.Tyres.Saves;
+        var second = await s.Tyres.SwapAsync(again, default, id);
+
+        Assert.True(Set(first, summer).OnTheCar);
+        Assert.Single(Set(second, summer).Stretches);
+        Assert.Equal(saves + 1, s.W.Tyres.Saves); // answered without a change (the day's empty log line saves nothing new)
+    }
 }

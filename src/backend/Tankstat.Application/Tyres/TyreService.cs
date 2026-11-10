@@ -15,7 +15,8 @@ public sealed record TyreSetInput(string Name, TyreSeason Season, string? Size, 
 
 /// <param name="Fitted">The set is on the car from <see cref="Day"/> (a swap that day); else it is in storage.</param>
 /// <param name="Day">The day tracking starts (the client's today); the rough figure stands for the time before it.</param>
-public sealed record AddTyreSetInput(Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront);
+/// <param name="Replace">A fitted set on a day that has a swap replaces it (as <see cref="TyreSwapInput.Replace"/>).</param>
+public sealed record AddTyreSetInput(Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront, bool Replace = false);
 
 /// <param name="Replace">A swap logged on that day already is replaced (its stretch goes to the trash) instead of refused.</param>
 public sealed record TyreSwapInput(Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note);
@@ -70,10 +71,10 @@ public sealed class TyreService(
         if (input.Fitted)
         {
             var history = History(vehicle, book, extra: set);
-            save.Take(history.Swap(set, input.Day, input.PairOneFront, replace: false, by, clock.GetUtcNow(), stretchId));
+            save.Take(history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId));
             await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, note: null, keepNote: true, by, ct);
         }
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         logger.LogDebug("User {UserId} added tyre set {SetId} to vehicle {VehicleId}", by, set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -88,7 +89,7 @@ public sealed class TyreService(
         History(vehicle, book).Check(); // a later "in use since" may no longer fit its stretches
         var save = new TyreSave();
         save.ChangedSets.Add(set);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} updated", id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -101,7 +102,7 @@ public sealed class TyreService(
         set.SetRough(distance, until ?? set.RoughUntil ?? Today, (await access.RequirePrincipalAsync(ct)).Id);
         var save = new TyreSave();
         save.ChangedSets.Add(set);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -115,10 +116,10 @@ public sealed class TyreService(
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
-        save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId));
+        save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId, repeatable: stretchId is not null));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
-        await tyres.SaveAsync(save, ct);
-        logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car on {Day}", set.Id, vehicle.Id, input.Day);
+        await SaveAsync(save, ct);
+        logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -133,7 +134,7 @@ public sealed class TyreService(
         var save = new TyreSave();
         save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, stretchId));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -153,10 +154,10 @@ public sealed class TyreService(
         foreach (var row in rows.OrderBy(r => r.Day))
         {
             RequireNotFuture(row.Day);
-            save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.StretchId));
+            save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.StretchId, pairsGiven: false, repeatable: row.StretchId is not null));
             if (row.Odometer is not null) await SetDayAsync(vehicle, book, save, row.Day, row.Odometer, note: null, keepNote: true, by, ct);
         }
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         logger.LogDebug("User {UserId} added {Count} past tyre swaps to vehicle {VehicleId}", by, rows.Count, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -170,7 +171,7 @@ public sealed class TyreService(
         var save = new TyreSave();
         save.AddedStretches.Add(History(vehicle, book).Add(set, input.From, input.Until, input.PairOneFront, by, id));
         await StretchReadingsAsync(vehicle, book, save, input, by, ct);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -183,7 +184,7 @@ public sealed class TyreService(
         var save = new TyreSave();
         if (History(vehicle, book).Edit(stretch, input.From, input.Until, input.PairOneFront, by)) save.ChangedStretches.Add(stretch);
         await StretchReadingsAsync(vehicle, book, save, input, by, ct);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -195,7 +196,7 @@ public sealed class TyreService(
         stretch.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
         var save = new TyreSave();
         save.ChangedStretches.Add(stretch);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         logger.LogDebug("Tyre stretch {StretchId} of vehicle {VehicleId} moved to the trash", id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -210,7 +211,7 @@ public sealed class TyreService(
         History(vehicle, book).CheckRestored([stretch]);
         var save = new TyreSave();
         save.ChangedStretches.Add(stretch);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -223,7 +224,7 @@ public sealed class TyreService(
         var book = await tyres.LoadAsync(vehicle.Id, ct);
         var save = new TyreSave();
         await SetDayAsync(vehicle, book, save, day, odometerValue, note, keepNote: false, by, ct, clear: true, id: id);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -354,11 +355,34 @@ public sealed class TyreService(
         if (input.OdometerUntil is not null && input.Until is { } until) await SetDayAsync(vehicle, book, save, until, input.OdometerUntil, null, keepNote: true, by, ct);
     }
 
+    /// <summary>
+    /// The readings one change saves are each checked against the stored ones (<see cref="OdometerService.ValidateAsync"/>), but not
+    /// against each other: in day order they must not fall either (readings of one day are not compared, as everywhere).
+    /// </summary>
+    private static void RequireRising(TyreSave save)
+    {
+        var planned = save.AddedDays.Concat(save.ChangedDays).Where(d => d.OdometerReading is not null)
+            .Select(d => (d.Day, Value: d.OdometerReading!.Value)).OrderBy(r => r.Day).ToList();
+        for (var i = 1; i < planned.Count; i++)
+        {
+            var (before, after) = (planned[i - 1], planned[i]);
+            if (after.Day > before.Day && after.Value < before.Value)
+                throw new DomainException("odometer.belowPrevious", $"The odometer cannot be lower than {before.Value} on {before.Day:yyyy-MM-dd}.",
+                    new { Previous = before.Value, Date = before.Day.ToString("yyyy-MM-dd") });
+        }
+    }
+
+    private async Task SaveAsync(TyreSave save, CancellationToken ct)
+    {
+        RequireRising(save);
+        await tyres.SaveAsync(save, ct);
+    }
+
     private async Task SaveSetAsync(TyreSet set, CancellationToken ct)
     {
         var save = new TyreSave();
         save.ChangedSets.Add(set);
-        await tyres.SaveAsync(save, ct);
+        await SaveAsync(save, ct);
     }
 
     private void RequireNotFuture(DateOnly day)
