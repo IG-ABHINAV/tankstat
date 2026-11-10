@@ -1,5 +1,6 @@
 # Gates (GitHub status checks): coverage of the whole project may not drop by more than 1% against the base commit,
 # and the lines a pull request adds or changes need 80%. Reporting only: nothing here fixes a number to maintain.
+
 coverage:
   status:
     project:

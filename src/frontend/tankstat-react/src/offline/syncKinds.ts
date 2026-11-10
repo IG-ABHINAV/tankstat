@@ -55,9 +55,12 @@ export const kindKeyOf = (kind: string): ReturnType<typeof syncKindKey> | null =
 
 /**
  * A change the server parked, as a change of this device (the inverse of `push.ts` `toChangeInput`), so it is named and shown like one
- * that waits here. `change` is the ChangeInput as the server keeps it (JSON; absent operations left out or null).
+ * that waits here; null for a kind this build does not know. `change` is the ChangeInput as the server keeps it (JSON; absent operations left out or null).
  */
-export function fromParked(parked: Pick<ParkedChangeFieldsFragment, 'id' | 'kind' | 'vehicleId' | 'targetId' | 'change' | 'receivedAt'> & { base?: string | null }): Change {
+export function fromParked(parked: Pick<ParkedChangeFieldsFragment, 'id' | 'kind' | 'vehicleId' | 'targetId' | 'change' | 'receivedAt'> & { base?: string | null }): Change | null {
+  // A kind this build does not know (one a newer server adds while this tab waits for its update): left out, never thrown, so
+  // the screens that list parked changes keep working.
+  if (!(parked.kind in SYNC_KINDS)) return null
   const [entity, action] = SYNC_KINDS[parked.kind as keyof typeof SYNC_KINDS]
   let envelope: Record<string, unknown> = {}
   try {

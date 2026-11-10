@@ -26,7 +26,7 @@ namespace Tankstat.Api.GraphQL;
 
 /// <summary>
 /// One change a device kept while the server was out of reach: its own id, the version of what it changes it was made from, and exactly
-/// one operation (the last two set or remove a vehicle's picture), with the same input as the single mutation (an add carries the id the device gave it). <c>Base</c> is the values the
+/// one operation (a log's, a vehicle's or its picture's, a schedule's, or one of the fifteen tyre changes), with the same input as the single mutation (an add carries the id the device gave it). <c>Base</c> is the values the
 /// change was made from (JSON in the shape of its input, as the device knew them), kept with it if it is parked so whoever decides can
 /// merge it; the server never reads it.
 /// </summary>
@@ -255,9 +255,11 @@ public sealed class SyncMutations
             AddExpense = change.AddExpense is { } ae ? ae with { PhotoIds = null } : null,
             MarkRecurringExpensesDone = change.MarkRecurringExpensesDone is { } md ? md with { PhotoIds = null } : null,
         };
-        var request = Request(change, services, stored.SubmittedById);
-        // The same change of the same thing: the ledger row stays filed under what it concerns.
-        if (request.Kind != stored.Kind || request.TargetId != stored.TargetId || (request.VehicleIdHint is { } vehicle && stored.VehicleId is { } filed && vehicle != filed))
+        var request = Request(change, services, stored.SubmittedById, resolving: true);
+        // The same change of the same thing: the ledger row stays filed under what it concerns (found through what it names when the change
+        // does not carry its vehicle, as a stretch added to a set does).
+        var vehicleOf = request.VehicleIdHint ?? (input.Change is not null && request.VehicleOf is { } find ? await find(ct) : null);
+        if (request.Kind != stored.Kind || request.TargetId != stored.TargetId || (vehicleOf is { } vehicle && stored.VehicleId is { } filed && vehicle != filed))
             throw new DomainException("sync.kindMismatch", "An edited change does the same as the one parked.");
         var replacement = input.Change is null ? null : JsonSerializer.Serialize(change, Json);
         var apply = input.RestoreFirst ? RestoredFirst(stored.Kind, stored.TargetId!.Value, restoreFrom, request.Apply, services, logger) : request.Apply;
@@ -319,10 +321,13 @@ public sealed class SyncMutations
     /// <summary>
     /// A tyre change (#287), applied through <see cref="TyreService"/> like the mutation. An add names the id of what it creates: the set (and
     /// the stretch a fitted set starts with), the stretch a swap or a past swap creates, so a change sent again changes nothing. Its answer is
-    /// the set or stretch it concerns, with its version after the change.
+    /// the set or stretch it concerns, with its version after the change. Sent from a device's queue, a swap (or a past swap, a change of
+    /// positions) whose set is on the car already that day just as asked is a retry's answer; a day's line a change names by an id the server
+    /// does not know, while the day has a line, was made without that line and is parked. Neither when someone applies it anyway
+    /// (<paramref name="resolving"/>), which is never a retry and decides on purpose.
     /// </summary>
     private static SyncChangeRequest? Tyres(
-        ChangeInput c, SyncChangeServices services, int? version,
+        ChangeInput c, SyncChangeServices services, int? version, bool resolving,
         Func<SyncChangeKind, Guid?, Guid?, Func<CancellationToken, Task<AppliedChange>>, Func<CancellationToken, Task<Guid?>>?, SyncChangeRequest> make)
     {
         var tyres = services.Tyres;
@@ -367,7 +372,7 @@ public sealed class SyncMutations
             var id = Required(sw.StretchId, c.Id);
             return make(SyncChangeKind.SwapTyres, id, sw.VehicleId, async ct =>
             {
-                await tyres.SwapAsync(TyreChanges.Swap(sw), ct, id, repeat: true);
+                await tyres.SwapAsync(TyreChanges.Swap(sw), ct, id, repeat: !resolving);
                 return new AppliedChange(id, null, sw.VehicleId);
             }, null);
         }
@@ -376,7 +381,7 @@ public sealed class SyncMutations
             var id = Required(cp.StretchId, c.Id);
             return make(SyncChangeKind.ChangeTyrePositions, id, cp.VehicleId, async ct =>
             {
-                await tyres.ChangePositionsAsync(TyreChanges.Swap(cp), ct, id);
+                await tyres.ChangePositionsAsync(TyreChanges.Swap(cp), ct, id, repeat: !resolving);
                 return new AppliedChange(id, null, cp.VehicleId);
             }, null);
         }
@@ -385,7 +390,7 @@ public sealed class SyncMutations
             var rows = ps with { Swaps = [.. ps.Swaps.Select(w => w with { StretchId = Required(w.StretchId, c.Id) })] };
             return make(SyncChangeKind.AddPastTyreSwaps, rows.Swaps.FirstOrDefault()?.StretchId, ps.VehicleId, async ct =>
             {
-                await TyreChanges.Past(rows, tyres, ct, repeat: true);
+                await TyreChanges.Past(rows, tyres, ct, repeat: !resolving);
                 return new AppliedChange(rows.Swaps.FirstOrDefault()?.StretchId, null, ps.VehicleId);
             }, null);
         }
@@ -413,7 +418,7 @@ public sealed class SyncMutations
         if (c.SetTyreLogDay is { } day)
             return make(SyncChangeKind.SetTyreLogDay, day.Id, day.VehicleId, async ct =>
             {
-                var tyresNow = await tyres.SetLogDayAsync(day.VehicleId, day.Day, day.Odometer, day.Note, ct, day.Id, version);
+                var tyresNow = await tyres.SetLogDayAsync(day.VehicleId, day.Day, day.Odometer, day.Note, ct, day.Id, version, strict: !resolving);
                 var line = tyresNow.Days.FirstOrDefault(d => d.Day == day.Day);
                 return new AppliedChange(line?.Id ?? day.Id, line?.Version, day.VehicleId);
             }, null);
@@ -421,7 +426,8 @@ public sealed class SyncMutations
     }
 
     /// <param name="uploadedBy">Whose drafts a photo change takes: its sender's (null: the current user, who sends it).</param>
-    private static SyncChangeRequest Request(ChangeInput c, SyncChangeServices services, Guid? uploadedBy = null)
+    /// <param name="resolving">Applied anyway from <c>resolveSyncChange</c>: on purpose, never a retry.</param>
+    private static SyncChangeRequest Request(ChangeInput c, SyncChangeServices services, Guid? uploadedBy = null, bool resolving = false)
     {
         var (vehicles, refuelings, expenses, recurring, photos, defaults) = (services.Vehicles, services.Refuelings, services.Expenses, services.Recurring, services.Photos, services.Defaults);
         var find = services;
@@ -545,7 +551,7 @@ public sealed class SyncMutations
                 return new AppliedChange(rvp, null, rvp);
             });
 
-        if (Tyres(c, services, version, Make) is { } tyreChange) return tyreChange;
+        if (Tyres(c, services, version, resolving, Make) is { } tyreChange) return tyreChange;
 
         var rv = c.RestoreVehicle!.Value;
         return Make(SyncChangeKind.RestoreVehicle, rv, rv, async ct => Of(await vehicles.RestoreAsync(rv, ct, version), v => v.Id, v => v.Version, v => v.Id));

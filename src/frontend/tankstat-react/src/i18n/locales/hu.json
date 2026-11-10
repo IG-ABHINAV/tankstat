@@ -1086,7 +1086,8 @@
       "pastSwapsTooMany": "Egyszerre legfeljebb {{max}} cserét adhatsz meg.",
       "retireOnCar": "A(z) {{set}} az autón van: kivonás előtt cseréld le.",
       "setNotFound": "Ez a gumiszett már nem létezik.",
-      "stretchNotFound": "Ez az időszak már nem létezik."
+      "stretchNotFound": "Ez az időszak már nem létezik.",
+      "stretchIdTwice": "Két csere ugyanazzal az azonosítóval érkezett. Minden cserét egyszer adj meg."
     }
   },
   "a11y": {
