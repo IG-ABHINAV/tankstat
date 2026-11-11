@@ -9,6 +9,13 @@ export const ENTRY_KINDS: readonly TyreEntryKind[] = ['PUNCTURE_REPAIRED', 'VALV
 /** The line of an installation: its kind and set are locked, its day is the swap's. */
 export const isSwapLine = (entry: Pick<TyreEntry, 'kind'>) => entry.kind === 'SWAP' || entry.kind === 'POSITIONS_CHANGED'
 
+/**
+ * A line this device made in the server's place while its change waits (`replay.ts`: a Note line that keeps a reading or a note): its id is
+ * the device's own (`<change>:note:<day>`, `<change>:kept:<line>`) and the server gives the line one of its own, so a change of it could
+ * never be sent. It is shown, and changed once synced.
+ */
+export const isDeviceLine = (entry: Pick<TyreEntry, 'id'>) => entry.id.includes(':')
+
 /** The words of a line: its kind, its set's name (or none) and its day, as the log names it to a screen reader. */
 export function useEntryWords() {
   const { t } = useTranslation()

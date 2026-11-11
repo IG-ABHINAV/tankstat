@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Change } from '../../../src/offline/changes.ts'
+import { isDeviceLine } from '../../../src/tyres/entries.ts'
 import { applyTyreChange, noTyres, replayTyres } from '../../../src/tyres/replay.ts'
 import { TyreRuleError } from '../../../src/tyres/tyreHistory.ts'
 import type { Tyres } from '../../../src/tyres/tyres.ts'
@@ -127,6 +128,34 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
     expect(joined.sets.find((s) => s.set.id === 's1')!.installations.map((x) => [x.installation.id, x.installation.until])).toEqual([['a', null]])
     expect(joined.entries.map((e) => [e.kind, e.setId, e.day, e.odometer, e.note])).toEqual([['NOTE', 's1', '2026-08-01', 146_000, 'Summer again'], ['SWAP', 's1', '2026-03-28', null, null]])
     expect(joined.readings).toContainEqual(expect.objectContaining({ date: '2026-08-01', value: 146_000 }))
+  })
+
+  it('what is typed with a swap that makes no installation is a note line with the swap’s id, as the server’s; a line only the device names is not one to change', () => {
+    const joining: Tyres = {
+      ...base,
+      sets: [
+        set('s2', 'Continental WinterContact', false, [installation('w', 's2', '2026-06-01', '2026-08-01')]),
+        set('s1', 'Michelin Primacy 4', true, [installation('b', 's1', '2026-08-01', null), installation('a', 's1', '2026-03-28', '2026-06-01')]),
+      ],
+      entries: [line('b', 's1', '2026-08-01'), line('w', 's2', '2026-06-01'), line('a', 's1', '2026-03-28')],
+    }
+    const swap = change('swapTyres', { vehicleId: 'v1', setId: 's1', day: '2026-06-01', pairOneFront: true, replace: true, odometer: 143_000, note: 'Joined', installationId: 'n' })
+    const joined = replayTyres(joining, [swap]).tyres
+
+    const note = joined.entries.find((e) => e.day === '2026-06-01')!
+    expect(note).toMatchObject({ id: 'n', kind: 'NOTE', setId: 's1', installationId: null, odometer: 143_000, note: 'Joined' })
+    expect(isDeviceLine(note)).toBe(false)
+    // The line can be changed while the swap waits: the change names the id the server gives the line.
+    const changed = replayTyres(joining, [swap, change('updateTyreEntry', { id: 'n', kind: 'NOTE', setId: 's1', day: '2026-06-01', odometer: 143_500, note: null })])
+    expect(changed.skipped).toEqual([])
+    expect(changed.tyres.entries.find((e) => e.id === 'n')).toMatchObject({ odometer: 143_500, note: null })
+
+    // An installation's last reading on a day nothing starts: the server gives that note line an id of its own.
+    const past = replayTyres(base, [change('addTyreInstallation', { id: 'p', setId: 's2', from: '2024-11-10', until: '2025-03-20', pairOneFront: null, odometerFrom: null, odometerUntil: 120_000 })]).tyres
+    const kept = past.entries.find((e) => e.day === '2025-03-20')!
+    expect(kept).toMatchObject({ kind: 'NOTE', setId: 's2', odometer: 120_000 })
+    expect(isDeviceLine(kept)).toBe(true)
+    expect(past.entries.filter((e) => e !== kept).some(isDeviceLine)).toBe(false)
   })
 
   it('a rough figure saved without a day keeps the one it had; one added with the set stands until the day it was added', () => {

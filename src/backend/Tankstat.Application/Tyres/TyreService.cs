@@ -361,7 +361,7 @@ public sealed class TyreService(
     {
         var (vehicle, entry, book) = await EditableEntryAsync(id, ct, trashed: true);
         VersionCheck.Require(expectedVersion, entry.Version);
-        await RequireReadingFitsAsync(vehicle, entry, ct);
+        // The line's reading is checked where it comes back (RestoreSwapAsync), a swap's with its installation.
         await RestoreSwapAsync(vehicle, book, InstallationOf(book, entry, trashed: true), entry, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -483,10 +483,11 @@ public sealed class TyreService(
         if (id is not { } given) return false;
         if ((book.Installations.FirstOrDefault(s => s.Id == given) ?? await tyres.FindInstallationAsync(given, ct)) is not { } existing)
         {
-            // The installation's line takes its id. Without one, a Note line with it is what the same change typed where a join made no
-            // installation (TypedAsync); any other line with it means the id is someone else's.
+            // The installation's line takes its id. Without one, a line of its own with it is what the same change typed where a join made
+            // no installation (TypedAsync: a Note line, or an Other one for a fee, whatever kind it was given since); a swap's line with it
+            // means the id is someone else's.
             if (await tyres.FindEntryAsync(given, ct) is not { } line) return false;
-            ClientIds.Repeat(line, line is { Kind: TyreEntryKind.Note or TyreEntryKind.Other, InstallationId: null } && line.VehicleId == vehicleId && line.CreatedById == by, given);
+            ClientIds.Repeat(line, line is { IsSwapLine: false, InstallationId: null } && line.VehicleId == vehicleId && line.CreatedById == by, given);
             return true;
         }
         ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
@@ -605,7 +606,8 @@ public sealed class TyreService(
         Vehicle vehicle, TyreBook book, TyreSave save, TyreHistory history, Guid setId, DateOnly day, long? value, string? note, Guid by, CancellationToken ct,
         Guid? id = null, TyreFee? fee = null)
     {
-        if (value is null && string.IsNullOrWhiteSpace(note) && fee?.Amount is null) return;
+        if (string.IsNullOrWhiteSpace(note)) note = null; // only spaces is no note: it leaves the line's, as one left out
+        if (value is null && note is null && fee?.Amount is null) return;
         var line = history.Live.FirstOrDefault(s => s.From == day) is { } starting
             ? save.AddedEntries.FirstOrDefault(e => e.Id == starting.Id) ?? LineOf(book, starting.Id)
             : null;
