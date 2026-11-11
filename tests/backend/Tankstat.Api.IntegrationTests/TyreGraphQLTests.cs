@@ -143,7 +143,7 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Equal(("WHEEL_BALANCING", JsonValueKind.Null, JsonValueKind.Null), (changed.GetProperty("kind").GetString(), changed.GetProperty("setId").ValueKind, changed.GetProperty("odometer").ValueKind)); // left out clears them
         Assert.Equal("tyres.entryKindNotAllowed", (await Send("mutation($i: UpdateTyreEntryInput!) { updateTyreEntry(input: $i) { vehicleId } }",
             new { i = new { id = entry, kind = "SWAP", day = "2025-06-02" } })).GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
-        await Ok("mutation($id: UUID!) { deleteTyreEntry(id: $id) { vehicleId } }", new { id = entry });
+        await Ok("mutation($id: UUID!) { deleteTyreEntry(input: { id: $id }) { vehicleId } }", new { id = entry });
         await Ok("mutation($id: UUID!) { restoreTyreEntry(id: $id) { vehicleId } }", new { id = entry });
 
         await Ok("mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }",
@@ -156,5 +156,36 @@ public class TyreGraphQLTests(ApiFixture api)
 
         await Ok("mutation($id: UUID!) { deleteTyreSet(id: $id) { vehicleId } }", new { id = summer });
         Assert.True((await Ok("mutation { emptyTyreTrash }", new { })).GetProperty("emptyTyreTrash").GetInt32() >= 1);
+    }
+
+    [Fact]
+    public async Task ALinesAmount_IsAnExpenseThatNamesItsLine_AndTheLineCanGoToTheTrashWithoutIt()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true, day: "2026-03-28"), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var (line, expense) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        const string fields = "entries { id kind expenseId amount currency category expenseTrashed } expenseCategory";
+
+        var added = (await Send($"mutation($i: AddTyreEntryInput!) {{ addTyreEntry(input: $i) {{ {fields} }} }}", new
+        {
+            i = new { vehicleId = vehicle, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_200, id = line,
+                fee = new { amount = 25.5m, currency = "EUR", category = "Tyres", title = "Puncture repaired: Michelin", expenseId = expense } },
+        })).GetProperty("data").GetProperty("addTyreEntry");
+        var shown = added.GetProperty("entries").EnumerateArray().Single(e => e.GetProperty("id").GetString() == line);
+        Assert.Equal((expense, 25.5m, "EUR", "Tyres", false),
+            (shown.GetProperty("expenseId").GetString(), shown.GetProperty("amount").GetDecimal(), shown.GetProperty("currency").GetString(), shown.GetProperty("category").GetString(), shown.GetProperty("expenseTrashed").GetBoolean()));
+        Assert.Equal("Tyres", added.GetProperty("expenseCategory").GetString());
+
+        var linked = (await Send("query($id: UUID!) { expense(id: $id) { title amount odometer date tyreEntry { id kind setName trashed } } }", new { id = expense }))
+            .GetProperty("data").GetProperty("expense");
+        Assert.Equal(("Puncture repaired: Michelin", 148_200L, "2026-09-20"), (linked.GetProperty("title").GetString(), linked.GetProperty("odometer").GetInt64(), linked.GetProperty("date").GetString()));
+        var tyreEntry = linked.GetProperty("tyreEntry");
+        Assert.Equal((line, "PUNCTURE_REPAIRED", "Michelin", false),
+            (tyreEntry.GetProperty("id").GetString(), tyreEntry.GetProperty("kind").GetString(), tyreEntry.GetProperty("setName").GetString(), tyreEntry.GetProperty("trashed").GetBoolean()));
+
+        // Unticked: the line goes, its expense stays, naming its line in the trash.
+        Assert.False((await Send("mutation($id: UUID!) { deleteTyreEntry(input: { id: $id, withExpense: false }) { vehicleId } }", new { id = line })).TryGetProperty("errors", out _));
+        var after = (await Send("query($id: UUID!) { expense(id: $id) { tyreEntry { trashed } } }", new { id = expense })).GetProperty("data").GetProperty("expense");
+        Assert.True(after.GetProperty("tyreEntry").GetProperty("trashed").GetBoolean());
     }
 }

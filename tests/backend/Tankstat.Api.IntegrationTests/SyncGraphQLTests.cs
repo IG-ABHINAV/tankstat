@@ -104,8 +104,8 @@ public class SyncGraphQLTests : IDisposable
             new { id = Guid.NewGuid(), restoreTyreInstallation = installation },
             new { id = Guid.NewGuid(), addTyreEntry = new { vehicleId = car, kind = "STORAGE_FEE", day = "2026-09-20", odometer = 148_200, note = "At the garage", id = entry } },
             new { id = Guid.NewGuid(), updateTyreEntry = new { id = entry, kind = "STORAGE_FEE", setId = summer, day = "2026-09-20", odometer = 148_200, note = "Garage" } },
-            new { id = Guid.NewGuid(), deleteTyreEntry = entry },
-            new { id = Guid.NewGuid(), deleteTyreEntry = entry }, // in the trash already: nothing left to do
+            new { id = Guid.NewGuid(), deleteTyreEntry = new { id = entry } },
+            new { id = Guid.NewGuid(), deleteTyreEntry = new { id = entry } }, // in the trash already: nothing left to do
             new { id = Guid.NewGuid(), restoreTyreEntry = entry },
             new { id = Guid.NewGuid(), retireTyreSet = new { id = summer, day = "2026-10-02" } },
             new { id = Guid.NewGuid(), unretireTyreSet = summer },

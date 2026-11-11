@@ -189,7 +189,8 @@ type Mutation {
   addTyreEntry(input: AddTyreEntryInput!): VehicleTyres! @cost(weight: "10")
   updateTyreEntry(input: UpdateTyreEntryInput!): VehicleTyres!
     @cost(weight: "10")
-  deleteTyreEntry(id: UUID!): VehicleTyres! @cost(weight: "10")
+  deleteTyreEntry(input: DeleteTyreEntryInput!): VehicleTyres!
+    @cost(weight: "10")
   restoreTyreEntry(id: UUID!): VehicleTyres! @cost(weight: "10")
   retireTyreSet(id: UUID!, day: LocalDate!): VehicleTyres! @cost(weight: "10")
   unretireTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
@@ -453,6 +454,7 @@ type Expense {
   vehicle: Vehicle @cost(weight: "10")
   photos: [LogPhotoInfo!]! @cost(weight: "10")
   schedules: [RecurringRef!]! @cost(weight: "10")
+  tyreEntry: TyreEntryRef @cost(weight: "10")
 }
 
 type FigureData {
@@ -965,6 +967,8 @@ type TrendWindow {
 }
 
 type TyreEntry {
+  "The expense its amount made (#288), an ordinary one on the Expenses tab; in the trash or not."
+  expenseId: UUID
   "The installation whose line it is (the same id): set on a swap's and a change of positions' line."
   installationId: UUID
   id: UUID!
@@ -982,6 +986,17 @@ type TyreEntry {
   changedAt: DateTime
   changedById: UUID
   lastChange: EntityChange
+  amount: Decimal @cost(weight: "10")
+  currency: String @cost(weight: "10")
+  category: String @cost(weight: "10")
+  expenseTrashed: Boolean! @cost(weight: "10")
+}
+
+type TyreEntryRef {
+  id: UUID!
+  kind: TyreEntryKind!
+  setName: String
+  trashed: Boolean!
 }
 
 type TyreInstallation {
@@ -1194,6 +1209,7 @@ type VehicleTyres {
   vehicleId: UUID!
   sets: [TyreSetInfo!]!
   entries: [TyreEntry!]!
+  expenseCategory: String
   hasReadings: Boolean!
 }
 
@@ -1245,6 +1261,7 @@ input AddTyreEntryInput {
   odometer: Long
   note: String
   id: UUID
+  fee: TyreFeeInput
 }
 
 input AddTyreInstallationInput {
@@ -1273,6 +1290,9 @@ input AddTyreSetInput {
   replace: Boolean! = false
   id: UUID
   installationId: UUID
+  price: TyreFeeInput
+  boughtOn: LocalDate
+  boughtEntryId: UUID
 }
 
 input AddVehicleInput {
@@ -1324,7 +1344,7 @@ input ChangeInput {
   restoreTyreInstallation: UUID
   addTyreEntry: AddTyreEntryInput
   updateTyreEntry: UpdateTyreEntryInput
-  deleteTyreEntry: UUID
+  deleteTyreEntry: DeleteTyreEntryInput
   restoreTyreEntry: UUID
   base: String
 }
@@ -1373,6 +1393,11 @@ input DashboardTileInput {
   pinned: Boolean
   period: TrendPeriodInput
   recipe: TileRecipeInput
+}
+
+input DeleteTyreEntryInput {
+  id: UUID!
+  withExpense: Boolean! = true
 }
 
 input DeleteUserInput {
@@ -1557,6 +1582,7 @@ input SwapTyresInput {
   odometer: Long
   note: String
   installationId: UUID
+  fee: TyreFeeInput
 }
 
 input SyncChangesInput {
@@ -1584,6 +1610,14 @@ input TrendPeriodInput {
   since: LocalDate
   whole: Boolean
   against: TrendComparison
+}
+
+input TyreFeeInput {
+  amount: Decimal
+  currency: String
+  category: String
+  title: String
+  expenseId: UUID
 }
 
 input UpdateExpenseInput {
@@ -1637,6 +1671,7 @@ input UpdateTyreEntryInput {
   setId: UUID
   odometer: Long
   note: String
+  fee: TyreFeeInput
 }
 
 input UpdateTyreInstallationInput {

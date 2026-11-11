@@ -1,3 +1,5 @@
+using System.Text.Unicode;
+using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using GreenDonut;
@@ -44,7 +46,7 @@ public sealed record ChangeInput(
     RetireTyreSetInput? RetireTyreSet = null, Guid? UnretireTyreSet = null, Guid? DeleteTyreSet = null, Guid? RestoreTyreSet = null,
     SwapTyresInput? SwapTyres = null, SwapTyresInput? ChangeTyrePositions = null, AddPastTyreSwapsInput? AddPastTyreSwaps = null,
     AddTyreInstallationInput? AddTyreInstallation = null, UpdateTyreInstallationInput? UpdateTyreInstallation = null, Guid? DeleteTyreInstallation = null, Guid? RestoreTyreInstallation = null,
-    AddTyreEntryInput? AddTyreEntry = null, UpdateTyreEntryInput? UpdateTyreEntry = null, Guid? DeleteTyreEntry = null, Guid? RestoreTyreEntry = null,
+    AddTyreEntryInput? AddTyreEntry = null, UpdateTyreEntryInput? UpdateTyreEntry = null, DeleteTyreEntryInput? DeleteTyreEntry = null, Guid? RestoreTyreEntry = null,
     string? Base = null);
 
 /// <summary>A photo added to a saved log while offline: uploaded as a draft of the log's vehicle (<c>PUT /media/vehicles/{id}/photo-drafts</c>) just before.</summary>
@@ -211,6 +213,9 @@ public sealed class SyncMutations
         // Enums as the API spells them (PETROL, US_GALLONS), so a stored change is a ChangeInput a client can read back as it is.
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper) },
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Letters as they are, not \uXXXX: an accented note of 500 characters would take 3,000 of the ledger's 4,000 otherwise (#288). Still
+        // valid JSON, read back the same; quotes, control characters and markup are escaped as before.
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
     };
 
     /// <summary>
@@ -347,10 +352,16 @@ public sealed class SyncMutations
         SyncChangeRequest OnInstallation(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
             make(kind, id, null, async ct => { await apply(ct); return await InstallationAnswer(id, ct); }, services.TyreInstallation(id));
 
+        // An amount sent from a device makes an expense: it names that expense's id, so the change sent again makes one (#288).
+        TyreFeeInput? Fee(TyreFeeInput? fee) => fee is { Amount: not null } ? fee with { ExpenseId = Required(fee.ExpenseId, c.Id) } : fee;
         if (c.AddTyreSet is { } a)
         {
             var id = Required(a.Id, c.Id);
-            var input = a with { Id = id, InstallationId = a.Fitted ? Required(a.InstallationId, c.Id) : a.InstallationId };
+            var input = a with
+            {
+                Id = id, InstallationId = a.Fitted ? Required(a.InstallationId, c.Id) : a.InstallationId, Price = Fee(a.Price),
+                BoughtEntryId = a.Price is { Amount: not null } ? Required(a.BoughtEntryId, c.Id) : a.BoughtEntryId,
+            };
             return make(SyncChangeKind.AddTyreSet, id, a.VehicleId, async ct => { await TyreChanges.Add(input, tyres, ct); return await SetAnswer(id, ct); }, null);
         }
         if (c.UpdateTyreSet is { } u) return OnSet(SyncChangeKind.UpdateTyreSet, u.Id, ct => TyreChanges.Update(u, tyres, ct, version));
@@ -377,7 +388,7 @@ public sealed class SyncMutations
             var id = Required(sw.InstallationId, c.Id);
             return make(SyncChangeKind.SwapTyres, id, sw.VehicleId, async ct =>
             {
-                await tyres.SwapAsync(TyreChanges.Swap(sw), ct, id, repeat: !resolving);
+                await tyres.SwapAsync(TyreChanges.Swap(sw with { Fee = Fee(sw.Fee) }), ct, id, repeat: !resolving);
                 return new AppliedChange(id, null, sw.VehicleId);
             }, null);
         }
@@ -386,7 +397,7 @@ public sealed class SyncMutations
             var id = Required(cp.InstallationId, c.Id);
             return make(SyncChangeKind.ChangeTyrePositions, id, cp.VehicleId, async ct =>
             {
-                await tyres.ChangePositionsAsync(TyreChanges.Swap(cp), ct, id, repeat: !resolving);
+                await tyres.ChangePositionsAsync(TyreChanges.Swap(cp with { Fee = Fee(cp.Fee) }), ct, id, repeat: !resolving);
                 return new AppliedChange(id, null, cp.VehicleId);
             }, null);
         }
@@ -423,22 +434,23 @@ public sealed class SyncMutations
         if (c.AddTyreEntry is { } ae)
         {
             var id = Required(ae.Id, c.Id);
-            return make(SyncChangeKind.AddTyreEntry, id, ae.VehicleId, async ct => { await TyreChanges.AddEntry(ae with { Id = id }, tyres, ct); return await EntryAnswer(id, ct); }, null);
+            var input = ae with { Id = id, Fee = Fee(ae.Fee) };
+            return make(SyncChangeKind.AddTyreEntry, id, ae.VehicleId, async ct => { await TyreChanges.AddEntry(input, tyres, ct); return await EntryAnswer(id, ct); }, null);
         }
-        if (c.UpdateTyreEntry is { } ue) return OnEntry(SyncChangeKind.UpdateTyreEntry, ue.Id, ct => TyreChanges.UpdateEntry(ue, tyres, ct, version));
+        if (c.UpdateTyreEntry is { } ue) return OnEntry(SyncChangeKind.UpdateTyreEntry, ue.Id, ct => TyreChanges.UpdateEntry(ue with { Fee = Fee(ue.Fee) }, tyres, ct, version));
         if (c.DeleteTyreEntry is { } de)
-            return make(SyncChangeKind.DeleteTyreEntry, de, null, async ct =>
+            return make(SyncChangeKind.DeleteTyreEntry, de.Id, null, async ct =>
             {
                 try
                 {
-                    await tyres.TrashEntryAsync(de, ct, version);
+                    await tyres.TrashEntryAsync(de.Id, ct, version, de.WithExpense);
                 }
                 catch (NotFoundException)
                 {
-                    if (await tyres.EntryInTrashAsync(de, ct) is null) throw; // in the trash already: nothing left to do
+                    if (await tyres.EntryInTrashAsync(de.Id, ct) is null) throw; // in the trash already: nothing left to do
                 }
-                return await EntryAnswer(de, ct);
-            }, services.TyreEntry(de));
+                return await EntryAnswer(de.Id, ct);
+            }, services.TyreEntry(de.Id));
         if (c.RestoreTyreEntry is { } re) return OnEntry(SyncChangeKind.RestoreTyreEntry, re, ct => tyres.RestoreEntryAsync(re, ct, version));
         return null;
     }

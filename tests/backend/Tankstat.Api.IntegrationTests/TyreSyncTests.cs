@@ -76,8 +76,8 @@ public class TyreSyncTests : IDisposable
         var parked = (await people.Alice.Gql("{ parkedChanges { kind current { state tyreEntry { kind } } } }")).Data().GetProperty("parkedChanges")[0];
         Assert.Equal(("UPDATE_TYRE_ENTRY", "VALVE_REPLACED"), (parked.GetProperty("kind").GetString(), parked.GetProperty("current").GetProperty("tyreEntry").GetProperty("kind").GetString()));
 
-        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreEntry = line })));
-        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreEntry = line }))); // in the trash already
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreEntry = new { id = line } })));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreEntry = new { id = line } }))); // in the trash already
         Assert.DoesNotContain((await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray(), e => e.GetProperty("id").GetString() == line);
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyreEntry = line })));
         Assert.Equal(148_300, LineOf(await TyresOf(people.Alice, car), line).GetProperty("odometer").GetInt64());
@@ -119,6 +119,31 @@ public class TyreSyncTests : IDisposable
         var lines = (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("day").GetString() == "2026-06-01").ToList();
         var note = Assert.Single(lines);
         Assert.Equal(("NOTE", installation, 143_000L), (note.GetProperty("kind").GetString(), note.GetProperty("id").GetString(), note.GetProperty("odometer").GetInt64()));
+    }
+
+    [Fact]
+    public async Task AnAmountSentFromADevice_NamesTheExpenseItMakes()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        var sent = await people.Alice.Gql(Sync, new { i = new { changes = new object[] { new { id = Guid.NewGuid(), addTyreEntry = new {
+            vehicleId = car, kind = "OTHER", setId = summer, day = "2026-09-20", id = Guid.NewGuid(), fee = new { amount = 10m, currency = "EUR", title = "Other" } } } } } });
+        Assert.Equal("sync.entityIdRequired", Key(sent));
+    }
+
+    [Fact]
+    public async Task ALineWithItsLongestAccentedNoteTitleAndCategory_FitsOneChangeOfTheQueue()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        var (line, expense) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        var fee = new { amount = 123456.78m, currency = "HUF", category = new string('ő', 60), title = new string('ű', 120), expenseId = expense };
+
+        var sent = await Send(people.Alice, new { id = Guid.NewGuid(), addTyreEntry = new {
+            vehicleId = car, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_200, note = new string('é', 500), id = line, fee } });
+
+        Assert.Equal(("APPLIED", null), Result(sent));
+        Assert.Equal(new string('ű', 120), LineOf(await TyresOf(people.Alice, car), line).GetProperty("note").GetString() is not null
+            ? (await people.Alice.Gql("query($id: UUID!) { expense(id: $id) { title } }", new { id = expense })).Data().GetProperty("expense").GetProperty("title").GetString()
+            : null);
     }
 
     [Fact]
