@@ -22,11 +22,12 @@ namespace Tankstat.Migrations.SqlServer
             migrationBuilder.RenameIndex(name: "IX_TyreStretches_VehicleId_UpdatedAt", table: "TyreInstallations", newName: "IX_TyreInstallations_VehicleId_UpdatedAt");
             migrationBuilder.Sql("EXEC sp_rename N'[PK_TyreStretches]', N'PK_TyreInstallations', N'OBJECT';");
             migrationBuilder.Sql("EXEC sp_rename N'[FK_TyreStretches_TyreSets_SetId]', N'FK_TyreInstallations_TyreSets_SetId', N'OBJECT';");
-            // What was stored under the old name: tombstones, the sync ledger's kinds, reasons and payloads (#288).
+            // What was stored under the old name: tombstones, the sync ledger's kinds, reasons and payloads (#288). REPLACE over nvarchar(4000)
+            // returns at most 4,000 characters, cut silently: the payload is cast to nvarchar(max), so the length check sees what would be stored.
             migrationBuilder.Sql(@"UPDATE [Tombstones] SET [EntityType] = 'TyreInstallation' WHERE [EntityType] = 'TyreStretch';");
             migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [Kind] = REPLACE([Kind], 'TyreStretch', 'TyreInstallation') WHERE [Kind] LIKE '%TyreStretch';");
             migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [ReasonKey] = REPLACE([ReasonKey], 'tyres.stretch', 'tyres.installation') WHERE [ReasonKey] LIKE 'tyres.stretch%';");
-            migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [Payload] = REPLACE(REPLACE([Payload], 'TyreStretch', 'TyreInstallation'), '""stretchId""', '""installationId""') WHERE ([Payload] LIKE '%TyreStretch%' OR [Payload] LIKE '%""stretchId""%') AND LEN(REPLACE(REPLACE([Payload], 'TyreStretch', 'TyreInstallation'), '""stretchId""', '""installationId""')) <= 4000;");
+            migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [Payload] = REPLACE(REPLACE(CAST([Payload] AS nvarchar(max)), 'TyreStretch', 'TyreInstallation'), '""stretchId""', '""installationId""') WHERE ([Payload] LIKE '%TyreStretch%' OR [Payload] LIKE '%""stretchId""%') AND LEN(REPLACE(REPLACE(CAST([Payload] AS nvarchar(max)), 'TyreStretch', 'TyreInstallation'), '""stretchId""', '""installationId""')) <= 4000;");
         }
 
         /// <inheritdoc />
@@ -40,11 +41,12 @@ namespace Tankstat.Migrations.SqlServer
             migrationBuilder.RenameIndex(name: "IX_TyreInstallations_VehicleId_UpdatedAt", table: "TyreStretches", newName: "IX_TyreStretches_VehicleId_UpdatedAt");
             migrationBuilder.Sql("EXEC sp_rename N'[PK_TyreInstallations]', N'PK_TyreStretches', N'OBJECT';");
             migrationBuilder.Sql("EXEC sp_rename N'[FK_TyreInstallations_TyreSets_SetId]', N'FK_TyreStretches_TyreSets_SetId', N'OBJECT';");
-            // What was stored under the old name: tombstones, the sync ledger's kinds, reasons and payloads (#288).
+            // What was stored under the old name: tombstones, the sync ledger's kinds, reasons and payloads (#288). REPLACE over nvarchar(4000)
+            // returns at most 4,000 characters, cut silently: the payload is cast to nvarchar(max), so the length check sees what would be stored.
             migrationBuilder.Sql(@"UPDATE [Tombstones] SET [EntityType] = 'TyreStretch' WHERE [EntityType] = 'TyreInstallation';");
             migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [Kind] = REPLACE([Kind], 'TyreInstallation', 'TyreStretch') WHERE [Kind] LIKE '%TyreInstallation';");
             migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [ReasonKey] = REPLACE([ReasonKey], 'tyres.installation', 'tyres.stretch') WHERE [ReasonKey] LIKE 'tyres.installation%';");
-            migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [Payload] = REPLACE(REPLACE([Payload], 'TyreInstallation', 'TyreStretch'), '""installationId""', '""stretchId""') WHERE ([Payload] LIKE '%TyreInstallation%' OR [Payload] LIKE '%""installationId""%') AND LEN(REPLACE(REPLACE([Payload], 'TyreInstallation', 'TyreStretch'), '""installationId""', '""stretchId""')) <= 4000;");
+            migrationBuilder.Sql(@"UPDATE [SyncChanges] SET [Payload] = REPLACE(REPLACE(CAST([Payload] AS nvarchar(max)), 'TyreInstallation', 'TyreStretch'), '""installationId""', '""stretchId""') WHERE ([Payload] LIKE '%TyreInstallation%' OR [Payload] LIKE '%""installationId""%') AND LEN(REPLACE(REPLACE(CAST([Payload] AS nvarchar(max)), 'TyreInstallation', 'TyreStretch'), '""installationId""', '""stretchId""')) <= 4000;");
         }
     }
 }
