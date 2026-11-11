@@ -26,7 +26,7 @@ public sealed record SetTyreRoughDistanceInput(Guid Id, long Distance, DateOnly?
 
 /// <param name="PairOneFront">True: pair 1 at the front; false: pair 2 at the front; null: not recorded ("Not sure").</param>
 /// <param name="Replace">A swap logged on that day already is replaced instead of refused with <c>tyres.swapExists</c>.</param>
-/// <param name="Odometer">The reading of that day, kept on the tyre log's line for it as one of the car's readings.</param>
+/// <param name="Odometer">The reading of that day, kept on the swap's line of the tyre log as one of the car's readings.</param>
 /// <param name="InstallationId">The id of the installation it creates, if it creates one: the same change sent again changes nothing.</param>
 public sealed record SwapTyresInput(
     Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront = null, bool Replace = false, long? Odometer = null, string? Note = null, Guid? InstallationId = null);
@@ -36,16 +36,22 @@ public sealed record PastTyreSwapInput(DateOnly Day, Guid SetId, long? Odometer 
 /// <param name="Swaps">One per day (two on one day are refused), 1 to 25, applied in day order, all or nothing.</param>
 public sealed record AddPastTyreSwapsInput(Guid VehicleId, IReadOnlyList<PastTyreSwapInput> Swaps, bool Replace = false);
 
-/// <param name="OdometerFrom">A reading for the first day, kept on that day's tyre log line; left out leaves the day as it is.</param>
+/// <param name="OdometerFrom">A reading for the first day, kept on the installation's line of the tyre log; left out leaves it as it is.</param>
 public sealed record AddTyreInstallationInput(
     Guid SetId, DateOnly From, DateOnly? Until = null, bool? PairOneFront = null, long? OdometerFrom = null, long? OdometerUntil = null, Guid? Id = null);
 
 public sealed record UpdateTyreInstallationInput(
     Guid Id, DateOnly From, DateOnly? Until = null, bool? PairOneFront = null, long? OdometerFrom = null, long? OdometerUntil = null);
 
-/// <param name="Odometer">The reading; left out clears it (for good). A day left with neither a reading nor a note is deleted.</param>
-/// <param name="Id">The id of the line if it is created (the client's).</param>
-public sealed record SetTyreLogDayInput(Guid VehicleId, DateOnly Day, long? Odometer = null, string? Note = null, Guid? Id = null);
+/// <param name="Kind">What was done: any kind but <c>SWAP</c> and <c>POSITIONS_CHANGED</c>, which come with the swap (<c>tyres.entryKindNotAllowed</c>).</param>
+/// <param name="SetId">The set it concerns; left out for none.</param>
+/// <param name="Odometer">The reading of that day, one of the car's readings.</param>
+/// <param name="Id">The line's id chosen by the client: the same add sent again answers with what it created.</param>
+public sealed record AddTyreEntryInput(Guid VehicleId, TyreEntryKind Kind, DateOnly Day, Guid? SetId = null, long? Odometer = null, string? Note = null, Guid? Id = null);
+
+/// <param name="Kind">A swap's line keeps its kind and set (<c>tyres.swapLineLocked</c>); its new day moves the swap.</param>
+/// <param name="Odometer">The reading; left out clears it (for good).</param>
+public sealed record UpdateTyreEntryInput(Guid Id, TyreEntryKind Kind, DateOnly Day, Guid? SetId = null, long? Odometer = null, string? Note = null);
 
 /// <summary>The stored set; the installation, the reading and the version's bookkeeping stay internal.</summary>
 public sealed class TyreSetType : ObjectType<TyreSet>
@@ -67,16 +73,19 @@ public sealed class TyreInstallationType : ObjectType<TyreInstallation>
     }
 }
 
-/// <summary>A day of the tyre log: its reading (one of the car's readings) and note.</summary>
-public sealed class TyreLogDayType : ObjectType<TyreLogDay>
+/// <summary>A line of the tyre log (#288): what was done, to which set (or none), its reading (one of the car's readings) and note.</summary>
+public sealed class TyreEntryType : ObjectType<TyreEntry>
 {
-    protected override void Configure(IObjectTypeDescriptor<TyreLogDay> descriptor)
+    protected override void Configure(IObjectTypeDescriptor<TyreEntry> descriptor)
     {
-        descriptor.Ignore(d => d.SavedVersion);
-        descriptor.Ignore(d => d.OdometerReading);
-        descriptor.Ignore(d => d.OdometerReadingId);
-        descriptor.Ignore(d => d.IsEmpty);
-        descriptor.Ignore(d => d.Update(default, default, default));
+        descriptor.Ignore(e => e.SavedVersion);
+        descriptor.Ignore(e => e.OdometerReading);
+        descriptor.Ignore(e => e.OdometerReadingId);
+        descriptor.Ignore(e => e.IsDeleted);
+        descriptor.Ignore(e => e.DeletedAt);
+        descriptor.Ignore(e => e.Update(default, default, default, default, default, default));
+        descriptor.Ignore(e => e.MoveTo(default, default));
+        descriptor.Field(e => e.InstallationId).Description("The installation whose line it is (the same id): set on a swap's and a change of positions' line.");
     }
 }
 
@@ -126,10 +135,10 @@ public sealed class TyreTrashRowExtensions
 [ExtendObjectType(OperationTypeNames.Query)]
 public sealed class TyreQueries
 {
-    /// <summary>A vehicle's tyre sets, their installations and the tyre log's days; null when the vehicle cannot be seen.</summary>
+    /// <summary>A vehicle's tyre sets, their installations and the tyre log's lines; null when the vehicle cannot be seen.</summary>
     public Task<TyreOverview?> GetVehicleTyres(Guid vehicleId, [Service] TyreService tyres, CancellationToken ct) => tyres.OverviewAsync(vehicleId, ct);
 
-    /// <summary>The trashed tyre sets and the trashed installations of sets not in the trash, by when they were trashed (newest first by default).</summary>
+    /// <summary>The trashed tyre sets and the trashed tyre log lines of no set or of a set not in the trash, by when they were trashed (newest first by default).</summary>
     public Task<IReadOnlyList<TyreTrashRow>> GetTyreTrash(
         [Service] TyreService tyres, CancellationToken ct,
         TyreTrashSortField orderBy = TyreTrashSortField.DeletedAt, Tankstat.Domain.SortDirection direction = Tankstat.Domain.SortDirection.Desc,
@@ -167,8 +176,15 @@ public sealed class TyreMutations
 
     public Task<TyreOverview> RestoreTyreInstallation(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreInstallationAsync(id, ct);
 
-    public Task<TyreOverview> SetTyreLogDay(SetTyreLogDayInput input, [Service] TyreService tyres, CancellationToken ct) =>
-        tyres.SetLogDayAsync(input.VehicleId, input.Day, input.Odometer, input.Note, ct, input.Id);
+    public Task<TyreOverview> AddTyreEntry(AddTyreEntryInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.AddEntry(input, tyres, ct);
+
+    public Task<TyreOverview> UpdateTyreEntry(UpdateTyreEntryInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.UpdateEntry(input, tyres, ct);
+
+    /// <summary>Moves a tyre log line to the trash; a swap's line takes its installation along.</summary>
+    public Task<TyreOverview> DeleteTyreEntry(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.TrashEntryAsync(id, ct);
+
+    /// <summary>Brings a tyre log line back; a swap's line brings its installation back, or is refused with <c>tyres.restoreConflict</c>.</summary>
+    public Task<TyreOverview> RestoreTyreEntry(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreEntryAsync(id, ct);
 
     /// <param name="day">The device's today.</param>
     public Task<TyreOverview> RetireTyreSet(Guid id, DateOnly day, [Service] TyreService tyres, CancellationToken ct) => tyres.RetireAsync(id, day, ct);
@@ -179,7 +195,7 @@ public sealed class TyreMutations
 
     public Task<TyreOverview> RestoreTyreSet(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreSetAsync(id, ct);
 
-    /// <summary>Permanently removes the trashed tyre sets and installations the user has Delete access to; returns how many rows of the list went.</summary>
+    /// <summary>Permanently removes the trashed tyre sets and tyre log lines the user has Delete access to; returns how many rows of the list went.</summary>
     public Task<int> EmptyTyreTrash([Service] TyreService tyres, CancellationToken ct) => tyres.EmptyTrashAsync(ct);
 }
 
@@ -203,4 +219,10 @@ internal static class TyreChanges
 
     public static Task<TyreOverview> UpdateInstallation(UpdateTyreInstallationInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
         tyres.UpdateInstallationAsync(i.Id, new TyreInstallationInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, version);
+
+    public static Task<TyreOverview> AddEntry(AddTyreEntryInput i, TyreService tyres, CancellationToken ct) =>
+        tyres.AddEntryAsync(i.VehicleId, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note), ct, i.Id);
+
+    public static Task<TyreOverview> UpdateEntry(UpdateTyreEntryInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
+        tyres.UpdateEntryAsync(i.Id, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note), ct, version);
 }

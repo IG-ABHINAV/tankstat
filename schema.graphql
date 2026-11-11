@@ -186,7 +186,11 @@ type Mutation {
     @cost(weight: "10")
   deleteTyreInstallation(id: UUID!): VehicleTyres! @cost(weight: "10")
   restoreTyreInstallation(id: UUID!): VehicleTyres! @cost(weight: "10")
-  setTyreLogDay(input: SetTyreLogDayInput!): VehicleTyres! @cost(weight: "10")
+  addTyreEntry(input: AddTyreEntryInput!): VehicleTyres! @cost(weight: "10")
+  updateTyreEntry(input: UpdateTyreEntryInput!): VehicleTyres!
+    @cost(weight: "10")
+  deleteTyreEntry(id: UUID!): VehicleTyres! @cost(weight: "10")
+  restoreTyreEntry(id: UUID!): VehicleTyres! @cost(weight: "10")
   retireTyreSet(id: UUID!, day: LocalDate!): VehicleTyres! @cost(weight: "10")
   unretireTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
   deleteTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
@@ -875,6 +879,7 @@ type SyncCurrent {
   schedule: RecurringExpenseInfo
   tyreSet: TyreSet
   tyreInstallation: TyreInstallation
+  tyreEntry: TyreEntry
   changedBy: UserRef @cost(weight: "10")
 }
 
@@ -959,6 +964,26 @@ type TrendWindow {
   fillUps: Int!
 }
 
+type TyreEntry {
+  "The installation whose line it is (the same id): set on a swap's and a change of positions' line."
+  installationId: UUID
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  createdById: UUID!
+  kind: TyreEntryKind!
+  setId: UUID
+  day: LocalDate!
+  note: String
+  odometer: Long
+  isSwapLine: Boolean!
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+}
+
 type TyreInstallation {
   id: UUID!
   ownerId: UUID!
@@ -980,21 +1005,6 @@ type TyreInstallation {
 type TyreInstallationInfo {
   installation: TyreInstallation!
   distance: InstallationDistance!
-}
-
-type TyreLogDay {
-  id: UUID!
-  ownerId: UUID!
-  vehicleId: UUID!
-  createdById: UUID!
-  day: LocalDate!
-  note: String
-  odometer: Long
-  version: Int!
-  updatedAt: DateTime!
-  changedAt: DateTime
-  changedById: UUID
-  lastChange: EntityChange
 }
 
 type TyreSet {
@@ -1043,8 +1053,9 @@ type TyreTrashRow {
   kind: TyreTrashKind!
   id: UUID!
   vehicleId: UUID!
-  setName: String!
-  from: LocalDate
+  setName: String
+  entryKind: TyreEntryKind
+  day: LocalDate
   until: LocalDate
   installationCount: Int!
   deletedAt: DateTime!
@@ -1182,7 +1193,7 @@ type VehicleTyres {
   readings: [OdometerPoint!]!
   vehicleId: UUID!
   sets: [TyreSetInfo!]!
-  days: [TyreLogDay!]!
+  entries: [TyreEntry!]!
   hasReadings: Boolean!
 }
 
@@ -1223,6 +1234,16 @@ input AddRecurringExpenseInput {
   lastDoneOdometer: Long
   warnDays: Int
   warnDistance: Long
+  id: UUID
+}
+
+input AddTyreEntryInput {
+  vehicleId: UUID!
+  kind: TyreEntryKind!
+  day: LocalDate!
+  setId: UUID
+  odometer: Long
+  note: String
   id: UUID
 }
 
@@ -1301,7 +1322,10 @@ input ChangeInput {
   updateTyreInstallation: UpdateTyreInstallationInput
   deleteTyreInstallation: UUID
   restoreTyreInstallation: UUID
-  setTyreLogDay: SetTyreLogDayInput
+  addTyreEntry: AddTyreEntryInput
+  updateTyreEntry: UpdateTyreEntryInput
+  deleteTyreEntry: UUID
+  restoreTyreEntry: UUID
   base: String
 }
 
@@ -1505,14 +1529,6 @@ input SetLogAccessInput {
   level: AccessLevel!
 }
 
-input SetTyreLogDayInput {
-  vehicleId: UUID!
-  day: LocalDate!
-  odometer: Long
-  note: String
-  id: UUID
-}
-
 input SetTyreRoughDistanceInput {
   id: UUID!
   distance: Long!
@@ -1612,6 +1628,15 @@ input UpdateRefuelingInput {
   note: String
   missedPreviousFillUp: Boolean
   discount: Decimal
+}
+
+input UpdateTyreEntryInput {
+  id: UUID!
+  kind: TyreEntryKind!
+  day: LocalDate!
+  setId: UUID
+  odometer: Long
+  note: String
 }
 
 input UpdateTyreInstallationInput {
@@ -1880,7 +1905,7 @@ enum OfflineEntityType {
   RECURRING_EXPENSE
   TYRE_SET
   TYRE_INSTALLATION
-  TYRE_LOG_DAY
+  TYRE_ENTRY
 }
 
 enum ReadingFieldName {
@@ -2040,7 +2065,10 @@ enum SyncChangeKind {
   UPDATE_TYRE_INSTALLATION
   DELETE_TYRE_INSTALLATION
   RESTORE_TYRE_INSTALLATION
-  SET_TYRE_LOG_DAY
+  ADD_TYRE_ENTRY
+  UPDATE_TYRE_ENTRY
+  DELETE_TYRE_ENTRY
+  RESTORE_TYRE_ENTRY
 }
 
 enum SyncChangeStatus {
@@ -2092,6 +2120,18 @@ enum TrendWindowKind {
   THIS_MONTH
 }
 
+enum TyreEntryKind {
+  SWAP
+  POSITIONS_CHANGED
+  PUNCTURE_REPAIRED
+  VALVE_REPLACED
+  WHEEL_BALANCING
+  STORAGE_FEE
+  BOUGHT
+  OTHER
+  NOTE
+}
+
 enum TyreSeason {
   SUMMER
   WINTER
@@ -2100,7 +2140,7 @@ enum TyreSeason {
 
 enum TyreTrashKind {
   SET
-  INSTALLATION
+  ENTRY
 }
 
 enum TyreTrashSortField {

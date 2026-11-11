@@ -79,7 +79,7 @@ do
         .AddTypeExtension<RecurringExpenseInfoExtensions>()
         .AddType<TyreSetType>()
         .AddType<TyreInstallationType>()
-        .AddType<TyreLogDayType>()
+        .AddType<TyreEntryType>()
         .AddType<VehicleTyresType>()
         .AddType<ReadingPointType>()
         .AddType<TyreSetViewType>()

@@ -15,7 +15,7 @@ public class TyreSyncTests : IDisposable
     private const string Resolve = "mutation($i: ResolveSyncChangeInput!) { resolveSyncChange(input: $i) { id status } }";
     private const string SwapOnline = "mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }";
     private const string Tyres = """
-        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } installations { installation { id from until pairOneFront } } } days { id day odometer note version } } }
+        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } installations { installation { id from until pairOneFront } } } entries { id kind setId installationId day odometer note version } } }
         """;
 
     private readonly TestApp _app = TestApp.Standalone();
@@ -54,41 +54,54 @@ public class TyreSyncTests : IDisposable
         return (people, car, summer, winter, installation);
     }
 
+    private static JsonElement LineOf(JsonElement tyres, string id) => tyres.GetProperty("entries").EnumerateArray().Single(e => e.GetProperty("id").GetString() == id);
+
     [Fact]
-    public async Task ADayLineMadeWithoutTheLineAnotherDeviceLogged_IsParked_NotWrittenOverIt_UntilAppliedAnyway()
+    public async Task ALineAdded_FromTheQueue_IsAppliedOnce_ItsEditFromAnOlderVersionIsParked_AndItsTrashSentAgainIsDone()
     {
-        var (people, car, _, winter, _) = await Car(_app);
-        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, note = "Garage", installationId = Guid.NewGuid() } });
-        var change = Guid.NewGuid().ToString();
+        var (people, car, summer, _, _) = await Car(_app);
+        var (line, add) = (Guid.NewGuid().ToString(), Guid.NewGuid());
+        var input = new { vehicleId = car, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_200, note = "Rear left", id = line };
 
-        // Made offline before that swap reached the device: a line of its own for the day.
-        var sent = await Send(people.Alice, new { id = change, setTyreLogDay = new { vehicleId = car, day = "2026-09-20", note = "Pressure checked", id = Guid.NewGuid() } });
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = add, addTyreEntry = input })));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), addTyreEntry = input }))); // the same add, sent as a new change
+        var version = LineOf(await TyresOf(people.Alice, car), line).GetProperty("version").GetInt32();
 
-        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(sent));
-        var line = (await TyresOf(people.Alice, car)).GetProperty("days")[0];
-        Assert.Equal((148_200L, "Garage"), (line.GetProperty("odometer").GetInt64(), line.GetProperty("note").GetString()));
+        var edit = await Send(people.Bob, new { id = Guid.NewGuid(), expectedVersion = version, updateTyreEntry = new { id = line, kind = "VALVE_REPLACED", setId = summer, day = "2026-09-20", odometer = 148_300 } });
+        var stale = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, updateTyreEntry = new { id = line, kind = "OTHER", day = "2026-09-20" } });
+        Assert.Equal(("APPLIED", null), Result(edit));
+        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(stale));
+        var now = LineOf(await TyresOf(people.Alice, car), line);
+        Assert.Equal(("VALVE_REPLACED", 148_300L, JsonValueKind.Null), (now.GetProperty("kind").GetString(), now.GetProperty("odometer").GetInt64(), now.GetProperty("note").ValueKind));
+        var parked = (await people.Alice.Gql("{ parkedChanges { kind current { state tyreEntry { kind } } } }")).Data().GetProperty("parkedChanges")[0];
+        Assert.Equal(("UPDATE_TYRE_ENTRY", "VALVE_REPLACED"), (parked.GetProperty("kind").GetString(), parked.GetProperty("current").GetProperty("tyreEntry").GetProperty("kind").GetString()));
 
-        // Whoever decides may still apply it, on purpose: it goes over the line it did not know.
-        var applied = (await people.Alice.Gql(Resolve, new { i = new { id = change, action = "APPLY" } })).Data().GetProperty("resolveSyncChange");
-        Assert.Equal("APPLIED", applied.GetProperty("status").GetString());
-        line = (await TyresOf(people.Alice, car)).GetProperty("days")[0];
-        Assert.Equal((JsonValueKind.Null, "Pressure checked"), (line.GetProperty("odometer").ValueKind, line.GetProperty("note").GetString()));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreEntry = line })));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyreEntry = line }))); // in the trash already
+        Assert.DoesNotContain((await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray(), e => e.GetProperty("id").GetString() == line);
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyreEntry = line })));
+        Assert.Equal(148_300, LineOf(await TyresOf(people.Alice, car), line).GetProperty("odometer").GetInt64());
     }
 
     [Fact]
-    public async Task ADayLineChange_NamingTheLineAndItsVersion_IsApplied_AndOneMadeFromAnOlderVersionIsParked()
+    public async Task ASwapsLineOnAnotherDay_FromTheQueue_MovesTheSwap_AndAMoveTheHistoryRefusesIsParkedWithItsReason()
     {
-        var (people, car, _, winter, _) = await Car(_app);
-        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, installationId = Guid.NewGuid() } });
-        var line = (await TyresOf(people.Alice, car)).GetProperty("days")[0];
-        var (id, version) = (line.GetProperty("id").GetString(), line.GetProperty("version").GetInt32());
+        var (people, car, summer, winter, summerInstallation) = await Car(_app);
+        var installation = Guid.NewGuid().ToString();
+        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, installationId = installation } });
+        var line = LineOf(await TyresOf(people.Alice, car), installation);
+        Assert.Equal(("SWAP", installation), (line.GetProperty("kind").GetString(), line.GetProperty("installationId").GetString()));
 
-        var edit = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, setTyreLogDay = new { vehicleId = car, day = "2026-09-20", odometer = 148_300, id } });
-        var stale = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, setTyreLogDay = new { vehicleId = car, day = "2026-09-20", odometer = 148_400, id } });
+        var moved = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = line.GetProperty("version").GetInt32(),
+            updateTyreEntry = new { id = installation, kind = "SWAP", setId = winter, day = "2026-09-22", odometer = 148_200 } });
+        var before = await Send(people.Alice, new { id = Guid.NewGuid(), updateTyreEntry = new { id = installation, kind = "SWAP", setId = winter, day = "2026-03-28" } });
 
-        Assert.Equal(("APPLIED", null), Result(edit));
-        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(stale));
-        Assert.Equal(148_300, (await TyresOf(people.Alice, car)).GetProperty("days")[0].GetProperty("odometer").GetInt64());
+        Assert.Equal(("APPLIED", null), Result(moved));
+        Assert.Equal(("PARKED", "tyres.swapBeforePrevious"), Result(before));
+        var tyres = await TyresOf(people.Alice, car);
+        Assert.Equal("2026-09-22", Assert.Single(InstallationsOf(tyres, winter)).GetProperty("from").GetString());
+        Assert.Equal("2026-09-22", InstallationsOf(tyres, summer).Single(x => x.GetProperty("id").GetString() == summerInstallation).GetProperty("until").GetString());
+        Assert.Equal(("2026-09-22", 148_200L), (LineOf(tyres, installation).GetProperty("day").GetString(), LineOf(tyres, installation).GetProperty("odometer").GetInt64()));
     }
 
     [Fact]
@@ -107,7 +120,8 @@ public class TyreSyncTests : IDisposable
         Assert.Equal(("PARKED", "tyres.alreadyOnCar"), Result(fromPapers));
         var installation = Assert.Single(InstallationsOf(await TyresOf(people.Alice, car), winter));
         Assert.Equal(("2026-10-28", true), (installation.GetProperty("from").GetString(), installation.GetProperty("pairOneFront").GetBoolean()));
-        Assert.Empty((await TyresOf(people.Alice, car)).GetProperty("days").EnumerateArray()); // the parked swap's reading was not written either
+        Assert.DoesNotContain((await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray(),
+            e => e.GetProperty("odometer").ValueKind != JsonValueKind.Null); // the parked swap's reading was not written either
 
         // Applied anyway it is no retry: refused as online.
         Assert.Equal("tyres.alreadyOnCar", Key(await people.Alice.Gql(Resolve, new { i = new { id = late, action = "APPLY" } })));

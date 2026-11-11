@@ -44,7 +44,8 @@ public sealed record ChangeInput(
     RetireTyreSetInput? RetireTyreSet = null, Guid? UnretireTyreSet = null, Guid? DeleteTyreSet = null, Guid? RestoreTyreSet = null,
     SwapTyresInput? SwapTyres = null, SwapTyresInput? ChangeTyrePositions = null, AddPastTyreSwapsInput? AddPastTyreSwaps = null,
     AddTyreInstallationInput? AddTyreInstallation = null, UpdateTyreInstallationInput? UpdateTyreInstallation = null, Guid? DeleteTyreInstallation = null, Guid? RestoreTyreInstallation = null,
-    SetTyreLogDayInput? SetTyreLogDay = null, string? Base = null);
+    AddTyreEntryInput? AddTyreEntry = null, UpdateTyreEntryInput? UpdateTyreEntry = null, Guid? DeleteTyreEntry = null, Guid? RestoreTyreEntry = null,
+    string? Base = null);
 
 /// <summary>A photo added to a saved log while offline: uploaded as a draft of the log's vehicle (<c>PUT /media/vehicles/{id}/photo-drafts</c>) just before.</summary>
 public sealed record AddLogPhotoInput(Guid LogId, Guid DraftId);
@@ -97,12 +98,13 @@ public enum SyncTargetState
 /// </summary>
 public sealed record SyncCurrent(
     SyncTargetState State, int Version, DateTimeOffset? ChangedAt, Guid? ChangedById, EntityChange? LastChange,
-    Vehicle? Vehicle, Refueling? Refueling, Expense? Expense, RecurringExpenseInfo? Schedule, TyreSet? TyreSet = null, TyreInstallation? TyreInstallation = null)
+    Vehicle? Vehicle, Refueling? Refueling, Expense? Expense, RecurringExpenseInfo? Schedule, TyreSet? TyreSet = null, TyreInstallation? TyreInstallation = null,
+    TyreEntry? TyreEntry = null)
 {
     public static SyncCurrent From(SyncTarget t) => new(
         t.Trashed ? SyncTargetState.Trashed : SyncTargetState.Live, t.Entity.Version, t.Entity.ChangedAt, t.Entity.ChangedById, t.Entity.LastChange,
         t.Entity as Vehicle, t.Entity as Refueling, t.Entity as Expense, t.Schedule is { } s ? RecurringExpenseInfo.From(s) : null,
-        t.Entity as TyreSet, t.Entity as TyreInstallation);
+        t.Entity as TyreSet, t.Entity as TyreInstallation, t.Entity as TyreEntry);
 }
 
 [ExtendObjectType<SyncCurrent>]
@@ -320,11 +322,10 @@ public sealed class SyncMutations
 
     /// <summary>
     /// A tyre change (#287), applied through <see cref="TyreService"/> like the mutation. An add names the id of what it creates: the set (and
-    /// the installation a fitted set starts with), the installation a swap or a past swap creates, so a change sent again changes nothing. Its answer is
-    /// the set or installation it concerns, with its version after the change. Sent from a device's queue, a swap (or a past swap, a change of
-    /// positions) whose set is on the car already that day just as asked is a retry's answer; a day's line a change names by an id the server
-    /// does not know, while the day has a line, was made without that line and is parked. Neither when someone applies it anyway
-    /// (<paramref name="resolving"/>), which is never a retry and decides on purpose.
+    /// the installation a fitted set starts with), the installation a swap or a past swap creates (its line takes the same id), the line an
+    /// added line is, so a change sent again changes nothing. Its answer is the set, installation or line it concerns, with its version after
+    /// the change. Sent from a device's queue, a swap (or a past swap, a change of positions) whose set is on the car already that day just as
+    /// asked is a retry's answer; not when someone applies it anyway (<paramref name="resolving"/>), which is never a retry and decides on purpose.
     /// </summary>
     private static SyncChangeRequest? Tyres(
         ChangeInput c, SyncChangeServices services, int? version, bool resolving,
@@ -337,6 +338,10 @@ public sealed class SyncMutations
             await services.TyreSetRow(id, ct) is { } set ? new AppliedChange(set.Id, set.Version, set.VehicleId) : new AppliedChange(id, null, null);
         async Task<AppliedChange> InstallationAnswer(Guid id, CancellationToken ct) =>
             await services.TyreInstallationRow(id, ct) is { } st ? new AppliedChange(st.Id, st.Version, st.VehicleId) : new AppliedChange(id, null, null);
+        async Task<AppliedChange> EntryAnswer(Guid id, CancellationToken ct) =>
+            await services.TyreEntryRow(id, ct) is { } e ? new AppliedChange(e.Id, e.Version, e.VehicleId) : new AppliedChange(id, null, null);
+        SyncChangeRequest OnEntry(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await EntryAnswer(id, ct); }, services.TyreEntry(id));
         SyncChangeRequest OnSet(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
             make(kind, id, null, async ct => { await apply(ct); return await SetAnswer(id, ct); }, services.TyreSet(id));
         SyncChangeRequest OnInstallation(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
@@ -415,13 +420,26 @@ public sealed class SyncMutations
                 return await InstallationAnswer(dst, ct);
             }, services.TyreInstallation(dst));
         if (c.RestoreTyreInstallation is { } rst) return OnInstallation(SyncChangeKind.RestoreTyreInstallation, rst, ct => tyres.RestoreInstallationAsync(rst, ct, version));
-        if (c.SetTyreLogDay is { } day)
-            return make(SyncChangeKind.SetTyreLogDay, day.Id, day.VehicleId, async ct =>
+        if (c.AddTyreEntry is { } ae)
+        {
+            var id = Required(ae.Id, c.Id);
+            return make(SyncChangeKind.AddTyreEntry, id, ae.VehicleId, async ct => { await TyreChanges.AddEntry(ae with { Id = id }, tyres, ct); return await EntryAnswer(id, ct); }, null);
+        }
+        if (c.UpdateTyreEntry is { } ue) return OnEntry(SyncChangeKind.UpdateTyreEntry, ue.Id, ct => TyreChanges.UpdateEntry(ue, tyres, ct, version));
+        if (c.DeleteTyreEntry is { } de)
+            return make(SyncChangeKind.DeleteTyreEntry, de, null, async ct =>
             {
-                var tyresNow = await tyres.SetLogDayAsync(day.VehicleId, day.Day, day.Odometer, day.Note, ct, day.Id, version, strict: !resolving);
-                var line = tyresNow.Days.FirstOrDefault(d => d.Day == day.Day);
-                return new AppliedChange(line?.Id ?? day.Id, line?.Version, day.VehicleId);
-            }, null);
+                try
+                {
+                    await tyres.TrashEntryAsync(de, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.EntryInTrashAsync(de, ct) is null) throw; // in the trash already: nothing left to do
+                }
+                return await EntryAnswer(de, ct);
+            }, services.TyreEntry(de));
+        if (c.RestoreTyreEntry is { } re) return OnEntry(SyncChangeKind.RestoreTyreEntry, re, ct => tyres.RestoreEntryAsync(re, ct, version));
         return null;
     }
 
@@ -439,7 +457,7 @@ public sealed class SyncMutations
             c.SetVehiclePicture, c.RemoveVehiclePicture,
             c.AddTyreSet, c.UpdateTyreSet, c.SetTyreRoughDistance, c.RetireTyreSet, c.UnretireTyreSet, c.DeleteTyreSet, c.RestoreTyreSet,
             c.SwapTyres, c.ChangeTyrePositions, c.AddPastTyreSwaps, c.AddTyreInstallation, c.UpdateTyreInstallation, c.DeleteTyreInstallation, c.RestoreTyreInstallation,
-            c.SetTyreLogDay,
+            c.AddTyreEntry, c.UpdateTyreEntry, c.DeleteTyreEntry, c.RestoreTyreEntry,
         }.Count(o => o is not null);
         if (set != 1) throw new DomainException("sync.oneOperationRequired", "A change carries exactly one operation.", new { c.Id });
         var payload = JsonSerializer.Serialize(c with { Base = null }, Json);
@@ -570,11 +588,14 @@ public sealed class SyncChangeServices(
     public TyreService Tyres => tyres;
     public Func<CancellationToken, Task<Guid?>> TyreSet(Guid id) => async ct => (await tyreRows.FindSetAsync(id, ct))?.VehicleId;
     public Func<CancellationToken, Task<Guid?>> TyreInstallation(Guid id) => async ct => (await tyreRows.FindInstallationAsync(id, ct))?.VehicleId;
+    public Func<CancellationToken, Task<Guid?>> TyreEntry(Guid id) => async ct => (await tyreRows.FindEntryAsync(id, ct))?.VehicleId;
 
     /// <summary>A set's or installation's version after a change was applied (the change itself checked the access).</summary>
     public Task<TyreSet?> TyreSetRow(Guid id, CancellationToken ct) => tyreRows.FindSetAsync(id, ct);
 
     public Task<TyreInstallation?> TyreInstallationRow(Guid id, CancellationToken ct) => tyreRows.FindInstallationAsync(id, ct);
+
+    public Task<TyreEntry?> TyreEntryRow(Guid id, CancellationToken ct) => tyreRows.FindEntryAsync(id, ct);
 
     public ImageService Images => images;
     public VehicleService Vehicles => vehicles;
