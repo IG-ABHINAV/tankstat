@@ -223,14 +223,6 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
     /// </summary>
     public void MarkExpenseTrashedWithEntry(bool trashedWith) => ExpenseTrashedWithEntry = trashedWith && ExpenseId is not null;
 
-    /// <summary>A line kept for a day that has to carry an amount (#288, the owner's choice): an <see cref="TyreEntryKind.Other"/> line, since a note takes none.</summary>
-    public void TakeAmountAsOther(Guid? by = null)
-    {
-        if (Kind != TyreEntryKind.Note) return;
-        Kind = TyreEntryKind.Other;
-        Bump(EntityChange.Edited, by);
-    }
-
     /// <summary>Moves the line to the trash; its reading leaves the car's readings until the line is restored.</summary>
     public void MarkDeleted(DateTimeOffset now, Guid? by = null)
     {

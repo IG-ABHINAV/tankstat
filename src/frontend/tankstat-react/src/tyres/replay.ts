@@ -113,8 +113,8 @@ function typed(m: Model, setId: string, on: string | null, odometer: number | nu
   const starting = m.installations.find((x) => x.from === on)
   const line = starting ? m.entries.find((e) => e.id === starting.id) : undefined
   if (line) {
-    const kind = paid && line.kind === 'NOTE' ? 'OTHER' : line.kind
-    m.entries = m.entries.map((e) => (e === line ? entryOf({ ...lineOf(e), kind, odometer: odometer ?? e.odometer ?? null, note: note ?? e.note ?? null }, e) : e))
+    // An installation's line: a swap or a change of positions, which takes an amount as it is.
+    m.entries = m.entries.map((e) => (e === line ? entryOf({ ...lineOf(e), odometer: odometer ?? e.odometer ?? null, note: note ?? e.note ?? null }, e) : e))
     withFee(m, line.id, fee)
     return
   }

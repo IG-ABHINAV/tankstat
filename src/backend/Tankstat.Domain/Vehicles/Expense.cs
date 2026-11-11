@@ -132,13 +132,19 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
     /// <param name="discount">What was taken off <paramref name="amount"/>, which is what was paid; null is none (it needs an amount).</param>
     public LinkedChanges Update(
         DateOnly date, string title, string? category, decimal? amount, string? currency, long? odometer, string? note, bool readingPhotos = false, Guid? by = null,
-        decimal? discount = null)
+        decimal? discount = null) =>
+        Edit(date, title, category, amount, currency, note, readingPhotos, by, discount, () => SetReading(date, odometer));
+
+    /// <summary>A person's edit: everything but the reading, which <paramref name="setReading"/> sets once the cost is (its own, or its line's).</summary>
+    private LinkedChanges Edit(
+        DateOnly date, string title, string? category, decimal? amount, string? currency, string? note, bool readingPhotos, Guid? by, decimal? discount,
+        Func<(OdometerReading? Created, OdometerReading? Removed)> setReading)
     {
         if (IsDeleted) throw new DomainException("expense.trashedCannotEdit", "An expense in the trash cannot be edited; restore it first.");
         Cost.RequireAmountForDiscount(amount, discount);
         Apply(date, title, category, note);
         var (createdCost, removedCost) = SetCost(date, amount, currency, discount);
-        var (createdReading, removedReading) = SetReading(date, odometer);
+        var (createdReading, removedReading) = setReading();
         ReviewState = LogReview.AfterSave(Missing, Fillable, readingPhotos);
         FilledFromPhoto = LogValues.None;
         Bump(EntityChange.Edited, by);
@@ -206,18 +212,12 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
     /// </summary>
     public LinkedChanges UpdateWithLineReading(
         DateOnly date, string title, string? category, decimal? amount, string? currency, OdometerReading? lineReading, string? note, Guid? by, decimal? discount,
-        bool readingPhotos = false)
-    {
-        if (IsDeleted) throw new DomainException("expense.trashedCannotEdit", "An expense in the trash cannot be edited; restore it first.");
-        Cost.RequireAmountForDiscount(amount, discount);
-        Apply(date, title, category, note);
-        var (createdCost, removedCost) = SetCost(date, amount, currency, discount);
-        (OdometerReading, OdometerReadingId) = (lineReading, lineReading?.Id);
-        ReviewState = LogReview.AfterSave(Missing, Fillable, readingPhotos);
-        FilledFromPhoto = LogValues.None;
-        Bump(EntityChange.Edited, by);
-        return new LinkedChanges(null, null, createdCost, removedCost);
-    }
+        bool readingPhotos = false) =>
+        Edit(date, title, category, amount, currency, note, readingPhotos, by, discount, () =>
+        {
+            (OdometerReading, OdometerReadingId) = (lineReading, lineReading?.Id);
+            return (null, null);
+        });
 
     /// <summary>Lets go of the reading it shares with a line in the trash (#288), keeping the row for the line: an edit then gives it its own.</summary>
     public void LeaveSharedReading() => (OdometerReading, OdometerReadingId) = (null, null);
@@ -231,7 +231,8 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
     /// <summary>
     /// The expense of a tyre log line (#288) follows its line: its date (its cost's too), the reading the two share (the very object, or
     /// none), and, when the line's dialog sent them, the amount, the currency and the category (the discount kept). Not a review of its
-    /// photos, so their state stays as it was. True when anything changed; a change bumps the version like an edit.
+    /// photos, so their state stays as it was. True when anything changed; a change bumps the version like an edit. An amount for an
+    /// expense that has none yet (it waits for its photo's) makes its <see cref="Cost"/>, which the caller hands to the repository as new.
     /// </summary>
     /// <param name="category">Set when <paramref name="setCategory"/>, null clearing it.</param>
     public bool FollowLine(
@@ -243,17 +244,18 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
         var newAmount = amount ?? Cost?.Amount;
         var newCurrency = amount is null ? Cost?.Currency : currency ?? Cost?.Currency;
         var changed = Date != date || OdometerReadingId != reading?.Id || trimmedCategory != Category
-            || (Cost is { } cost && (cost.Amount != newAmount || cost.Currency != newCurrency || cost.Date != date));
+            || (Cost is { } cost ? cost.Amount != newAmount || cost.Currency != newCurrency || cost.Date != date : amount is not null);
         (OdometerReading, OdometerReadingId) = (reading, reading?.Id); // the same object as the line's (or the same row loaded once)
         if (!changed) return false;
         Date = date;
         Category = trimmedCategory;
-        Cost?.Update(date, newAmount!.Value, newCurrency, Cost.Discount);
+        if (Cost is not null) Cost.Update(date, newAmount!.Value, newCurrency, Cost.Discount);
+        else if (amount is { } typed) SetCost(date, typed, currency, discount: null);
         Bump(EntityChange.Edited, by);
         return true;
     }
 
-        private (OdometerReading? Created, OdometerReading? Removed) SetReading(DateOnly date, long? odometer)
+    private (OdometerReading? Created, OdometerReading? Removed) SetReading(DateOnly date, long? odometer)
     {
         if (odometer is null)
         {

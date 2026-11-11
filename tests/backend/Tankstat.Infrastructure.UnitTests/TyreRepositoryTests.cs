@@ -310,6 +310,36 @@ public class TyreRepositoryTests
     }
 
     [Fact]
+    public async Task AnExpenseLeftWithoutItsAmount_TakesTheOneItsLineGivesIt_AsANewCostRow()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var (line, expense) = await LineWithExpense(db, car);
+        var repo = db.Get<ITyreRepository>();
+
+        // The Expenses tab left the amount to a photo being read: the cost row goes.
+        var book = await repo.LoadAsync(car.Id, default);
+        var (loaded, linked) = (book.Entries.Single(e => e.Id == line.Id), Assert.Single(book.LinkedExpenses));
+        var emptied = new TyreSave();
+        emptied.ExpenseChanges.Add(linked.UpdateWithLineReading(linked.Date, linked.Title, linked.Category, null, null, loaded.OdometerReading, null, car.OwnerId, null, readingPhotos: true));
+        emptied.Change(linked);
+        Assert.True(await repo.SaveAsync(emptied, default));
+        Assert.Null((await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Amount);
+
+        // The amount typed on the line: a cost the expense did not have, saved as a new row.
+        book = await repo.LoadAsync(car.Id, default);
+        (loaded, linked) = (book.Entries.Single(e => e.Id == line.Id), Assert.Single(book.LinkedExpenses));
+        Assert.True(linked.FollowLine(loaded.Day, loaded.OdometerReading, 40, "EUR", "Tyres", setCategory: true));
+        var typed = new TyreSave();
+        typed.ExpenseChanges.Add(new LinkedChanges(null, null, linked.Cost, null));
+        typed.Change(linked);
+        Assert.True(await repo.SaveAsync(typed, default));
+
+        var after = await db.Get<IExpenseRepository>().FindAsync(expense.Id, default);
+        Assert.Equal((40m, "EUR", loaded.Day, (long?)148_200), (after!.Amount!.Value, after.Currency, after.Cost!.Date, after.Odometer));
+    }
+
+    [Fact]
     public async Task PurgingTheLine_LeavesTheExpenseWithTheReading_AndPurgingTheExpense_LeavesTheLineWithItButUnlinked()
     {
         await using var db = Database();

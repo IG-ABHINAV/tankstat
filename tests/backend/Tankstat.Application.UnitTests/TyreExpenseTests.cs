@@ -81,6 +81,28 @@ public class TyreExpenseTests
     }
 
     [Fact]
+    public async Task AnAmountTypedOnALine_SavedByAnotherRequestAtOnce_IsAnsweredAsTheRepeat_WithOneExpense()
+    {
+        var s = await Setup();
+        var (line, expenseId) = (Guid.NewGuid(), Guid.NewGuid());
+        var input = new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Rear left", null);
+        await s.Tyres.AddEntryAsync(s.Car.Id, input, default, line);
+        // The other request passed the same lookups a moment earlier and saved first: its expense and the line that names it are there.
+        s.W.Tyres.MeanwhileBeforeSave = save =>
+        {
+            s.W.Expenses.Items.AddRange(save.AddedExpenses);
+            s.W.Tyres.Entries.RemoveAll(e => e.Id == line);
+            s.W.Tyres.Entries.AddRange(save.ChangedEntries);
+        };
+
+        var overview = await s.Tyres.UpdateEntryAsync(line, input with { Fee = Fee(25, expenseId) }, default);
+
+        Assert.Equal(expenseId, overview.Entries.Single(e => e.Id == line).ExpenseId);
+        Assert.Single(s.W.Expenses.Items, e => e.Id == expenseId);
+        PairHolds(s, line);
+    }
+
+    [Fact]
     public async Task ADayOrAnOdometerChanged_OnEitherSide_ChangesBoth_AndClearedOnEitherSide_ClearsBoth()
     {
         var s = await Setup();
@@ -216,6 +238,25 @@ public class TyreExpenseTests
     }
 
     [Fact]
+    public async Task ASwapAJoinTakesAway_TakesItsExpenseToTheTrash_AndItsReadingStaysLiveOnTheNoteOfItsDay()
+    {
+        var s = await Setup();
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, s.Winter, D(2026, 6, 1), true, false, null, null), default, Guid.NewGuid());
+        var back = Guid.NewGuid();
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, s.Summer, D(2026, 8, 1), true, false, 145_000, "Back on", Fee(60)), default, back);
+
+        // The winter set's swap replaced by the summer set: its two installations become one, and the swap of 1 Aug goes to the trash.
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, s.Summer, D(2026, 6, 1), true, true, null, null), default, Guid.NewGuid());
+
+        Assert.True(s.W.Tyres.Entries.Single(l => l.Id == back).IsDeleted);
+        Assert.True(ExpenseOf(s, back).IsDeleted);
+        Assert.Null(ExpenseOf(s, back).OdometerReadingId);
+        var kept = s.W.Tyres.Entries.Single(e => e is { Kind: TyreEntryKind.Note, IsDeleted: false } && e.Day == D(2026, 8, 1));
+        Assert.Equal(145_000, kept.Odometer);
+        Assert.Null(kept.OdometerReading!.DeletedAt); // the live note holds it: still one of the car's readings
+    }
+
+    [Fact]
     public async Task ASetsPrice_IsABoughtLineOnTheDayItWasBought()
     {
         var s = await Setup();
@@ -228,6 +269,37 @@ public class TyreExpenseTests
         Assert.Equal((TyreEntryKind.Bought, (Guid?)set, D(2024, 5, 1)), (line.Kind, line.SetId, line.Day));
         Assert.Equal((480m, D(2024, 5, 1)), (ExpenseOf(s, bought).Amount!.Value, ExpenseOf(s, bought).Date));
         PairHolds(s, bought);
+    }
+
+    [Fact]
+    public async Task ASetsBoughtLine_WithAnIdALineHas_IsRefusedAsTaken()
+    {
+        var s = await Setup();
+        var line = await Puncture(s);
+
+        var refused = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.AddSetAsync(
+            new NewTyreSet(s.Car.Id, new TyreSetInput("Nokian", TyreSeason.AllSeason, null, D(2024, 5, 1), null, null), false, D(2026, 10, 1), null, null,
+                Price: Fee(480), BoughtOn: D(2024, 5, 1), BoughtEntryId: line), default, Guid.NewGuid()));
+
+        Assert.Equal("sync.idTaken", refused.Key);
+        Assert.DoesNotContain(s.W.Tyres.Sets, x => x.Name == "Nokian");
+    }
+
+    [Fact]
+    public async Task AnAmountTypedOnTheLine_WhileItsExpenseWaitsForItsPhotos_MakesTheExpensesCost()
+    {
+        var s = await Setup();
+        var line = await Puncture(s);
+        var expense = ExpenseOf(s, line);
+        // The Expenses tab left the amount to a photo still being read.
+        await s.Tyres.UpdateExpenseAsync(s.W.Tyres.Entries.Single(l => l.Id == line), expense.Id,
+            new ExpenseInput(D(2026, 9, 20), "Puncture", "Tyres", null, null, 148_200, null), default, readingPhotos: true);
+        Assert.Null(ExpenseOf(s, line).Cost);
+
+        await s.Tyres.UpdateEntryAsync(line, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Rear left", Fee(40, expense.Id)), default);
+
+        Assert.Equal((40m, "EUR"), (ExpenseOf(s, line).Amount!.Value, ExpenseOf(s, line).Currency));
+        PairHolds(s, line);
     }
 
     [Fact]

@@ -44,12 +44,12 @@ public sealed class TyreSave
 
     /// <summary>The costs and readings an expense's own edit created or let go of (an expense changed from the Expenses tab).</summary>
     public List<LinkedChanges> ExpenseChanges { get; } = [];
+    public List<OdometerReading> RemovedReadings { get; } = [];
 
     public void Change(Expense expense)
     {
         if (!AddedExpenses.Contains(expense) && !ChangedExpenses.Contains(expense)) ChangedExpenses.Add(expense);
     }
-    public List<OdometerReading> RemovedReadings { get; } = [];
 
     public void Take(TyreChanges changes)
     {
