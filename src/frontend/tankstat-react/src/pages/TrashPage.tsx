@@ -1,6 +1,7 @@
 import { useApolloClient, useMutation } from '@apollo/client/react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
@@ -310,9 +311,15 @@ function TyreTrash({ run, setNotice }: Shared) {
               ? none
               : r.entryKind !== 'SWAP' && r.entryKind !== 'POSITIONS_CHANGED'
                 ? t('trash.tyres.day', { day: format.date(r.day) })
-                : r.until
-                  ? t('trash.tyres.swapUntil', { day: format.date(r.day), until: format.date(r.until) })
-                  : t('trash.tyres.swapNow', { day: format.date(r.day) }),
+                : (
+                    // A swap's row (#288): the chip says it is one (text, not colour alone), then its time on the car.
+                    <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Chip size="small" variant="soft" label={t('trash.tyres.swapChip')} />
+                      {r.until
+                        ? t('trash.tyres.swapUntil', { day: format.date(r.day), until: format.date(r.until) })
+                        : t('trash.tyres.swapNow', { day: format.date(r.day) })}
+                    </Stack>
+                  ),
       },
       { id: 'vehicle', label: 'columns.vehicle', cell: (r) => r.vehicle?.name ?? none },
       { id: 'deletedAt', label: 'columns.deletedAt', mobile: true, sortField: 'DELETED_AT', cell: (r) => format.dateTime(r.deletedAt) },

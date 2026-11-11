@@ -4,7 +4,7 @@ import { connectivity } from './connectivity.ts'
 import type { LogKind, LogRow, PullCursor, RowStore, VehicleRow } from './deviceStorage.ts'
 import { todayIso } from '../forms/dates.ts'
 import { keptPhotos } from './keptPhotos.ts'
-import { noTyres, replayTyres } from '../tyres/replay.ts'
+import { isCurrentShape, noTyres, replayTyres } from '../tyres/replay.ts'
 import type { Tyres } from '../tyres/tyres.ts'
 import { outbox } from './outbox.ts'
 
@@ -277,8 +277,9 @@ async function knownWithoutLogs(rows: RowStore, vehicleId: unknown, kept: Kept):
  */
 async function tyresOf(vehicleId: string, kept: Kept): Promise<Tyres | undefined> {
   const waiting = outbox.changes.filter((c) => c.entity === 'tyres' && c.vehicleId === vehicleId)
-  if (waiting.length === 0 && !addedVehicle(vehicleId)) return undefined
   const base = (await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined
+  // Nothing waits: the kept answer as it is, unless an older build kept it in another shape (#288: days, not lines), which counts as none.
+  if (waiting.length === 0 && !addedVehicle(vehicleId)) return base && !isCurrentShape(base) ? noTyres(vehicleId) : undefined
   return replayTyres(base ?? noTyres(vehicleId), waiting).tyres
 }
 

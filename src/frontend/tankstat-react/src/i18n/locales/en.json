@@ -366,7 +366,8 @@
       "entryNoSet": "{{kind}}",
       "day": "{{day}}",
       "swapUntil": "{{day}} · on the car until {{until}}",
-      "swapNow": "{{day}} · on the car now"
+      "swapNow": "{{day}} · on the car now",
+      "swapChip": "Swap"
     },
     "tyreDescription_one": "This permanently deletes {{count}} item of the tyres. It cannot be undone.",
     "tyreDescription_other": "This permanently deletes {{count}} items of the tyres. It cannot be undone.",
@@ -2542,6 +2543,7 @@
     "changeRough": "Change the rough figure",
     "distanceMadeUp": "{{measured}} from its installations, ≈ {{rough}} before that (rough figure)",
     "frontRear": "Pair {{pair}}: front {{front}} · rear {{rear}}",
+    "readingOn": "{{value}} on {{date}}",
     "pairOneIs": "Pair 1 is the two tyres that were at the front when the pairs were first recorded.",
     "seasons": {
       "SUMMER": "Summer",

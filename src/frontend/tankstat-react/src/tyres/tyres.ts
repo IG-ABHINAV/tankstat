@@ -6,7 +6,7 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { VehicleTyresDocument, type DistanceUnit, type VehicleTyresFieldsFragment } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
-import { madeDay, monthsBetween, odometerHint, sortedReadings, type Reading } from './odometer.ts'
+import { madeDay, monthsBetween, neighbours, odometerHint, sortedReadings, type Reading } from './odometer.ts'
 import { todayIso } from '../forms/dates.ts'
 import { discardChange, submitChange, willKeep } from '../offline/submitChange.ts'
 import { isTyreAction, tyreTarget, type TyreAction } from '../offline/tyreChanges.ts'
@@ -140,7 +140,19 @@ export function useTyreWords(unit: DistanceUnit) {
         return t('tyres.odoHint.worked', { value: distance(hint.value) })
     }
   }
-  return { unitShort: short, distance, pairs, age, odometerText }
+  /** The readings around a day, which a reading typed for it must fit between (the server checks it so). */
+  const neighbourText = (readings: readonly Reading[], day: string) => {
+    const { previous, next } = neighbours(sortedReadings(readings), day)
+    const on = (r: Reading) => t('tyres.readingOn', { value: distance(r.value), date: format.date(r.date) })
+    return previous && next
+      ? t('tyres.odoHint.neighbours', { previous: on(previous), next: on(next) })
+      : previous
+        ? t('tyres.odoHint.after', { previous: on(previous) })
+        : next
+          ? t('tyres.odoHint.beforeOnly', { next: on(next) })
+          : ''
+  }
+  return { unitShort: short, distance, pairs, age, odometerText, neighbourText }
 }
 
 /** A whole number typed in a field, or null when the field is empty. */

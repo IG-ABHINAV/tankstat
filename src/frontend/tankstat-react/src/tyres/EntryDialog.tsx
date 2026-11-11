@@ -140,7 +140,7 @@ export function EntryDialog({
                 <Field
                   name="odometer"
                   label={t('tyres.fields.odometer', { unit: words.unitShort })}
-                  hint={`${t('tyres.entries.odometerHint')} ${words.odometerText(tyres.readings, day)}`}
+                  hint={[t('tyres.entries.odometerHint'), words.neighbourText(tyres.readings.filter((r) => r.date !== entry?.day || r.value !== entry?.odometer), day)].filter(Boolean).join(' ')}
                   invalid={wholeInvalid(t('forms.numberInvalid'))}
                 >
                   <FieldInput inputMode="numeric" autoComplete="off" defaultValue={entry?.odometer == null ? '' : String(entry.odometer)} />

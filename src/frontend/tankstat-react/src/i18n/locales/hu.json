@@ -366,7 +366,8 @@
       "entryNoSet": "{{kind}}",
       "day": "{{day}}",
       "swapUntil": "{{day}} · az autón eddig: {{until}}",
-      "swapNow": "{{day}} · most is az autón"
+      "swapNow": "{{day}} · most is az autón",
+      "swapChip": "Csere"
     },
     "tyreDescription_one": "Ez véglegesen töröl {{count}} tételt a gumik közül. Nem vonható vissza.",
     "tyreDescription_other": "Ez véglegesen töröl {{count}} tételt a gumik közül. Nem vonható vissza.",
@@ -2542,6 +2543,7 @@
     "changeRough": "A becsült táv módosítása",
     "distanceMadeUp": "{{measured}} az időszakaiból, előtte ≈ {{rough}} (becsült)",
     "frontRear": "{{pair}}. pár: elöl {{front}} · hátul {{rear}}",
+    "readingOn": "{{value}}, {{date}}",
     "pairOneIs": "Az 1. pár az a két gumi, amely a párok első rögzítésekor elöl volt.",
     "seasons": {
       "SUMMER": "Nyári",

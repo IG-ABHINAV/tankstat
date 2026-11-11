@@ -554,10 +554,11 @@ it('merging a vehicle takes the other value into a text field and a choice alike
 it('a tyre swap waiting here is named by its set and day; one the server parked because another swap got there first can replace it (#287)', async () => {
   await downloaded()
   await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v1' }), {
-    vehicleTyres: { vehicleId: 'v1', sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, installations: [] }], days: [], readings: [], hasReadings: false },
+    vehicleTyres: { vehicleId: 'v1', sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, installations: [] }], entries: [{ id: 'e1', setId: 's2' }], readings: [], hasReadings: false },
   })
   const swap = { vehicleId: 'v1', setId: 's2', day: '2026-10-20', pairOneFront: null, replace: false, odometer: null, note: null, installationId: 'st1' }
   await outbox.enqueue({ id: 'w1', entity: 'tyres', action: 'swapTyres', vehicleId: 'v1', targetId: 'st1', input: swap })
+  await outbox.enqueue({ id: 'w2', entity: 'tyres', action: 'deleteTyreEntry', vehicleId: 'v1', targetId: 'e1', input: { id: 'e1' } }) // a line, named by its set (#288)
   connectivity.reset()
   const parkedSwap = parkedRow('p1', 'SWAP_TYRES', { id: 'p1', swapTyres: { ...swap, installationId: 'st0', day: '2026-10-06' } }, 'tyres.swapExists', { targetId: 'st0' })
   parkedSwap.reason = { __typename: 'SyncReasonInfo', key: 'tyres.swapExists', args: [{ __typename: 'SyncReasonArg', name: 'date', value: '2026-10-06' }, { __typename: 'SyncReasonArg', name: 'set', value: 'Michelin Primacy 4' }] } as never
@@ -575,6 +576,7 @@ it('a tyre swap waiting here is named by its set and day; one the server parked 
   const waiting = within((await screen.findAllByRole('region', { name: /^Octavia/ }))[0]) // Waiting to sync comes first
   expect(await waiting.findByRole('heading', { name: 'Tyre swap' })).toBeInTheDocument()
   expect(waiting.getByText('Oct 20, 2026 · Continental WinterContact')).toBeInTheDocument()
+  expect(waiting.getByRole('heading', { name: 'Tyre log line to the trash' }).closest('li')).toHaveTextContent('Continental WinterContact')
 
   const notApplied = within(await screen.findByRole('region', { name: 'Not applied' }))
   expect(await notApplied.findByText(/^A swap is already logged on .* \(Michelin Primacy 4 went on\)/)).toBeInTheDocument()
