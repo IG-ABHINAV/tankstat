@@ -282,7 +282,7 @@ describe('a line’s amount waiting on the device (#288)', () => {
 describe('whose costs waiting changes put out of date (#288 step 4)', () => {
   const paid = { ...line('p1', 's1', '2026-05-01', 'PUNCTURE_REPAIRED'), expenseId: 'x1', amount: 25, currency: 'EUR' }
   const withPaid: Tyres = { ...base, entries: [paid, ...base.entries] }
-  const expense = (action: Change['action'], targetId: string): Change => ({ id: `c${++seq}`, seq, createdAt: seq, entity: 'expenses', action, vehicleId: 'v1', targetId, input: action === 'update' ? { amount: 30 } : null })
+  const expense = (action: Change['action'], targetId: string): Change => ({ id: `c${++seq}`, seq, createdAt: seq, entity: 'expenses', action, vehicleId: 'v1', targetId, input: action === 'update' ? { amount: 30 } : undefined })
 
   it('nothing waiting, nothing out of date', () => {
     expect([...replayTyres(withPaid, []).costs]).toEqual([])
