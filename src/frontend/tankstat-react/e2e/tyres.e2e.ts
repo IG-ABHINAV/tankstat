@@ -204,6 +204,11 @@ test('a repair with an amount is an expense on the Expenses tab: its day changed
   const log = page.getByRole('region', { name: 'Tyre log' })
   await expect(log.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, May 10, 2026, / })).toContainText('25,000')
   await expectSoundLayout(page)
+  // What the set cost and its repairs, and the Spent on tyres block (#288).
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer.getByText('Spent').locator('xpath=following-sibling::*[1]')).toContainText('25,000')
+  await expect(summer.getByText('Repairs').locator('xpath=following-sibling::*[1]')).toHaveText('1')
+  await expect(page.getByRole('heading', { name: 'Spent on tyres' })).toBeVisible()
 
   // On the Expenses tab: an ordinary expense with the chip; its date changed there moves the line.
   await page.getByRole('tab', { name: 'Expenses' }).click()

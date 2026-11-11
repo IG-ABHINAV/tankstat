@@ -41,7 +41,7 @@ More in [`docs/screenshots/`](docs/screenshots/): the refuelling grid and the li
 - **Vehicles and refuelings**: per-vehicle units and currencies (never converted), odometer checks, full and partial fill-ups, and the fuel consumption between full fill-ups.
 - **Expenses**: service, insurance, parking and anything else, with a free-text category and an optional odometer.
 - **Recurring expenses**: schedules by time, by distance or whichever comes first, with *due soon* and *overdue* reminders; a service visit marks several of them done at once.
-- **Tyres**: a car's tyre sets, on the car or in storage, swapped today or entered from papers, each set's distance worked out from the readings, with how far each pair ran at the front and at the rear.
+- **Tyres**: a car's tyre sets, on the car or in storage, swapped today or entered from papers, each set's distance worked out from the readings, with how far each pair ran at the front and at the rear; a tyre log of what was done (swaps, repairs, storage, purchases), whose amounts are expenses, and what each set cost.
 - **Dashboard and charts**: key figures, ready-made charts and your own, arranged per vehicle or for yourself alone (the Standard preset until then) (metric, grouping, chart type, period, a trend line, a running total or a year earlier beside it, a second measure on a scale of its own; cost per distance among the metrics), costs always per currency.
 - **Photos and photo reading**: up to ten photos per entry, and optionally a vision model behind any OpenAI-compatible API that reads the odometer or the receipt into the form. Off by default; nothing leaves your server unless you point it at a paid API.
 - **Notifications**: access changes and due schedules, folded so nobody is flooded.
