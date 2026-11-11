@@ -2,7 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { collapse, discard, keptPhotosOf, markOf, type Change, type ChangeEntity, type PendingMark } from './changes.ts'
 import { deviceData } from './deviceData.ts'
 import type { RowStore } from './deviceStorage.ts'
-import { isTyreAction } from './tyreChanges.ts'
+import { isTyreAction, tyreFeeExpense } from './tyreChanges.ts'
 import { keptPhotos } from './keptPhotos.ts'
 
 /**
@@ -168,6 +168,8 @@ export const outbox = {
     for (const c of changes) {
       if (c.entity === entity) for (const id of c.action === 'markDone' ? (c.targetIds ?? []) : [c.targetId]) ids.add(id)
       if (entity === 'expenses' && c.action === 'markDone') ids.add(c.targetId)
+      const fee = entity === 'expenses' && c.entity === 'tyres' ? tyreFeeExpense(c.action, c.input) : null
+      if (fee) ids.add(fee.expenseId)
     }
     const marks = new Map<string, PendingMark>()
     for (const id of ids) {
@@ -182,7 +184,10 @@ export const outbox = {
     const mark = MARK_ORDER.find((m) => marks.includes(m))
     if (mark) return mark
     // The expense a visit logs is new until the server has it.
-    return entity === 'expenses' && changes.some((c) => c.action === 'markDone' && c.targetId === id && c.input?.amount != null) ? 'new' : null
+    if (entity === 'expenses' && changes.some((c) => c.action === 'markDone' && c.targetId === id && c.input?.amount != null)) return 'new'
+    // The expense a tyre log line's amount makes (#288) is new until the server has it; one a waiting edit changes is changed.
+    const fees = entity === 'expenses' ? changes.filter((c) => c.entity === 'tyres').map((c) => tyreFeeExpense(c.action, c.input)).filter((f) => f?.expenseId === id) : []
+    return fees.length === 0 ? null : fees.every((f) => f!.edit) ? 'changed' : 'new'
   },
 
   /** The vehicles with a change waiting: the device answers their logs itself, so what was changed shows. */

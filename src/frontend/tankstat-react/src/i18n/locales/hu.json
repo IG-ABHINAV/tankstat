@@ -367,12 +367,15 @@
       "day": "{{day}}",
       "swapUntil": "{{day}} · az autón eddig: {{until}}",
       "swapNow": "{{day}} · most is az autón",
-      "swapChip": "Csere"
+      "swapChip": "Csere",
+      "restoredWithExpense": "Visszaállítva, a kiadásával együtt.",
+      "restored": "Visszaállítva."
     },
     "tyreDescription_one": "Ez véglegesen töröl {{count}} tételt a gumik közül. Nem vonható vissza.",
     "tyreDescription_other": "Ez véglegesen töröl {{count}} tételt a gumik közül. Nem vonható vissza.",
     "emptiedTyres_one": "{{count}} tétel véglegesen törölve a gumik közül.",
-    "emptiedTyres_other": "{{count}} tétel véglegesen törölve a gumik közül."
+    "emptiedTyres_other": "{{count}} tétel véglegesen törölve a gumik közül.",
+    "restoredLineInTrash": "Visszaállítva. A gumi napló sora a kukában marad."
   },
   "account": {
     "title": "Fiók",
@@ -1098,7 +1101,8 @@
       "entryNotFound": "A gumi napló e sora már nem létezik.",
       "entryTrashedCannotEdit": "A kukában lévő sor nem módosítható; előbb állítsd vissza.",
       "entryAlreadyTrashed": "A gumi napló e sora már a kukában van.",
-      "entryNotTrashed": "A gumi napló e sora nincs a kukában."
+      "entryNotTrashed": "A gumi napló e sora nincs a kukában.",
+      "noteTakesNoAmount": "A megjegyzéshez nem tartozhat összeg; válaszd ki, mi történt."
     }
   },
   "a11y": {
@@ -1237,7 +1241,15 @@
     },
     "trashTitle": "Kukába helyezed ezt a költséget?",
     "trashDescription": "A(z) {{title}} visszaállítható a kukából, amíg véglegesen nem töröljük.",
-    "trashConfirm": "Áthelyezés a kukába"
+    "trashConfirm": "Áthelyezés a kukába",
+    "tyreLog": {
+      "chip": "Gumi napló",
+      "chipTrashed": "Gumi napló · a sor a kukában",
+      "bannerTitle": "A gumi naplóból",
+      "banner": "{{what}}. A dátum és a kilométeróra-állás ott is ugyanez: itt módosítva mindkettő változik.",
+      "open": "Megnyitás a gumi naplóban",
+      "trashLine": "A sora a gumi naplóban marad, összeg nélkül."
+    }
   },
   "import": {
     "title": "Importálás",
@@ -2689,6 +2701,27 @@
       "trashSwapUntil": "Ezzel a csere is törlődik: {{set}} az autón {{from}} – {{until}}. A megtett távolsága nem számít tovább.",
       "trashReading": "A(z) {{value}} kilométeróra-állás nem számít az autó állásai közé, amíg a sort vissza nem állítod.",
       "restorable": "A kukából visszaállítható."
+    },
+    "fee": {
+      "paid": "Fizetve",
+      "paidForSwap": "A csere díja",
+      "price": "Ár",
+      "category": "Kategória",
+      "defaultCategory": "Gumik",
+      "amountHint": "Nem kötelező. Az összegből kiadás lesz a Kiadások lapon.",
+      "emptyHint": "Az összeg törlésével a kiadás a kukába kerül.",
+      "categoryHint": "A kiadás kategóriája. Csak akkor számít, ha összeget is megadsz.",
+      "linkedOdometerHint": "Az autó egyik kilométeróra-állása. A kiadás is ugyanezt mutatja.",
+      "linkedDayHint": "A kiadása és a kilométeróra-állása ugyanerre a napra szól.",
+      "swapDayExpense": "A kiadása és a kilométeróra-állása is vele megy.",
+      "swapText": "Minden csere a gumi napló egy Gumicsere sora; a kilométeróra-állás, a megjegyzés és a díj ezen van, és később is megadható.",
+      "priceText": "Az ár a gumi napló Vásárlás sorára kerül, a vásárlás napjára.",
+      "boughtOn": "Vásárlás napja",
+      "boughtOnHint": "A Vásárlás sor napja. Használtan vett szettnél az, amikor megvetted.",
+      "alsoExpense": "A kiadása ({{amount}}) is kerüljön a kukába",
+      "stays": "Ha nem jelölöd be, a kiadás a Kiadások lapon marad.",
+      "staysWithReading": "Ha nem jelölöd be, a kiadás a Kiadások lapon marad, a kilométeróra-állással együtt.",
+      "readingWithExpense": "Ha a kiadás is a kukába kerül, a(z) {{value}} kilométeróra-állás nem számít az autó állásai közé, amíg a sort vissza nem állítod."
     }
   }
 }

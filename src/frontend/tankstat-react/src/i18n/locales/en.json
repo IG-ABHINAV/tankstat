@@ -367,12 +367,15 @@
       "day": "{{day}}",
       "swapUntil": "{{day}} · on the car until {{until}}",
       "swapNow": "{{day}} · on the car now",
-      "swapChip": "Swap"
+      "swapChip": "Swap",
+      "restoredWithExpense": "Restored, with its expense.",
+      "restored": "Restored."
     },
     "tyreDescription_one": "This permanently deletes {{count}} item of the tyres. It cannot be undone.",
     "tyreDescription_other": "This permanently deletes {{count}} items of the tyres. It cannot be undone.",
     "emptiedTyres_one": "Permanently deleted {{count}} item of the tyres.",
-    "emptiedTyres_other": "Permanently deleted {{count}} items of the tyres."
+    "emptiedTyres_other": "Permanently deleted {{count}} items of the tyres.",
+    "restoredLineInTrash": "Restored. Its tyre log line stays in the trash."
   },
   "account": {
     "title": "Account",
@@ -1098,7 +1101,8 @@
       "entryNotFound": "This line of the tyre log does not exist any more.",
       "entryTrashedCannotEdit": "A line in the trash cannot be changed; restore it first.",
       "entryAlreadyTrashed": "This line of the tyre log is already in the trash.",
-      "entryNotTrashed": "This line of the tyre log is not in the trash."
+      "entryNotTrashed": "This line of the tyre log is not in the trash.",
+      "noteTakesNoAmount": "A note takes no amount; choose what was done."
     }
   },
   "a11y": {
@@ -1237,7 +1241,15 @@
     },
     "trashTitle": "Move this expense to the trash?",
     "trashDescription": "{{title}} can be restored from the trash until it is deleted permanently.",
-    "trashConfirm": "Move to trash"
+    "trashConfirm": "Move to trash",
+    "tyreLog": {
+      "chip": "Tyre log",
+      "chipTrashed": "Tyre log · line in the trash",
+      "bannerTitle": "From the tyre log",
+      "banner": "{{what}}. The date and the odometer are the same there: changing them here changes both.",
+      "open": "Open in the tyre log",
+      "trashLine": "Its line stays in the tyre log, without the amount."
+    }
   },
   "import": {
     "title": "Import",
@@ -2689,6 +2701,27 @@
       "trashSwapUntil": "This removes the swap: {{set}} on the car from {{from}} to {{until}}. Its distance no longer counts.",
       "trashReading": "The reading of {{value}} no longer counts among the car's readings until the line is restored.",
       "restorable": "It can be restored from the trash."
+    },
+    "fee": {
+      "paid": "Paid",
+      "paidForSwap": "Paid for the swap",
+      "price": "Price",
+      "category": "Category",
+      "defaultCategory": "Tyres",
+      "amountHint": "Optional. An amount makes an expense on the Expenses tab.",
+      "emptyHint": "Emptying the amount moves the expense to the trash.",
+      "categoryHint": "The expense's category. Used only when an amount is typed.",
+      "linkedOdometerHint": "One of the car's readings. The expense shows the same one.",
+      "linkedDayHint": "Its expense and its reading carry the same day.",
+      "swapDayExpense": "Its expense and its reading move with it.",
+      "swapText": "Every swap is a Tyre swap line of the tyre log; the reading, the note and the fee are on it and can be added later.",
+      "priceText": "A price goes on a Bought line of the tyre log, on the day the set was bought.",
+      "boughtOn": "Bought on",
+      "boughtOnHint": "The day of the Bought line. For a set bought used, the day you bought it.",
+      "alsoExpense": "Also move its expense ({{amount}}) to the trash",
+      "stays": "Unticked, the expense stays on the Expenses tab.",
+      "staysWithReading": "Unticked, the expense stays on the Expenses tab, with the reading.",
+      "readingWithExpense": "With the expense in the trash too, the reading of {{value}} no longer counts among the car's readings until the line is restored."
     }
   }
 }

@@ -7,7 +7,7 @@ import { graphql } from '../../support/graphql.ts'
 import { answered, server } from '../../support/server.ts'
 import { connectivity } from '../../../src/offline/connectivity.ts'
 import { outbox } from '../../../src/offline/outbox.ts'
-import { fakeExpenseBackend, fakeVehicle, gqlError, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
+import { fakeExpense, fakeExpenseBackend, fakeVehicle, gqlError, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { UUID } from '../../support/ids.ts'
 import { fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
 import { findDateField, typeDate } from '../../support/dates.ts'
@@ -168,7 +168,7 @@ it('moves a swap to the trash from the history, its line with it, saying what th
   expect(confirm).toHaveTextContent("The reading of 141,000 km no longer counts among the car's readings until the line is restored.")
   await ui.click(within(confirm).getByRole('button', { name: 'Move to the trash' }))
 
-  await waitFor(() => expect(state.calls.DeleteTyreEntry).toEqual([{ id: 'r1' }]))
+  await waitFor(() => expect(state.calls.DeleteTyreEntry).toEqual([{ input: { id: 'r1', withExpense: false } }])) // it has no expense
   await ui.click(await screen.findByRole('button', { name: 'Undo', hidden: true })) // the history dialog is still open over the page
   await waitFor(() => expect(state.calls.RestoreTyreEntry).toEqual([{ id: 'r1' }]))
 })
@@ -222,6 +222,23 @@ it('lists trashed sets and tyre log lines on the Trash page, says why a restore 
 
   await ui.click(screen.getByRole('button', { name: 'Restore Set: Pirelli Cinturato' }))
   await waitFor(() => expect(calls.RestoreTyreSet).toEqual([{ id: 's9' }]))
+})
+
+it('says a line restored from the trash brought its expense back when the two went there together (#288)', async () => {
+  stubViewport('desktop')
+  const row = { __typename: 'TyreTrashRow', kind: 'ENTRY', entryKind: 'PUNCTURE_REPAIRED', id: 'e9', setName: 'Michelin Primacy 4', day: '2026-06-01', until: null, installationCount: 0,
+    deletedAt: '2026-11-09T21:14:00Z', version: 2, withExpense: true, canDelete: true, vehicle: { __typename: 'Vehicle', id: 'v1', name: 'Octavia' } }
+  server.use(
+    sessionHandler('NONE', () => null),
+    healthHandler,
+    graphql.query('TyreTrash', () => HttpResponse.json({ data: { tyreTrash: [row], tyreTrashCount: 1, tyreTrashDeletableCount: 1 } })),
+    graphql.mutation('RestoreTyreEntry', () => HttpResponse.json({ data: { restoreTyreEntry: { __typename: 'VehicleTyres', vehicleId: 'v1', hasReadings: false, expenseCategory: null, readings: [], entries: [], sets: [] } } })),
+  )
+  const ui = userEvent.setup()
+  renderWithApollo(<App />, '/trash?tab=tyres')
+
+  await ui.click(await screen.findByRole('button', { name: 'Restore Puncture repaired: Michelin Primacy 4' }))
+  expect(await screen.findByText('Restored, with its expense.')).toBeInTheDocument()
 })
 
 it('changes the positions of the set on the car: front and rear exchanged from a day', async () => {
@@ -302,13 +319,14 @@ it('changes a line from the log, and moves one to the trash after asking, with U
   await ui.clear(within(dialog).getByLabelText(/^Note/))
   await ui.type(within(dialog).getByLabelText(/^Note/), 'Front right')
   await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
-  await waitFor(() => expect(state.calls.UpdateTyreEntry).toEqual([{ input: { id: 'e1', kind: 'VALVE_REPLACED', setId: 's2', day: '2025-06-01', odometer: null, note: 'Front right' } }]))
+  await waitFor(() => expect(state.calls.UpdateTyreEntry).toHaveLength(1))
+  expect(state.calls.UpdateTyreEntry[0].input).toMatchObject({ id: 'e1', kind: 'VALVE_REPLACED', setId: 's2', day: '2025-06-01', odometer: null, note: 'Front right', fee: { amount: null } })
 
   await ui.click(within(log).getByRole('button', { name: 'Move to the trash: Valve replaced, Jun 1, 2025' }))
   const confirm = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
   expect(confirm).toHaveTextContent('Valve replaced, Continental WinterContact, Jun 1, 2025 · Pressure checked. It can be restored from the trash.')
   await ui.click(within(confirm).getByRole('button', { name: 'Move to the trash' }))
-  await waitFor(() => expect(state.calls.DeleteTyreEntry).toEqual([{ id: 'e1' }]))
+  await waitFor(() => expect(state.calls.DeleteTyreEntry).toEqual([{ input: { id: 'e1', withExpense: false } }]))
   await ui.click(await screen.findByRole('button', { name: 'Undo' }))
   await waitFor(() => expect(state.calls.RestoreTyreEntry).toEqual([{ id: 'e1' }]))
 })
@@ -327,7 +345,8 @@ it('keeps a swap’s line to its kind and set, saying why, and moves the swap wi
   await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
 
   expect(await within(dialog).findByText('The swap cannot move to or before 2025-11-15, the day Continental WinterContact went on the car before it.')).toBeInTheDocument()
-  expect(state.calls.UpdateTyreEntry).toEqual([{ input: { id: 'r1', kind: 'SWAP', setId: 's1', day: '2025-11-15', odometer: null, note: null } }])
+  expect(state.calls.UpdateTyreEntry).toHaveLength(1)
+  expect(state.calls.UpdateTyreEntry[0].input).toMatchObject({ id: 'r1', kind: 'SWAP', setId: 's1', day: '2025-11-15', odometer: null, note: null })
 })
 
 it('moves a set to the trash from its history, with Undo', async () => {
@@ -498,4 +517,123 @@ it('shows a line of no set with its kind and note, and the reading typed with it
 
   const line = await screen.findByRole('button', { name: 'Storage fee, Jun 1, 2025' })
   expect(line).toHaveTextContent('133,000 km · Winter tyres stored')
+})
+
+const expenseLine = { id: 'e1', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-06-01', odometer: 143_000, note: null, expenseId: 'x1', amount: 25_000, currency: 'HUF', category: 'Tyres' }
+
+it('adds a line with an amount: an expense in the vehicle’s currency and the Tyres category, titled by what was done and the set (#288)', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(await screen.findByRole('button', { name: 'Add entry' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add entry' })
+  expect(within(dialog).getByText('Optional. An amount makes an expense on the Expenses tab.')).toBeInTheDocument()
+  expect(within(dialog).getByLabelText(/^Category/)).toHaveValue('Tyres')
+  await ui.type(within(dialog).getByLabelText(/^Paid/), '25000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.AddTyreEntry).toHaveLength(1))
+  expect(state.calls.AddTyreEntry[0].input).toMatchObject({
+    kind: 'PUNCTURE_REPAIRED', fee: { amount: 25_000, currency: 'HUF', category: 'Tyres', title: 'Puncture repaired: Michelin Primacy 4', expenseId: UUID },
+  })
+})
+
+it('offers no amount for a note', async () => {
+  const { ui } = setup([summer, winter])
+
+  await ui.click(await screen.findByRole('button', { name: 'Add entry' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add entry' })
+  await ui.click(within(dialog).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Note' }))
+  expect(within(dialog).queryByLabelText(/^Paid/)).not.toBeInTheDocument()
+  expect(within(dialog).queryByLabelText(/^Category/)).not.toBeInTheDocument()
+})
+
+it('shows a line’s amount, and its bin asks whether the expense goes too, saying what stays (#288)', async () => {
+  const { ui, state } = setup([summer, winter], { entries: [expenseLine] })
+
+  const line = await screen.findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, Jun 1, 2026, HUF/ })
+  expect(line).toHaveTextContent(/25,000/)
+  await ui.click(screen.getByRole('button', { name: 'Move to the trash: Puncture repaired, Jun 1, 2026' }))
+  const confirm = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
+  const box = within(confirm).getByRole('checkbox', { name: /^Also move its expense \(HUF\s25,000(\.00)?\) to the trash$/ })
+  expect(box).toBeChecked()
+  expect(confirm).toHaveTextContent(/With the expense in the trash too, the reading of 143,000 km no longer counts/)
+  await ui.click(box)
+  expect(confirm).toHaveTextContent('Unticked, the expense stays on the Expenses tab, with the reading.')
+  await ui.click(within(confirm).getByRole('button', { name: 'Move to the trash' }))
+
+  await waitFor(() => expect(state.calls.DeleteTyreEntry).toEqual([{ input: { id: 'e1', withExpense: false } }]))
+})
+
+it('edits a line with an expense: its day and reading are said to be the expense’s too, and an emptied amount sends none (#288)', async () => {
+  const { ui, state } = setup([summer, winter], { entries: [expenseLine] })
+
+  await ui.click(await screen.findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, Jun 1, 2026/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit entry' })
+  expect(within(dialog).getByText('Its expense and its reading carry the same day.')).toBeInTheDocument()
+  expect(within(dialog).getByText(/^One of the car's readings\. The expense shows the same one\./)).toBeInTheDocument()
+  expect(within(dialog).getByText(/Emptying the amount moves the expense to the trash\./)).toBeInTheDocument()
+  await ui.clear(within(dialog).getByLabelText(/^Paid/))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.UpdateTyreEntry).toHaveLength(1))
+  expect(state.calls.UpdateTyreEntry[0].input).toMatchObject({ id: 'e1', fee: { amount: null } })
+})
+
+it('takes a swap’s fee, titled by the swap and the set going on (#288)', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Swap tyres' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Swap tyres' })
+  expect(within(dialog).getByText(/^Every swap is a Tyre swap line of the tyre log/)).toBeInTheDocument()
+  await typeDate(ui, await findDateField(/^Day/, dialog), '2026-06-01')
+  await ui.type(within(dialog).getByLabelText(/^Paid for the swap/), '8000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Swap tyres' }))
+
+  await waitFor(() => expect(state.calls.SwapTyres).toHaveLength(1))
+  expect(state.calls.SwapTyres[0].input).toMatchObject({ fee: { amount: 8000, currency: 'HUF', title: 'Tyre swap: Continental WinterContact', expenseId: UUID } })
+})
+
+it('asks a used set’s price for the day it was bought, starting from in use since (#288)', async () => {
+  const { ui, state } = setup([summer, winter])
+
+  await ui.click(await screen.findByRole('button', { name: 'Add a tyre set' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add a tyre set' })
+  await ui.type(within(dialog).getByLabelText(/^Name/), 'Nokian')
+  await typeDate(ui, await findDateField(/In use since/, dialog), '2024-05-01')
+  expect(within(dialog).queryByRole('group', { name: /^Bought on/ })).not.toBeInTheDocument()
+  await ui.type(within(dialog).getByLabelText(/^Price/), '120000')
+  expect(await findDateField(/^Bought on/, dialog)).toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save set' }))
+
+  await waitFor(() => expect(state.calls.AddTyreSet).toHaveLength(1))
+  expect(state.calls.AddTyreSet[0].input).toMatchObject({
+    name: 'Nokian', price: { amount: 120_000, currency: 'HUF', title: 'Bought: Nokian', expenseId: UUID }, boughtOn: '2024-05-01', boughtEntryId: UUID,
+  })
+})
+
+it('marks an expense a line made on the Expenses tab, and its edit dialog opens the line in the tyre log (#288)', async () => {
+  stubViewport('desktop')
+  const vehicle = fakeVehicle()
+  const expenses = fakeExpenseBackend(vehicle, [
+    fakeExpense({ id: 'x1', title: 'Puncture repaired: Michelin Primacy 4', category: 'Tyres', canDelete: true, tyreEntry: { __typename: 'TyreEntryRef', id: 'e1', kind: 'PUNCTURE_REPAIRED', setName: 'Michelin Primacy 4', trashed: false } }),
+  ])
+  const tyres = fakeTyres([summer, winter], [expenseLine])
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...expenses.handlers, ...tyres.handlers)
+  renderWithApollo(<App />, '/vehicles/v1?tab=expenses')
+  const ui = userEvent.setup()
+
+  const row = (await screen.findByText('Puncture repaired: Michelin Primacy 4')).closest('[role="row"]') as HTMLElement
+  expect(row).toHaveTextContent('Tyre log')
+  await ui.click(within(row).getByRole('button', { name: /^Delete/ }))
+  expect(await screen.findByRole('alertdialog')).toHaveTextContent('Its line stays in the tyre log, without the amount.')
+  await ui.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(within(row).getByRole('button', { name: /^Edit/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit expense' })
+  expect(await within(dialog).findByText(/Puncture repaired, Michelin Primacy 4\. The date and the odometer are the same there/)).toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('link', { name: 'Open in the tyre log' }))
+
+  expect(await screen.findByRole('dialog', { name: 'Edit entry' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Tyres', selected: true, hidden: true })).toBeInTheDocument() // behind the dialog
 })

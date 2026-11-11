@@ -111,7 +111,7 @@ public class ContractTests
     [InlineData("TyreInstallation", "id", "vehicleId", "setId", "from", "until", "pairOneFront", "isOpen", "deletedAt", "version", "updatedAt", "changedAt", "lastChange")]
     [InlineData("InstallationDistance", "distance", "approximate", "measure")]
     [InlineData("TyreEntry", "id", "vehicleId", "kind", "setId", "installationId", "isSwapLine", "day", "odometer", "note", "version", "updatedAt", "expenseId", "amount", "currency", "category", "expenseTrashed")]
-    [InlineData("TyreTrashRow", "kind", "id", "vehicleId", "setName", "entryKind", "day", "until", "installationCount", "deletedAt", "version", "vehicle", "canDelete")]
+    [InlineData("TyreTrashRow", "kind", "id", "vehicleId", "setName", "entryKind", "day", "until", "installationCount", "deletedAt", "version", "withExpense", "vehicle", "canDelete")]
     [InlineData("RemovedEntity", "type", "id")]
     [InlineData("OfflineSettingsInfo", "defaultWindow", "vehicles")]
     [InlineData("OfflineVehicleWindow", "vehicleId", "window")]

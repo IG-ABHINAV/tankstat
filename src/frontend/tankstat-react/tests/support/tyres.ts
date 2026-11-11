@@ -16,7 +16,11 @@ export const tyreWinter: FakeTyreSet = {
 }
 
 /** A tyre log line (#288) besides the swap lines every installation has (`lines` gives those a reading or a note). */
-export type FakeTyreEntry = { id: string; kind: string; setId: string | null; day: string; odometer: number | null; note: string | null }
+export type FakeTyreEntry = {
+  id: string; kind: string; setId: string | null; day: string; odometer: number | null; note: string | null
+  /** Its expense (#288): the amount and currency it shows; `expenseTrashed` while the expense is in the trash. */
+  expenseId?: string; amount?: number; currency?: string; category?: string; expenseTrashed?: boolean
+}
 
 /**
  * The server's answers as the tab reads them; the fake only records what was sent and answers with the state it was given. Every
@@ -34,11 +38,12 @@ export function fakeTyres(initial: FakeTyreSet[], entries: FakeTyreEntry[] = [],
       ...state.entries.map((e) => ({ ...e, installationId: null })),
     ]
       .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : a.id < b.id ? -1 : 1))
-      .map((e) => ({ __typename: 'TyreEntry', version: 1, ...e }))
+      .map((e) => ({ __typename: 'TyreEntry', version: 1, expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false, ...e }))
   const answer = () => ({
     __typename: 'VehicleTyres',
     vehicleId: 'v1',
     hasReadings: true,
+    expenseCategory: null,
     readings: [
       { __typename: 'OdometerPoint', date: '2026-03-01', value: 140_000 },
       { __typename: 'OdometerPoint', date: '2026-09-01', value: 147_000 },

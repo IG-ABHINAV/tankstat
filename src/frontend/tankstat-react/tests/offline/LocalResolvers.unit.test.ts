@@ -219,6 +219,24 @@ describe('a visit waiting on this device', () => {
     expect(outbox.markOf('recurring', 's2')).toBe('done')
   })
 
+  it('a tyre log line’s amount (#288) shows as its expense, new, with its line, in the vehicle\'s expenses', async () => {
+    const { outbox } = await import('../../src/offline/outbox.ts')
+    const { deviceData } = await import('../../src/offline/deviceData.ts')
+    const { withChanges } = await import('../../src/offline/localResolvers.ts')
+    deviceData.reset(memoryStorage())
+    await deviceData.signedIn('u1')
+    await outbox.reload()
+    const input = { vehicleId: 'v1', id: 'l1', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-10-05', odometer: 1500,
+      fee: { amount: 25, currency: 'EUR', category: 'Tyres', title: 'Puncture repaired: Michelin', expenseId: 'x9' } }
+    await outbox.enqueue({ id: 'line', entity: 'tyres', action: 'addTyreEntry', vehicleId: 'v1', targetId: 'l1', input })
+
+    const rows = withChanges('expenses', [], 'v1')
+
+    expect(rows).toMatchObject([{ __typename: 'Expense', id: 'x9', title: 'Puncture repaired: Michelin', amount: 25, currency: 'EUR', category: 'Tyres', date: '2026-10-05',
+      odometer: 1500, version: 1, tyreEntry: { id: 'l1', kind: 'PUNCTURE_REPAIRED', trashed: false } }])
+    expect(outbox.markOf('expenses', 'x9')).toBe('new')
+  })
+
   it('moves its schedules on as the server will: no longer due, the new baseline, one version more', async () => {
     const { outbox } = await import('../../src/offline/outbox.ts')
     const { deviceData } = await import('../../src/offline/deviceData.ts')

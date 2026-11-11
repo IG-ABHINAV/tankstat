@@ -267,7 +267,12 @@ function ExpenseTrash({ run, setNotice }: Shared) {
         />
       )}
       actions={(r) => (
-        <Button variant="soft" aria-label={t('trash.restoreAria', { name: r.title })} onClick={() => void run(() => restoreLog('expenses', r, () => restore({ variables: { id: r.id } })))}>
+        <Button variant="soft" aria-label={t('trash.restoreAria', { name: r.title })} onClick={() =>
+            void run(async () => {
+              await restoreLog('expenses', r, () => restore({ variables: { id: r.id } }))
+              if (r.tyreEntry?.trashed) setNotice(t('trash.restoredLineInTrash')) // only the expense comes back (#288)
+            })
+          }>
           {t('trash.restore')}
         </Button>
       )}
@@ -349,7 +354,15 @@ function TyreTrash({ run, setNotice }: Shared) {
         <Button
           variant="soft"
           aria-label={t('trash.restoreAria', { name: what(r) })}
-          onClick={() => void run(() => (r.kind === 'SET' ? restoreSet({ variables: { id: r.id } }) : restoreEntry({ variables: { id: r.id } })))}
+          onClick={() =>
+            void run(async () => {
+              if (r.kind === 'SET') await restoreSet({ variables: { id: r.id } })
+              else {
+                await restoreEntry({ variables: { id: r.id } })
+                setNotice(t(r.withExpense ? 'trash.tyres.restoredWithExpense' : 'trash.tyres.restored'))
+              }
+            })
+          }
         >
           {t('trash.restore')}
         </Button>

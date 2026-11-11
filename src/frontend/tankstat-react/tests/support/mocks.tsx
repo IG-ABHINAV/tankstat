@@ -842,6 +842,8 @@ export interface FakeExpense {
   filledFromPhoto: ('ODOMETER' | 'VOLUME' | 'TOTAL' | 'DISCOUNT')[]
   /** The recurring expenses it covered when they were marked done. */
   schedules?: { id: string; title: string }[]
+  /** The tyre log line it was made from (#288). */
+  tyreEntry?: { __typename: 'TyreEntryRef'; id: string; kind: string; setName: string | null; trashed: boolean } | null
   version: number
 }
 
@@ -861,6 +863,7 @@ export const fakeExpense = (over: Partial<FakeExpense> = {}): FakeExpense => ({
   createdBy: person('Alice'),
   reviewState: 'NONE',
   filledFromPhoto: [],
+  tyreEntry: null,
   version: 1,
   ...over,
 })

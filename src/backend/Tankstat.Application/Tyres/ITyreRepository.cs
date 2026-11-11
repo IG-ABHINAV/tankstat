@@ -82,9 +82,10 @@ public sealed class TyreSave
 /// <param name="Day">For a line: its day.</param>
 /// <param name="Until">For a swap's line: the day its installation came off (null while it would still be on the car).</param>
 /// <param name="InstallationCount">For a set: its installations that come back with it.</param>
+/// <param name="WithExpense">For a line: its expense went to the trash with it and comes back with it (#288).</param>
 public sealed record TyreTrashRow(
     TyreTrashKind Kind, Guid Id, Guid VehicleId, string? SetName, TyreEntryKind? EntryKind, DateOnly? Day, DateOnly? Until, int InstallationCount,
-    DateTimeOffset DeletedAt, int Version);
+    DateTimeOffset DeletedAt, int Version, bool WithExpense = false);
 
 public enum TyreTrashKind
 {

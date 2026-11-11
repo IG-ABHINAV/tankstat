@@ -532,7 +532,7 @@ internal sealed class InMemoryTyres : ITyreRepository
             .Select(s => new TyreTrashRow(TyreTrashKind.Set, s.Id, s.VehicleId, s.Name, null, null, null, Installations.Count(x => x.SetId == s.Id && !x.IsDeleted), s.DeletedAt!.Value, s.Version))
             .Concat(Entries.Where(e => e.IsDeleted && scope.Contains(e.OwnerId, e.VehicleId) && (e.SetId is null || Sets.Any(s => s.Id == e.SetId && !s.IsDeleted)))
                 .Select(e => new TyreTrashRow(TyreTrashKind.Entry, e.Id, e.VehicleId, Sets.FirstOrDefault(s => s.Id == e.SetId)?.Name, e.Kind, e.Day,
-                    Installations.FirstOrDefault(x => x.Id == e.InstallationId)?.Until, 0, e.DeletedAt!.Value, e.Version)));
+                    Installations.FirstOrDefault(x => x.Id == e.InstallationId)?.Until, 0, e.DeletedAt!.Value, e.Version, e.ExpenseTrashedWithEntry)));
 
     // As the repository orders it: by when it was trashed either way, then always by id.
     public Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct, bool descending = true) =>

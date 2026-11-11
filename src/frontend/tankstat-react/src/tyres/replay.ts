@@ -58,8 +58,33 @@ const text = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v.trim(
 
 const lineOf = (e: Entry): LineState => ({ id: e.id, kind: e.kind, setId: e.setId ?? null, installationId: e.installationId ?? null, day: e.day, odometer: e.odometer ?? null, note: e.note ?? null })
 
-/** A line the change made or changed: version 0, so a later change of it goes without the version the server will have moved on from. */
-const entryOf = (l: LineState): Entry => named<Entry>('TyreEntry', { ...l, version: 0 })
+type Money = Pick<Entry, 'expenseId' | 'amount' | 'currency' | 'category' | 'expenseTrashed'>
+const NO_MONEY: Money = { expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false }
+const moneyOf = (e: Entry | undefined): Money =>
+  e ? { expenseId: e.expenseId ?? null, amount: e.amount ?? null, currency: e.currency ?? null, category: e.category ?? null, expenseTrashed: e.expenseTrashed } : NO_MONEY
+
+/**
+ * A line the change made or changed: version 0, so a later change of it goes without the version the server will have moved on from. Its
+ * amount (#288) is the one it had, unless `money` says otherwise.
+ */
+const entryOf = (l: LineState, was?: Entry, money?: Money): Entry => named<Entry>('TyreEntry', { ...(money ?? moneyOf(was)), ...l, version: 0 })
+
+/**
+ * The amount a change gives a line (#288), as the server's `ApplyFeeAsync`: none sent leaves it; an empty one puts its expense in the trash
+ * (the line shows none); one typed makes or changes it (the expense's id the change's own when it makes one).
+ */
+function feeOn(line: Entry, fee: unknown): Money {
+  const money = moneyOf(line)
+  if (!fee || typeof fee !== 'object') return money
+  const f = fee as Record<string, unknown>
+  if (num(f.amount) === null) return { ...money, amount: null, expenseTrashed: money.expenseId !== null }
+  if (line.kind === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
+  return { expenseId: money.expenseId ?? (day(f.expenseId) || null), amount: num(f.amount), currency: str(f.currency) || money.currency, category: text(f.category), expenseTrashed: false }
+}
+
+const withFee = (m: Model, id: string, fee: unknown) => {
+  m.entries = m.entries.map((e) => (e.id === id ? entryOf(lineOf(e), e, feeOn(e, fee)) : e))
+}
 
 const LINE_KINDS = new Set(['SWAP', 'POSITIONS_CHANGED'])
 
@@ -70,7 +95,9 @@ function history(m: Model, after: InstallationState[], joined: Joined[], changeI
   m.installations = after
   m.entries = followed.lines.map((l) => {
     const was = before.find((e) => e.id === l.id)
-    return was && JSON.stringify(lineOf(was)) === JSON.stringify(l) ? was : entryOf(l)
+    if (was && JSON.stringify(lineOf(was)) === JSON.stringify(l)) return was
+    // A swap the history trashes takes its amount along (the owner's choice): it is gone from the log with it; a moved one keeps it.
+    return entryOf(l, was) // a kept line is new: no amount
   })
 }
 
@@ -78,15 +105,21 @@ function history(m: Model, after: InstallationState[], joined: Joined[], changeI
  * What was typed with a change (a reading, a note) goes on the line of the installation that starts that day, else (a join made none that
  * day) on a Note line of the set, as the server's `TypedAsync`. A note left out leaves the line's.
  */
-function typed(m: Model, setId: string, on: string | null, odometer: number | null, note: string | null, changeId: string) {
-  if (!on || (odometer === null && note === null)) return
+function typed(m: Model, setId: string, on: string | null, odometer: number | null, note: string | null, changeId: string, fee?: unknown, id?: string) {
+  const paid = !!fee && typeof fee === 'object' && num((fee as Record<string, unknown>).amount) !== null
+  if (!on || (odometer === null && note === null && !paid)) return
   const starting = m.installations.find((x) => x.from === on)
   const line = starting ? m.entries.find((e) => e.id === starting.id) : undefined
   if (line) {
-    m.entries = m.entries.map((e) => (e === line ? entryOf({ ...lineOf(e), odometer: odometer ?? e.odometer ?? null, note: note ?? e.note ?? null }) : e))
+    const kind = paid && line.kind === 'NOTE' ? 'OTHER' : line.kind
+    m.entries = m.entries.map((e) => (e === line ? entryOf({ ...lineOf(e), kind, odometer: odometer ?? e.odometer ?? null, note: note ?? e.note ?? null }, e) : e))
+    withFee(m, line.id, fee)
     return
   }
-  m.entries = [...m.entries, entryOf({ id: `${changeId}:note:${on}`, kind: 'NOTE', setId, installationId: null, day: on, odometer, note })]
+  // No installation starts that day (a join): a line of the set of its own, an Other one when it carries an amount (a note takes none).
+  const made = entryOf({ id: id && !m.entries.some((e) => e.id === id) ? id : `${changeId}:note:${on}`, kind: paid ? 'OTHER' : 'NOTE', setId, installationId: null, day: on, odometer, note })
+  m.entries = [...m.entries, made]
+  withFee(m, made.id, fee)
 }
 
 /** A swap of a set onto the car: the history's rule, and the lines that follow it. */
@@ -115,6 +148,12 @@ function apply(m: Model, c: Change, vehicleId: string) {
       if (input.fitted === true) {
         swapped(m, c, str(input.id), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
         typed(m, str(input.id), day(input.day), num(input.odometer), null, c.id)
+      }
+      // Its price (#288): a Bought line on the day it was bought, with the amount.
+      if (input.price && num((input.price as Record<string, unknown>).amount) !== null) {
+        const bought = entryOf({ id: str(input.boughtEntryId) || `${c.id}:bought`, kind: 'BOUGHT', setId: str(input.id), installationId: null, day: day(input.boughtOn) ?? str(input.day), odometer: null, note: null })
+        m.entries = [...m.entries, bought]
+        withFee(m, bought.id, input.price)
       }
       return
     }
@@ -155,12 +194,12 @@ function apply(m: Model, c: Change, vehicleId: string) {
     case 'swapTyres':
       setOf(m, input.setId)
       swapped(m, c, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
-      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id)
+      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id, input.fee, str(input.installationId) || undefined)
       return
     case 'changeTyrePositions':
       setOf(m, input.setId)
       history(m, changePositions(states(m), m.installations, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, str(input.installationId) || c.id), [], c.id)
-      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id)
+      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id, input.fee, str(input.installationId) || undefined)
       return
     case 'addPastTyreSwaps': {
       const rows = (Array.isArray(input.swaps) ? (input.swaps as Record<string, unknown>[]) : []).slice().sort((a, b) => (str(a.day) < str(b.day) ? -1 : 1))
@@ -206,7 +245,9 @@ function apply(m: Model, c: Change, vehicleId: string) {
       const kind = str(input.kind) as Entry['kind']
       if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
       if (input.setId) setOf(m, input.setId)
-      m.entries = [...m.entries, entryOf({ id: str(input.id) || c.id, kind, setId: day(input.setId), installationId: null, day: str(input.day), odometer: num(input.odometer), note: text(input.note) })]
+      const added = entryOf({ id: str(input.id) || c.id, kind, setId: day(input.setId), installationId: null, day: str(input.day), odometer: num(input.odometer), note: text(input.note) })
+      m.entries = [...m.entries, added]
+      withFee(m, added.id, input.fee)
       return
     }
     case 'updateTyreEntry': {
@@ -222,7 +263,8 @@ function apply(m: Model, c: Change, vehicleId: string) {
         if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
         if (setId && setId !== line.setId) setOf(m, setId)
       }
-      m.entries = m.entries.map((e) => (e.id === line.id ? entryOf({ ...lineOf(e), kind, setId, day: on, odometer: num(input.odometer), note: text(input.note) }) : e))
+      m.entries = m.entries.map((e) => (e.id === line.id ? entryOf({ ...lineOf(e), kind, setId, day: on, odometer: num(input.odometer), note: text(input.note) }, e) : e))
+      withFee(m, line.id, input.fee)
       return
     }
     case 'deleteTyreEntry': {
@@ -322,4 +364,4 @@ export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed 
 }
 
 /** The answer of a vehicle the server has no tyres of yet as far as this device knows (added here, or never downloaded): nothing. */
-export const noTyres = (vehicleId: string): Tyres => named<Tyres>('VehicleTyres', { vehicleId, sets: [], entries: [], readings: [], hasReadings: false })
+export const noTyres = (vehicleId: string): Tyres => named<Tyres>('VehicleTyres', { vehicleId, sets: [], entries: [], readings: [], hasReadings: false, expenseCategory: null })

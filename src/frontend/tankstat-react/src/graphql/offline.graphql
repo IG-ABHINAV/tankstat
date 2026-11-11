@@ -61,6 +61,12 @@ fragment OfflineExpenseFields on Expense {
     id
     title
   }
+  tyreEntry {
+    id
+    kind
+    setName
+    trashed
+  }
   photos {
     id
     url

@@ -16,11 +16,13 @@ const set = (id: string, name: string, onTheCar: boolean, installations: ReturnT
 })
 const line = (id: string, setId: string | null, day: string, kind: Tyres['entries'][number]['kind'] = 'SWAP', odometer: number | null = null, note: string | null = null) => ({
   id, kind, setId, installationId: kind === 'SWAP' ? id : null, day, odometer, note, version: 4,
+  expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false,
 })
 const base: Tyres = {
   vehicleId: 'v1',
   hasReadings: true,
   readings: [{ date: '2026-03-01', value: 140_000 }],
+  expenseCategory: null,
   entries: [line('r1', 's1', '2026-03-28'), line('r2', 's2', '2025-11-15')],
   sets: [
     set('s2', 'Continental WinterContact', false, [installation('r2', 's2', '2025-11-15', '2026-03-28')]),
@@ -198,5 +200,35 @@ describe('an answer an older build kept', () => {
     const old = { ...rest, days: [{ id: 'd', day: '2026-03-28', odometer: 140_000, note: null, version: 1 }] } as unknown as Tyres
     expect(() => replayTyres(old, [change('addTyreEntry', { vehicleId: 'v1', id: 'e', kind: 'NOTE', day: '2026-06-01', note: 'x' })])).not.toThrow()
     expect(replayTyres(old, []).tyres.entries).toEqual([])
+  })
+})
+
+describe('a line’s amount waiting on the device (#288)', () => {
+  const fee = (amount: number | null, expenseId = 'x1') => ({ amount, currency: 'HUF', category: 'Tyres', title: 'Puncture repaired', expenseId })
+
+  it('shows on its line, and emptied it is gone (its expense in the trash)', () => {
+    const added = replayTyres(base, [change('addTyreEntry', { vehicleId: 'v1', id: 'e1', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-06-01', fee: fee(25_000) })]).tyres
+    expect(added.entries[0]).toMatchObject({ id: 'e1', expenseId: 'x1', amount: 25_000, currency: 'HUF', category: 'Tyres', expenseTrashed: false })
+
+    const emptied = replayTyres(added, [change('updateTyreEntry', { id: 'e1', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-06-01', fee: { amount: null } })]).tyres
+    expect(emptied.entries[0]).toMatchObject({ expenseId: 'x1', amount: null, expenseTrashed: true })
+    expect(() => applyTyreChange(base, change('addTyreEntry', { vehicleId: 'v1', id: 'n', kind: 'NOTE', day: '2026-06-01', fee: fee(5) }))).toThrow(expect.objectContaining({ key: 'tyres.noteTakesNoAmount' }))
+  })
+
+  it('a swap’s fee is on its line, and a set’s price on a Bought line on the day it was bought', () => {
+    const swapped = replayTyres(base, [change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-11-10', pairOneFront: null, replace: false, installationId: 'n1', fee: fee(8000, 'x2') })]).tyres
+    expect(swapped.entries[0]).toMatchObject({ id: 'n1', kind: 'SWAP', amount: 8000, expenseId: 'x2' })
+
+    const bought = replayTyres(base, [change('addTyreSet', {
+      id: 'n', vehicleId: 'v1', name: 'Nokian', season: 'WINTER', since: '2024-05-01', fitted: false, day: '2026-11-10', roughDistance: 0, replace: false,
+      price: fee(120_000, 'x3'), boughtOn: '2024-05-01', boughtEntryId: 'b1',
+    })]).tyres
+    expect(bought.entries.find((e) => e.id === 'b1')).toMatchObject({ kind: 'BOUGHT', setId: 'n', day: '2024-05-01', amount: 120_000, expenseId: 'x3' })
+  })
+
+  it('a moved swap keeps its fee', () => {
+    const withFee: Tyres = { ...base, entries: base.entries.map((e) => (e.id === 'r1' ? { ...e, expenseId: 'x1', amount: 60, currency: 'EUR' } : e)) }
+    const moved = applyTyreChange(withFee, change('updateTyreEntry', { id: 'r1', kind: 'SWAP', setId: 's1', day: '2026-04-02' }))
+    expect(moved.entries.find((e) => e.id === 'r1')).toMatchObject({ day: '2026-04-02', expenseId: 'x1', amount: 60 })
   })
 })

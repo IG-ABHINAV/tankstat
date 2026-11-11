@@ -35,11 +35,17 @@ fragment TyreEntryFields on TyreEntry {
   odometer
   note
   version
+  expenseId
+  amount
+  currency
+  category
+  expenseTrashed
 }
 
 fragment VehicleTyresFields on VehicleTyres {
   vehicleId
   hasReadings
+  expenseCategory
   readings {
     date
     value
@@ -156,8 +162,8 @@ mutation UpdateTyreEntry($input: UpdateTyreEntryInput!) {
   }
 }
 
-mutation DeleteTyreEntry($id: UUID!) {
-  deleteTyreEntry(id: $id) {
+mutation DeleteTyreEntry($input: DeleteTyreEntryInput!) {
+  deleteTyreEntry(input: $input) {
     ...VehicleTyresFields
   }
 }
@@ -203,6 +209,7 @@ query TyreTrash($orderBy: TyreTrashSortField!, $direction: SortDirection!, $skip
     installationCount
     deletedAt
     version
+    withExpense
     canDelete
     vehicle {
       id

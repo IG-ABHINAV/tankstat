@@ -1075,6 +1075,7 @@ type TyreTrashRow {
   installationCount: Int!
   deletedAt: DateTime!
   version: Int!
+  withExpense: Boolean!
   vehicle: Vehicle @cost(weight: "10")
   canDelete: Boolean! @cost(weight: "10")
 }

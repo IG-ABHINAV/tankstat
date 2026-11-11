@@ -10,7 +10,7 @@ setupAccessibilityTests()
 const withTyres = (route: string) => {
   const opened = setup(route)
   server.use(
-    ...fakeTyres([tyreSummer, tyreWinter], [{ id: 'e1', kind: 'STORAGE_FEE', setId: null, day: '2025-06-01', odometer: null, note: 'Stored' }], { r1: { odometer: 141_000 } }).handlers,
+    ...fakeTyres([tyreSummer, tyreWinter], [{ id: 'e1', kind: 'STORAGE_FEE', setId: null, day: '2025-06-01', odometer: 133_000, note: 'Stored', expenseId: 'x1', amount: 9000, currency: 'HUF', category: 'Tyres' }], { r1: { odometer: 141_000 } }).handlers,
   )
   return opened
 }
@@ -65,6 +65,7 @@ it('the tyre log’s entry dialogs and the remove dialog are labelled and free o
   await ui.click(within(edit).getByRole('button', { name: 'Cancel' }))
 
   await ui.click(screen.getByRole('button', { name: 'Move to the trash: Storage fee, Jun 1, 2025' }))
-  await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
+  const confirm = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
+  expect(within(confirm).getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked() // #288: the box, labelled
   await check(document.body)
 })

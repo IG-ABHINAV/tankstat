@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography'
 import { Archive, ArrowLeftRight, ArrowUpDown, CircleDot, CloudUpload, History, NotebookPen, Plus, Snowflake, Sun } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router'
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx'
 import { Loading } from '../../components/Loading.tsx'
 import { todayIso } from '../../forms/dates.ts'
@@ -289,6 +290,16 @@ function SetCard({
  */
 function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: string; unit: DistanceUnit; canLog: boolean }) {
   const { t } = useTranslation()
+  // An expense's *Open in the tyre log* (#288) opens its line's dialog; closed, the address forgets it.
+  const [params, setParams] = useSearchParams()
+  const asked = params.get('entry')
+  const closeAsked = (open: boolean) => {
+    if (open) return
+    setParams((p) => {
+      p.delete('entry')
+      return p
+    }, { replace: true })
+  }
   const format = useFormat()
   const words = useTyreWords(unit)
   const entryWords = useEntryWords()
@@ -325,6 +336,11 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                       {set}
                     </Typography>
                   )}
+                  {entryWords.amount(entry) && (
+                    <Typography component="span" variant="body2" sx={{ ml: { sm: 'auto' }, fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      {entryWords.amount(entry)}
+                    </Typography>
+                  )}
                 </Stack>
                 {(odometer || entry.note) && (
                   <Typography component="span" variant="body2" sx={{ display: 'block', color: 'text.secondary', overflowWrap: 'anywhere' }}>
@@ -341,6 +357,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                     unit={unit}
                     tyres={tyres}
                     entry={entry}
+                    {...(asked === entry.id ? { open: true, onOpenChange: closeAsked } : {})}
                     trigger={
                       <ButtonBase
                         aria-label={entryWords.name(tyres, entry)}

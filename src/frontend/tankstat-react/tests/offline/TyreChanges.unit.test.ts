@@ -30,13 +30,17 @@ describe('tyre changes kept on the device (#287)', () => {
     expect(batches([addSet, swap, positions, other]).map((b) => b.map((c) => c.action))).toEqual([['addTyreSet'], ['swapTyres', 'changeTyrePositions', 'updateTyreSet']])
   })
 
-  it('a tyre log line (#288): an add creates it, a change of a swap’s line needs the swap that made it, a trash goes as a bare id', () => {
+  it('a tyre log line (#288): an add creates it (and the expense its amount makes), a change of a swap’s line needs the swap, a trash says whether its expense goes too', () => {
     const addLine = tyre('addTyreEntry', { vehicleId: 'v1', id: 'e1', kind: 'NOTE', setId: 'n', day: '2026-11-12', note: 'x' }, 'e1')
     const swapLine = tyre('updateTyreEntry', { id: 'st', kind: 'SWAP', setId: 'n', day: '2026-11-11' }, 'st')
-    const trashLine = tyre('deleteTyreEntry', { id: 'e1' }, 'e1')
+    const trashLine = tyre('deleteTyreEntry', { id: 'e1', withExpense: true }, 'e1')
     expect([tyreTarget('addTyreEntry', addLine.input), tyreCreates('addTyreEntry', addLine.input), tyreNeeds('addTyreEntry', addLine.input)]).toEqual(['e1', ['e1'], ['n']])
     expect([tyreTarget('updateTyreEntry', swapLine.input), tyreCreates('updateTyreEntry', swapLine.input), tyreNeeds('updateTyreEntry', swapLine.input)]).toEqual(['st', [], ['st', 'n']])
-    expect(toChangeInput({ ...trashLine, expectedVersion: 2 })).toEqual({ id: trashLine.id, expectedVersion: 2, deleteTyreEntry: 'e1' })
+    expect(toChangeInput({ ...trashLine, expectedVersion: 2 })).toEqual({ id: trashLine.id, expectedVersion: 2, deleteTyreEntry: { id: 'e1', withExpense: true } })
+    const paid = { vehicleId: 'v1', id: 'e2', kind: 'OTHER', day: '2026-11-12', fee: { amount: 25, currency: 'EUR', title: 'Other', expenseId: 'x2' } }
+    expect(tyreCreates('addTyreEntry', paid)).toEqual(['e2', 'x2'])
+    expect(tyreCreates('swapTyres', { ...swap.input, fee: { amount: 60, expenseId: 'x3' } })).toEqual(['st', 'x3'])
+    expect(tyreCreates('addTyreSet', { ...addSet.input, price: { amount: 480, expenseId: 'x4' }, boughtEntryId: 'b4' })).toEqual(['n', 'ns', 'b4', 'x4'])
     expect(discard([addSet, swap, swapLine, addLine, trashLine, other], swap.id)).toEqual([addSet, addLine, trashLine, other]) // the swap's line goes with it
     expect(discard([addSet, swap, swapLine, addLine, trashLine, other], addLine.id)).toEqual([addSet, swap, swapLine, other])
   })

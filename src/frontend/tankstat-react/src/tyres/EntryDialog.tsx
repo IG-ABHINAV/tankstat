@@ -1,5 +1,8 @@
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 import { Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,7 +29,8 @@ import {
 } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
 import { ErrorMessage } from '../messages.tsx'
-import { ENTRY_KINDS, isSwapLine, useEntryWords } from './entries.ts'
+import { ENTRY_KINDS, feeOf, isSwapLine, useEntryWords } from './entries.ts'
+import { FeeFields } from './FeeFields.tsx'
 import { type TyreEntry, type Tyres, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 /**
@@ -40,6 +44,8 @@ export function EntryDialog({
   unit,
   tyres,
   entry,
+  open: openAsked,
+  onOpenChange,
 }: {
   trigger: ReactNode
   vehicleId: string
@@ -47,15 +53,21 @@ export function EntryDialog({
   tyres: Tyres
   /** The line to change; none adds one. */
   entry?: TyreEntry
+  /** Opened by something else (an expense's *Open in the tyre log*). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const { t } = useTranslation()
   const words = useTyreWords(unit)
   const entryWords = useEntryWords()
   const notify = useTyreToasts()
   const run = useTyreMutation(vehicleId)
-  const [open, setOpen] = useDialogState()
+  const [open, setOpen] = useDialogState({ open: openAsked, onOpenChange })
   const id = useClientId(open)
+  const expenseId = useClientId(open)
   const locked = !!entry && isSwapLine(entry)
+  // Its expense (#288): the amount, live or in the trash, and whether the day and the reading are shared with one now.
+  const linked = !!entry?.expenseId && !entry.expenseTrashed
   const [kind, setKind] = useState<TyreEntryKind>(entry?.kind ?? 'PUNCTURE_REPAIRED')
   const [setId, setSet] = useState(entry?.setId ?? '')
   const [day, setDay] = useState(entry?.day ?? todayIso())
@@ -76,7 +88,11 @@ export function EntryDialog({
     setBusy(true)
     setError(undefined)
     try {
-      const values = { kind, setId: setId || null, day: text('day'), odometer: wholeOrNull(text('odometer')), note: text('note') || null }
+      // A note takes no amount: one it had (another kind before) goes, with its expense, to the trash.
+      const fee = kind === 'NOTE'
+        ? entry?.expenseId ? { amount: null } : null
+        : feeOf(form, entryWords.feeTitle(kind, entryWords.setName(tyres, setId || null)), expenseId)
+      const values = { kind, setId: setId || null, day: text('day'), odometer: wholeOrNull(text('odometer')), note: text('note') || null, ...(fee ? { fee } : {}) }
       const saved = entry
         ? await run(UpdateTyreEntryDocument, { input: { id: entry.id, ...values } })
         : await run(AddTyreEntryDocument, { input: { vehicleId, id, ...values } })
@@ -134,18 +150,34 @@ export function EntryDialog({
                   options={sets}
                   onChange={setSet}
                 />
-                <Field name="day" label={t('tyres.fields.day')} hint={locked ? t('tyres.entries.swapDayHint') : undefined} required>
+                <Field
+                  name="day"
+                  label={t('tyres.fields.day')}
+                  hint={[locked ? t('tyres.entries.swapDayHint') : '', linked ? t(locked ? 'tyres.fee.swapDayExpense' : 'tyres.fee.linkedDayHint') : ''].filter(Boolean).join(' ') || undefined}
+                  required
+                >
                   <FieldDate disableFuture value={day} onChange={setDay} />
                 </Field>
                 <Field
                   name="odometer"
                   label={t('tyres.fields.odometer', { unit: words.unitShort })}
-                  hint={[t('tyres.entries.odometerHint'), words.neighbourText(tyres.readings.filter((r) => r.date !== entry?.day || r.value !== entry?.odometer), day)].filter(Boolean).join(' ')}
+                  hint={[t(linked ? 'tyres.fee.linkedOdometerHint' : 'tyres.entries.odometerHint'), words.neighbourText(tyres.readings.filter((r) => r.date !== entry?.day || r.value !== entry?.odometer), day)].filter(Boolean).join(' ')}
                   invalid={wholeInvalid(t('forms.numberInvalid'))}
                 >
                   <FieldInput inputMode="numeric" autoComplete="off" defaultValue={entry?.odometer == null ? '' : String(entry.odometer)} />
                 </Field>
               </Stack>
+              {kind !== 'NOTE' && (
+                <FeeFields
+                  vehicleId={vehicleId}
+                  tyres={tyres}
+                  label={t('tyres.fee.paid')}
+                  amount={entry?.amount}
+                  currency={entry?.currency}
+                  category={entry?.category}
+                  linked={linked}
+                />
+              )}
               <Field name="note" label={t('tyres.fields.note')}>
                 <FieldInput maxLength={500} autoComplete="off" defaultValue={entry?.note ?? ''} />
               </Field>
@@ -166,7 +198,8 @@ export function EntryDialog({
 
 /**
  * Moves a line to the trash, asking first (#288): the line in one sentence; for a swap's line, that the swap goes with it (its time on the
- * car no longer counts); for a line with a reading, that the reading no longer counts until the line is restored. Undo restores it.
+ * car no longer counts); with an expense, a box (ticked at first) to move that along too, else it stays with the reading; and when the
+ * reading goes with them, that it no longer counts until the line is restored. Undo restores it (its expense with it when it went along).
  */
 export function TrashEntryDialog({
   vehicleId,
@@ -196,12 +229,15 @@ export function TrashEntryDialog({
         ? t('tyres.entries.trashSwapUntil', { set, from: format.date(installation.from), until: format.date(installation.until) })
         : t('tyres.entries.trashSwap', { set, from: format.date(installation.from) }),
     )
-  if (entry.odometer != null) parts.push(t('tyres.entries.trashReading', { value: words.distance(entry.odometer) }))
+  const expense = entry.expenseId && !entry.expenseTrashed && entry.amount != null
+  const [withExpense, setWithExpense] = useState(true)
+  if (!expense && entry.odometer != null) parts.push(t('tyres.entries.trashReading', { value: words.distance(entry.odometer) }))
   parts.push(t('tyres.entries.restorable'))
+  const reading = entry.odometer != null ? words.distance(entry.odometer) : null
 
   const trash = async () => {
     try {
-      const saved = await run(DeleteTyreEntryDocument, { id: entry.id })
+      const saved = await run(DeleteTyreEntryDocument, { input: { id: entry.id, withExpense: !!expense && withExpense } })
       notify.undoable(saved, t('tyres.toast.trashed'), () => run(RestoreTyreEntryDocument, { id: entry.id }))
     } catch (err) {
       onError(err)
@@ -218,6 +254,21 @@ export function TrashEntryDialog({
       description={parts.join(' ')}
       confirmLabel={t('tyres.dialogs.toTrash')}
       onConfirm={() => void trash()}
-    />
+      onClosed={() => setWithExpense(true)}
+    >
+      {expense && (
+        <Stack sx={{ gap: 0.5, mb: 1 }}>
+          <FormControlLabel
+            control={<Checkbox checked={withExpense} onChange={(e) => setWithExpense(e.target.checked)} />}
+            label={t('tyres.fee.alsoExpense', { amount: format.money(entry.amount!, entry.currency ?? '') })}
+          />
+          <Typography variant="body2" sx={{ color: 'text.secondary' }} aria-live="polite">
+            {withExpense
+              ? reading && t('tyres.fee.readingWithExpense', { value: reading })
+              : t(reading ? 'tyres.fee.staysWithReading' : 'tyres.fee.stays')}
+          </Typography>
+        </Stack>
+      )}
+    </ConfirmDialog>
   )
 }

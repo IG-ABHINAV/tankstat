@@ -162,7 +162,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         var ordered = descending ? trash.OrderByDescending(r => r.DeletedAt) : trash.OrderBy(r => r.DeletedAt);
         var rows = await ordered.ThenBy(r => r.Id).Skip(skip).Take(take).ToListAsync(ct);
         return [.. rows.Select(r => new TyreTrashRow(r.IsSet ? TyreTrashKind.Set : TyreTrashKind.Entry, r.Id, r.VehicleId, r.SetName,
-            r.EntryKind is null ? null : Enum.Parse<TyreEntryKind>(r.EntryKind), r.Day, r.Until, r.InstallationCount, r.DeletedAt, r.Version))];
+            r.EntryKind is null ? null : Enum.Parse<TyreEntryKind>(r.EntryKind), r.Day, r.Until, r.InstallationCount, r.DeletedAt, r.Version, r.WithExpense))];
     }
 
     public async Task<int> CountTrashAsync(OwnerScope scope, CancellationToken ct)
@@ -202,6 +202,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
             {
                 IsSet = true, Id = s.Id, VehicleId = s.VehicleId, SetName = s.Name, EntryKind = null, Day = (DateOnly?)null, Until = (DateOnly?)null,
                 InstallationCount = db.TyreInstallations.Count(x => x.SetId == s.Id && x.DeletedAt == null), DeletedAt = s.DeletedAt!.Value, Version = s.Version,
+                WithExpense = false,
             });
         var entries = db.TyreEntries.IgnoreQueryFilters().Where(e => e.DeletedAt != null).InScope(scope, e => e.VehicleId)
             .Where(e => e.SetId == null || db.TyreSets.Any(s => s.Id == e.SetId && s.DeletedAt == null))
@@ -209,7 +210,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
             {
                 IsSet = false, Id = e.Id, VehicleId = e.VehicleId, SetName = db.TyreSets.Where(s => s.Id == e.SetId).Select(s => s.Name).FirstOrDefault(),
                 EntryKind = e.Kind.ToString(), Day = e.Day, Until = db.TyreInstallations.Where(x => x.Id == e.InstallationId).Select(x => x.Until).FirstOrDefault(),
-                InstallationCount = 0, DeletedAt = e.DeletedAt!.Value, Version = e.Version,
+                InstallationCount = 0, DeletedAt = e.DeletedAt!.Value, Version = e.Version, WithExpense = e.ExpenseTrashedWithEntry,
             });
         return sets.Concat(entries);
     }
@@ -228,5 +229,6 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         public int InstallationCount { get; init; }
         public DateTimeOffset DeletedAt { get; init; }
         public int Version { get; init; }
+        public bool WithExpense { get; init; }
     }
 }
