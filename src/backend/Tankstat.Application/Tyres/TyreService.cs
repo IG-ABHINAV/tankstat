@@ -84,7 +84,7 @@ public sealed class TyreService(
         {
             var history = History(vehicle, book, extra: set);
             Follow(save, book, history, history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId), by);
-            await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, note: null, by, ct);
+            await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, note: null, by, ct, installationId);
         }
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added tyre set {SetId} to vehicle {VehicleId}", by, set.Id, vehicle.Id);
@@ -137,7 +137,7 @@ public sealed class TyreService(
         var save = new TyreSave();
         var history = History(vehicle, book);
         Follow(save, book, history, history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId, repeatable: repeat), by);
-        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct);
+        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId);
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -157,7 +157,7 @@ public sealed class TyreService(
         var save = new TyreSave();
         var history = History(vehicle, book);
         Follow(save, book, history, history.ChangePositions(set, input.Day, input.PairOneFront, by, installationId, repeatable: repeat), by);
-        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct);
+        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId);
         await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -192,7 +192,7 @@ public sealed class TyreService(
         {
             RequireNotFuture(row.Day);
             Follow(save, book, history, history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.InstallationId, pairsGiven: false, repeatable: repeat), by);
-            await TypedAsync(vehicle, book, save, history, row.SetId, row.Day, row.Odometer, note: null, by, ct);
+            await TypedAsync(vehicle, book, save, history, row.SetId, row.Day, row.Odometer, note: null, by, ct, row.InstallationId);
         }
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added {Count} past tyre swaps to vehicle {VehicleId}", by, rows.Count, vehicle.Id);
@@ -227,7 +227,13 @@ public sealed class TyreService(
         if (history.Edit(installation, input.From, input.Until, input.PairOneFront, by))
         {
             save.ChangedInstallations.Add(installation);
-            if (LineOf(book, installation.Id) is { IsDeleted: false } line && line.MoveTo(installation.From, by)) save.Change(line); // its reading moves with it
+            if (LineOf(book, installation.Id) is { IsDeleted: false } line && line.MoveTo(installation.From, by))
+            {
+                save.Change(line);
+                // Its reading moves with it, and must fit the readings around its new day (one typed now is checked below).
+                if (input.OdometerFrom is null && line.OdometerReading is { } moved)
+                    await odometer.ValidateAsync(vehicle.Id, moved.Date, moved.Value, exceptReadingId: moved.Id, ct);
+            }
         }
         await InstallationReadingsAsync(vehicle, book, save, history, installation.SetId, input, by, ct);
         await SaveAsync(save, ct);
@@ -326,6 +332,7 @@ public sealed class TyreService(
     {
         var (vehicle, entry, book) = await EditableEntryAsync(id, ct, trashed: true);
         VersionCheck.Require(expectedVersion, entry.Version);
+        await RequireReadingFitsAsync(vehicle, entry, ct);
         if (InstallationOf(book, entry, trashed: true) is { } installation) await RestoreSwapAsync(vehicle, book, installation, entry, ct);
         else
         {
@@ -452,9 +459,11 @@ public sealed class TyreService(
         if (id is not { } given) return false;
         if ((book.Installations.FirstOrDefault(s => s.Id == given) ?? await tyres.FindInstallationAsync(given, ct)) is not { } existing)
         {
-            // The installation's line takes its id: a line of another kind with it means the id is someone else's.
-            if (await tyres.FindEntryAsync(given, ct) is { } line) ClientIds.Repeat(line, false, given);
-            return false;
+            // The installation's line takes its id. Without one, a Note line with it is what the same change typed where a join made no
+            // installation (TypedAsync); any other line with it means the id is someone else's.
+            if (await tyres.FindEntryAsync(given, ct) is not { } line) return false;
+            ClientIds.Repeat(line, line is { Kind: TyreEntryKind.Note, InstallationId: null } && line.VehicleId == vehicleId && line.CreatedById == by, given);
+            return true;
         }
         ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
         return true;
@@ -503,8 +512,11 @@ public sealed class TyreService(
     /// new installation that day) on a new <see cref="TyreEntryKind.Note"/> line of the set. A reading is set, a note set when given; null
     /// leaves what the line has.
     /// </summary>
+    /// <param name="id">The change's own client id (the installation's it would have made): a Note line made in its place takes it, so the
+    /// change sent again finds it (<see cref="RepeatedAsync"/>) instead of writing the line twice.</param>
     private async Task TypedAsync(
-        Vehicle vehicle, TyreBook book, TyreSave save, TyreHistory history, Guid setId, DateOnly day, long? value, string? note, Guid by, CancellationToken ct)
+        Vehicle vehicle, TyreBook book, TyreSave save, TyreHistory history, Guid setId, DateOnly day, long? value, string? note, Guid by, CancellationToken ct,
+        Guid? id = null)
     {
         if (value is null && string.IsNullOrWhiteSpace(note)) return;
         var line = history.Live.FirstOrDefault(s => s.From == day) is { } starting
@@ -513,7 +525,8 @@ public sealed class TyreService(
         if (value is { } v) await odometer.ValidateAsync(vehicle.Id, day, v, exceptReadingId: line?.OdometerReadingId, ct);
         if (line is null)
         {
-            var created = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, TyreEntryKind.Note, setId, day, value, note);
+            var created = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, TyreEntryKind.Note, setId, day, value, note,
+                id is { } given && save.AddedEntries.All(e => e.Id != given) && book.Entries.All(e => e.Id != given) ? given : null);
             save.AddedEntries.Add(created);
             if (created.OdometerReading is { } reading) save.AddedReadings.Add(reading);
             return;
@@ -529,6 +542,12 @@ public sealed class TyreService(
     {
         await TypedAsync(vehicle, book, save, history, setId, input.From, input.OdometerFrom, null, by, ct);
         if (input.Until is { } until) await TypedAsync(vehicle, book, save, history, setId, until, input.OdometerUntil, null, by, ct);
+    }
+
+    /// <summary>A line's reading coming back from the trash must still fit the car's readings, as an expense's does when it is restored.</summary>
+    private async Task RequireReadingFitsAsync(Vehicle vehicle, TyreEntry line, CancellationToken ct)
+    {
+        if (line.IsDeleted && line.OdometerReading is { } reading) await odometer.ValidateAsync(vehicle.Id, line.Day, reading.Value, exceptReadingId: null, ct);
     }
 
     /// <summary>A swap's line and its installation go to the trash together.</summary>
@@ -556,6 +575,7 @@ public sealed class TyreService(
         save.Change(installation);
         if (line is { IsDeleted: true })
         {
+            await RequireReadingFitsAsync(vehicle, line, ct);
             line.Restore(by);
             save.Change(line);
         }

@@ -105,6 +105,23 @@ public class TyreSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task AJoiningSwapWithAReading_SentAgainAsANewChange_WritesItsNoteLineOnce()
+    {
+        var (people, car, summer, winter, _) = await Car(_app);
+        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = winter, day = "2026-06-01", pairOneFront = true, installationId = Guid.NewGuid() } });
+        await people.Alice.Gql(SwapOnline, new { i = new { vehicleId = car, setId = summer, day = "2026-08-01", pairOneFront = true, installationId = Guid.NewGuid() } });
+        var installation = Guid.NewGuid().ToString();
+        var joining = new { vehicleId = car, setId = summer, day = "2026-06-01", pairOneFront = true, replace = true, odometer = 143_000, note = "Joined", installationId = installation };
+
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), swapTyres = joining })));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), swapTyres = joining }))); // the answer never arrived: sent again
+
+        var lines = (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("day").GetString() == "2026-06-01").ToList();
+        var note = Assert.Single(lines);
+        Assert.Equal(("NOTE", installation, 143_000L), (note.GetProperty("kind").GetString(), note.GetProperty("id").GetString(), note.GetProperty("odometer").GetInt64()));
+    }
+
+    [Fact]
     public async Task ASwapOntoASetOnTheCarSinceEarlier_IsParked_UnlessItsPairsAreAsAsked_WhichARetryOfAJoinedSwapIs()
     {
         var (people, car, _, winter, _) = await Car(_app);

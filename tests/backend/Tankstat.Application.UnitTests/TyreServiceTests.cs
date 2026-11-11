@@ -499,6 +499,44 @@ public class TyreServiceTests
     }
 
     [Fact]
+    public async Task AReadingMovedWithItsInstallationsFirstDay_OrBroughtBackFromTheTrash_MustStillFitTheCarsReadings()
+    {
+        var s = await Setup();
+        var (_, _, winter) = await TwoSets(s);
+        var added = await s.Tyres.AddInstallationAsync(winter, new TyreInstallationInput(D(2025, 11, 15), D(2026, 3, 28), null, 132_000, null), default, Guid.NewGuid());
+        var installation = Set(added, winter).Installations.Single().Installation;
+
+        // 132,000 on 10 Mar would be below the 140,000 of 1 Mar.
+        var moved = await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.UpdateInstallationAsync(installation.Id, new TyreInstallationInput(D(2026, 3, 10), D(2026, 3, 28), null, null, null), default));
+        Assert.Equal("odometer.belowPrevious", moved.Key);
+
+        var id = Guid.NewGuid();
+        await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Note, null, D(2026, 6, 1), 143_000, null), default, id);
+        await s.Tyres.TrashEntryAsync(id, default);
+        await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(D(2026, 5, 1), "Wash", null, 10, "EUR", 145_000, null), default); // fits while the line is away
+        Assert.Equal("odometer.belowPrevious", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreEntryAsync(id, default))).Key);
+    }
+
+    [Fact]
+    public async Task AJoiningSwapsReading_GoesOnANoteLineWithTheSwapsId_SoTheSwapSentAgainWritesItOnce()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 1), true, false, null, null), default, Guid.NewGuid());
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 8, 1), true, false, null, null), default, Guid.NewGuid());
+        var change = Guid.NewGuid();
+        var joining = new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, true, 143_000, "Joined");
+
+        var first = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+        var again = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+
+        var note = Assert.Single(again.Entries, e => e.Day == D(2026, 6, 1));
+        Assert.Equal((change, TyreEntryKind.Note, (Guid?)summer, (long?)143_000, "Joined"), (note.Id, note.Kind, note.SetId, note.Odometer, note.Note));
+        Assert.Equal(first.Entries.Count, again.Entries.Count);
+    }
+
+    [Fact]
     public async Task ViewAccess_CannotAddALine_AndEditAccessCannotEmptyTheTrash()
     {
         var s = await Setup();
