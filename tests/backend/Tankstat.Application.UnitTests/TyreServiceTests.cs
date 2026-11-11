@@ -537,6 +537,40 @@ public class TyreServiceTests
     }
 
     [Fact]
+    public async Task AJoiningSwapsNoteLine_GivenAnotherKindSince_StillAnswersTheSwapSentAgain()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 1), true, false, null, null), default, Guid.NewGuid());
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 8, 1), true, false, null, null), default, Guid.NewGuid());
+        var change = Guid.NewGuid();
+        var joining = new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, true, 143_000, "Joined");
+        var first = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+        // The next change of the same queue: the line is a puncture repair's. The answer is lost, so the whole request comes again.
+        await s.Tyres.UpdateEntryAsync(change, new TyreEntryInput(TyreEntryKind.PunctureRepaired, summer, D(2026, 6, 1), 143_000, "Joined"), default);
+
+        var again = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+
+        var line = Assert.Single(again.Entries, e => e.Day == D(2026, 6, 1));
+        Assert.Equal((change, TyreEntryKind.PunctureRepaired, (long?)143_000), (line.Id, line.Kind, line.Odometer));
+        Assert.Equal(first.Entries.Count, again.Entries.Count);
+    }
+
+    [Fact]
+    public async Task ANoteOfOnlySpaces_TypedWithAReading_LeavesTheSwapLinesNote()
+    {
+        var s = await Setup();
+        var (_, _, winter) = await TwoSets(s);
+        var swap = new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, "Winter on");
+        await s.Tyres.SwapAsync(swap, default, Guid.NewGuid());
+
+        var again = await s.Tyres.SwapAsync(swap with { Odometer = 150_000, Note = "  " }, default, Guid.NewGuid());
+
+        var line = Assert.Single(again.Entries, e => e.Day == D(2026, 9, 20));
+        Assert.Equal(((long?)150_000, "Winter on"), (line.Odometer, line.Note));
+    }
+
+    [Fact]
     public async Task ViewAccess_CannotAddALine_AndEditAccessCannotEmptyTheTrash()
     {
         var s = await Setup();

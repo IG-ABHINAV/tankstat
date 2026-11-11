@@ -1060,7 +1060,7 @@ internal sealed class World
         Drafts = new PhotoDraftService(LogGuard, PhotoDrafts, ImageService, Access, Clock, Log.For<PhotoDraftService>());
         Photos = new LogPhotoService(logPhotoAccess, LogPhotos, ImageService, Drafts, Access, Clock, Log.For<LogPhotoService>());
         VehicleService = new VehicleService(Vehicles, Refuelings, Tyres, Access, Odometer, ImageService, Clock, Log.For<VehicleService>());
-        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create()), Notifier, Notifications, TyreService, Clock, Log.For<LogPhotoFiller>());
+        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
         RefuelingService = new RefuelingService(Vehicles, LogGuard, Refuelings, Access, Odometer, Photos, Filler, Clock, Log.For<RefuelingService>());
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
         RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());

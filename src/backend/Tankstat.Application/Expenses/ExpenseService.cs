@@ -117,10 +117,13 @@ public sealed class ExpenseService(
     public async Task<Expense> DeleteAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {
         var expense = await EditableAsync(id, includeDeleted: false, ct);
-        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) return await tyres.TrashExpenseAsync(line, id, ct, expectedVersion); // its line keeps the reading
-        VersionCheck.Require(expectedVersion, expense.Version);
-        expense.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
-        await expenses.UpdateAsync(expense, LinkedChanges.None, ct);
+        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) expense = await tyres.TrashExpenseAsync(line, id, ct, expectedVersion); // its line keeps the reading
+        else
+        {
+            VersionCheck.Require(expectedVersion, expense.Version);
+            expense.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
+            await expenses.UpdateAsync(expense, LinkedChanges.None, ct);
+        }
         logger.LogDebug("Expense {ExpenseId} of vehicle {VehicleId} moved to the trash", id, expense.VehicleId);
         return expense;
     }
@@ -135,9 +138,12 @@ public sealed class ExpenseService(
         var expense = await EditableAsync(id, includeDeleted: true, ct);
         VersionCheck.Require(expectedVersion, expense.Version);
         if (expense.Odometer is { } value) await odometer.ValidateAsync(expense.VehicleId, expense.Date, value, exceptReadingId: expense.OdometerReadingId, ct);
-        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) return await tyres.RestoreExpenseAsync(line, id, ct, expectedVersion);
-        expense.Restore((await access.RequirePrincipalAsync(ct)).Id);
-        await expenses.UpdateAsync(expense, LinkedChanges.None, ct);
+        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) expense = await tyres.RestoreExpenseAsync(line, id, ct, expectedVersion);
+        else
+        {
+            expense.Restore((await access.RequirePrincipalAsync(ct)).Id);
+            await expenses.UpdateAsync(expense, LinkedChanges.None, ct);
+        }
         logger.LogDebug("Expense {ExpenseId} of vehicle {VehicleId} restored from the trash", id, expense.VehicleId);
         if (expense.ReviewState == ReviewState.AwaitingPhotos)
         {

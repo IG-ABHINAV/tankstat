@@ -310,6 +310,36 @@ public class TyreRepositoryTests
     }
 
     [Fact]
+    public async Task AnExpenseLeftWithoutItsAmount_TakesTheOneItsLineGivesIt_AsANewCostRow()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var (line, expense) = await LineWithExpense(db, car);
+        var repo = db.Get<ITyreRepository>();
+
+        // The Expenses tab left the amount to a photo being read: the cost row goes.
+        var book = await repo.LoadAsync(car.Id, default);
+        var (loaded, linked) = (book.Entries.Single(e => e.Id == line.Id), Assert.Single(book.LinkedExpenses));
+        var emptied = new TyreSave();
+        emptied.ExpenseChanges.Add(linked.UpdateWithLineReading(linked.Date, linked.Title, linked.Category, null, null, loaded.OdometerReading, null, car.OwnerId, null, readingPhotos: true));
+        emptied.Change(linked);
+        Assert.True(await repo.SaveAsync(emptied, default));
+        Assert.Null((await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Amount);
+
+        // The amount typed on the line: a cost the expense did not have, saved as a new row.
+        book = await repo.LoadAsync(car.Id, default);
+        (loaded, linked) = (book.Entries.Single(e => e.Id == line.Id), Assert.Single(book.LinkedExpenses));
+        Assert.True(linked.FollowLine(loaded.Day, loaded.OdometerReading, 40, "EUR", "Tyres", setCategory: true));
+        var typed = new TyreSave();
+        typed.ExpenseChanges.Add(new LinkedChanges(null, null, linked.Cost, null));
+        typed.Change(linked);
+        Assert.True(await repo.SaveAsync(typed, default));
+
+        var after = await db.Get<IExpenseRepository>().FindAsync(expense.Id, default);
+        Assert.Equal((40m, "EUR", loaded.Day, (long?)148_200), (after!.Amount!.Value, after.Currency, after.Cost!.Date, after.Odometer));
+    }
+
+    [Fact]
     public async Task PurgingTheLine_LeavesTheExpenseWithTheReading_AndPurgingTheExpense_LeavesTheLineWithItButUnlinked()
     {
         await using var db = Database();
@@ -337,5 +367,65 @@ public class TyreRepositoryTests
         await expenses.PurgeAsync(OwnerScope.All, default);
         var kept = (await repo.LoadAsync(car.Id, default)).Entries.Single(e => e.Id == other.Id);
         Assert.Equal((148_200L, (Guid?)null), (kept.Odometer!.Value, kept.ExpenseId));
+    }
+
+    [Fact]
+    public async Task WhatAnExpenseShowsOfItsLine_Changing_MarksTheExpenseForDownload_ThoughItIsNotSavedItself()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        var (set, _, _) = await SetOnTheCar(db, car, odometer: null);
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.PunctureRepaired, set.Id, D(2026, 9, 20), null, "Rear left");
+        var expense = Expense.Create(car.OwnerId, car.OwnerId, car.Id, line.Day, "Puncture repaired", "Tyres", Cost.Create(car.OwnerId, car.Id, line.Day, 25, "EUR"), null);
+        line.LinkExpense(expense.Id);
+        var added = new TyreSave();
+        added.AddedEntries.Add(line);
+        added.AddedExpenses.Add(expense);
+        Assert.True(await repo.SaveAsync(added, default));
+        var (otherLine, other) = await LineWithExpense(db, car); // a line of no set, which nothing below touches until it is purged
+        var created = _clock.GetUtcNow();
+        async Task<DateTimeOffset> Saved(Expense e) => (await db.Get<IExpenseRepository>().FindAsync(e.Id, default))!.UpdatedAt;
+        async Task<TyreEntry> Line(TyreEntry e) => (await repo.LoadAsync(car.Id, default)).Entries.Single(l => l.Id == e.Id);
+
+        // The line goes to the trash alone: the expense stays, and now says its line is in the trash.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var trashed = await Line(line);
+        trashed.MarkDeleted(_clock.GetUtcNow());
+        var trash = new TyreSave();
+        trash.ChangedEntries.Add(trashed);
+        Assert.True(await repo.SaveAsync(trash, default));
+        Assert.Equal((_clock.GetUtcNow(), created), (await Saved(expense), await Saved(other)));
+
+        // The set renamed: the expense names its line's set.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var renamed = (await repo.LoadAsync(car.Id, default)).Sets.Single(s => s.Id == set.Id);
+        renamed.Update("Michelin Primacy 4", renamed.Season, renamed.Size, renamed.Since, renamed.MadeWeek, renamed.MadeYear);
+        var rename = new TyreSave();
+        rename.ChangedSets.Add(renamed);
+        Assert.True(await repo.SaveAsync(rename, default));
+        Assert.Equal((_clock.GetUtcNow(), created), (await Saved(expense), await Saved(other)));
+
+        // The line comes back without it: the expense no longer shows a line.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var back = await Line(line);
+        back.Restore();
+        back.UnlinkExpense();
+        var restore = new TyreSave();
+        restore.ChangedEntries.Add(back);
+        Assert.True(await repo.SaveAsync(restore, default));
+        Assert.Equal((_clock.GetUtcNow(), created), (await Saved(expense), await Saved(other)));
+
+        // A line purged: its expense stays, without a line.
+        var gone = await Line(otherLine);
+        gone.MarkDeleted(_clock.GetUtcNow());
+        gone.OdometerReading!.Restore(); // still held by the live expense
+        var purged = new TyreSave();
+        purged.ChangedEntries.Add(gone);
+        Assert.True(await repo.SaveAsync(purged, default));
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        await repo.PurgeAsync(OwnerScope.All, default);
+        Assert.Equal(_clock.GetUtcNow(), await Saved(other));
+        Assert.Empty(await repo.ListEntriesByExpenseAsync([other.Id], default));
     }
 }
