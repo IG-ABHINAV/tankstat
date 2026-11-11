@@ -7,7 +7,8 @@ namespace Tankstat.Migrations.Sqlite
 {
     /// <summary>
     /// #288: a tyre set's time on the car is an installation, no longer a stretch. The table, its keys and indexes are renamed, never
-    /// dropped (its rows stay), and so are the names stored as text: tombstones, the sync ledger's change kinds, reasons and payloads.
+    /// dropped (its rows stay), and so are the names stored as text: tombstones, the sync ledger's change kinds, reasons and payloads, and
+    /// the arguments of the notifications about its parked changes.
     /// </summary>
     public partial class RenameTyreInstallations : Migration
     {
@@ -25,6 +26,8 @@ namespace Tankstat.Migrations.Sqlite
             migrationBuilder.Sql(@"UPDATE ""SyncChanges"" SET ""Kind"" = REPLACE(""Kind"", 'TyreStretch', 'TyreInstallation') WHERE ""Kind"" LIKE '%TyreStretch';");
             migrationBuilder.Sql(@"UPDATE ""SyncChanges"" SET ""ReasonKey"" = REPLACE(""ReasonKey"", 'tyres.stretch', 'tyres.installation') WHERE ""ReasonKey"" LIKE 'tyres.stretch%';");
             migrationBuilder.Sql(@"UPDATE ""SyncChanges"" SET ""Payload"" = REPLACE(REPLACE(""Payload"", 'TyreStretch', 'TyreInstallation'), '""stretchId""', '""installationId""') WHERE (""Payload"" LIKE '%TyreStretch%' OR ""Payload"" LIKE '%""stretchId""%') AND LENGTH(REPLACE(REPLACE(""Payload"", 'TyreStretch', 'TyreInstallation'), '""stretchId""', '""installationId""')) <= 4000;");
+            // A parked change's notification is worded from the change's kind and the reason's key, kept in its arguments (one JSON object).
+            migrationBuilder.Sql(@"UPDATE ""Notifications"" SET ""Args"" = REPLACE(REPLACE(""Args"", '_TYRE_STRETCH""', '_TYRE_INSTALLATION""'), '""tyres.stretch', '""tyres.installation') WHERE ""Kind"" = 'SyncChangeParked' AND (""Args"" LIKE '%TYRE_STRETCH""%' OR ""Args"" LIKE '%""tyres.stretch%') AND LENGTH(REPLACE(REPLACE(""Args"", '_TYRE_STRETCH""', '_TYRE_INSTALLATION""'), '""tyres.stretch', '""tyres.installation')) <= 4000;");
         }
 
         /// <inheritdoc />
@@ -41,6 +44,7 @@ namespace Tankstat.Migrations.Sqlite
             migrationBuilder.Sql(@"UPDATE ""SyncChanges"" SET ""Kind"" = REPLACE(""Kind"", 'TyreInstallation', 'TyreStretch') WHERE ""Kind"" LIKE '%TyreInstallation';");
             migrationBuilder.Sql(@"UPDATE ""SyncChanges"" SET ""ReasonKey"" = REPLACE(""ReasonKey"", 'tyres.installation', 'tyres.stretch') WHERE ""ReasonKey"" LIKE 'tyres.installation%';");
             migrationBuilder.Sql(@"UPDATE ""SyncChanges"" SET ""Payload"" = REPLACE(REPLACE(""Payload"", 'TyreInstallation', 'TyreStretch'), '""installationId""', '""stretchId""') WHERE (""Payload"" LIKE '%TyreInstallation%' OR ""Payload"" LIKE '%""installationId""%') AND LENGTH(REPLACE(REPLACE(""Payload"", 'TyreInstallation', 'TyreStretch'), '""installationId""', '""stretchId""')) <= 4000;");
+            migrationBuilder.Sql(@"UPDATE ""Notifications"" SET ""Args"" = REPLACE(REPLACE(""Args"", '_TYRE_INSTALLATION""', '_TYRE_STRETCH""'), '""tyres.installation', '""tyres.stretch') WHERE ""Kind"" = 'SyncChangeParked' AND (""Args"" LIKE '%TYRE_INSTALLATION""%' OR ""Args"" LIKE '%""tyres.installation%');");
         }
     }
 }
