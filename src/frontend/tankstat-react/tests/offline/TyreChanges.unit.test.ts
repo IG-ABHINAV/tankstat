@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { collapse, discard, type Change } from '../../src/offline/changes.ts'
 import { batches, toChangeInput } from '../../src/offline/push.ts'
 import { fromParked } from '../../src/offline/syncKinds.ts'
-import { tyreCreates, tyreNeeds, tyreTarget } from '../../src/offline/tyreChanges.ts'
+import { tyreCreates, tyreFeeExpense, tyreNeeds, tyreTarget } from '../../src/offline/tyreChanges.ts'
 
 let seq = 0
 const tyre = (action: Change['action'], input: Record<string, unknown>, targetId = ''): Change => ({ id: `c${++seq}`, seq, createdAt: seq, entity: 'tyres', action, vehicleId: 'v1', targetId, input })
@@ -56,5 +56,32 @@ describe('tyre changes kept on the device (#287)', () => {
     expect(parked('DELETE_TYRE_INSTALLATION', { id: 'p1', expectedVersion: 4, deleteTyreInstallation: 'st' })).toMatchObject({ action: 'deleteTyreInstallation', targetId: 'st', input: { id: 'st' }, expectedVersion: 4 })
     expect(parked('UPDATE_TYRE_ENTRY', { id: 'p1', expectedVersion: 2, updateTyreEntry: { id: 'e1', kind: 'NOTE', day: '2026-11-12' } })).toMatchObject({ action: 'updateTyreEntry', targetId: 'e1', expectedVersion: 2 })
     expect(parked('SET_TYRE_LOG_DAY', { id: 'p1', setTyreLogDay: { day: '2026-11-12' } })).toBeNull() // an older build's kind: not known here
+  })
+})
+
+describe('the expense a waiting amount makes (#288)', () => {
+  const fee = { amount: 60, currency: 'EUR', category: 'Tyres', title: 'Tyre swap: Nokian', expenseId: 'x1' }
+
+  it('a swap, a change of positions and a set bought with a price: on the line each makes, never an edit', () => {
+    expect(tyreFeeExpense('swapTyres', { ...swap.input, odometer: 150_000, fee })).toEqual({
+      expenseId: 'x1', lineId: 'st', kind: 'SWAP', day: '2026-11-10', odometer: 150_000, title: 'Tyre swap: Nokian', category: 'Tyres', amount: 60, currency: 'EUR', edit: false,
+    })
+    expect(tyreFeeExpense('changeTyrePositions', { ...positions.input, fee })).toMatchObject({ lineId: 'st2', kind: 'POSITIONS_CHANGED', day: '2026-11-12', odometer: null, edit: false })
+    expect(tyreFeeExpense('addTyreSet', { ...addSet.input, price: { ...fee, amount: 480 }, boughtEntryId: 'b1', boughtOn: '2026-10-01' }))
+      .toMatchObject({ lineId: 'b1', kind: 'BOUGHT', day: '2026-10-01', amount: 480, odometer: null, edit: false })
+    expect(tyreFeeExpense('addTyreSet', { ...addSet.input, price: fee, boughtEntryId: 'b1' })).toMatchObject({ day: '2026-11-10' }) // bought the day it went on
+  })
+
+  it('an edit of a line is one; nothing without an amount, without its id, or for a change that takes none', () => {
+    expect(tyreFeeExpense('updateTyreEntry', { id: 'e1', kind: 'STORAGE_FEE', day: '2026-11-01', fee })).toMatchObject({ lineId: 'e1', kind: 'STORAGE_FEE', edit: true })
+    expect(tyreFeeExpense('addTyreEntry', { id: 'e1', fee: { ...fee, amount: null } })).toBeNull()
+    expect(tyreFeeExpense('addTyreEntry', { id: 'e1', fee: { ...fee, expenseId: undefined } })).toBeNull()
+    expect(tyreFeeExpense('addTyreEntry', { id: 'e1' })).toBeNull()
+    expect(tyreFeeExpense('deleteTyreSet', { id: 'n', fee })).toBeNull()
+  })
+
+  it('past swaps and an installation create their installations', () => {
+    expect(tyreCreates('addPastTyreSwaps', { vehicleId: 'v1', swaps: [{ setId: 'n', installationId: 'p1' }, { setId: 'n', installationId: 'p2' }] })).toEqual(['p1', 'p2'])
+    expect(tyreCreates('addTyreInstallation', { id: 'i1', setId: 'n' })).toEqual(['i1'])
   })
 })
