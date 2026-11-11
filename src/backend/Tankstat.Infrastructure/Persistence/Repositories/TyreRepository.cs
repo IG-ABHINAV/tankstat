@@ -9,7 +9,7 @@ using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Infrastructure.Persistence.Repositories;
 
-internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) : ITyreRepository
+internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, TimeProvider clock) : ITyreRepository
 {
     public async Task<TyreBook> LoadAsync(Guid vehicleId, CancellationToken ct)
     {
@@ -116,6 +116,9 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // An expense shows the line it was made from (its kind, its set's name, whether it is in the trash): a device downloads it again
+        // when one of those changes, also when the expense itself is not saved. Before the save, while a line that lets go of it still names it.
+        await db.TouchExpensesOfTyreLinesAsync([.. save.ChangedEntries.Select(e => e.Id)], [.. save.ChangedSets.Select(s => s.Id)], clock.GetUtcNow(), ct);
         foreach (var s in save.AddedSets) db.TyreSets.Add(s);
         foreach (var s in save.ChangedSets) db.TyreSets.Update(s);
         foreach (var s in save.AddedInstallations) db.TyreInstallations.Add(s);
@@ -186,6 +189,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         var readingIds = entries.Where(e => e.OdometerReadingId is not null).Select(e => e.OdometerReadingId!.Value).ToList();
         var held = (await db.Expenses.IgnoreQueryFilters().Where(x => x.OdometerReadingId != null && readingIds.Contains(x.OdometerReadingId.Value))
             .Select(x => x.OdometerReadingId!.Value).ToListAsync(ct)).ToHashSet();
+        await db.TouchExpensesOfTyreLinesAsync([.. entries.Where(e => e.ExpenseId is not null).Select(e => e.Id)], [], clock.GetUtcNow(), ct); // they no longer show a line
         db.TyreEntries.RemoveRange(entries);
         db.OdometerReadings.RemoveRange(entries.Where(e => e.OdometerReading is not null && !held.Contains(e.OdometerReading.Id)).Select(e => e.OdometerReading!));
         db.TyreInstallations.RemoveRange(installations);
