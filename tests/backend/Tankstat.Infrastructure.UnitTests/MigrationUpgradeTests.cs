@@ -65,6 +65,53 @@ public sealed class MigrationUpgradeTests : IAsyncDisposable
         return id;
     }
 
+    /// <summary>
+    /// #288: a database from before the rename (tyre stretches, from v0.21.0-preview-1) comes up with its rows as installations, its tombstones
+    /// and its parked tyre changes renamed too (their kind, reason and the payload's field names), so the server reads them as before.
+    /// </summary>
+    [Fact]
+    public async Task TyreStretchesOfAnOlderDatabase_ComeUpAsInstallations_WithTheirTombstonesAndParkedChangesRenamed()
+    {
+        Services();
+        await AtMigration("AddTyres");
+        string G(Guid g) => g.ToString().ToUpperInvariant(); // how EF Core stores a Guid in SQLite
+        var (vehicle, owner, set, stretch, gone, parked, pastSwaps) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await using (var db = await Db())
+        {
+            await db.Database.OpenConnectionAsync();
+            await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;"); // the vehicle and the user are not the point
+            await using var insert = db.Database.GetDbConnection().CreateCommand(); // a raw command: the JSON's braces are no format placeholders
+            insert.CommandText = $$$"""
+                INSERT INTO "TyreSets" ("Id", "OwnerId", "VehicleId", "CreatedById", "Name", "Season", "Since", "RoughDistance", "Version", "UpdatedAt")
+                VALUES ('{{{G(set)}}}', '{{{G(owner)}}}', '{{{G(vehicle)}}}', '{{{G(owner)}}}', 'Michelin', 'Summer', '2023-03-01', 0, 1, '2026-11-10 12:00:00');
+                INSERT INTO "TyreStretches" ("Id", "OwnerId", "VehicleId", "SetId", "CreatedById", "From", "Until", "PairOneFront", "Version", "UpdatedAt")
+                VALUES ('{{{G(stretch)}}}', '{{{G(owner)}}}', '{{{G(vehicle)}}}', '{{{G(set)}}}', '{{{G(owner)}}}', '2026-03-28', NULL, 1, 1, '2026-11-10 12:00:00');
+                INSERT INTO "Tombstones" ("Id", "EntityId", "EntityType", "PurgedAt", "VehicleId")
+                VALUES ('{{{G(Guid.NewGuid())}}}', '{{{G(gone)}}}', 'TyreStretch', '2026-11-10 12:00:00', '{{{G(vehicle)}}}');
+                INSERT INTO "SyncChanges" ("Id", "Kind", "OwnerId", "Payload", "ReasonArgs", "ReasonKey", "ReceivedAt", "Status", "SubmittedById", "TargetId", "VehicleId")
+                VALUES ('{{{G(parked)}}}', 'UpdateTyreStretch', '{{{G(owner)}}}', '{"id":"{{{parked}}}","updateTyreStretch":{"id":"{{{gone}}}","from":"2026-03-28"}}', '{}', 'tyres.stretchNotFound',
+                        '2026-11-10 12:00:00', 'Parked', '{{{G(owner)}}}', '{{{G(gone)}}}', '{{{G(vehicle)}}}');
+                INSERT INTO "SyncChanges" ("Id", "Kind", "OwnerId", "Payload", "ReasonArgs", "ReceivedAt", "Status", "SubmittedById", "VehicleId")
+                VALUES ('{{{G(pastSwaps)}}}', 'AddPastTyreSwaps', '{{{G(owner)}}}', '{"id":"{{{pastSwaps}}}","addPastTyreSwaps":{"swaps":[{"day":"2025-11-15","stretchId":"{{{gone}}}"}]}}', '{}',
+                        '2026-11-10 12:00:00', 'Parked', '{{{G(owner)}}}', '{{{G(vehicle)}}}');
+                """;
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        await using (var db = await Db()) await db.Database.MigrateAsync();
+
+        await using var after = await Db();
+        var installation = await after.TyreInstallations.IgnoreQueryFilters().SingleAsync(i => i.Id == stretch);
+        Assert.Equal((set, new DateOnly(2026, 3, 28), (bool?)true), (installation.SetId, installation.From, installation.PairOneFront));
+        Assert.Equal(Tankstat.Domain.Sync.OfflineEntityType.TyreInstallation, (await after.Tombstones.SingleAsync(t => t.EntityId == gone)).EntityType);
+        var update = await after.SyncChanges.SingleAsync(c => c.Id == parked);
+        Assert.Equal((Tankstat.Domain.Sync.SyncChangeKind.UpdateTyreInstallation, "tyres.installationNotFound"), (update.Kind, update.ReasonKey));
+        Assert.Contains("\"updateTyreInstallation\":", update.Payload);
+        var past = await after.SyncChanges.SingleAsync(c => c.Id == pastSwaps);
+        Assert.Contains("\"installationId\":", past.Payload);
+        Assert.DoesNotContain("stretch", past.Payload + update.Payload, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<string?> LastApplied()
     {
         await using var db = await Db();
