@@ -159,6 +159,13 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading, an 
   await paid.getByRole('button', { name: 'Save' }).click()
   await expect(paid).toBeHidden()
   await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Puncture repaired, .*9,000/ })).toBeVisible()
+  // On the Expenses tab, the expense it will make: new, not synced, with its chip.
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  const waitingExpense = page.getByRole('row').filter({ hasText: /^.*Puncture repaired/ })
+  await expect(waitingExpense).toContainText('Tyre log')
+  await expect(waitingExpense.getByRole('button', { name: /New · not synced/ })).toBeVisible()
+  await expectSoundLayout(page)
+  await page.getByRole('tab', { name: 'Tyres' }).click()
 
   await context.setOffline(false)
   // Once the server answers again the device sends the four changes in order: every one applied, none parked.

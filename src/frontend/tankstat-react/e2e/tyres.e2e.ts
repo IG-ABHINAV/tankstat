@@ -235,3 +235,33 @@ test('a repair with an amount is an expense on the Expenses tab: its day changed
   await openVehicle(page, vehicle.id, 'expenses')
   await expect(page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })).toBeVisible()
 })
+
+test('a swap with a fee keeps it on its line, and the line’s new day moves the swap and the expense with it (#288)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
+  const addSet = 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }'
+  const set = { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false }
+  await graphql(page, addSet, { i: { ...set, name: 'Michelin Primacy 4', season: 'SUMMER', since: '2023-03-25', fitted: true, day: '2026-01-15' } })
+  await graphql(page, addSet, { i: { ...set, name: 'Continental WinterContact', season: 'WINTER', since: '2022-11-19', fitted: false, day: '2026-01-15' } })
+  await openVehicle(page, vehicle.id, 'tyres')
+
+  await page.getByRole('article', { name: 'Michelin Primacy 4' }).getByRole('button', { name: 'Swap tyres' }).click()
+  const swap = page.getByRole('dialog', { name: 'Swap tyres' })
+  await typeDate(page, dateField(swap, /^Day/), '2026-05-01')
+  await swap.getByLabel(/^Paid for the swap/).fill('8000')
+  await expectSoundLayout(page)
+  await swap.getByRole('button', { name: 'Swap tyres' }).click()
+  await expect(swap).toBeHidden()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await log.getByRole('button', { name: /^Tyre swap, Continental WinterContact, May 1, 2026, / }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit entry' })
+  await expect(edit.getByText(/Its expense and its reading move with it\./)).toBeVisible()
+  await typeDate(page, dateField(edit, /^Day/), '2026-05-04')
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(edit).toBeHidden()
+  await expect(log.getByRole('button', { name: /^Tyre swap, Continental WinterContact, May 4, 2026, / })).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Continental WinterContact' })).toContainText(/On since May 4, 2026/)
+
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Tyre swap: Continental WinterContact' })).toContainText(/5\/4\/2026|May 4, 2026|2026-05-04/)
+})

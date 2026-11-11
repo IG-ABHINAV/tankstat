@@ -4,7 +4,7 @@ import { connectivity } from './connectivity.ts'
 import type { LogKind, LogRow, PullCursor, RowStore, VehicleRow } from './deviceStorage.ts'
 import { todayIso } from '../forms/dates.ts'
 import { keptPhotos } from './keptPhotos.ts'
-import { isCurrentShape, noTyres, replayTyres } from '../tyres/replay.ts'
+import { isCurrentShape, noTyres, replayTyres, touchesTyres } from '../tyres/replay.ts'
 import type { Tyres } from '../tyres/tyres.ts'
 import { outbox } from './outbox.ts'
 import { tyreFeeExpense } from './tyreChanges.ts'
@@ -106,7 +106,7 @@ export function sortLogs(kind: LogKind, rows: readonly LogRow[], field: string, 
  */
 function asAnswer(row: LogRow, vehicle: VehicleRow | undefined): Record<string, unknown> {
   const { pulledAt: _pulledAt, ...fields } = row
-  const known = row.__typename === 'Refueling' ? withDiscount(fields) : row.__typename === 'Expense' ? { ...fields, discount: fields.discount ?? null } : fields
+  const known = row.__typename === 'Refueling' ? withDiscount(fields) : row.__typename === 'Expense' ? { ...fields, discount: fields.discount ?? null, tyreEntry: fields.tyreEntry ?? null } : fields
   return { ...known, canEdit: atLeast(vehicle?.logAccess, 'EDIT'), canDelete: atLeast(vehicle?.logAccess, 'DELETE') }
 }
 
@@ -291,7 +291,7 @@ async function knownWithoutLogs(rows: RowStore, vehicleId: unknown, kept: Kept):
  * tyre change waiting, the server's answer (or the kept one) is the device's.
  */
 async function tyresOf(vehicleId: string, kept: Kept): Promise<Tyres | undefined> {
-  const waiting = outbox.changes.filter((c) => c.entity === 'tyres' && c.vehicleId === vehicleId)
+  const waiting = outbox.changes.filter((c) => touchesTyres(c) && c.vehicleId === vehicleId)
   const base = (await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined
   // Nothing waits: the kept answer as it is, unless an older build kept it in another shape (#288: days, not lines), which counts as none.
   if (waiting.length === 0 && !addedVehicle(vehicleId)) return base && !isCurrentShape(base) ? noTyres(vehicleId) : undefined

@@ -637,3 +637,17 @@ it('marks an expense a line made on the Expenses tab, and its edit dialog opens 
   expect(await screen.findByRole('dialog', { name: 'Edit entry' })).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Tyres', selected: true, hidden: true })).toBeInTheDocument() // behind the dialog
 })
+
+it('says an expense restored on its own leaves its tyre log line in the trash (#288)', async () => {
+  stubViewport('desktop')
+  const vehicle = fakeVehicle()
+  const expenses = fakeExpenseBackend(vehicle, [])
+  expenses.state.trash = [fakeExpense({ id: 'x1', title: 'Puncture repaired: Michelin Primacy 4', deletedAt: '2026-10-01T08:00:00Z', canDelete: true,
+    tyreEntry: { __typename: 'TyreEntryRef', id: 'e1', kind: 'PUNCTURE_REPAIRED', setName: 'Michelin Primacy 4', trashed: true } })]
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...expenses.handlers)
+  renderWithApollo(<App />, '/trash?tab=expenses')
+  const ui = userEvent.setup()
+
+  await ui.click(await screen.findByRole('button', { name: /^Restore Puncture repaired/ }))
+  expect(await screen.findByText('Restored. Its tyre log line stays in the trash.')).toBeInTheDocument()
+})

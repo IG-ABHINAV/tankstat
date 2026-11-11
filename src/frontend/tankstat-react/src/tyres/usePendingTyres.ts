@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { deviceData } from '../offline/deviceData.ts'
 import { outbox, usePendingCount } from '../offline/outbox.ts'
 import { snapshotKey } from '../offline/snapshotPolicy.ts'
-import { noTyres, replayTyres } from './replay.ts'
+import { noTyres, replayTyres, touchesTyres } from './replay.ts'
 import type { Tyres } from './tyres.ts'
 
 const NONE: ReadonlyMap<string, 'new' | 'changed'> = new Map()
@@ -17,7 +17,7 @@ export function usePendingTyres(vehicleId: string): ReadonlyMap<string, 'new' | 
   const [touched, setTouched] = useState<ReadonlyMap<string, 'new' | 'changed'>>(NONE)
   useEffect(() => {
     let live = true
-    const waiting = outbox.changes.filter((c) => c.entity === 'tyres' && c.vehicleId === vehicleId)
+    const waiting = outbox.changes.filter((c) => touchesTyres(c) && c.vehicleId === vehicleId)
     // Nothing waiting: nothing to read either.
     const read = waiting.length === 0 ? Promise.resolve(undefined) : deviceData.read(snapshotKey('VehicleTyres', { vehicleId })).catch(() => undefined)
     void read.then((kept) => {

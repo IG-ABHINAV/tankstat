@@ -223,6 +223,8 @@ function withoutTyreDependents(list: readonly Change[], created: readonly string
   for (let more = gone.size > 0; more; ) {
     more = false
     left = left.filter((c) => {
+      // An edit, trash or photo of the expense a line's amount made (#288) goes with the change that made it.
+      if (c.entity === 'expenses' && gone.has(c.targetId)) return false
       if (c.entity !== 'tyres' || !tyreNeedsOf(c).some((id) => gone.has(id))) return true
       createdBy(c).forEach((id) => gone.add(id))
       more = true

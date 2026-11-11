@@ -128,8 +128,30 @@ function swapped(m: Model, c: Change, setId: string, on: string, pairOneFront: b
   history(m, swap(states(m), m.installations, setId, on, pairOneFront, { ...options, joined: (id, d) => joined.push({ id, day: d }) }), joined, c.id)
 }
 
+/** A change the tyres follow: a tyre change, or an edit of an expense (#288: one a line made shares its day and reading with the line). */
+export const touchesTyres = (c: Change) => c.entity === 'tyres' || (c.entity === 'expenses' && c.action === 'update')
+
+/**
+ * A waiting edit of a line's expense (#288), as the server's `UpdateExpenseAsync`: its date and odometer are the line's (a swap's day moving
+ * the swap by the history's rules), its amount the line's to show. An expense no live line made changes nothing here.
+ */
+function expenseEdited(m: Model, c: Change) {
+  const line = m.entries.find((e) => e.expenseId === c.targetId)
+  if (!line) return
+  const input = c.input ?? {}
+  const on = day(input.date) ?? line.day
+  const odometer = 'odometer' in input ? num(input.odometer) : (line.odometer ?? null)
+  if (LINE_KINDS.has(line.kind) && on !== line.day) history(m, moveSwap(states(m), m.installations, line.installationId ?? line.id, on), [], c.id)
+  m.entries = m.entries.map((e) =>
+    e.id === line.id
+      ? entryOf({ ...lineOf(e), day: on, odometer }, e, { ...moneyOf(e), amount: num(input.amount) ?? e.amount ?? null, currency: str(input.currency) || (e.currency ?? null) })
+      : e,
+  )
+}
+
 /** Applies one tyre change to the model; a rule it breaks is thrown (`TyreRuleError`), as the server would refuse it. */
 function apply(m: Model, c: Change, vehicleId: string) {
+  if (c.entity === 'expenses') return expenseEdited(m, c)
   if (!isTyreAction(c.action)) return
   const input = c.input ?? {}
   switch (c.action) {
@@ -351,7 +373,7 @@ export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed 
   const base = current(given)
   const m = modelOf(base)
   const skipped: string[] = []
-  for (const change of [...changes].filter((c) => c.entity === 'tyres' && c.vehicleId === base.vehicleId).sort((a, b) => a.seq - b.seq)) {
+  for (const change of [...changes].filter((c) => touchesTyres(c) && c.vehicleId === base.vehicleId).sort((a, b) => a.seq - b.seq)) {
     const attempt: Model = { ...m, sets: m.sets.map((s) => ({ ...s, set: { ...s.set } })), installations: [...m.installations], entries: [...m.entries] }
     try {
       apply(attempt, change, base.vehicleId)

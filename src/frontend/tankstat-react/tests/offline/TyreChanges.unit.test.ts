@@ -43,6 +43,10 @@ describe('tyre changes kept on the device (#287)', () => {
     expect(tyreCreates('addTyreSet', { ...addSet.input, price: { amount: 480, expenseId: 'x4' }, boughtEntryId: 'b4' })).toEqual(['n', 'ns', 'b4', 'x4'])
     expect(discard([addSet, swap, swapLine, addLine, trashLine, other], swap.id)).toEqual([addSet, addLine, trashLine, other]) // the swap's line goes with it
     expect(discard([addSet, swap, swapLine, addLine, trashLine, other], addLine.id)).toEqual([addSet, swap, swapLine, other])
+    // The expense the amount made goes too, with a waiting edit of it on the Expenses tab.
+    const paidLine = tyre('addTyreEntry', { vehicleId: 'v1', id: 'e3', kind: 'OTHER', day: '2026-11-12', fee: { amount: 9, expenseId: 'x3' } }, 'e3')
+    const expenseEdit: Change = { id: 'c-edit', seq: 900, createdAt: 900, entity: 'expenses', action: 'update', vehicleId: 'v1', targetId: 'x3', input: { amount: 10 } }
+    expect(discard([paidLine, expenseEdit, other], paidLine.id)).toEqual([other])
   })
 
   it('come back from the server parked as the change they were', () => {

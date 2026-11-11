@@ -226,6 +226,19 @@ describe('a line’s amount waiting on the device (#288)', () => {
     expect(bought.entries.find((e) => e.id === 'b1')).toMatchObject({ kind: 'BOUGHT', setId: 'n', day: '2024-05-01', amount: 120_000, expenseId: 'x3' })
   })
 
+  it('a waiting edit of a line’s expense shows on its line: its day and reading, a swap’s day moving the swap', () => {
+    const withFee: Tyres = { ...base, entries: base.entries.map((e) => (e.id === 'r1' ? { ...e, expenseId: 'x1', amount: 60, currency: 'EUR' } : e)) }
+    const edit: Change = { id: 'c-x', seq: 99, createdAt: 99, entity: 'expenses', action: 'update', vehicleId: 'v1', targetId: 'x1',
+      input: { id: 'x1', date: '2026-04-02', title: 'Tyre swap', amount: 65, currency: 'EUR', odometer: 141_000 } }
+
+    const { tyres, skipped } = replayTyres(withFee, [edit])
+
+    expect(skipped).toEqual([])
+    expect(tyres.entries.find((e) => e.id === 'r1')).toMatchObject({ day: '2026-04-02', odometer: 141_000, amount: 65 })
+    expect(tyres.sets.find((s) => s.set.id === 's2')!.installations[0].installation.until).toBe('2026-04-02')
+    expect(replayTyres(base, [edit]).tyres.entries).toEqual(base.entries) // an expense no line made changes nothing here
+  })
+
   it('a moved swap keeps its fee', () => {
     const withFee: Tyres = { ...base, entries: base.entries.map((e) => (e.id === 'r1' ? { ...e, expenseId: 'x1', amount: 60, currency: 'EUR' } : e)) }
     const moved = applyTyreChange(withFee, change('updateTyreEntry', { id: 'r1', kind: 'SWAP', setId: 's1', day: '2026-04-02' }))
