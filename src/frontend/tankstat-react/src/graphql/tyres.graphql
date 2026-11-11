@@ -1,4 +1,4 @@
-# A vehicle's tyres (#287): sets with their figures, their installations with distances (worked out by the server), the tyre log's days and the
+# A vehicle's tyres (#287): sets with their figures, their installations with distances (worked out by the server), the tyre log's lines (#288) and the
 # vehicle's readings, from which a day's odometer is worked out on the device (tyres/odometer.ts) for a form's hint and a log line.
 
 fragment TyreSetFields on TyreSet {
@@ -26,6 +26,17 @@ fragment TyreInstallationFields on TyreInstallation {
   version
 }
 
+fragment TyreEntryFields on TyreEntry {
+  id
+  kind
+  setId
+  installationId
+  day
+  odometer
+  note
+  version
+}
+
 fragment VehicleTyresFields on VehicleTyres {
   vehicleId
   hasReadings
@@ -33,12 +44,8 @@ fragment VehicleTyresFields on VehicleTyres {
     date
     value
   }
-  days {
-    id
-    day
-    odometer
-    note
-    version
+  entries {
+    ...TyreEntryFields
   }
   sets {
     onTheCar
@@ -137,8 +144,26 @@ mutation RestoreTyreInstallation($id: UUID!) {
   }
 }
 
-mutation SetTyreLogDay($input: SetTyreLogDayInput!) {
-  setTyreLogDay(input: $input) {
+mutation AddTyreEntry($input: AddTyreEntryInput!) {
+  addTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreEntry($input: UpdateTyreEntryInput!) {
+  updateTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreEntry($id: UUID!) {
+  deleteTyreEntry(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreEntry($id: UUID!) {
+  restoreTyreEntry(id: $id) {
     ...VehicleTyresFields
   }
 }
@@ -172,7 +197,8 @@ query TyreTrash($orderBy: TyreTrashSortField!, $direction: SortDirection!, $skip
     kind
     id
     setName
-    from
+    entryKind
+    day
     until
     installationCount
     deletedAt

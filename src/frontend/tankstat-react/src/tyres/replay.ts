@@ -1,6 +1,7 @@
 import type { Change } from '../offline/changes.ts'
 import { isTyreAction } from '../offline/tyreChanges.ts'
-import { changePositions, checked, swap, TyreRuleError, type SetState, type InstallationState } from './tyreHistory.ts'
+import { changePositions, checked, moveSwap, swap, TyreRuleError, type SetState, type InstallationState } from './tyreHistory.ts'
+import { follow, type Joined, type LineState } from './tyreLog.ts'
 import type { Tyres, TyreSetInfo } from './tyres.ts'
 
 /**
@@ -20,14 +21,13 @@ export interface Replayed {
 }
 
 type SetInfo = TyreSetInfo
-type Day = Tyres['days'][number]
+type Entry = Tyres['entries'][number]
 type Distance = SetInfo['installations'][number]['distance']
 
 interface Model {
   sets: SetInfo[]
   installations: InstallationState[]
-  days: Day[]
-  readings: Tyres['readings']
+  entries: Entry[]
 }
 
 /** An object of the answer with its type's name, which Apollo's cache needs and the generated types leave out. */
@@ -40,8 +40,7 @@ const modelOf = (tyres: Tyres): Model => ({
   installations: tyres.sets.flatMap((s) =>
     s.installations.map((x) => ({ id: x.installation.id, setId: s.set.id, from: x.installation.from, until: x.installation.until ?? null, pairOneFront: x.installation.pairOneFront ?? null })),
   ),
-  days: tyres.days.map((d) => ({ ...d })),
-  readings: [...tyres.readings],
+  entries: tyres.entries.map((e) => ({ ...e })),
 })
 
 const states = (m: Model): SetState[] => m.sets.map((s) => ({ id: s.set.id, name: s.set.name, retiredOn: s.set.retiredOn ?? null }))
@@ -55,24 +54,45 @@ const setOf = (m: Model, id: unknown) => {
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const num = (v: unknown) => (typeof v === 'number' ? v : null)
 const day = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null)
+const text = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null)
 
-/** The id the device gives a tyre log line a waiting change wrote: not one the server knows, so a change of that line names none. */
-const LOCAL_LINE = 'local:'
-export const isLocalLine = (id: string) => id.startsWith(LOCAL_LINE)
+const lineOf = (e: Entry): LineState => ({ id: e.id, kind: e.kind, setId: e.setId ?? null, installationId: e.installationId ?? null, day: e.day, odometer: e.odometer ?? null, note: e.note ?? null })
+
+/** A line the change made or changed: version 0, so a later change of it goes without the version the server will have moved on from. */
+const entryOf = (l: LineState): Entry => named<Entry>('TyreEntry', { ...l, version: 0 })
+
+const LINE_KINDS = new Set(['SWAP', 'POSITIONS_CHANGED'])
+
+/** The history after a change, with the tyre log's lines following it (`tyreLog.ts`): made, moved or trashed with their installations. */
+function history(m: Model, after: InstallationState[], joined: Joined[], changeId: string) {
+  const before = m.entries
+  const followed = follow(m.installations, after, before.map(lineOf), joined, (line) => `${changeId}:kept:${line.id}`)
+  m.installations = after
+  m.entries = followed.lines.map((l) => {
+    const was = before.find((e) => e.id === l.id)
+    return was && JSON.stringify(lineOf(was)) === JSON.stringify(l) ? was : entryOf(l)
+  })
+}
 
 /**
- * A reading typed with a change: the tyre log's line for that day (its note kept), and a reading of the car on that day. A line it changes
- * has version 0 from then on, so a later change of it goes without the version the server will have moved on from. `clear`: a null reading
- * clears the line's (the tyre log's own edit, as the server's `clear`), else it leaves it.
+ * What was typed with a change (a reading, a note) goes on the line of the installation that starts that day, else (a join made none that
+ * day) on a Note line of the set, as the server's `TypedAsync`. A note left out leaves the line's.
  */
-function typed(m: Model, vehicleId: string, on: string | null, odometer: number | null, note?: unknown, clear = false) {
-  if (!on || (odometer === null && note === undefined)) return
-  const existing = m.days.find((d) => d.day === on)
-  const next: Day = existing
-    ? { ...existing, odometer: clear ? odometer : (odometer ?? existing.odometer), note: note === undefined ? existing.note : ((note as string | null) ?? null), version: 0 }
-    : named<Day>('TyreLogDay', { id: `${LOCAL_LINE}${vehicleId}:${on}`, day: on, odometer, note: (note as string | null | undefined) ?? null, version: 0 })
-  m.days = [...m.days.filter((d) => d !== existing), next]
-  if (odometer !== null) m.readings = [...m.readings.filter((r) => r.date !== on || r.value > odometer), ...(m.readings.some((r) => r.date === on && r.value > odometer) ? [] : [named('OdometerPoint', { date: on, value: odometer })])]
+function typed(m: Model, setId: string, on: string | null, odometer: number | null, note: string | null, changeId: string) {
+  if (!on || (odometer === null && note === null)) return
+  const starting = m.installations.find((x) => x.from === on)
+  const line = starting ? m.entries.find((e) => e.id === starting.id) : undefined
+  if (line) {
+    m.entries = m.entries.map((e) => (e === line ? entryOf({ ...lineOf(e), odometer: odometer ?? e.odometer ?? null, note: note ?? e.note ?? null }) : e))
+    return
+  }
+  m.entries = [...m.entries, entryOf({ id: `${changeId}:note:${on}`, kind: 'NOTE', setId, installationId: null, day: on, odometer, note })]
+}
+
+/** A swap of a set onto the car: the history's rule, and the lines that follow it. */
+function swapped(m: Model, c: Change, setId: string, on: string, pairOneFront: boolean | null, options: { id: string; replace: boolean; pairsGiven?: boolean }) {
+  const joined: Joined[] = []
+  history(m, swap(states(m), m.installations, setId, on, pairOneFront, { ...options, joined: (id, d) => joined.push({ id, day: d }) }), joined, c.id)
 }
 
 /** Applies one tyre change to the model; a rule it breaks is thrown (`TyreRuleError`), as the server would refuse it. */
@@ -93,8 +113,8 @@ function apply(m: Model, c: Change, vehicleId: string) {
         installations: [],
       }))
       if (input.fitted === true) {
-        m.installations = swap(states(m), m.installations, str(input.id), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
-        typed(m, vehicleId, day(input.day), num(input.odometer))
+        swapped(m, c, str(input.id), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
+        typed(m, str(input.id), day(input.day), num(input.odometer), null, c.id)
       }
       return
     }
@@ -129,24 +149,25 @@ function apply(m: Model, c: Change, vehicleId: string) {
       const s = setOf(m, input.id)
       m.sets = m.sets.filter((x) => x !== s)
       m.installations = m.installations.filter((x) => x.setId !== s.set.id)
+      m.entries = m.entries.filter((e) => e.setId !== s.set.id) // hidden through it, as its installations
       return
     }
     case 'swapTyres':
       setOf(m, input.setId)
-      m.installations = swap(states(m), m.installations, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
-      typed(m, vehicleId, day(input.day), num(input.odometer), input.note ?? undefined)
+      swapped(m, c, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
+      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id)
       return
     case 'changeTyrePositions':
       setOf(m, input.setId)
-      m.installations = changePositions(states(m), m.installations, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, str(input.installationId) || c.id)
-      typed(m, vehicleId, day(input.day), num(input.odometer), input.note ?? undefined)
+      history(m, changePositions(states(m), m.installations, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, str(input.installationId) || c.id), [], c.id)
+      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id)
       return
     case 'addPastTyreSwaps': {
       const rows = (Array.isArray(input.swaps) ? (input.swaps as Record<string, unknown>[]) : []).slice().sort((a, b) => (str(a.day) < str(b.day) ? -1 : 1))
       for (const row of rows) {
         setOf(m, row.setId)
-        m.installations = swap(states(m), m.installations, str(row.setId), str(row.day), null, { id: str(row.installationId) || `${c.id}:${str(row.day)}`, replace: input.replace === true, pairsGiven: false })
-        typed(m, vehicleId, day(row.day), num(row.odometer))
+        swapped(m, c, str(row.setId), str(row.day), null, { id: str(row.installationId) || `${c.id}:${str(row.day)}`, replace: input.replace === true, pairsGiven: false })
+        typed(m, str(row.setId), day(row.day), num(row.odometer), null, c.id)
       }
       return
     }
@@ -154,46 +175,68 @@ function apply(m: Model, c: Change, vehicleId: string) {
       setOf(m, input.setId)
       if (m.installations.some((x) => x.id === input.id)) return
       const id = str(input.id) || c.id
-      m.installations = checked(
+      history(m, checked(
         states(m),
         [...m.installations, { id, setId: str(input.setId), from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null }],
         new Set([id]),
-      )
-      typed(m, vehicleId, day(input.from), num(input.odometerFrom))
-      typed(m, vehicleId, day(input.until), num(input.odometerUntil))
+      ), [], c.id)
+      typed(m, str(input.setId), day(input.from), num(input.odometerFrom), null, c.id)
+      typed(m, str(input.setId), day(input.until), num(input.odometerUntil), null, c.id)
       return
     }
     case 'updateTyreInstallation': {
       const old = m.installations.find((x) => x.id === input.id)
       if (!old) throw new TyreRuleError('tyres.installationNotFound')
       if (day(input.until) !== null && str(input.until) <= str(input.from)) throw new TyreRuleError('tyres.untilBeforeFrom', { from: str(input.from), until: str(input.until) })
-      m.installations = checked(
+      history(m, checked(
         states(m),
         m.installations.map((x) => (x === old ? { ...old, from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null } : x)),
         new Set([old.id]),
-      )
-      typed(m, vehicleId, day(input.from), num(input.odometerFrom))
-      typed(m, vehicleId, day(input.until), num(input.odometerUntil))
+      ), [], c.id)
+      typed(m, old.setId, day(input.from), num(input.odometerFrom), null, c.id)
+      typed(m, old.setId, day(input.until), num(input.odometerUntil), null, c.id)
       return
     }
     case 'deleteTyreInstallation':
       if (!m.installations.some((x) => x.id === input.id)) throw new TyreRuleError('tyres.installationNotFound')
-      m.installations = m.installations.filter((x) => x.id !== input.id)
+      history(m, m.installations.filter((x) => x.id !== input.id), [], c.id)
       return
-    case 'setTyreLogDay': {
-      const on = day(input.day)
-      const existing = m.days.find((d) => d.day === on)
-      const odometer = num(input.odometer)
-      const note = (input.note as string | null | undefined) ?? null
-      // The reading it replaces goes first (one typed lower would otherwise stay as the day's highest); a reading typed here was the day's own.
-      if (existing?.odometer != null && existing.odometer !== odometer) m.readings = m.readings.filter((r) => !(r.date === on && r.value === existing.odometer))
-      // Cleared, the line goes with its reading (as clearing an expense's odometer); a reading cleared with the note kept leaves the line without one.
-      if (odometer === null && !note) m.days = m.days.filter((d) => d !== existing)
-      else typed(m, vehicleId, on, odometer, note, true)
+    case 'addTyreEntry': {
+      if (m.entries.some((e) => e.id === input.id)) return // sent before: the server answers it with what it made
+      const kind = str(input.kind) as Entry['kind']
+      if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
+      if (input.setId) setOf(m, input.setId)
+      m.entries = [...m.entries, entryOf({ id: str(input.id) || c.id, kind, setId: day(input.setId), installationId: null, day: str(input.day), odometer: num(input.odometer), note: text(input.note) })]
+      return
+    }
+    case 'updateTyreEntry': {
+      const line = m.entries.find((e) => e.id === input.id)
+      if (!line) throw new TyreRuleError('tyres.entryNotFound')
+      const kind = str(input.kind) as Entry['kind']
+      const setId = day(input.setId)
+      const on = str(input.day)
+      if (LINE_KINDS.has(line.kind)) {
+        if (kind !== line.kind || setId !== (line.setId ?? null)) throw new TyreRuleError('tyres.swapLineLocked')
+        if (on !== line.day) history(m, moveSwap(states(m), m.installations, line.installationId ?? line.id, on), [], c.id)
+      } else {
+        if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
+        if (setId && setId !== line.setId) setOf(m, setId)
+      }
+      m.entries = m.entries.map((e) => (e.id === line.id ? entryOf({ ...lineOf(e), kind, setId, day: on, odometer: num(input.odometer), note: text(input.note) }) : e))
+      return
+    }
+    case 'deleteTyreEntry': {
+      const line = m.entries.find((e) => e.id === input.id)
+      if (!line) throw new TyreRuleError('tyres.entryNotFound')
+      // A swap's line takes its installation along.
+      if (line.installationId && m.installations.some((x) => x.id === line.installationId))
+        history(m, m.installations.filter((x) => x.id !== line.installationId), [], c.id)
+      else m.entries = m.entries.filter((e) => e !== line)
       return
     }
     case 'restoreTyreSet':
     case 'restoreTyreInstallation':
+    case 'restoreTyreEntry':
       return // what is in the trash is the server's (online only): shown once synced
   }
 }
@@ -234,14 +277,24 @@ function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string>; 
   })
   const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
   sets.sort((a, b) => Number(a.set.isRetired) - Number(b.set.isRetired) || collator.compare(a.set.name, b.set.name) || (a.set.id < b.set.id ? -1 : 1))
-  const days = [...m.days].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
-  const readings = [...m.readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  return { tyres: { ...base, sets, days, readings, hasReadings: readings.length > 0 }, touched, added }
+  // The server's order (`TyreService` `Overview`): newest day first, a swap's line before the others of its day, then by id.
+  const swapFirst = (e: Entry) => (LINE_KINDS.has(e.kind) ? 0 : 1)
+  const entries = [...m.entries].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : swapFirst(a) - swapFirst(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)))
+  // The car's readings: the server's, less those of the lines as they were, plus those of the lines as they are now (moved, trashed, typed).
+  const readings = [...base.readings]
+  for (const e of base.entries) {
+    const at = e.odometer == null ? -1 : readings.findIndex((r) => r.date === e.day && r.value === e.odometer)
+    if (at >= 0) readings.splice(at, 1)
+  }
+  for (const e of entries) if (e.odometer != null) readings.push(named('OdometerPoint', { date: e.day, value: e.odometer }))
+  readings.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.value - b.value))
+  return { tyres: { ...base, sets, entries, readings, hasReadings: readings.length > 0 }, touched, added }
 }
 
 /** One tyre change over the vehicle's tyres as they are shown: what the device checks before it keeps the change (the server's refusals). */
-/** A kept answer of an older build's shape (#288 renamed a set's stretches to installations) counts as none, never throws. */
-const current = (tyres: Tyres): Tyres => (tyres.sets.every((s) => Array.isArray(s.installations)) ? tyres : noTyres(tyres.vehicleId))
+/** A kept answer of an older build's shape (#288 renamed a set's stretches to installations, and made the tyre log's days lines) counts as none, never throws. */
+const current = (tyres: Tyres): Tyres =>
+  Array.isArray(tyres.entries) && tyres.sets.every((s) => Array.isArray(s.installations)) ? tyres : noTyres(tyres.vehicleId)
 
 export function applyTyreChange(given: Tyres, change: Change): Tyres {
   const tyres = current(given)
@@ -256,7 +309,7 @@ export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed 
   const m = modelOf(base)
   const skipped: string[] = []
   for (const change of [...changes].filter((c) => c.entity === 'tyres' && c.vehicleId === base.vehicleId).sort((a, b) => a.seq - b.seq)) {
-    const attempt: Model = { ...m, sets: m.sets.map((s) => ({ ...s, set: { ...s.set } })), installations: [...m.installations], days: [...m.days], readings: [...m.readings] }
+    const attempt: Model = { ...m, sets: m.sets.map((s) => ({ ...s, set: { ...s.set } })), installations: [...m.installations], entries: [...m.entries] }
     try {
       apply(attempt, change, base.vehicleId)
       Object.assign(m, attempt)
@@ -268,4 +321,4 @@ export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed 
 }
 
 /** The answer of a vehicle the server has no tyres of yet as far as this device knows (added here, or never downloaded): nothing. */
-export const noTyres = (vehicleId: string): Tyres => named<Tyres>('VehicleTyres', { vehicleId, sets: [], days: [], readings: [], hasReadings: false })
+export const noTyres = (vehicleId: string): Tyres => named<Tyres>('VehicleTyres', { vehicleId, sets: [], entries: [], readings: [], hasReadings: false })

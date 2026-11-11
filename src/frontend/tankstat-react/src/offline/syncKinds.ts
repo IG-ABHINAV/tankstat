@@ -41,7 +41,10 @@ export const SYNC_KINDS: Record<SyncChangeKind, [ChangeEntity, ChangeAction]> = 
   UPDATE_TYRE_INSTALLATION: ['tyres', 'updateTyreInstallation'],
   DELETE_TYRE_INSTALLATION: ['tyres', 'deleteTyreInstallation'],
   RESTORE_TYRE_INSTALLATION: ['tyres', 'restoreTyreInstallation'],
-  SET_TYRE_LOG_DAY: ['tyres', 'setTyreLogDay'],
+  ADD_TYRE_ENTRY: ['tyres', 'addTyreEntry'],
+  UPDATE_TYRE_ENTRY: ['tyres', 'updateTyreEntry'],
+  DELETE_TYRE_ENTRY: ['tyres', 'deleteTyreEntry'],
+  RESTORE_TYRE_ENTRY: ['tyres', 'restoreTyreEntry'],
 }
 
 /** The ChangeInput field of each kind (LOG_REFUELING: logRefueling). */

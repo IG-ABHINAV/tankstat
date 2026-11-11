@@ -287,10 +287,10 @@ const vehicleTyres: Resolver = async (_rows, variables, kept) => {
   return tyres ? { vehicleTyres: tyres } : undefined
 }
 
-/** The readings typed with tyre changes (the tyre log's days), kept and waiting: they are readings of the car like a log's. */
+/** The readings typed with tyre changes (the tyre log's lines), kept and waiting: they are readings of the car like a log's. */
 async function tyreReadings(vehicleId: string, kept: Kept): Promise<{ date: string; odometer: number }[]> {
   const tyres = (await tyresOf(vehicleId, kept)) ?? ((await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined)
-  return (tyres?.days ?? []).flatMap((d) => (d.odometer != null ? [{ date: d.day, odometer: d.odometer }] : []))
+  return (tyres?.entries ?? []).flatMap((e) => (e.odometer != null ? [{ date: e.day, odometer: e.odometer }] : []))
 }
 
 const logDefaults: Resolver = async (rows, variables, kept) => {

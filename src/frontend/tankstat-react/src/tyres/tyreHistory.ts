@@ -47,7 +47,11 @@ function moved(before: readonly InstallationState[], after: readonly Installatio
  */
 export function swap(
   sets: readonly SetState[], installations: readonly InstallationState[], setId: string, day: string, pairOneFront: boolean | null,
-  { id, replace = false, pairsGiven = true }: { id: string; replace?: boolean; pairsGiven?: boolean },
+  { id, replace = false, pairsGiven = true, joined }: {
+    id: string; replace?: boolean; pairsGiven?: boolean
+    /** Told of each installation a join takes away from its first day (trashed into the one before it, or moved earlier), with that day. */
+    joined?: (id: string, day: string) => void
+  },
 ): InstallationState[] {
   const set = sets.find((s) => s.id === setId)
   if (!set) throw new TyreRuleError('tyres.setNotFound')
@@ -73,10 +77,14 @@ export function swap(
   // Into a gap, never the set's next installation: that one began with a swap of its own (only one this swap cut or replaced is carried on).
   const after = covering && until !== null ? live.find((s) => s.setId === setId && s.from === until && s.pairOneFront === pairOneFront) : undefined
   if (before && after) {
+    joined?.(after.id, after.from)
     before.until = after.until
     live = live.filter((s) => s !== after)
   } else if (before) before.until = until
-  else if (after) after.from = day
+  else if (after) {
+    joined?.(after.id, after.from)
+    after.from = day
+  }
   else live.push({ id, setId, from: day, until, pairOneFront })
   return checked(sets, live, moved(installations, live))
 }
@@ -97,6 +105,25 @@ export function changePositions(
   const until = covering.until
   covering.until = day
   live.push({ id, setId, from: day, until, pairOneFront })
+  return checked(sets, live, moved(installations, live))
+}
+
+/**
+ * The swap that began an installation moves to another day (`TyreHistory.MoveSwap`, its line's day changed, #288): it starts then, and the
+ * installation that came off on its old first day comes off then instead (refused at or before that one's own first day).
+ */
+export function moveSwap(sets: readonly SetState[], installations: readonly InstallationState[], id: string, day: string): InstallationState[] {
+  const live = installations.map((s) => ({ ...s }))
+  const moving = live.find((s) => s.id === id)
+  if (!moving) throw new TyreRuleError('tyres.installationTrashedCannotEdit')
+  if (moving.from === day) return live
+  const before = live.find((s) => s !== moving && s.until === moving.from)
+  if (before) {
+    if (day <= before.from) throw new TyreRuleError('tyres.swapBeforePrevious', { set: sets.find((x) => x.id === before.setId)?.name ?? '', from: before.from })
+    before.until = day
+  }
+  if (moving.until !== null && moving.until <= day) throw new TyreRuleError('tyres.untilBeforeFrom', { from: day, until: moving.until })
+  moving.from = day
   return checked(sets, live, moved(installations, live))
 }
 

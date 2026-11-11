@@ -19,7 +19,7 @@ export type Tyres = VehicleTyresFieldsFragment
 export type TyreSetInfo = Tyres['sets'][number]
 export type TyreSet = TyreSetInfo['set']
 export type TyreInstallationInfo = TyreSetInfo['installations'][number]
-export type TyreLogDay = Tyres['days'][number]
+export type TyreEntry = Tyres['entries'][number]
 
 /** A tyre change saved: sent (the server applied it), or kept on this device to be sent once the server can be reached. */
 export interface TyreSaved {
@@ -39,7 +39,7 @@ const actionOf = (document: DocumentNode): TyreAction => {
 
 const SET_ACTIONS = new Set<TyreAction>(['updateTyreSet', 'setTyreRoughDistance', 'retireTyreSet', 'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet'])
 const INSTALLATION_ACTIONS = new Set<TyreAction>(['updateTyreInstallation', 'deleteTyreInstallation', 'restoreTyreInstallation'])
-const DAY_ACTIONS = new Set<TyreAction>(['setTyreLogDay'])
+const ENTRY_ACTIONS = new Set<TyreAction>(['updateTyreEntry', 'deleteTyreEntry', 'restoreTyreEntry'])
 
 /** The version of the set, installation or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
 function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: Record<string, unknown>): number | null {
@@ -48,8 +48,8 @@ function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: R
     ? sets.find((s) => s.set.id === input.id)?.set.version
     : INSTALLATION_ACTIONS.has(action)
       ? sets.flatMap((s) => s.installations).find((x) => x.installation.id === input.id)?.installation.version
-      : DAY_ACTIONS.has(action)
-        ? shown?.days.find((d) => d.id === input.id)?.version
+      : ENTRY_ACTIONS.has(action)
+        ? shown?.entries.find((e) => e.id === input.id)?.version
         : undefined
   return version ? version : null
 }

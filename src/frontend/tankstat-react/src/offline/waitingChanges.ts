@@ -63,17 +63,19 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
   }
   for (const c of changes) if (c.entity === 'recurring' && c.input?.title && c.action !== 'markDone') schedules.set(c.targetId, String(c.input.title))
 
-  // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change.
+  // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change; an installation's
+  // and a tyre log line's by the set they belong to (#288).
   const tyreSets = new Map<string, string>()
   const installationSet = new Map<string, string>()
   for (const vehicleId of new Set(changes.filter((c) => c.entity === 'tyres').map((c) => c.vehicleId))) {
     const kept = (await deviceData.read(snapshotKey('VehicleTyres', { vehicleId })))?.data as
-      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; installations: { installation: { id: string } }[] }[] } | null }
+      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; installations: { installation: { id: string } }[] }[]; entries?: { id: string; setId?: string | null }[] } | null }
       | undefined
     for (const s of kept?.vehicleTyres?.sets ?? []) {
       tyreSets.set(s.set.id, s.set.name)
       for (const x of s.installations) installationSet.set(x.installation.id, s.set.id)
     }
+    for (const e of kept?.vehicleTyres?.entries ?? []) if (e.setId) installationSet.set(e.id, e.setId)
   }
   for (const c of changes) {
     if (c.action === 'addTyreSet' || c.action === 'updateTyreSet') tyreSets.set(String(c.input?.id), String(c.input?.name))
