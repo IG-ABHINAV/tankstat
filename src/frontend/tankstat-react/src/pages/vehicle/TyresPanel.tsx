@@ -23,7 +23,7 @@ import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
 import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
 import { noTyres } from '../../tyres/replay.ts'
 import { EntryDialog, TrashEntryDialog } from '../../tyres/EntryDialog.tsx'
-import { isSwapLine, useEntryWords } from '../../tyres/entries.ts'
+import { isDeviceLine, isSwapLine, useEntryWords } from '../../tyres/entries.ts'
 import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords } from '../../tyres/tyres.ts'
 
 const SEASON_ICON: Record<TyreSeason, ReactNode> = {
@@ -313,6 +313,8 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
             const worked = entry.odometer == null && isSwapLine(entry)
             const on = worked ? odometerOn(sorted, entry.day) : null
             const odometer = entry.odometer != null ? words.distance(entry.odometer) : on ? words.distance(on.value, on.approximate) : worked ? t('tyres.beforeLog') : null
+            // A line the device made in the server's place has no id the server knows: it is changed once its change is synced.
+            const changeable = canLog && !isDeviceLine(entry)
             const body = (
               <Box sx={{ flex: 1, minWidth: 0, textAlign: 'start' }}>
                 <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -335,7 +337,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
             )
             return (
               <Box component="li" key={entry.id} sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 0.5, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
-                {canLog ? (
+                {changeable ? (
                   <EntryDialog
                     vehicleId={vehicleId}
                     unit={unit}
@@ -353,7 +355,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                 ) : (
                   <Box sx={{ flex: 1, minWidth: 0, px: 1, py: 0.75 }}>{body}</Box>
                 )}
-                {canLog && <TrashEntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} entry={entry} onError={setError} />}
+                {changeable && <TrashEntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} entry={entry} onError={setError} />}
               </Box>
             )
           })}

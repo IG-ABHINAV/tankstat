@@ -485,6 +485,30 @@ it('edits a line offline naming the version it was made from, and a line a waiti
   expect(outbox.changes[2].input?.id).toBe(outbox.changes[1].input?.installationId) // the swap's line has its installation's id
 })
 
+it('shows a note line the device made for a waiting change without its Edit and bin: the server names that line, so it is changed once synced', async () => {
+  const { ui } = setup([summer, winter])
+  await screen.findByRole('article', { name: 'Continental WinterContact' })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(within(screen.getByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Continental WinterContact' })
+  await ui.click(within(history).getByRole('button', { name: 'Add an installation' }))
+  const add = await screen.findByRole('dialog', { name: 'Add an installation' })
+  await typeDate(ui, await findDateField(/First day on the car/, add), '2024-11-09')
+  await typeDate(ui, await findDateField(/Day it came off/, add), '2025-03-29')
+  await ui.type(within(add).getByLabelText(/^Odometer on the day it came off/), '124000')
+  await ui.click(within(add).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(outbox.changes).toMatchObject([{ action: 'addTyreInstallation', input: { odometerUntil: 124_000 } }]))
+
+  // The page is behind the history dialog: read through it.
+  const log = screen.getByRole('region', { name: 'Tyre log', hidden: true })
+  await waitFor(() => expect(log).toHaveTextContent('124,000 km'))
+  expect(within(log).getByRole('button', { name: 'Tyre swap, Continental WinterContact, Nov 9, 2024', hidden: true })).toBeInTheDocument() // the installation's own line
+  expect(within(log).queryByRole('button', { name: /^Note, Continental WinterContact, Mar 29, 2025/, hidden: true })).not.toBeInTheDocument()
+  expect(within(log).queryByRole('button', { name: 'Move to the trash: Note, Mar 29, 2025', hidden: true })).not.toBeInTheDocument()
+})
+
 it('shows no tyres, not an endless wait, to someone who may see the vehicle but not its logs (the server answers null)', async () => {
   setup([summer, winter])
   server.use(graphql.query('VehicleTyres', () => HttpResponse.json({ data: { vehicleTyres: null } })))

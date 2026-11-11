@@ -76,9 +76,11 @@ function history(m: Model, after: InstallationState[], joined: Joined[], changeI
 
 /**
  * What was typed with a change (a reading, a note) goes on the line of the installation that starts that day, else (a join made none that
- * day) on a Note line of the set, as the server's `TypedAsync`. A note left out leaves the line's.
+ * day) on a Note line of the set, as the server's `TypedAsync`. A note left out leaves the line's. The Note line takes `id`, the id of the
+ * installation the change would have made, when no line has it (the server's choice too, so a later change of the line finds it there);
+ * without one its id is the device's own (`entries.ts` `isDeviceLine`: the server gives it one of its own).
  */
-function typed(m: Model, setId: string, on: string | null, odometer: number | null, note: string | null, changeId: string) {
+function typed(m: Model, setId: string, on: string | null, odometer: number | null, note: string | null, changeId: string, id = '') {
   if (!on || (odometer === null && note === null)) return
   const starting = m.installations.find((x) => x.from === on)
   const line = starting ? m.entries.find((e) => e.id === starting.id) : undefined
@@ -86,7 +88,8 @@ function typed(m: Model, setId: string, on: string | null, odometer: number | nu
     m.entries = m.entries.map((e) => (e === line ? entryOf({ ...lineOf(e), odometer: odometer ?? e.odometer ?? null, note: note ?? e.note ?? null }) : e))
     return
   }
-  m.entries = [...m.entries, entryOf({ id: `${changeId}:note:${on}`, kind: 'NOTE', setId, installationId: null, day: on, odometer, note })]
+  const lineId = id && m.entries.every((e) => e.id !== id) ? id : `${changeId}:note:${on}`
+  m.entries = [...m.entries, entryOf({ id: lineId, kind: 'NOTE', setId, installationId: null, day: on, odometer, note })]
 }
 
 /** A swap of a set onto the car: the history's rule, and the lines that follow it. */
@@ -114,7 +117,7 @@ function apply(m: Model, c: Change, vehicleId: string) {
       }))
       if (input.fitted === true) {
         swapped(m, c, str(input.id), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
-        typed(m, str(input.id), day(input.day), num(input.odometer), null, c.id)
+        typed(m, str(input.id), day(input.day), num(input.odometer), null, c.id, str(input.installationId))
       }
       return
     }
@@ -155,19 +158,19 @@ function apply(m: Model, c: Change, vehicleId: string) {
     case 'swapTyres':
       setOf(m, input.setId)
       swapped(m, c, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, { id: str(input.installationId) || c.id, replace: input.replace === true })
-      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id)
+      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id, str(input.installationId))
       return
     case 'changeTyrePositions':
       setOf(m, input.setId)
       history(m, changePositions(states(m), m.installations, str(input.setId), str(input.day), (input.pairOneFront as boolean | null) ?? null, str(input.installationId) || c.id), [], c.id)
-      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id)
+      typed(m, str(input.setId), day(input.day), num(input.odometer), text(input.note), c.id, str(input.installationId))
       return
     case 'addPastTyreSwaps': {
       const rows = (Array.isArray(input.swaps) ? (input.swaps as Record<string, unknown>[]) : []).slice().sort((a, b) => (str(a.day) < str(b.day) ? -1 : 1))
       for (const row of rows) {
         setOf(m, row.setId)
         swapped(m, c, str(row.setId), str(row.day), null, { id: str(row.installationId) || `${c.id}:${str(row.day)}`, replace: input.replace === true, pairsGiven: false })
-        typed(m, str(row.setId), day(row.day), num(row.odometer), null, c.id)
+        typed(m, str(row.setId), day(row.day), num(row.odometer), null, c.id, str(row.installationId))
       }
       return
     }
