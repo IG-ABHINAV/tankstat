@@ -2722,6 +2722,14 @@
       "stays": "Unticked, the expense stays on the Expenses tab.",
       "staysWithReading": "Unticked, the expense stays on the Expenses tab, with the reading.",
       "readingWithExpense": "With the expense in the trash too, the reading of {{value}} no longer counts among the car's readings until the line is restored."
+    },
+    "spent": "Spent",
+    "repairs": "Repairs",
+    "costs": {
+      "title": "Spent on tyres",
+      "all": "All",
+      "noSet": "Not tied to a set",
+      "note": "The amounts are the expenses linked to the tyre log's lines."
     }
   }
 }

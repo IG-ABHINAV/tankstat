@@ -404,7 +404,7 @@ it('swaps while the server is out of reach: kept on the device, shown done and m
   expect(outbox.changes).toMatchObject([{ entity: 'tyres', action: 'swapTyres', vehicleId: 'v1', targetId: UUID, input: { setId: 's2', replace: false, installationId: UUID } }])
   const winterCard = await screen.findByRole('article', { name: 'Continental WinterContact' })
   await waitFor(() => expect(within(winterCard).getByText('Changed · not synced')).toBeInTheDocument())
-  expect(within(winterCard).getByText('updated once synced')).toBeInTheDocument()
+  expect(within(winterCard).getAllByText('updated once synced')).toHaveLength(3) // its distance, what it cost and its repairs (#288)
   expect(within(winterCard).getByRole('button', { name: 'Swap tyres' })).toBeInTheDocument() // on the car now
   expect(within(screen.getByRole('article', { name: 'Michelin Primacy 4' })).getByText('Changed · not synced')).toBeInTheDocument()
 
@@ -650,4 +650,20 @@ it('says an expense restored on its own leaves its tyre log line in the trash (#
 
   await ui.click(await screen.findByRole('button', { name: /^Restore Puncture repaired/ }))
   expect(await screen.findByText('Restored. Its tyre log line stays in the trash.')).toBeInTheDocument()
+})
+
+it('shows what each set cost and its repairs, and what the tyres cost altogether, per set and for the lines of no set (#288)', async () => {
+  setup([{ ...summer, spent: [{ currency: 'HUF', amount: 120_000 }, { currency: 'EUR', amount: 40 }], repairs: 2 }, winter], {
+    entries: [{ id: 'n1', kind: 'OTHER', setId: null, day: '2026-05-01', odometer: null, note: null, expenseId: 'x', amount: 8, currency: 'EUR' }],
+  })
+
+  const card = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
+  expect(within(card).getByText('Spent').nextSibling).toHaveTextContent(/HUF.*120,000.*·.*€40\.00/)
+  expect(within(card).getByText('Repairs').nextSibling).toHaveTextContent('2')
+  expect(within(screen.getByRole('article', { name: 'Continental WinterContact' })).getByText('Spent').nextSibling).toHaveTextContent('—')
+  const block = screen.getByRole('heading', { name: 'Spent on tyres' }).parentElement!
+  expect(within(block).getByText('All').nextSibling).toHaveTextContent(/HUF.*120,000.*·.*€48\.00/)
+  expect(within(block).getByText('Continental WinterContact').nextSibling).toHaveTextContent('—') // every set has its row
+  expect(within(block).getByText('Not tied to a set').nextSibling).toHaveTextContent('€8.00')
+  expect(within(block).getByText("The amounts are the expenses linked to the tyre log's lines.")).toBeInTheDocument()
 })

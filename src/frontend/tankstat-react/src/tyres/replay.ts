@@ -165,6 +165,8 @@ function apply(m: Model, c: Change, vehicleId: string) {
           since: str(input.since), madeWeek: num(input.madeWeek), madeYear: num(input.madeYear), roughDistance: rough, roughUntil: rough > 0 ? day(input.day) : null, retiredOn: null, isRetired: false, version: 0,
         }),
         figures: named<SetInfo['figures']>('TyreSetFigures', { distance: rough, approximate: rough > 0, measured: 0, pairOneFront: 0, pairOneRear: 0, pairsUnknown: 0, suggestion: null }),
+        spent: [],
+        repairs: 0,
         installations: [],
       }))
       if (input.fitted === true) {
@@ -386,4 +388,4 @@ export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed 
 }
 
 /** The answer of a vehicle the server has no tyres of yet as far as this device knows (added here, or never downloaded): nothing. */
-export const noTyres = (vehicleId: string): Tyres => named<Tyres>('VehicleTyres', { vehicleId, sets: [], entries: [], readings: [], hasReadings: false, expenseCategory: null })
+export const noTyres = (vehicleId: string): Tyres => named<Tyres>('VehicleTyres', { vehicleId, sets: [], entries: [], readings: [], hasReadings: false, expenseCategory: null, spentAll: [], spentNoSet: [] })

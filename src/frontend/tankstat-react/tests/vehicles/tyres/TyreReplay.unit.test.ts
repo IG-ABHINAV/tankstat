@@ -12,6 +12,8 @@ const set = (id: string, name: string, onTheCar: boolean, installations: ReturnT
   onTheCar,
   set: { id, vehicleId: 'v1', name, season: 'SUMMER' as const, size: null, since: '2023-03-01', madeWeek: null, madeYear: null, roughDistance: 0, roughUntil: null, retiredOn: null, isRetired: false, version: 2 },
   figures: { distance: 9000, approximate: false, measured: 9000, pairOneFront: 9000, pairOneRear: 0, pairsUnknown: 0, suggestion: null },
+  spent: [],
+  repairs: 0,
   installations,
 })
 const line = (id: string, setId: string | null, day: string, kind: Tyres['entries'][number]['kind'] = 'SWAP', odometer: number | null = null, note: string | null = null) => ({
@@ -23,6 +25,8 @@ const base: Tyres = {
   hasReadings: true,
   readings: [{ date: '2026-03-01', value: 140_000 }],
   expenseCategory: null,
+  spentAll: [],
+  spentNoSet: [],
   entries: [line('r1', 's1', '2026-03-28'), line('r2', 's2', '2025-11-15')],
   sets: [
     set('s2', 'Continental WinterContact', false, [installation('r2', 's2', '2025-11-15', '2026-03-28')]),

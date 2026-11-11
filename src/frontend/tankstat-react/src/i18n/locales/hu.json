@@ -2722,6 +2722,14 @@
       "stays": "Ha nem jelölöd be, a kiadás a Kiadások lapon marad.",
       "staysWithReading": "Ha nem jelölöd be, a kiadás a Kiadások lapon marad, a kilométeróra-állással együtt.",
       "readingWithExpense": "Ha a kiadás is a kukába kerül, a(z) {{value}} kilométeróra-állás nem számít az autó állásai közé, amíg a sort vissza nem állítod."
+    },
+    "spent": "Ráköltve",
+    "repairs": "Javítások",
+    "costs": {
+      "title": "Gumikra költve",
+      "all": "Összesen",
+      "noSet": "Szetthez nem kötve",
+      "note": "Az összegek a gumi napló soraihoz kapcsolt kiadások."
     }
   }
 }

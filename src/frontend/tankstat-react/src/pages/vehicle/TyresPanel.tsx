@@ -131,10 +131,57 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
             </Stack>
           )}
           {retired.length > 0 && <Section title={t('tyres.retired')}>{retired.map(card)}</Section>}
+          <SpentOnTyres tyres={tyres} pending={pending} />
         </Stack>
         <TyreLog tyres={tyres} vehicleId={vehicle.id} unit={unit} canLog={canLog} />
       </Box>
     </Stack>
+  )
+}
+
+/** Amounts per currency in one line, the largest first ("HUF 120,000 · €40.00"); a dash for none. */
+function spentText(spent: readonly { currency: string; amount: number }[], format: ReturnType<typeof useFormat>) {
+  return spent.length === 0 ? '—' : spent.map((s) => format.money(s.amount, s.currency)).join(' · ')
+}
+
+/**
+ * The costs of a set (or of the lines of no set, `null`) wait for a sync (#288): a line with an expense that a waiting change made or
+ * changed (the device gives it version 0) makes the server's figures out of date.
+ */
+const costsWaitFor = (tyres: Tyres, setId: string | null) =>
+  tyres.entries.some((e) => e.version === 0 && (e.setId ?? null) === setId && (e.expenseId != null || e.amount != null))
+
+/**
+ * What the tyres cost (#288 step 4): a row for all of them, one per set (also with nothing spent), and one for the lines of no set when
+ * those hold something; the server's figures, a row a waiting change touched updated once synced. Shown once the vehicle has a set.
+ */
+function SpentOnTyres({ tyres, pending }: { tyres: Tyres; pending: ReadonlyMap<string, 'new' | 'changed'> }) {
+  const { t } = useTranslation()
+  const format = useFormat()
+  const waiting = (setId: string | null) => (setId !== null && pending.has(setId)) || costsWaitFor(tyres, setId)
+  const rows = [
+    { key: 'all', name: t('tyres.costs.all'), spent: tyres.spentAll ?? [], stale: tyres.sets.some((s) => waiting(s.set.id)) || waiting(null), strong: true },
+    ...tyres.sets.map((s) => ({ key: s.set.id, name: s.set.name, spent: s.spent ?? [], stale: waiting(s.set.id), strong: false })),
+    ...((tyres.spentNoSet ?? []).length > 0 || waiting(null) ? [{ key: 'none', name: t('tyres.costs.noSet'), spent: tyres.spentNoSet ?? [], stale: waiting(null), strong: false }] : []),
+  ]
+  return (
+    <Section title={t('tyres.costs.title')}>
+      <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', columnGap: 2, rowGap: 0.75 }}>
+        {rows.map((r) => (
+          <Box key={r.key} sx={{ display: 'contents' }}>
+            <Typography component="dt" variant="body2" sx={{ fontWeight: r.strong ? 700 : 400, overflowWrap: 'anywhere' }}>
+              {r.name}
+            </Typography>
+            <Typography component="dd" variant="body2" sx={{ m: 0, textAlign: 'end', fontWeight: r.strong ? 700 : 400, fontVariantNumeric: 'tabular-nums' }}>
+              {r.stale ? t('tyres.updatedOnSync') : spentText(r.spent, format)}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        {t('tyres.costs.note')}
+      </Typography>
+    </Section>
   )
 }
 
@@ -178,6 +225,7 @@ function SetCard({
   const last = info.installations[0]?.installation
   const measuredFrom = info.installations.length > 0 ? info.installations[info.installations.length - 1].installation.from : null
   const nothingMeasured = !tyres.hasReadings || (info.installations.length > 0 && info.installations.every((s) => s.distance.measure === 'NOT_MEASURED'))
+  const costsWaiting = !!pending || costsWaitFor(tyres, set.id)
 
   const retire = async () => {
     setError(undefined)
@@ -229,6 +277,23 @@ function SetCard({
           </Typography>
           <Typography component="dd" variant="body1" sx={{ m: 0, fontWeight: 700 }}>
             {words.age(set)}
+          </Typography>
+        </Box>
+        {/* What it cost and its repairs (#288): the server's figures; one a waiting change touched is updated once synced. */}
+        <Box>
+          <Typography component="dt" variant="caption" sx={{ color: 'text.secondary' }}>
+            {t('tyres.spent')}
+          </Typography>
+          <Typography component="dd" variant="body1" sx={{ m: 0, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+            {costsWaiting ? t('tyres.updatedOnSync') : spentText(info.spent ?? [], format)}
+          </Typography>
+        </Box>
+        <Box>
+          <Typography component="dt" variant="caption" sx={{ color: 'text.secondary' }}>
+            {t('tyres.repairs')}
+          </Typography>
+          <Typography component="dd" variant="body1" sx={{ m: 0, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+            {costsWaiting ? t('tyres.updatedOnSync') : format.number(info.repairs ?? 0)}
           </Typography>
         </Box>
       </Box>

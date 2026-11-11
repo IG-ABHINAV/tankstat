@@ -46,6 +46,14 @@ fragment VehicleTyresFields on VehicleTyres {
   vehicleId
   hasReadings
   expenseCategory
+  spentAll {
+    currency
+    amount
+  }
+  spentNoSet {
+    currency
+    amount
+  }
   readings {
     date
     value
@@ -55,6 +63,11 @@ fragment VehicleTyresFields on VehicleTyres {
   }
   sets {
     onTheCar
+    spent {
+      currency
+      amount
+    }
+    repairs
     set {
       ...TyreSetFields
     }
