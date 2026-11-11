@@ -188,7 +188,7 @@ internal static class TyreChanges
 {
     public static TyreSwapInput Swap(SwapTyresInput i) => new(i.VehicleId, i.SetId, i.Day, i.PairOneFront, i.Replace, i.Odometer, i.Note);
 
-    public static Task<TyreOverview> Add(AddTyreSetInput i, TyreService tyres, CancellationToken ct, int? _ = null) =>
+    public static Task<TyreOverview> Add(AddTyreSetInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddSetAsync(new NewTyreSet(i.VehicleId, new TyreSetInput(i.Name, i.Season, i.Size, i.Since, i.MadeWeek, i.MadeYear, i.RoughDistance), i.Fitted, i.Day, i.Odometer, i.PairOneFront, i.Replace),
             ct, i.Id, i.StretchId);
 
