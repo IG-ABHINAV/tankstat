@@ -96,6 +96,8 @@ public sealed record OfflineCursor(Guid VehicleId, DateOnly? From, DateTimeOffse
 /// <param name="Next">Continues this download; null when it is complete.</param>
 /// <param name="Watermark">The moment to send as <c>since</c> next time.</param>
 /// <param name="Resync">The device's last download is too old for what the server remembers: it starts afresh, nothing else came.</param>
+/// <param name="Tyres">The vehicle's tyres (#287) whole, with the server's figures, on the first page (the device keeps them as they come; it never
+/// works a distance out); null on the others.</param>
 public sealed record OfflinePage(
     Vehicle Vehicle, IReadOnlyList<Refueling> Refuelings, IReadOnlyList<Expense> Expenses, IReadOnlyList<RecurringItem> Recurring,
-    IReadOnlyList<RemovedEntity> Removed, string? Next, DateTimeOffset Watermark, bool Resync);
+    IReadOnlyList<RemovedEntity> Removed, string? Next, DateTimeOffset Watermark, bool Resync, Tyres.TyreOverview? Tyres = null);

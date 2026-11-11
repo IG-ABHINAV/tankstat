@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Change } from './changes.ts'
+import { createdBy, type Change } from './changes.ts'
 import { deviceData } from './deviceData.ts'
 import { outbox, usePendingCount } from './outbox.ts'
 import { snapshotKey } from './snapshotPolicy.ts'
@@ -63,6 +63,29 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
   }
   for (const c of changes) if (c.entity === 'recurring' && c.input?.title && c.action !== 'markDone') schedules.set(c.targetId, String(c.input.title))
 
+  // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change.
+  const tyreSets = new Map<string, string>()
+  const stretchSet = new Map<string, string>()
+  for (const vehicleId of new Set(changes.filter((c) => c.entity === 'tyres').map((c) => c.vehicleId))) {
+    const kept = (await deviceData.read(snapshotKey('VehicleTyres', { vehicleId })))?.data as
+      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; stretches: { stretch: { id: string } }[] }[] } | null }
+      | undefined
+    for (const s of kept?.vehicleTyres?.sets ?? []) {
+      tyreSets.set(s.set.id, s.set.name)
+      for (const x of s.stretches) stretchSet.set(x.stretch.id, s.set.id)
+    }
+  }
+  for (const c of changes) {
+    if (c.action === 'addTyreSet' || c.action === 'updateTyreSet') tyreSets.set(String(c.input?.id), String(c.input?.name))
+    for (const id of createdBy(c)) if (typeof c.input?.setId === 'string') stretchSet.set(id, c.input.setId)
+    if (c.action === 'addTyreSet' && typeof c.input?.stretchId === 'string') stretchSet.set(c.input.stretchId, String(c.input.id))
+  }
+  const tyreSetOf = (c: Change, input: Record<string, unknown>) => {
+    const swaps = Array.isArray(input.swaps) ? (input.swaps as { setId: string }[]) : []
+    const ids = [input.setId, ...swaps.map((s) => s.setId), stretchSet.get(c.targetId), input.id].filter((id): id is string => typeof id === 'string')
+    return [...new Set(ids.map((id) => tyreSets.get(id)).filter((n): n is string => !!n))].join(', ') || undefined
+  }
+
   const items = await Promise.all(
     changes.map(async (change): Promise<WaitingChange> => {
       const input = change.input ?? {}
@@ -82,6 +105,11 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
           return change.action === 'markDone'
             ? { change, date: input.date as string, amount: input.amount as number | null, currency: input.currency as string | null, titles: (change.targetIds ?? []).map((id) => schedules.get(id) ?? '') }
             : { change, title: schedules.get(change.targetId) }
+        case 'tyres': {
+          const swaps = Array.isArray(input.swaps) ? (input.swaps as { day: string }[]) : []
+          const date = (input.day ?? input.from ?? [...swaps].map((s) => s.day).sort()[0]) as string | undefined
+          return { change, name: tyreSetOf(change, input), date }
+        }
       }
     }),
   )

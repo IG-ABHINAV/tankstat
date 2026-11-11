@@ -1,0 +1,192 @@
+# A vehicle's tyres (#287): sets with their figures, their stretches with distances (worked out by the server), the tyre log's days and the
+# vehicle's readings, from which a day's odometer is worked out on the device (tyres/odometer.ts) for a form's hint and a log line.
+
+fragment TyreSetFields on TyreSet {
+  id
+  vehicleId
+  name
+  season
+  size
+  since
+  madeWeek
+  madeYear
+  roughDistance
+  roughUntil
+  retiredOn
+  isRetired
+  version
+}
+
+fragment TyreStretchFields on TyreStretch {
+  id
+  setId
+  from
+  until
+  pairOneFront
+  version
+}
+
+fragment VehicleTyresFields on VehicleTyres {
+  vehicleId
+  hasReadings
+  readings {
+    date
+    value
+  }
+  days {
+    id
+    day
+    odometer
+    note
+    version
+  }
+  sets {
+    onTheCar
+    set {
+      ...TyreSetFields
+    }
+    figures {
+      distance
+      approximate
+      measured
+      pairOneFront
+      pairOneRear
+      pairsUnknown
+      suggestion {
+        distance
+        until
+        measuredBefore
+      }
+    }
+    stretches {
+      stretch {
+        ...TyreStretchFields
+      }
+      distance {
+        distance
+        approximate
+        measure
+      }
+    }
+  }
+}
+
+query VehicleTyres($vehicleId: UUID!) {
+  vehicleTyres(vehicleId: $vehicleId) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddTyreSet($input: AddTyreSetInput!) {
+  addTyreSet(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreSet($input: UpdateTyreSetInput!) {
+  updateTyreSet(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation SetTyreRoughDistance($input: SetTyreRoughDistanceInput!) {
+  setTyreRoughDistance(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation SwapTyres($input: SwapTyresInput!) {
+  swapTyres(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation ChangeTyrePositions($input: SwapTyresInput!) {
+  changeTyrePositions(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddPastTyreSwaps($input: AddPastTyreSwapsInput!) {
+  addPastTyreSwaps(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddTyreStretch($input: AddTyreStretchInput!) {
+  addTyreStretch(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreStretch($input: UpdateTyreStretchInput!) {
+  updateTyreStretch(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreStretch($id: UUID!) {
+  deleteTyreStretch(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreStretch($id: UUID!) {
+  restoreTyreStretch(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation SetTyreLogDay($input: SetTyreLogDayInput!) {
+  setTyreLogDay(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RetireTyreSet($id: UUID!, $day: LocalDate!) {
+  retireTyreSet(id: $id, day: $day) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UnretireTyreSet($id: UUID!) {
+  unretireTyreSet(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreSet($id: UUID!) {
+  deleteTyreSet(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreSet($id: UUID!) {
+  restoreTyreSet(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+query TyreTrash($orderBy: TyreTrashSortField!, $direction: SortDirection!, $skip: Int!, $take: Int!) {
+  tyreTrash(orderBy: $orderBy, direction: $direction, skip: $skip, take: $take) {
+    kind
+    id
+    setName
+    from
+    until
+    stretchCount
+    deletedAt
+    version
+    canDelete
+    vehicle {
+      id
+      name
+    }
+  }
+  tyreTrashCount
+  tyreTrashDeletableCount
+}
+
+mutation EmptyTyreTrash {
+  emptyTyreTrash
+}

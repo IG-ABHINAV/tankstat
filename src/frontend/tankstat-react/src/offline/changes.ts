@@ -2,15 +2,17 @@
  * Changes kept on this device until the server can take them (the outbox, `outbox.ts`). Pure: what a change is, and how a new one folds
  * into the ones already waiting, so the server only ever gets what is left to do (`collapse`).
  */
+import { isTyreAction, tyreCreates, tyreNeeds, type TyreAction } from './tyreChanges.ts'
+
 export type LogEntity = 'refuelings' | 'expenses'
-/** What a change can concern: the logs, a vehicle, a recurring expense (schedule). */
-export type ChangeEntity = LogEntity | 'vehicles' | 'recurring'
+/** What a change can concern: the logs, a vehicle, a recurring expense (schedule), a vehicle's tyres (#287: `tyreChanges.ts`). */
+export type ChangeEntity = LogEntity | 'vehicles' | 'recurring' | 'tyres'
 /**
  * `trash` of a schedule deletes it for good (schedules have no trash); `markDone` is a service visit of one or more schedules; `addPhoto`
  * and `removePhoto` change the photos of a saved log (input `{ key }`, a photo kept on this device, or `{ imageId }`); `setPicture` (input
  * `{ key }`, a picture kept on this device) and `removePicture` change a vehicle's picture.
  */
-export type ChangeAction = 'add' | 'update' | 'trash' | 'restore' | 'markDone' | 'addPhoto' | 'removePhoto' | 'setPicture' | 'removePicture'
+export type ChangeAction = 'add' | 'update' | 'trash' | 'restore' | 'markDone' | 'addPhoto' | 'removePhoto' | 'setPicture' | 'removePicture' | TyreAction
 
 export interface Change {
   /** The change's own id; for an add, the id of what it adds (the client chose it, the server keeps it). */
@@ -50,6 +52,9 @@ export type PendingMark = 'new' | 'changed' | 'deleted' | 'restored' | 'done'
 const MARKS: Record<ChangeAction, PendingMark> = {
   add: 'new', update: 'changed', trash: 'deleted', restore: 'restored', markDone: 'done', addPhoto: 'changed', removePhoto: 'changed',
   setPicture: 'changed', removePicture: 'changed',
+  addTyreSet: 'new', updateTyreSet: 'changed', setTyreRoughDistance: 'changed', retireTyreSet: 'changed', unretireTyreSet: 'changed',
+  deleteTyreSet: 'deleted', restoreTyreSet: 'restored', swapTyres: 'changed', changeTyrePositions: 'changed', addPastTyreSwaps: 'changed',
+  addTyreStretch: 'new', updateTyreStretch: 'changed', deleteTyreStretch: 'deleted', restoreTyreStretch: 'restored', setTyreLogDay: 'changed',
 }
 export const markOf = (change: Change): PendingMark => MARKS[change.action]
 
@@ -78,7 +83,14 @@ export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
   expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
   vehicles: ['name', 'licensePlate', 'fuelType', 'units'],
   recurring: ['title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
+  tyres: [], // never folded
 }
+
+/** The ids a change creates: an add's own, a tyre change's sets and stretches (what is made on them must reach the server after it). */
+export const createdBy = (c: Change): string[] => (isTyreAction(c.action) ? tyreCreates(c.action, c.input) : c.action === 'add' ? [c.targetId] : [])
+
+/** The ids of what a tyre change is made on (its set, its stretch), any of which may have been created here. */
+export const tyreNeedsOf = (c: Change): string[] => (isTyreAction(c.action) ? tyreNeeds(c.action, c.input) : [])
 
 /**
  * The changes waiting after `incoming` joins them. Changes of one log fold into one:
@@ -91,8 +103,8 @@ export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
  * once it is applied. Anything else waits as it is, in order.
  */
 export function collapse(existing: readonly Change[], incoming: Change): Change[] {
-  // A visit never folds: each one is a visit of its own.
-  if (incoming.action === 'markDone') return [...existing, incoming]
+  // A visit never folds: each one is a visit of its own. Nor does a tyre change: each depends on the ones before it (a swap on a day).
+  if (incoming.action === 'markDone' || incoming.entity === 'tyres') return [...existing, incoming]
   // The expense a visit waiting here would log, trashed: the visit logs none (its schedules are still done), and nothing else of it waits.
   const visit = incoming.entity === 'expenses' && incoming.action === 'trash' ? existing.find((c) => isVisitOf(c, incoming.targetId) && !c.sent) : undefined
   if (visit) {
@@ -153,6 +165,8 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
       if (trash) return trash.input ? replace(existing, trash, asEdit(trash)) : existing.filter((c) => c !== trash)
       if (restore) return [...existing] // already waiting to come back
       return [...existing, next]
+    default:
+      return [...existing, incoming] // a tyre change, returned above
   }
 }
 
@@ -180,6 +194,7 @@ export function discard(existing: readonly Change[], id: string): Change[] {
   // A visit taken back logs no expense: what was made to that expense here goes with it.
   if (removed && isVisitOf(removed, removed.targetId)) return existing.filter((c) => c.id !== id && !(c.entity === 'expenses' && c.targetId === removed.targetId))
   const rest = existing.filter((c) => c.id !== id)
+  if (removed?.entity === 'tyres') return withoutTyreDependents(rest, createdBy(removed))
   return removed?.action === 'add' ? withoutDependents(rest, removed) : rest
 }
 
@@ -198,6 +213,22 @@ function withoutDependents(list: readonly Change[], removed: Change): Change[] {
     const left = c.targetIds.filter((id) => id !== removed.targetId)
     return left.length > 0 ? [{ ...c, targetIds: left, input: { ...c.input, ids: left } }] : []
   })
+}
+
+/** A tyre change taken back takes along the changes made on what it created (a swap of a set added here), and theirs in turn. */
+function withoutTyreDependents(list: readonly Change[], created: readonly string[]): Change[] {
+  const gone = new Set(created)
+  let left = [...list]
+  for (let more = gone.size > 0; more; ) {
+    more = false
+    left = left.filter((c) => {
+      if (c.entity !== 'tyres' || !tyreNeedsOf(c).some((id) => gone.has(id))) return true
+      createdBy(c).forEach((id) => gone.add(id))
+      more = true
+      return false
+    })
+  }
+  return left
 }
 
 const replace = (list: readonly Change[], old: Change, next: Change) => list.map((c) => (c === old ? next : c))

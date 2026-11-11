@@ -14,7 +14,7 @@ public readonly record struct SyncTargetKey(OfflineEntityType Type, Guid Id);
 
 /// <summary>
 /// What a parked change concerns, as it is on the server now: the entity (<see cref="Vehicle"/>, <see cref="Refueling"/>,
-/// <see cref="Expense"/>, or a schedule with its status), and whether it is in the trash.
+/// <see cref="Expense"/>, a tyre set or stretch, or a schedule with its status), and whether it is in the trash.
 /// </summary>
 public sealed record SyncTarget(ISynced Entity, bool Trashed, RecurringItem? Schedule = null);
 
@@ -25,7 +25,7 @@ public sealed record SyncTarget(ISynced Entity, bool Trashed, RecurringItem? Sch
 /// </summary>
 public sealed class SyncTargetService(
     IVehicleRepository vehicles, IRefuelingRepository refuelings, IExpenseRepository expenses, IRecurringExpenseRepository schedules,
-    RecurringExpenseService recurring, AccessService access)
+    RecurringExpenseService recurring, Tyres.ITyreRepository tyres, AccessService access)
 {
     /// <summary>What a kind of change concerns, when it concerns one thing that a person could have changed meanwhile (not adds, visits or photos).</summary>
     public static OfflineEntityType? TargetOf(SyncChangeKind kind) => kind switch
@@ -34,6 +34,9 @@ public sealed class SyncTargetService(
         SyncChangeKind.UpdateExpense or SyncChangeKind.DeleteExpense or SyncChangeKind.RestoreExpense => OfflineEntityType.Expense,
         SyncChangeKind.UpdateRecurringExpense or SyncChangeKind.DeleteRecurringExpense => OfflineEntityType.RecurringExpense,
         SyncChangeKind.UpdateVehicle or SyncChangeKind.DeleteVehicle or SyncChangeKind.RestoreVehicle => OfflineEntityType.Vehicle,
+        SyncChangeKind.UpdateTyreSet or SyncChangeKind.SetTyreRoughDistance or SyncChangeKind.RetireTyreSet or SyncChangeKind.UnretireTyreSet
+            or SyncChangeKind.DeleteTyreSet or SyncChangeKind.RestoreTyreSet => OfflineEntityType.TyreSet,
+        SyncChangeKind.UpdateTyreStretch or SyncChangeKind.DeleteTyreStretch or SyncChangeKind.RestoreTyreStretch => OfflineEntityType.TyreStretch,
         _ => null,
     };
 
@@ -53,6 +56,21 @@ public sealed class SyncTargetService(
             result[new SyncTargetKey(OfflineEntityType.Refueling, r.Id)] = new SyncTarget(r, r.IsDeleted);
         foreach (var e in expenseRows.Where(e => MaySee(e.VehicleId, e.IsDeleted)))
             result[new SyncTargetKey(OfflineEntityType.Expense, e.Id)] = new SyncTarget(e, e.IsDeleted);
+
+        // Tyres follow the logs' rules; a stretch of a set in the trash is in the trash with it.
+        var sets = await tyres.ListSetsAsync(Ids(OfflineEntityType.TyreSet), ct);
+        var stretches = await tyres.ListStretchesAsync(Ids(OfflineEntityType.TyreStretch), ct);
+        var setsOfStretches = await tyres.ListSetsAsync([.. stretches.Select(s => s.SetId).Distinct()], ct);
+        var tyreVehicles = await vehicles.ListByIdsAsync([.. sets.Select(s => s.VehicleId).Concat(stretches.Select(s => s.VehicleId)).Distinct()], ct);
+        var tyreLevels = await access.LogLevelsAsync(tyreVehicles, ct);
+        bool MaySeeTyres(Guid vehicleId, bool trashed) => tyreLevels.GetValueOrDefault(vehicleId) >= (trashed ? AccessLevel.Edit : AccessLevel.View);
+        foreach (var set in sets.Where(s => MaySeeTyres(s.VehicleId, s.IsDeleted)))
+            result[new SyncTargetKey(OfflineEntityType.TyreSet, set.Id)] = new SyncTarget(set, set.IsDeleted);
+        foreach (var stretch in stretches)
+        {
+            var trashed = stretch.IsDeleted || setsOfStretches.Any(s => s.Id == stretch.SetId && s.IsDeleted);
+            if (MaySeeTyres(stretch.VehicleId, trashed)) result[new SyncTargetKey(OfflineEntityType.TyreStretch, stretch.Id)] = new SyncTarget(stretch, trashed);
+        }
 
         // Schedules (deleted for good, never in a trash): with their status, through the list that checks the vehicles' logs.
         var scheduleIds = Ids(OfflineEntityType.RecurringExpense);

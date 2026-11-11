@@ -74,6 +74,7 @@ function waitingFor(name: string | undefined, variables: Record<string, unknown>
     case 'LogDefaults':
     case 'ExpenseCategories':
     case 'RecurringExpenses':
+    case 'VehicleTyres': // a tyre change waiting shows as done (#287)
     case 'ChartData':
     case 'VehicleFigure': // every key figure (#274): a vehicle added here is the device's to answer until the server has it
       return outbox.vehicleIds().has(String(variables.vehicleId))

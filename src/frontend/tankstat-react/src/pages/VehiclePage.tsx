@@ -24,8 +24,9 @@ import { SharingPanel } from './vehicle/SharingPanel.tsx'
 const DashboardPanel = lazy(() => import('../dashboard/DashboardPanel.tsx').then((m) => ({ default: m.DashboardPanel })))
 const RefuelingsPanel = lazy(() => import('./vehicle/RefuelingsPanel.tsx').then((m) => ({ default: m.RefuelingsPanel })))
 const ExpensesPanel = lazy(() => import('./vehicle/ExpensesPanel.tsx').then((m) => ({ default: m.ExpensesPanel })))
+const TyresPanel = lazy(() => import('./vehicle/TyresPanel.tsx').then((m) => ({ default: m.TyresPanel })))
 
-const TABS = ['dashboard', 'refuelings', 'expenses', 'recurring', 'details', 'sharing'] as const
+const TABS = ['dashboard', 'refuelings', 'expenses', 'recurring', 'tyres', 'details', 'sharing'] as const
 type Tab = (typeof TABS)[number]
 
 /**
@@ -99,6 +100,15 @@ export function VehiclePage({ isAdmin }: { isAdmin: boolean }) {
                 ),
               },
               { value: 'recurring', label: t('vehicles.tabs.recurring'), content: () => <RecurringPanel vehicle={vehicle} canLog={canLog} /> },
+              {
+                value: 'tyres',
+                label: t('vehicles.tabs.tyres'),
+                content: () => (
+                  <Suspense fallback={<Loading />}>
+                    <TyresPanel vehicle={vehicle} canLog={canLog} />
+                  </Suspense>
+                ),
+              },
               { value: 'details', label: t('vehicles.tabs.details'), content: () => <DetailsPanel vehicle={vehicle} onChanged={() => refetch()} /> },
               ...(vehicle.canEdit ? [{ value: 'sharing' as const, label: t('vehicles.tabs.sharing'), content: () => <SharingPanel vehicleId={vehicle.id} /> }] : []),
             ]}

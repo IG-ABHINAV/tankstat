@@ -7,6 +7,9 @@ public enum OfflineEntityType
     Refueling,
     Expense,
     RecurringExpense,
+    TyreSet,
+    TyreStretch,
+    TyreLogDay,
 }
 
 /// <summary>What the last change that counted (one that moved <see cref="ISynced.Version"/>) did to an entity.</summary>

@@ -81,6 +81,9 @@ query OfflineChanges($input: OfflineChangesInput!) {
     recurring {
       ...RecurringFields
     }
+    tyres {
+      ...VehicleTyresFields
+    }
     removed {
       type
       id

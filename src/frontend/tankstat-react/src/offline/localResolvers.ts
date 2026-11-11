@@ -4,6 +4,8 @@ import { connectivity } from './connectivity.ts'
 import type { LogKind, LogRow, PullCursor, RowStore, VehicleRow } from './deviceStorage.ts'
 import { todayIso } from '../forms/dates.ts'
 import { keptPhotos } from './keptPhotos.ts'
+import { noTyres, replayTyres } from '../tyres/replay.ts'
+import type { Tyres } from '../tyres/tyres.ts'
 import { outbox } from './outbox.ts'
 
 /**
@@ -268,6 +270,29 @@ async function knownWithoutLogs(rows: RowStore, vehicleId: unknown, kept: Kept):
   return (await rows.vehicles()).some((v) => v.id === vehicleId) || (await kept('VehicleDetails', { id: vehicleId })) !== undefined
 }
 
+/**
+ * A vehicle's tyres as the device shows them (#287): the server's last answer with the tyre changes waiting here laid over it, in the order
+ * they were made (`tyres/replay.ts`, the server's rules; one that no longer fits is left out); nothing for a vehicle added here. Without a
+ * tyre change waiting, the server's answer (or the kept one) is the device's.
+ */
+async function tyresOf(vehicleId: string, kept: Kept): Promise<Tyres | undefined> {
+  const waiting = outbox.changes.filter((c) => c.entity === 'tyres' && c.vehicleId === vehicleId)
+  if (waiting.length === 0 && !addedVehicle(vehicleId)) return undefined
+  const base = (await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined
+  return replayTyres(base ?? noTyres(vehicleId), waiting).tyres
+}
+
+const vehicleTyres: Resolver = async (_rows, variables, kept) => {
+  const tyres = await tyresOf(String(variables.vehicleId), kept)
+  return tyres ? { vehicleTyres: tyres } : undefined
+}
+
+/** The readings typed with tyre changes (the tyre log's days), kept and waiting: they are readings of the car like a log's. */
+async function tyreReadings(vehicleId: string, kept: Kept): Promise<{ date: string; odometer: number }[]> {
+  const tyres = (await tyresOf(vehicleId, kept)) ?? ((await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined)
+  return (tyres?.days ?? []).flatMap((d) => (d.odometer != null ? [{ date: d.day, odometer: d.odometer }] : []))
+}
+
 const logDefaults: Resolver = async (rows, variables, kept) => {
   const refuelings = await downloaded(rows, 'refuelings', variables.vehicleId)
   const expenses = await downloaded(rows, 'expenses', variables.vehicleId)
@@ -277,7 +302,7 @@ const logDefaults: Resolver = async (rows, variables, kept) => {
     if (seen || !(await knownWithoutLogs(rows, variables.vehicleId, kept))) return seen
     return { logDefaults: { __typename: 'LogDefaults', lastOdometer: null, lastDate: null, currency: null } }
   }
-  const readings = [...refuelings, ...expenses].filter((r) => num(r.odometer) !== null)
+  const readings: { date: string; odometer?: unknown }[] = [...refuelings, ...expenses, ...(await tyreReadings(String(variables.vehicleId), kept))].filter((r) => num(r.odometer) !== null)
   const latest = readings.sort((a, b) => compare(b.date, a.date) || compare(num(b.odometer), num(a.odometer)))[0]
   const lastRefueling = sortLogs('refuelings', refuelings, 'DATE', 'DESC', new Map())[0]
   return {
@@ -475,7 +500,7 @@ const FIGURE_UNIT: Record<FigureMeasure, ChartUnit | null> = {
  * measure's unit. A point in time is what the device holds: the odometer the highest reading of the logs kept here, the last fill-up their
  * latest refuelling's date and the counts.
  */
-const vehicleFigure: Resolver = async (rows, variables) => {
+const vehicleFigure: Resolver = async (rows, variables, kept) => {
   if (!addedVehicle(variables.vehicleId)) return undefined
   const measure = variables.measure as FigureMeasure
   const figure = { __typename: 'FigureData', recent: null, earlier: null, unit: FIGURE_UNIT[measure] ?? null, currencies: [], value: null, lastFillUp: null }
@@ -490,7 +515,8 @@ const vehicleFigure: Resolver = async (rows, variables) => {
       const expenseCount = expenses.filter((x) => num(x.amount) !== null).length
       return { vehicleFigure: { ...figure, lastFillUp: { __typename: 'LastFillUpFigure', date, fillUps: fillUps.length, expenses: expenseCount } } }
     }
-    const readings = [...refuelings, ...expenses].map((r) => num(r.odometer)).filter((v): v is number => v !== null)
+    const tyres = await tyreReadings(String(variables.vehicleId), kept)
+    const readings = [...refuelings, ...expenses, ...tyres].map((r) => num(r.odometer)).filter((v): v is number => v !== null)
     return { vehicleFigure: { ...figure, value: readings.length > 0 ? { __typename: 'ValueChange', recent: Math.max(...readings), earlier: null } : null } }
   }
   const today = todayIso()
@@ -513,6 +539,7 @@ const RESOLVERS: Record<string, Resolver> = {
   VehicleCard: vehicleCard,
   VehicleDetails: vehicleDetails,
   RecurringExpenses: recurringExpenses,
+  VehicleTyres: vehicleTyres,
   VehicleDashboard: vehicleDashboard,
   ChartData: chartData,
   VehicleFigure: vehicleFigure,

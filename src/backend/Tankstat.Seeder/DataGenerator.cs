@@ -4,15 +4,17 @@ using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Notifications;
 using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Recurring;
+using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Seeder;
 
 /// <param name="Expenses">The visits of its schedules and the one-off expenses, in date order.</param>
 /// <param name="Completions">The links from each schedule to the expenses of its visits, as marking it done leaves them.</param>
+/// <param name="TyreSets">A summer and a winter set (#287), with <paramref name="TyreStretches"/>: their time on the car.</param>
 public sealed record GeneratedVehicle(
     Vehicle Vehicle, IReadOnlyList<Refueling> Refuelings, IReadOnlyList<RecurringExpense> Recurring, IReadOnlyList<Expense> Expenses,
-    IReadOnlyList<RecurringCompletion> Completions);
+    IReadOnlyList<RecurringCompletion> Completions, IReadOnlyList<TyreSet>? TyreSets = null, IReadOnlyList<TyreStretch>? TyreStretches = null);
 
 /// <summary>
 /// Creates random but internally consistent test data through the domain's own factories (so every rule of the
@@ -40,6 +42,7 @@ public sealed class DataGenerator(TimeProvider clock)
         var scheduleRandom = new Random(options.RandomSeed + 1); // its own sequence, so the vehicles and logs of a seed stay as they were
         var expenseRandom = new Random(options.RandomSeed + 3); // and its own too (+2 is the notifications'), so expenses move nothing else
         var discountRandom = new Random(options.RandomSeed + 4); // the discounts on fill-ups: their own sequence, so the logs of a seed stay as they were
+        var tyreRandom = new Random(options.RandomSeed + 5); // the tyres: their own sequence too
         var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var total = options.Vehicles + options.Trashed;
@@ -57,7 +60,8 @@ public sealed class DataGenerator(TimeProvider clock)
             var trajectory = OdometerTrajectory.Of(log, DefaultKmPerDay * market.DistancePerKm);
             var schedules = vehicle.IsDeleted ? [] : Recurring(scheduleRandom, vehicle, market, trajectory, options.RecurringPerVehicle, today);
             var (expenses, completions) = Expenses(expenseRandom, vehicle, market, trajectory, schedules, options.ExpensesPerVehicle, today);
-            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions);
+            var (sets, stretches) = vehicle.IsDeleted || log.Count == 0 ? ([], []) : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
+            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, sets, stretches);
         }
     }
 
@@ -173,6 +177,54 @@ public sealed class DataGenerator(TimeProvider clock)
         }
         ConsumptionCalculator.Apply(log); // stored like the app stores it
         return log;
+    }
+
+    // ---- Tyres ------------------------------------------------------------------------------------------------------
+
+    private static readonly string[] SummerTyres = ["Michelin Primacy 4", "Continental PremiumContact 6", "Bridgestone Turanza 6", "Goodyear EfficientGrip Performance 2"];
+    private static readonly string[] WinterTyres = ["Continental WinterContact TS 870", "Michelin Alpin 6", "Nokian Snowproof 2", "Bridgestone Blizzak LM005"];
+    private static readonly string[] TyreSizes = ["195/65 R15 91H", "205/55 R16 91V", "225/45 R17 94W"];
+
+    /// <summary>
+    /// A summer and a winter set (#287): each used before the log starts (a rough figure for that time, standing until the first swap), swapped
+    /// through the history's own rules (<see cref="TyreHistory"/>) around the start of April and of November from the log's first day to today,
+    /// each set's pairs exchanged front to rear every other season. No reading is typed: the distances come from the log's readings.
+    /// </summary>
+    private (List<TyreSet> Sets, List<TyreStretch> Stretches) Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
+    {
+        var owner = vehicle.OwnerId;
+        var size = TyreSizes[random.Next(TyreSizes.Length)];
+        TyreSet Make(string[] names, TyreSeason season)
+        {
+            var since = new DateOnly(first.Year, first.Month, 1).AddMonths(-random.Next(0, 25));
+            var made = since.AddDays(-random.Next(30, 300));
+            var week = Math.Clamp(made.DayOfYear / 7 + 1, 1, 52);
+            var rough = (long)Math.Round(random.Next(0, 30) * 1000 * market.DistancePerKm);
+            return TyreSet.Create(owner, owner, vehicle.Id, names[random.Next(names.Length)], season, size, since, week, made.Year, rough, first);
+        }
+        var summer = Make(SummerTyres, TyreSeason.Summer);
+        var winter = Make(WinterTyres, TyreSeason.Winter);
+        var history = new TyreHistory(owner, vehicle.Id, [summer, winter], []);
+        var now = clock.GetUtcNow();
+
+        bool IsSummer(DateOnly day) => day.Month is >= 4 and <= 10;
+        var front = new Dictionary<Guid, bool> { [summer.Id] = true, [winter.Id] = true };
+        TyreSet? on = null;
+        void Fit(TyreSet set, DateOnly day)
+        {
+            if (set == on) return; // the log began in that season: the set is on already
+            history.Swap(set, day, front[set.Id], replace: false, owner, now);
+            front[set.Id] = !front[set.Id]; // exchanged front to rear when it goes on again next year
+            on = set;
+        }
+        Fit(IsSummer(first) ? summer : winter, first);
+        for (var year = first.Year; year <= today.Year; year++)
+            foreach (var (month, set) in new[] { (4, summer), (11, winter) })
+            {
+                var day = new DateOnly(year, month, 1).AddDays(random.Next(-10, 15));
+                if (day > first && day <= today) Fit(set, day);
+            }
+        return ([summer, winter], [.. history.Live]);
     }
 
     // ---- Recurring expenses -----------------------------------------------------------------------------------------

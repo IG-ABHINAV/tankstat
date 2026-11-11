@@ -1,6 +1,7 @@
 import { CombinedGraphQLErrors } from '@apollo/client/errors'
 import { useTranslation } from 'react-i18next'
 import { UnreadableImageError } from '../pictures/resizeImage.ts'
+import { TyreRuleError } from '../tyres/tyreHistory.ts'
 import { ApiError } from '../pictures/ApiError.ts'
 import { OfflineError } from '../offline/errors.ts'
 
@@ -38,6 +39,7 @@ export function useErrorText() {
       return t('errors.offline')
     }
     if (error instanceof ApiError) return byKey(error.key, error.args) ?? error.message
+    if (error instanceof TyreRuleError) return byKey(error.key, error.args) ?? error.message // the device's check of a tyre change it keeps
     if (error instanceof UnreadableImageError) return t('image.unreadable')
     if (CombinedGraphQLErrors.is(error)) {
       const first = error.errors[0]

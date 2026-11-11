@@ -401,9 +401,11 @@ const daysAgo = (days: number, years = 0) => {
 test('sets trend figures\' periods from their chips on the edit strips, kept with the arrangement and saved with it, and no chip outside Customize (#230, #260)', async ({ page }) => {
   await signInAsNewUser(page)
   const vehicle = await addVehicle(page)
-  // A fill-up in the last 8 weeks and one a year before it: the figure compares HUF 24,000 with 20,000.
-  await logRefueling(page, vehicle.id, { date: daysAgo(10, 1), totalCost: 20000, odometer: 1000 })
-  await logRefueling(page, vehicle.id, { date: daysAgo(10), totalCost: 24000, odometer: 2000 })
+  // A fill-up in the last 8 weeks and one a year before it: the figure compares HUF 24,000 with 20,000. On the 15th of last month
+  // (and a year before that), so it is inside the default period's 12 whole months whatever today's day (ten days ago is in this
+  // month from the 11th on, which a period of whole months leaves out) and inside the last 8 weeks, never on a leap day.
+  await logRefueling(page, vehicle.id, { date: monthsAgo(13), totalCost: 20000, odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: monthsAgo(1), totalCost: 24000, odometer: 2000 })
   await arrange(page, vehicle.id, [
     { id: 'spendingTrend', x: 0, y: 0, w: 1, h: 4, pinned: false },
     { id: 'distanceTrend', x: 1, y: 0, w: 1, h: 4, pinned: false },
