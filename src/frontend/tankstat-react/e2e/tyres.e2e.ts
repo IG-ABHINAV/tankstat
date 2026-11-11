@@ -182,3 +182,56 @@ test('adds a line to the tyre log, moves a swap by its line’s day, and moves a
   await openVehicle(page, vehicle.id, 'tyres')
   await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: 'Wheel balancing, Continental WinterContact, May 10, 2026' })).toBeVisible()
 })
+
+test('a repair with an amount is an expense on the Expenses tab: its day changed there moves the line, and the two go to the trash and come back together (#288)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: '2026-06-01', odometer: 6000 })
+  const addSet = 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }'
+  const set = { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false }
+  await graphql(page, addSet, { i: { ...set, name: 'Michelin Primacy 4', season: 'SUMMER', since: '2023-03-25', fitted: true, day: '2026-01-15' } })
+  await openVehicle(page, vehicle.id, 'tyres')
+
+  // A puncture repaired for the set on the car, with what it cost.
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await typeDate(page, dateField(add, /^Day/), '2026-05-10')
+  await add.getByLabel(/^Paid/).fill('25000')
+  await expect(add.getByLabel(/^Category/)).toHaveValue('Tyres')
+  await expectSoundLayout(page)
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await expect(log.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, May 10, 2026, / })).toContainText('25,000')
+  await expectSoundLayout(page)
+
+  // On the Expenses tab: an ordinary expense with the chip; its date changed there moves the line.
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  const row = page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })
+  await expect(row).toContainText('Tyre log')
+  await row.getByRole('button', { name: /^Edit the expense/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await expect(edit.getByText(/The date and the odometer are the same there/)).toBeVisible()
+  await expectSoundLayout(page)
+  await typeDate(page, dateField(edit, /^Date/), '2026-05-12')
+  await edit.getByRole('button', { name: /^Save/ }).click()
+  await expect(edit).toBeHidden()
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  const moved = page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, May 12, 2026/ })
+  await expect(moved).toBeVisible()
+
+  // To the trash with its expense (the box ticked), and back from the Trash page together.
+  await page.getByRole('button', { name: 'Move to the trash: Puncture repaired, May 12, 2026' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Move to the trash?' })
+  await expect(confirm.getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked()
+  await expectSoundLayout(page)
+  await confirm.getByRole('button', { name: 'Move to the trash' }).click()
+  await expect(moved).toBeHidden()
+  await page.goto('/trash?tab=tyres')
+  await pageLoaded(page)
+  const trashed = page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })
+  await trashed.getByRole('button', { name: /^Restore/ }).click()
+  await expect(page.getByText('Restored, with its expense.')).toBeVisible()
+  await openVehicle(page, vehicle.id, 'expenses')
+  await expect(page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })).toBeVisible()
+})
