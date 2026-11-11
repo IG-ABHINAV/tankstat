@@ -34,7 +34,7 @@ The rules of each area are in `.claude/rules/`, one file per area. Each loads by
 
 - `fuel-log-and-stats.md`: refuellings, stored consumption, statistics and charts.
 - `expenses-imports-recurring.md`: expenses, importing (Fuelio), recurring expenses and marking them done.
-- `tyres.md`: tyre sets, their stretches on the car, the tyre log, distances worked out from the readings, the tyre trash.
+- `tyres.md`: tyre sets, their installations on the car, the tyre log, distances worked out from the readings, the tyre trash.
 - `notifications.md`: the inbox, producers, `NotificationPolicy`, the bell.
 - `photos-and-uploads.md`: photos of logs, drafts, upload folders and the two storage roots.
 - `offline-sync.md`: client ids and versions, the offline download, connectivity, device data, the downloaded window, changes kept on the device, sending, parked changes, the generation after a restore.

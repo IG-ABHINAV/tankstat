@@ -12,39 +12,40 @@ paths:
 # Tyres
 
 - **The model (#287, parts 1–4 of #286):** `Domain/Tyres`.
+  - **The name (#288):** a set's time on the car is an *installation* (`TyreInstallation`, table `TyreInstallations`; Hungarian *időszak*), called a stretch before. `RenameTyreInstallations` renamed the table, its keys and indexes, and what was stored as text under the old name: tombstones' `EntityType`, the sync ledger's `Kind`, `ReasonKey` (`tyres.stretch*`) and payload field names (`…TyreStretch`, `stretchId`). Waiting changes on a device under the old names are not mapped (the owner: a preview's).
   - `TyreSet` (name, season, size, *in use since*, made week and year, the rough figure `RoughDistance` with `RoughUntil`, the first day it does not cover; retired; trashed).
-  - `TyreStretch` (a set's time on the car: `From`, `Until` the day it came off, null while on; `PairOneFront` true/false/null for a whole set's pairs; at least one day; vehicle and owner denormalized, the only cascading key the set's: a key to the vehicle as well would give SQL Server two cascade paths).
-  - `TyreLogDay` (one per vehicle and day, owning the `OdometerReading` typed with a swap, a past swap or a stretch, and a note; never trashed: cleared it is deleted, the reading with it, as clearing an expense's odometer).
+  - `TyreInstallation` (a set's time on the car: `From`, `Until` the day it came off, null while on; `PairOneFront` true/false/null for a whole set's pairs; at least one day; vehicle and owner denormalized, the only cascading key the set's: a key to the vehicle as well would give SQL Server two cascade paths).
+  - `TyreLogDay` (one per vehicle and day, owning the `OdometerReading` typed with a swap, a past swap or an installation, and a note; never trashed: cleared it is deleted, the reading with it, as clearing an expense's odometer).
   - All three are `ISynced` and `OfflineEntityType`s; `SyncChangeKind` has a kind per mutation.
 - **Worked out on read, nothing stored:** `TyreCalculator` (pure).
   - **The odometer of a day:** that day's highest reading, else a straight line between the nearest readings (approximate), after the latest reading the latest (approximate), before the first unknown.
-  - **A stretch's distance:** both stretches of a boundary day use the same value. A stretch still on the car ends at the latest reading, exactly. One before the fuel log counts from its first reading or is `NotMeasured`. Never below 0.
-  - **A set's figures:** the rough figure plus its stretches, front and rear per pair, and `RoughSuggestion` once stretches measure time `RoughUntil` stood for. The suggestion is shown, never applied by itself.
+  - **An installation's distance:** both installations of a boundary day use the same value. An installation still on the car ends at the latest reading, exactly. One before the fuel log counts from its first reading or is `NotMeasured`. Never below 0.
+  - **A set's figures:** the rough figure plus its installations, front and rear per pair, and `RoughSuggestion` once installations measure time `RoughUntil` stood for. The suggestion is shown, never applied by itself.
   - **The device's port:** `src/tyres/odometer.ts`, checked on the same cases by `TyreOdometer.unit` (the readings come with `vehicleTyres.readings`). It only words hints and log lines.
 - **The rules:** `TyreHistory` (pure).
-  - **A swap on a day:** what covers that day ends there; the set runs until the stretch it cut would have ended, else the next start. The set's stretches join when they meet with the same pairs.
-  - **A second swap on a day** (another set's stretch starts then) is `tyres.swapExists` (args `date`, `set`) unless `replace`; replacing trashes that stretch. The same set on its own first day only sets its pairs.
-  - **Change positions:** in place on the stretch's first day, else it splits.
+  - **A swap on a day:** what covers that day ends there; the set runs until the installation it cut would have ended, else the next start. The set's installations join when they meet with the same pairs.
+  - **A second swap on a day** (another set's installation starts then) is `tyres.swapExists` (args `date`, `set`) unless `replace`; replacing trashes that installation. The same set on its own first day only sets its pairs.
+  - **Change positions:** in place on the installation's first day, else it splits.
   - **The checks** after every change: `tyres.setOnTwice`, `tyres.twoSetsAtOnce`, `tyres.setRetired`; `tyres.restoreConflict` while restoring. *In use since* is month-level and limits nothing.
-  - **The retry flags:** `pairsGiven: false` (from papers) leaves a set's pairs; `repeatable` (from the queue only, never online or applied anyway: `SyncGraphQL`'s `resolving`) answers a set already on the car that day with the pairs asked for as a retry (a joined swap kept no id), with other pairs `tyres.alreadyOnCar`; for a change of positions, pairs already as asked on the stretch's first day.
+  - **The retry flags:** `pairsGiven: false` (from papers) leaves a set's pairs; `repeatable` (from the queue only, never online or applied anyway: `SyncGraphQL`'s `resolving`) answers a set already on the car that day with the pairs asked for as a retry (a joined swap kept no id), with other pairs `tyres.alreadyOnCar`; for a change of positions, pairs already as asked on the installation's first day.
   - **A day's line from the queue** (`SetLogDayAsync`'s `strict`): one named by an id the server does not know while the day has a line was made without it, parked with `sync.versionMismatch`; the device names a server-known line by its id and version, and a line its own waiting change wrote by neither (`replay.ts` `isLocalLine`).
 - **The service:** `TyreService`.
   - **Access:** the logs' rules through `LogAccessGuard`.
   - **Saves:** every change checked and saved in one transaction (`ITyreRepository.SaveAsync`: rows let go of deleted in a second save).
   - **Readings:** each typed reading is validated by `OdometerService`, the day's own excluded, and the readings of one change must not fall in day order (`odometer.belowPrevious`).
-  - **Client ids:** a set's, its first stretch's, a swap's and a past swap's stretch, so a change sent again changes nothing.
+  - **Client ids:** a set's, its first installation's, a swap's and a past swap's installation, so a change sent again changes nothing.
   - **Past swaps:** at most 25 per change (`tyres.pastSwapsTooMany`), so one fits the sync ledger.
   - **Retiring:** only a set in storage (`tyres.retireOnCar`).
-  - **The trash:** a trashed set hides its stretches and brings back only those not trashed on their own.
+  - **The trash:** a trashed set hides its installations and brings back only those not trashed on their own.
   - **The units lock:** a rough figure locks the vehicle's units (`vehicle.unitsLocked`).
   - **The tyre trash:** one query over both kinds (`TyreRepository.Trash`, `Concat`, checked to translate on the four providers in `OfflineFeedTranslationTests`). It is purged through the change tracker for tombstones.
   - **Users:** `UserDataRepository` moves the tyre rows with a user; a vehicle's purge takes them through the cascade.
-- **GraphQL:** `vehicleTyres(vehicleId)` (`VehicleTyres`: `TyreSetInfo` with figures and stretches with distances, the days, `readings`), `tyreTrash` with its counts (`orderBy: DELETED_AT`, `direction`), and a mutation per change answering with the vehicle's tyres.
-- **Offline (server side):** the feed's first page carries the vehicle's tyres whole (`offlineChanges.tyres`) and no tyre tombstones. A parked tyre change tells its set or stretch as it is now (`SyncCurrent.tyreSet` / `tyreStretch`).
+- **GraphQL:** `vehicleTyres(vehicleId)` (`VehicleTyres`: `TyreSetInfo` with figures and installations with distances, the days, `readings`), `tyreTrash` with its counts (`orderBy: DELETED_AT`, `direction`), and a mutation per change answering with the vehicle's tyres.
+- **Offline (server side):** the feed's first page carries the vehicle's tyres whole (`offlineChanges.tyres`) and no tyre tombstones. A parked tyre change tells its set or installation as it is now (`SyncCurrent.tyreSet` / `tyreInstallation`).
 - **The device:**
   - **The policies:** `VehicleTyres` is kept (and kept from the feed's first page by `pull.ts`, null too: tyres the reader may no longer see leave the device), `TyreTrash` online only.
   - **Changes offline (part 4, the owner's Q3: shown done, marked):** every tyre mutation goes through `useTyreMutation` → `submitChange` (entity `tyres`, the action the mutation's field, the input the mutation's own, a bare id as `{ id }`; `offline/tyreChanges.ts` says what each targets, creates and needs). Before one is kept the device checks it with `tyres/replay.ts` `applyTyreChange` over what the tab shows (the server's refusal as a `TyreRuleError`, which `keyedOf` and `useErrorText` read, so `tyres.swapExists` asks before it waits). They never fold; a change taken back takes along what was made on what it created; `push.ts` sends one after what it needs, as its own `ChangeInput` field; all 15 kinds are in `SYNC_KINDS`.
-  - **The device's answer:** `localResolvers` `VehicleTyres` (`waitingFor` while the vehicle's changes wait) is `replayTyres` over the kept answer, in `seq` order, a change that no longer fits left out; what only the server works out stays as it was for what did not change (a new or changed stretch's distance `NOT_MEASURED`), and a set or stretch a waiting change changed has version 0, so the next change of it goes without a version. `usePendingTyres` (the same replay) marks the touched cards *New* / *Changed · not synced* and their distances *updated once synced*. `LogDefaults` and an added vehicle's odometer figure count the tyre log's readings.
+  - **The device's answer:** `localResolvers` `VehicleTyres` (`waitingFor` while the vehicle's changes wait) is `replayTyres` over the kept answer, in `seq` order, a change that no longer fits left out; what only the server works out stays as it was for what did not change (a new or changed installation's distance `NOT_MEASURED`), and a set or installation a waiting change changed has version 0, so the next change of it goes without a version. `usePendingTyres` (the same replay) marks the touched cards *New* / *Changed · not synced* and their distances *updated once synced*. `LogDefaults` and an added vehicle's odometer figure count the tyre log's readings.
   - **The port of the rules:** `tyres/tyreHistory.ts`, pinned to `TyreHistory` by `tests/backend/contracts/tyre-swaps/tyre-swaps.json` (`TyreSwapContractTests`, `TyreHistory.unit`): change one, change the other and the cases.
   - **Waiting to sync:** `sync.kinds.tyres.*`, named by the set and day; no Edit (the owner's decision); a swap parked with `tyres.swapExists` offers *Replace the swap* (`resolveSyncChange` with `replace: true`) in place of *Apply anyway*. Rows found on the device after a restore (`foundRows.ts`) leave tyres out.
   - **UI offline:** `OfflineNote` atop the tyre dialogs; `useTyreToasts` says a kept save is saved on the device, and its Undo takes a kept change back instead of sending the opposite one.
@@ -54,7 +55,7 @@ paths:
     - `TyreSetDialog` (add; with `edit`, a set's own details, opened by *Edit set* in its history: no *Where are they now?* or *These tyres are new*);
     - `SwapDialog` (swap, or `rotate`: the pairs as `Segmented` and an `aria-hidden` picture);
     - `PastSwapsDialog`;
-    - `HistoryDialog`, with the stretch form and `RoughDialog`.
+    - `HistoryDialog`, with the installation form and `RoughDialog`.
   - **Mutations:** each goes through `useTyreMutation`, which, when sent, writes the answer into `VehicleTyres` at once and asks `VehicleTyres` (so the device's kept answer follows), `VehicleDetails` and `LogDefaults` again.
   - **Replacing:** `tyres.swapExists` turns the dialog's button into *Replace the swap* and sends again with `replace`; changing the day, the set or the rows asks afresh.
   - **Opening:** a dialog that keeps state while closed (add set, swap, past swaps) sets it afresh when it opens, from the tyres as they are then (the edit form from the set it edits).
