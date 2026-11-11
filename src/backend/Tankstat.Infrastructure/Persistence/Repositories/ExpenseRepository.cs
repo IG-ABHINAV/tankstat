@@ -94,7 +94,11 @@ internal sealed class ExpenseRepository(IDbContextFactory<AppDbContext> dbFactor
         // The schedules an expense covered are linked without a foreign key on the expense side (see RecurringCompletionConfiguration).
         db.RecurringCompletions.RemoveRange(await db.RecurringCompletions.Where(c => ids.Contains(c.ExpenseId)).ToListAsync(ct));
         db.Expenses.RemoveRange(doomed);
-        db.OdometerReadings.RemoveRange(doomed.Where(e => e.OdometerReading is not null).Select(e => e.OdometerReading!));
+        // A tyre log line that made one (#288) keeps everything but the link, its reading included: the two held it together.
+        var lines = await db.TyreEntries.IgnoreQueryFilters().Where(e => e.ExpenseId != null && ids.Contains(e.ExpenseId.Value)).ToListAsync(ct);
+        foreach (var line in lines) line.UnlinkExpense();
+        var held = lines.Where(l => l.OdometerReadingId is not null).Select(l => l.OdometerReadingId!.Value).ToHashSet();
+        db.OdometerReadings.RemoveRange(doomed.Where(e => e.OdometerReading is not null && !held.Contains(e.OdometerReading.Id)).Select(e => e.OdometerReading!));
         db.Costs.RemoveRange(doomed.Where(e => e.Cost is not null).Select(e => e.Cost!));
         await db.SaveChangesAsync(ct);
         var withPhotos = photos.Select(p => p.LogId).ToHashSet();

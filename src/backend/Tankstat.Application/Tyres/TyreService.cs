@@ -1,3 +1,6 @@
+using Tankstat.Domain.Odometers;
+using Tankstat.Domain.Measurements;
+using Tankstat.Application.Expenses;
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Access;
 using Tankstat.Application.Auth;
@@ -16,10 +19,24 @@ public sealed record TyreSetInput(string Name, TyreSeason Season, string? Size, 
 /// <param name="Fitted">The set is on the car from <see cref="Day"/> (a swap that day); else it is in storage.</param>
 /// <param name="Day">The day tracking starts (the client's today); the rough figure stands for the time before it.</param>
 /// <param name="Replace">A fitted set on a day that has a swap replaces it (as <see cref="TyreSwapInput.Replace"/>).</param>
-public sealed record NewTyreSet(Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront, bool Replace = false);
+/// <param name="Price">What the set cost (#288): a <see cref="TyreEntryKind.Bought"/> line of the tyre log with its expense, on <paramref name="BoughtOn"/>.</param>
+/// <param name="BoughtOn">The day the set was bought (a used set asks for it); none takes <paramref name="Day"/>.</param>
+/// <param name="BoughtEntryId">The client's id of that line.</param>
+public sealed record NewTyreSet(
+    Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront, bool Replace = false, TyreFee? Price = null,
+    DateOnly? BoughtOn = null, Guid? BoughtEntryId = null);
 
 /// <param name="Replace">A swap logged on that day already is replaced (its installation goes to the trash) instead of refused.</param>
-public sealed record TyreSwapInput(Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note);
+/// <param name="Fee">What the swap (or the change of positions) cost (#288): on the line of the installation that starts that day.</param>
+public sealed record TyreSwapInput(Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note, TyreFee? Fee = null);
+
+/// <summary>
+/// The amount a tyre log line carries (#288): an ordinary expense on the Expenses tab, with the line's day and reading. Null as a whole leaves
+/// the line's as it is (an older client knows none); an <paramref name="Amount"/> of null takes it away (the expense goes to the trash).
+/// </summary>
+/// <param name="Title">The expense's title when it is made (the client words it, "Puncture repaired: Michelin Primacy 4"); kept after that.</param>
+/// <param name="ExpenseId">The client's id for the expense it makes, so the change sent again makes one.</param>
+public sealed record TyreFee(decimal? Amount, string? Currency, string? Category, string? Title, Guid? ExpenseId = null);
 
 public sealed record TyrePastSwap(DateOnly Day, Guid SetId, long? Odometer, Guid? InstallationId = null);
 
@@ -30,7 +47,8 @@ public sealed record TyreInstallationInput(DateOnly From, DateOnly? Until, bool?
 
 /// <summary>A tyre log line as typed (#288): of any kind but the two of an installation, which come with the swap.</summary>
 /// <param name="SetId">The set it concerns, or none.</param>
-public sealed record TyreEntryInput(TyreEntryKind Kind, Guid? SetId, DateOnly Day, long? Odometer, string? Note);
+/// <param name="Fee">Its amount (a <see cref="TyreEntryKind.Note"/> takes none: <c>tyres.noteTakesNoAmount</c>).</param>
+public sealed record TyreEntryInput(TyreEntryKind Kind, Guid? SetId, DateOnly Day, long? Odometer, string? Note, TyreFee? Fee = null);
 
 /// <summary>An installation with its distance, worked out on read.</summary>
 public sealed record TyreInstallationView(TyreInstallation Installation, InstallationDistance Distance);
@@ -44,7 +62,9 @@ public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyL
 /// (date and value, by date), so a client works out the odometer of a day as <see cref="TyreCalculator.OdometerOn"/> does (a form's hint, a
 /// log line), never saving it.
 /// </summary>
-public sealed record TyreOverview(Guid VehicleId, IReadOnlyList<TyreSetView> Sets, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings)
+/// <param name="ExpenseCategory">The category of the latest expense a line's amount made (#288), to offer for the next; none before the first.</param>
+public sealed record TyreOverview(
+    Guid VehicleId, IReadOnlyList<TyreSetView> Sets, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings, string? ExpenseCategory = null)
 {
     public bool HasReadings => Readings.Count > 0;
 }
@@ -57,7 +77,8 @@ public sealed record TyreOverview(Guid VehicleId, IReadOnlyList<TyreSetView> Set
 /// (<see cref="TyreCalculator"/>).
 /// </summary>
 public sealed class TyreService(
-    LogAccessGuard guard, ITyreRepository tyres, AccessService access, OdometerService odometer, TimeProvider clock, ILogger<TyreService> logger)
+    LogAccessGuard guard, ITyreRepository tyres, IExpenseRepository expenses, AccessService access, OdometerService odometer, TimeProvider clock,
+    ILogger<TyreService> logger)
 {
     /// <summary>A day ahead covers every time zone, like the logs.</summary>
     private DateOnly LatestAllowedDate => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime).AddDays(1);
@@ -78,13 +99,22 @@ public sealed class TyreService(
         RequireNotFuture(input.Set.Since);
         var set = TyreSet.Create(vehicle.OwnerId, by, vehicle.Id, input.Set.Name, input.Set.Season, input.Set.Size, input.Set.Since, input.Set.MadeWeek, input.Set.MadeYear,
             input.Set.RoughDistance, input.Set.RoughDistance > 0 ? input.Day : null, id);
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         save.AddedSets.Add(set);
         if (input.Fitted)
         {
             var history = History(vehicle, book, extra: set);
             Follow(save, book, history, history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId), by);
             await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, note: null, by, ct, installationId);
+        }
+        if (input.Price is { Amount: not null } price)
+        {
+            // What it cost: a Bought line of the tyre log on the day it was bought, its amount an expense (#288).
+            var boughtOn = input.BoughtOn ?? input.Day;
+            RequireNotFuture(boughtOn);
+            var bought = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, TyreEntryKind.Bought, set.Id, boughtOn, null, null, input.BoughtEntryId);
+            save.AddedEntries.Add(bought);
+            await ApplyFeeAsync(vehicle, book, save, bought, price, by, ct);
         }
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added tyre set {SetId} to vehicle {VehicleId}", by, set.Id, vehicle.Id);
@@ -134,10 +164,10 @@ public sealed class TyreService(
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         var history = History(vehicle, book);
         Follow(save, book, history, history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId, repeatable: repeat), by);
-        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId);
+        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId, input.Fee);
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -154,10 +184,10 @@ public sealed class TyreService(
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         var history = History(vehicle, book);
         Follow(save, book, history, history.ChangePositions(set, input.Day, input.PairOneFront, by, installationId, repeatable: repeat), by);
-        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId);
+        await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId, input.Fee);
         await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -187,7 +217,7 @@ public sealed class TyreService(
         if (day is { } twice)
             throw new DomainException("tyres.pastSwapsSameDay", "Two swaps on one day: one day holds one swap.", new { Date = twice.ToString("yyyy-MM-dd") });
         var history = History(vehicle, book);
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         foreach (var row in rows.OrderBy(r => r.Day))
         {
             RequireNotFuture(row.Day);
@@ -206,7 +236,7 @@ public sealed class TyreService(
         Task<bool> Repeat() => RepeatedAsync(book, id, vehicle.Id, by, ct);
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireDays(input);
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         var history = History(vehicle, book);
         var created = history.Add(set, input.From, input.Until, input.PairOneFront, by, id);
         save.AddedInstallations.Add(created);
@@ -222,7 +252,7 @@ public sealed class TyreService(
         VersionCheck.Require(expectedVersion, installation.Version);
         RequireDays(input);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         var history = History(vehicle, book);
         if (history.Edit(installation, input.From, input.Until, input.PairOneFront, by))
         {
@@ -245,7 +275,7 @@ public sealed class TyreService(
     {
         var (vehicle, installation, book) = await EditableInstallationAsync(id, ct);
         VersionCheck.Require(expectedVersion, installation.Version);
-        await TrashSwapAsync(installation, LineOf(book, id), ct);
+        await TrashSwapAsync(book, installation, LineOf(book, id), withExpense: true, ct);
         logger.LogDebug("Tyre installation {InstallationId} of vehicle {VehicleId} moved to the trash", id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -273,9 +303,10 @@ public sealed class TyreService(
         if (input.SetId is { } setId) LiveSet(book, setId);
         if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Day, value, exceptReadingId: null, ct);
         var entry = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, input.SetId, input.Day, input.Odometer, input.Note, id);
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         save.AddedEntries.Add(entry);
         if (entry.OdometerReading is { } reading) save.AddedReadings.Add(reading);
+        await ApplyFeeAsync(vehicle, book, save, entry, input.Fee, by, ct);
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added tyre log line {EntryId} to vehicle {VehicleId}", by, entry.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -291,7 +322,7 @@ public sealed class TyreService(
         VersionCheck.Require(expectedVersion, entry.Version);
         RequireNotFuture(input.Day);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
-        var save = new TyreSave();
+        var save = new TyreSave { Book = book, By = by };
         if (entry.IsSwapLine)
         {
             if (input.Kind != entry.Kind || input.SetId != entry.SetId)
@@ -306,23 +337,21 @@ public sealed class TyreService(
         if (added is not null) save.AddedReadings.Add(added);
         if (removed is not null) save.RemovedReadings.Add(removed);
         if (changed) save.Change(entry);
+        await ApplyFeeAsync(vehicle, book, save, entry, input.Fee, by, ct);
         await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <summary>Moves a line to the trash; a swap's line takes its installation along, so the swap's time on the car no longer counts.</summary>
-    public async Task<TyreOverview> TrashEntryAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    /// <summary>
+    /// Moves a line to the trash; a swap's line takes its installation along, so the swap's time on the car no longer counts. Its expense goes
+    /// along when <paramref name="withExpense"/> (the remove dialog's box), and comes back with it then; else it stays, with the reading.
+    /// </summary>
+    public async Task<TyreOverview> TrashEntryAsync(Guid id, CancellationToken ct, int? expectedVersion = null, bool withExpense = true)
     {
         var (vehicle, entry, book) = await EditableEntryAsync(id, ct);
         VersionCheck.Require(expectedVersion, entry.Version);
-        if (InstallationOf(book, entry, trashed: false) is { } installation) await TrashSwapAsync(installation, entry, ct);
-        else
-        {
-            entry.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
-            var save = new TyreSave();
-            save.Change(entry);
-            await SaveAsync(save, ct);
-        }
+        if (InstallationOf(book, entry, trashed: false) is { } installation) await TrashSwapAsync(book, installation, entry, withExpense, ct);
+        else await TrashSwapAsync(book, null, entry, withExpense, ct);
         logger.LogDebug("Tyre log line {EntryId} of vehicle {VehicleId} moved to the trash", id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -333,14 +362,7 @@ public sealed class TyreService(
         var (vehicle, entry, book) = await EditableEntryAsync(id, ct, trashed: true);
         VersionCheck.Require(expectedVersion, entry.Version);
         await RequireReadingFitsAsync(vehicle, entry, ct);
-        if (InstallationOf(book, entry, trashed: true) is { } installation) await RestoreSwapAsync(vehicle, book, installation, entry, ct);
-        else
-        {
-            entry.Restore((await access.RequirePrincipalAsync(ct)).Id);
-            var save = new TyreSave();
-            save.Change(entry);
-            await SaveAsync(save, ct);
-        }
+        await RestoreSwapAsync(vehicle, book, InstallationOf(book, entry, trashed: true), entry, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -444,7 +466,9 @@ public sealed class TyreService(
         var liveSets = book.Sets.Where(s => !s.IsDeleted).Select(s => s.Id).ToHashSet();
         var entries = book.Entries.Where(e => !e.IsDeleted && (e.SetId is null || liveSets.Contains(e.SetId.Value)))
             .OrderByDescending(e => e.Day).ThenBy(e => e.IsSwapLine ? 0 : 1).ThenBy(e => e.Id).ToList();
-        return new TyreOverview(vehicleId, sets, entries, book.Readings);
+        var category = book.Entries.Where(e => !e.IsDeleted && e.ExpenseId is not null).OrderByDescending(e => e.Day).ThenByDescending(e => e.UpdatedAt)
+            .Select(book.ExpenseOf).FirstOrDefault(x => x is { IsDeleted: false })?.Category;
+        return new TyreOverview(vehicleId, sets, entries, book.Readings, category);
     }
 
     private static TyreHistory History(Vehicle vehicle, TyreBook book, TyreSet? extra = null) =>
@@ -462,7 +486,7 @@ public sealed class TyreService(
             // The installation's line takes its id. Without one, a Note line with it is what the same change typed where a join made no
             // installation (TypedAsync); any other line with it means the id is someone else's.
             if (await tyres.FindEntryAsync(given, ct) is not { } line) return false;
-            ClientIds.Repeat(line, line is { Kind: TyreEntryKind.Note, InstallationId: null } && line.VehicleId == vehicleId && line.CreatedById == by, given);
+            ClientIds.Repeat(line, line is { Kind: TyreEntryKind.Note or TyreEntryKind.Other, InstallationId: null } && line.VehicleId == vehicleId && line.CreatedById == by, given);
             return true;
         }
         ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
@@ -499,6 +523,67 @@ public sealed class TyreService(
     {
         save.Take(changes);
         save.Take(TyreLog.Follow(changes, history, [.. book.Entries, .. save.AddedEntries], by, clock.GetUtcNow()));
+        // A swap the history trashes (a replace, a join) takes its expense along, as the remove dialog's ticked box (the owner's choice, #288).
+        foreach (var installation in changes.Trashed)
+            if (save.AddedEntries.Concat(book.Entries).FirstOrDefault(e => e.Id == installation.Id) is { IsDeleted: true } line
+                && ExpenseOf(save, book, line) is { IsDeleted: false } expense)
+            {
+                expense.MarkDeleted(clock.GetUtcNow(), by);
+                line.MarkExpenseTrashedWithEntry(true);
+                save.Change(expense);
+            }
+    }
+
+    private static Expense? ExpenseOf(TyreSave save, TyreBook book, TyreEntry line) =>
+        line.ExpenseId is { } id ? save.AddedExpenses.FirstOrDefault(e => e.Id == id) ?? book.ExpenseOf(line) : null;
+
+    /// <summary>
+    /// The amount of a line (#288): none given leaves it; an empty one moves its expense to the trash; one typed makes the expense (an
+    /// ordinary one, with the line's day and very reading), or changes it, bringing it back from the trash when the amount was emptied before.
+    /// </summary>
+    private async Task ApplyFeeAsync(Vehicle vehicle, TyreBook book, TyreSave save, TyreEntry line, TyreFee? fee, Guid by, CancellationToken ct)
+    {
+        if (fee is null) return;
+        var expense = ExpenseOf(save, book, line);
+        if (fee.Amount is not { } amount)
+        {
+            if (expense is not { IsDeleted: false }) return;
+            expense.MarkDeleted(clock.GetUtcNow(), by);
+            line.MarkExpenseTrashedWithEntry(false);
+            save.Change(expense);
+            save.Change(line);
+            return;
+        }
+        if (!line.TakesAmount) throw new DomainException("tyres.noteTakesNoAmount", "A note takes no amount; choose what was done.");
+        if (expense is null)
+        {
+            if (fee.ExpenseId is { } given && await expenses.FindIncludingDeletedAsync(given, ct) is { } taken)
+                ClientIds.Repeat(taken, false, given); // someone else's id: the line's own would have been found as its expense
+            var cost = Cost.Create(vehicle.OwnerId, vehicle.Id, line.Day, amount, fee.Currency);
+            expense = Expense.Create(vehicle.OwnerId, by, vehicle.Id, line.Day, fee.Title ?? "", fee.Category, cost, line.OdometerReading, id: fee.ExpenseId);
+            line.LinkExpense(expense.Id);
+            save.AddedExpenses.Add(expense);
+            save.Change(line);
+            return;
+        }
+        if (expense.IsDeleted) expense.Restore(by); // the amount was emptied before, or the expense trashed on its own: typed again, it is back
+        expense.FollowLine(line.Day, line.OdometerReading, amount, fee.Currency, fee.Category, setCategory: true, by);
+        line.MarkExpenseTrashedWithEntry(false);
+        save.Change(expense);
+        save.Change(line);
+    }
+
+    /// <summary>Before a save: every linked expense of a line the change touched follows its line's day and reading, which is live while a live holder has it.</summary>
+    private void Linked(TyreSave save)
+    {
+        if (save.Book is not { } book) return;
+        foreach (var line in save.AddedEntries.Concat(save.ChangedEntries).Where(l => l.ExpenseId is not null).ToList())
+        {
+            if (ExpenseOf(save, book, line) is not { } expense) continue;
+            // An expense left live while its line is in the trash goes on on its own; otherwise it is on its line's day, with its reading.
+            if (!(line.IsDeleted && !expense.IsDeleted) && expense.FollowLine(line.Day, line.OdometerReading, by: save.By)) save.Change(expense);
+            TyreExpenses.Settle(line, expense, clock.GetUtcNow());
+        }
     }
 
     private static TyreEntry? LineOf(TyreBook book, Guid installationId) => book.Entries.FirstOrDefault(e => e.Id == installationId);
@@ -514,27 +599,31 @@ public sealed class TyreService(
     /// </summary>
     /// <param name="id">The change's own client id (the installation's it would have made): a Note line made in its place takes it, so the
     /// change sent again finds it (<see cref="RepeatedAsync"/>) instead of writing the line twice.</param>
+    /// <param name="fee">What the change cost (#288): on the same line; a line made for it is an Other line, since a note takes no amount.</param>
     private async Task TypedAsync(
         Vehicle vehicle, TyreBook book, TyreSave save, TyreHistory history, Guid setId, DateOnly day, long? value, string? note, Guid by, CancellationToken ct,
-        Guid? id = null)
+        Guid? id = null, TyreFee? fee = null)
     {
-        if (value is null && string.IsNullOrWhiteSpace(note)) return;
+        if (value is null && string.IsNullOrWhiteSpace(note) && fee?.Amount is null) return;
         var line = history.Live.FirstOrDefault(s => s.From == day) is { } starting
             ? save.AddedEntries.FirstOrDefault(e => e.Id == starting.Id) ?? LineOf(book, starting.Id)
             : null;
         if (value is { } v) await odometer.ValidateAsync(vehicle.Id, day, v, exceptReadingId: line?.OdometerReadingId, ct);
         if (line is null)
         {
-            var created = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, TyreEntryKind.Note, setId, day, value, note,
+            var created = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, fee?.Amount is null ? TyreEntryKind.Note : TyreEntryKind.Other, setId, day, value, note,
                 id is { } given && save.AddedEntries.All(e => e.Id != given) && book.Entries.All(e => e.Id != given) ? given : null);
             save.AddedEntries.Add(created);
             if (created.OdometerReading is { } reading) save.AddedReadings.Add(reading);
+            await ApplyFeeAsync(vehicle, book, save, created, fee, by, ct);
             return;
         }
         var (added, removed, changed) = line.Update(line.Kind, line.SetId, line.Day, value ?? line.Odometer, note ?? line.Note, by);
         if (added is not null) save.AddedReadings.Add(added);
         if (removed is not null) save.RemovedReadings.Add(removed);
         if (changed) save.Change(line);
+        if (fee?.Amount is not null) line.TakeAmountAsOther(by); // a line kept for the day (a Note) that now carries an amount
+        await ApplyFeeAsync(vehicle, book, save, line, fee, by, ct);
     }
 
     private async Task InstallationReadingsAsync(
@@ -550,35 +639,145 @@ public sealed class TyreService(
         if (line.IsDeleted && line.OdometerReading is { } reading) await odometer.ValidateAsync(vehicle.Id, line.Day, reading.Value, exceptReadingId: null, ct);
     }
 
-    /// <summary>A swap's line and its installation go to the trash together.</summary>
-    private async Task TrashSwapAsync(TyreInstallation installation, TyreEntry? line, CancellationToken ct)
+    /// <summary>
+    /// A line goes to the trash, a swap's with its installation. Its expense goes along when <paramref name="withExpense"/> (and comes back with
+    /// it); else it stays, holding the reading, which then stays among the car's readings.
+    /// </summary>
+    private async Task TrashSwapAsync(TyreBook book, TyreInstallation? installation, TyreEntry? line, bool withExpense, CancellationToken ct)
     {
         var (now, by) = (clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
-        var save = new TyreSave();
-        installation.MarkDeleted(now, by);
-        save.Change(installation);
+        var save = new TyreSave { Book = book, By = by };
+        if (installation is not null)
+        {
+            installation.MarkDeleted(now, by);
+            save.Change(installation);
+        }
         if (line is { IsDeleted: false })
         {
             line.MarkDeleted(now, by);
             save.Change(line);
+            if (withExpense && book.ExpenseOf(line) is { IsDeleted: false } expense)
+            {
+                expense.MarkDeleted(now, by);
+                line.MarkExpenseTrashedWithEntry(true);
+                save.Change(expense);
+            }
         }
         await SaveAsync(save, ct);
     }
 
-    /// <summary>A swap's line and its installation come back together, or not at all (the history's reason).</summary>
-    private async Task RestoreSwapAsync(Vehicle vehicle, TyreBook book, TyreInstallation installation, TyreEntry? line, CancellationToken ct)
+    /// <summary>
+    /// A line comes back, a swap's with its installation (or not at all: the history's reason), and its expense with it when the two went to
+    /// the trash together.
+    /// </summary>
+    private async Task RestoreSwapAsync(Vehicle vehicle, TyreBook book, TyreInstallation? installation, TyreEntry? line, CancellationToken ct)
     {
         var by = (await access.RequirePrincipalAsync(ct)).Id;
-        installation.Restore(by);
-        History(vehicle, book).CheckRestored([installation]);
-        var save = new TyreSave();
-        save.Change(installation);
+        var save = new TyreSave { Book = book, By = by };
+        if (installation is not null)
+        {
+            installation.Restore(by);
+            History(vehicle, book).CheckRestored([installation]);
+            save.Change(installation);
+        }
         if (line is { IsDeleted: true })
         {
             await RequireReadingFitsAsync(vehicle, line, ct);
             line.Restore(by);
             save.Change(line);
+            if (line.ExpenseTrashedWithEntry && book.ExpenseOf(line) is { IsDeleted: true } expense)
+            {
+                expense.Restore(by);
+                save.Change(expense);
+            }
+            line.MarkExpenseTrashedWithEntry(false);
         }
+        await SaveAsync(save, ct);
+    }
+
+    /// <summary>The line an expense was made from (#288), the trash included; null for an ordinary expense.</summary>
+    public async Task<TyreEntry?> LineOfExpenseAsync(Guid expenseId, CancellationToken ct) => (await tyres.ListEntriesByExpenseAsync([expenseId], ct)).FirstOrDefault();
+
+    /// <summary>
+    /// A person's edit of an expense a tyre log line made (#288), from the Expenses tab: its date and odometer are its line's, so they change
+    /// both (a swap's line moving its swap by the history's rules). While the line is in the trash the expense is edited on its own, and a
+    /// reading it is then given is its own.
+    /// </summary>
+    public async Task<Expense> UpdateExpenseAsync(TyreEntry found, Guid expenseId, ExpenseInput input, CancellationToken ct, int? expectedVersion = null)
+    {
+        var vehicle = await EditableVehicleAsync(found.VehicleId, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        var book = await tyres.LoadAsync(vehicle.Id, ct);
+        var line = book.Entries.First(e => e.Id == found.Id);
+        var expense = book.ExpenseOf(line) ?? throw new NotFoundException("expense.notFound", $"Expense {expenseId} does not exist.", new { Id = expenseId });
+        VersionCheck.Require(expectedVersion, expense.Version);
+        RequireNotFuture(input.Date);
+        var save = new TyreSave { Book = book, By = by };
+        var (currency, discount) = (input.Currency ?? expense.Currency, input.Discount ?? expense.Discount);
+        if (line.IsDeleted)
+        {
+            if (line.OdometerReadingId is { } shared && expense.OdometerReadingId == shared) expense.LeaveSharedReading();
+            if (input.Odometer is { } own) await odometer.ValidateAsync(vehicle.Id, input.Date, own, exceptReadingId: expense.OdometerReadingId, ct);
+            save.ExpenseChanges.Add(expense.Update(input.Date, input.Title, input.Category, input.Amount, currency, input.Odometer, input.Note, by: by, discount: discount));
+            save.Change(expense);
+            save.Change(line); // its reading leaves the car's readings once nothing live holds it
+            TyreExpenses.Settle(line, expense, clock.GetUtcNow());
+        }
+        else
+        {
+            if (line.IsSwapLine && input.Date != line.Day)
+            {
+                var history = History(vehicle, book);
+                Follow(save, book, history, history.MoveSwap(book.Installations.First(s => s.Id == line.InstallationId), input.Date, by), by);
+            }
+            if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Date, value, exceptReadingId: line.OdometerReadingId, ct);
+            var (added, removed, _) = line.Update(line.Kind, line.SetId, input.Date, input.Odometer, line.Note, by);
+            if (added is not null) save.AddedReadings.Add(added);
+            if (removed is not null) save.RemovedReadings.Add(removed);
+            save.Change(line);
+            save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount));
+            save.Change(expense);
+        }
+        await SaveAsync(save, ct);
+        logger.LogDebug("Expense {ExpenseId} of tyre log line {EntryId} updated", expense.Id, line.Id);
+        return await expenses.FindAsync(expense.Id, ct) ?? expense;
+    }
+
+    /// <summary>An expense a line made, moved to the trash on its own (the Expenses tab): the line stays, with its reading.</summary>
+    public async Task<Expense> TrashExpenseAsync(TyreEntry found, Guid expenseId, CancellationToken ct, int? expectedVersion = null) =>
+        await ChangeExpenseAsync(found, expenseId, expectedVersion, (expense, by) => expense.MarkDeleted(clock.GetUtcNow(), by), ct);
+
+    /// <summary>An expense a line made, restored on its own: only it comes back (the owner's choice), the line stays where it is.</summary>
+    public async Task<Expense> RestoreExpenseAsync(TyreEntry found, Guid expenseId, CancellationToken ct, int? expectedVersion = null) =>
+        await ChangeExpenseAsync(found, expenseId, expectedVersion, (expense, by) => expense.Restore(by), ct);
+
+    private async Task<Expense> ChangeExpenseAsync(TyreEntry found, Guid expenseId, int? expectedVersion, Action<Expense, Guid> change, CancellationToken ct)
+    {
+        var vehicle = await EditableVehicleAsync(found.VehicleId, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        var book = await tyres.LoadAsync(vehicle.Id, ct);
+        var line = book.Entries.First(e => e.Id == found.Id);
+        var expense = book.ExpenseOf(line) ?? throw new NotFoundException("expense.notFound", $"Expense {expenseId} does not exist.", new { Id = expenseId });
+        VersionCheck.Require(expectedVersion, expense.Version);
+        change(expense, by);
+        line.MarkExpenseTrashedWithEntry(false);
+        TyreExpenses.Settle(line, expense, clock.GetUtcNow());
+        var save = new TyreSave { Book = book, By = by };
+        save.Change(expense);
+        save.Change(line); // its reading, and the bookkeeping of the trash
+        await SaveAsync(save, ct);
+        return await expenses.FindIncludingDeletedAsync(expense.Id, ct) ?? expense;
+    }
+
+    /// <summary>A photo of a line's expense filled in the odometer the two had none of (#288): the line takes that very reading.</summary>
+    public async Task ExpenseReadingFilledAsync(Guid expenseId, OdometerReading reading, CancellationToken ct)
+    {
+        if (await LineOfExpenseAsync(expenseId, ct) is not { IsDeleted: false } found) return;
+        var book = await tyres.LoadAsync(found.VehicleId, ct);
+        var line = book.Entries.First(e => e.Id == found.Id);
+        if (!line.TakeReading(reading)) return;
+        var save = new TyreSave();
+        save.Change(line);
         await SaveAsync(save, ct);
     }
 
@@ -601,6 +800,7 @@ public sealed class TyreService(
 
     private async Task SaveAsync(TyreSave save, CancellationToken ct)
     {
+        Linked(save);
         RequireRising(save);
         if (!await tyres.SaveAsync(save, ct))
             throw new InvalidOperationException("A tyre change without client ids clashed on an id."); // not reached: only a client's id is chosen twice
@@ -613,6 +813,7 @@ public sealed class TyreService(
     /// </summary>
     private async Task<bool> SaveOnceAsync(TyreSave save, Func<Task<bool>> repeat, CancellationToken ct)
     {
+        Linked(save);
         RequireRising(save);
         try
         {

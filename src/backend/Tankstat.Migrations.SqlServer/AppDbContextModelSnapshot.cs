@@ -947,6 +947,12 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("ExpenseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("ExpenseTrashedWithEntry")
+                        .HasColumnType("bit");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("uniqueidentifier");
 
@@ -987,6 +993,8 @@ namespace Tankstat.Migrations.SqlServer
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt");
+
+                    b.HasIndex("ExpenseId");
 
                     b.HasIndex("OdometerReadingId")
                         .IsUnique()

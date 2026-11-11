@@ -947,6 +947,12 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("ExpenseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("ExpenseTrashedWithEntry")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("uuid");
 
@@ -987,6 +993,8 @@ namespace Tankstat.Migrations.PostgreSql
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt");
+
+                    b.HasIndex("ExpenseId");
 
                     b.HasIndex("OdometerReadingId")
                         .IsUnique();

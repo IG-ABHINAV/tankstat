@@ -2,7 +2,10 @@ using System.Runtime.ExceptionServices;
 using Microsoft.EntityFrameworkCore;
 using Tankstat.Application.Access;
 using Tankstat.Application.Tyres;
+using Tankstat.Domain.Measurements;
+using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Tyres;
+using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Infrastructure.Persistence.Repositories;
 
@@ -15,7 +18,19 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         var installations = await db.TyreInstallations.AsNoTracking().Where(s => s.VehicleId == vehicleId).ToListAsync(ct);
         var entries = await Entries(db).Where(e => e.VehicleId == vehicleId).ToListAsync(ct);
         var readings = await db.OdometerReadings.AsNoTracking().Where(r => r.VehicleId == vehicleId).Select(r => new ReadingPoint(r.Date, r.Value)).ToListAsync(ct);
-        return new TyreBook(sets, installations, entries, TyreCalculator.Sorted(readings));
+        return new TyreBook(sets, installations, entries, TyreCalculator.Sorted(readings), await LinkedExpensesAsync(db, entries, ct));
+    }
+
+    /// <summary>The expenses the lines' amounts made, the trash included, each holding its line's reading object (one row, one object).</summary>
+    private static async Task<IReadOnlyList<Expense>> LinkedExpensesAsync(AppDbContext db, IReadOnlyCollection<TyreEntry> entries, CancellationToken ct)
+    {
+        var ids = entries.Where(e => e.ExpenseId is not null).Select(e => e.ExpenseId!.Value).ToList();
+        if (ids.Count == 0) return [];
+        var expenses = await db.Expenses.IgnoreQueryFilters().AsNoTracking().Include(e => e.Cost).Include(e => e.OdometerReading)
+            .Where(e => ids.Contains(e.Id)).ToListAsync(ct);
+        foreach (var expense in expenses)
+            if (entries.FirstOrDefault(e => e.ExpenseId == expense.Id)?.OdometerReading is { } reading) expense.ShareReadingObject(reading);
+        return expenses;
     }
 
     public async Task<TyreSet?> FindSetAsync(Guid id, CancellationToken ct)
@@ -50,6 +65,13 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         return await Entries(db).FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
+    public async Task<IReadOnlyList<TyreEntry>> ListEntriesByExpenseAsync(IReadOnlyCollection<Guid> expenseIds, CancellationToken ct)
+    {
+        if (expenseIds.Count == 0) return [];
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await Entries(db).Where(e => e.ExpenseId != null && expenseIds.Contains(e.ExpenseId.Value)).ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<TyreEntry>> ListEntriesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
     {
         if (ids.Count == 0) return [];
@@ -74,16 +96,17 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
             await SaveInOneAsync(save, ct);
             return true;
         }
-        catch (DbUpdateException e) when (e is not DbUpdateConcurrencyException && save.AddedSets.Count + save.AddedInstallations.Count + save.AddedEntries.Count > 0)
+        catch (DbUpdateException e) when (e is not DbUpdateConcurrencyException && save.AddedSets.Count + save.AddedInstallations.Count + save.AddedEntries.Count + save.AddedExpenses.Count > 0)
         {
             failure = ExceptionDispatchInfo.Capture(e);
         }
         var sets = save.AddedSets.Select(s => s.Id).ToList();
         var installations = save.AddedInstallations.Select(s => s.Id).ToList();
         var entries = save.AddedEntries.Select(e => e.Id).ToList();
+        var expenses = save.AddedExpenses.Select(e => e.Id).ToList();
         await using var check = await dbFactory.CreateDbContextAsync(ct); // a fresh context: the failed one still holds the inserts
         if (await check.TyreSets.AnyAsync(s => sets.Contains(s.Id), ct) || await check.TyreInstallations.AnyAsync(s => installations.Contains(s.Id), ct)
-            || await check.TyreEntries.AnyAsync(e => entries.Contains(e.Id), ct))
+            || await check.TyreEntries.AnyAsync(e => entries.Contains(e.Id), ct) || await check.Expenses.IgnoreQueryFilters().AnyAsync(e => expenses.Contains(e.Id), ct))
             return false;
         failure.Throw();
         return false; // not reached
@@ -104,10 +127,23 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
                 db.Entry(kept).State = EntityState.Modified;
         foreach (var e in save.AddedEntries) db.Entry(e).State = EntityState.Added;
         foreach (var e in save.ChangedEntries) db.Entry(e).State = EntityState.Modified;
-        await db.SaveChangesAsync(ct);
-        if (save.RemovedReadings.Count > 0)
+        // A line's expense (#288): its reading is the line's object (attached above), else its own; its cost new with it or changed.
+        var createdCosts = save.ExpenseChanges.Select(c => c.CreatedCost).Concat(save.AddedExpenses.Select(e => e.Cost)).OfType<Cost>().ToHashSet();
+        foreach (var r in save.ExpenseChanges.Select(c => c.CreatedReading).OfType<OdometerReading>()) db.Entry(r).State = EntityState.Added;
+        foreach (var e in save.AddedExpenses.Concat(save.ChangedExpenses))
         {
-            foreach (var r in save.RemovedReadings) db.Entry(r).State = EntityState.Deleted;
+            if (e.OdometerReading is { } reading && db.Entry(reading).State == EntityState.Detached) db.Entry(reading).State = EntityState.Modified;
+            if (e.Cost is { } cost && db.Entry(cost).State == EntityState.Detached) db.Entry(cost).State = createdCosts.Contains(cost) ? EntityState.Added : EntityState.Modified;
+        }
+        foreach (var e in save.AddedExpenses) db.Entry(e).State = EntityState.Added;
+        foreach (var e in save.ChangedExpenses) db.Entry(e).State = EntityState.Modified;
+        await db.SaveChangesAsync(ct);
+        var removedCosts = save.ExpenseChanges.Select(c => c.RemovedCost).OfType<Cost>().ToList();
+        var removedReadings = save.RemovedReadings.Concat(save.ExpenseChanges.Select(c => c.RemovedReading).OfType<OdometerReading>()).Distinct().ToList();
+        if (removedReadings.Count + removedCosts.Count > 0)
+        {
+            foreach (var c in removedCosts) db.Entry(c).State = EntityState.Deleted;
+            foreach (var r in removedReadings) db.Entry(r).State = EntityState.Deleted;
             await db.SaveChangesAsync(ct);
         }
         await tx.CommitAsync(ct);
@@ -145,9 +181,13 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory) 
         var entries = await db.TyreEntries.IgnoreQueryFilters().Include(e => e.OdometerReading)
             .Where(e => e.DeletedAt != null || (e.SetId != null && setIds.Contains(e.SetId.Value))).InScope(scope, e => e.VehicleId).ToListAsync(ct);
         var listed = sets.Count + entries.Count(e => e.SetId is not { } setId || !setIds.Contains(setId));
-        // Through the change tracker (not the cascade alone), so devices get a tombstone for every row.
+        // Through the change tracker (not the cascade alone), so devices get a tombstone for every row. A reading an expense still holds (the
+        // line's amount made it, #288; in the trash or not) stays with it, and so does the expense.
+        var readingIds = entries.Where(e => e.OdometerReadingId is not null).Select(e => e.OdometerReadingId!.Value).ToList();
+        var held = (await db.Expenses.IgnoreQueryFilters().Where(x => x.OdometerReadingId != null && readingIds.Contains(x.OdometerReadingId.Value))
+            .Select(x => x.OdometerReadingId!.Value).ToListAsync(ct)).ToHashSet();
         db.TyreEntries.RemoveRange(entries);
-        db.OdometerReadings.RemoveRange(entries.Where(e => e.OdometerReading is not null).Select(e => e.OdometerReading!));
+        db.OdometerReadings.RemoveRange(entries.Where(e => e.OdometerReading is not null && !held.Contains(e.OdometerReading.Id)).Select(e => e.OdometerReading!));
         db.TyreInstallations.RemoveRange(installations);
         db.TyreSets.RemoveRange(sets);
         await db.SaveChangesAsync(ct);

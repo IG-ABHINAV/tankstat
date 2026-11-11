@@ -60,6 +60,18 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
 
     public long? Odometer => OdometerReading?.Value;
 
+    /// <summary>
+    /// The expense made from the line's amount (#288), an ordinary one on the Expenses tab: no foreign key, one per line. It holds the same
+    /// reading and day as the line. Cleared when that expense is purged.
+    /// </summary>
+    public Guid? ExpenseId { get; private set; }
+
+    /// <summary>The expense went to the trash together with the line (the remove dialog's box, or the history trashing a swap): restoring the line brings it back.</summary>
+    public bool ExpenseTrashedWithEntry { get; private set; }
+
+    /// <summary>A line that may carry an amount: a note never does.</summary>
+    public bool TakesAmount => Kind != TyreEntryKind.Note;
+
     public DateTimeOffset? DeletedAt { get; private set; }
 
     public bool IsDeleted => DeletedAt is not null;
@@ -188,6 +200,35 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
         (line.OdometerReading, line.OdometerReadingId, line.Note) = (null, null, null);
         line.Bump(EntityChange.Edited, by);
         return kept;
+    }
+
+    /// <summary>Links the expense its amount made. Part of the change that typed the amount, so it bumps nothing of its own.</summary>
+    public void LinkExpense(Guid expenseId) => (ExpenseId, ExpenseTrashedWithEntry) = (expenseId, false);
+
+    /// <summary>Takes the reading its expense's photo filled in (#288: the two hold one reading), when it has none.</summary>
+    public bool TakeReading(OdometerReading reading, Guid? by = null)
+    {
+        if (OdometerReading is not null || reading.Date != Day) return false;
+        (OdometerReading, OdometerReadingId) = (reading, reading.Id);
+        Bump(EntityChange.Edited, by);
+        return true;
+    }
+
+    /// <summary>The linked expense was purged: the line keeps everything else.</summary>
+    public void UnlinkExpense() => (ExpenseId, ExpenseTrashedWithEntry) = (null, false);
+
+    /// <summary>
+    /// Whether the linked expense is in the trash because the line went there. Bookkeeping, not an edit: it moves no version, so a change of
+    /// the line made meanwhile on a device is not refused for it.
+    /// </summary>
+    public void MarkExpenseTrashedWithEntry(bool trashedWith) => ExpenseTrashedWithEntry = trashedWith && ExpenseId is not null;
+
+    /// <summary>A line kept for a day that has to carry an amount (#288, the owner's choice): an <see cref="TyreEntryKind.Other"/> line, since a note takes none.</summary>
+    public void TakeAmountAsOther(Guid? by = null)
+    {
+        if (Kind != TyreEntryKind.Note) return;
+        Kind = TyreEntryKind.Other;
+        Bump(EntityChange.Edited, by);
     }
 
     /// <summary>Moves the line to the trash; its reading leaves the car's readings until the line is restored.</summary>

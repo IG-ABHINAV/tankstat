@@ -1,15 +1,33 @@
 using Tankstat.Application.Access;
 using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Tyres;
+using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Application.Tyres;
 
-/// <summary>A vehicle's tyres as stored: every set, installation and tyre log line (the trash included; the lines with their readings), and the vehicle's live odometer readings.</summary>
-public sealed record TyreBook(IReadOnlyList<TyreSet> Sets, IReadOnlyList<TyreInstallation> Installations, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings);
+/// <summary>
+/// A vehicle's tyres as stored: every set, installation and tyre log line (the trash included; the lines with their readings), the
+/// expenses the lines' amounts made (#288, the trash included, each holding its line's very reading object), and the vehicle's live
+/// odometer readings.
+/// </summary>
+public sealed record TyreBook(
+    IReadOnlyList<TyreSet> Sets, IReadOnlyList<TyreInstallation> Installations, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings,
+    IReadOnlyList<Expense>? Expenses = null)
+{
+    public IReadOnlyList<Expense> LinkedExpenses => Expenses ?? [];
+
+    /// <summary>The expense a line's amount made, when it still exists (a purged one is gone, the line's link with it).</summary>
+    public Expense? ExpenseOf(TyreEntry line) => line.ExpenseId is { } id ? LinkedExpenses.FirstOrDefault(e => e.Id == id) : null;
+}
 
 /// <summary>What one change saves, in one transaction (the entities are detached; new ones are added, the others updated).</summary>
 public sealed class TyreSave
 {
+    /// <summary>The book the change was made on (the service's): its linked expenses follow their lines before the save (#288).</summary>
+    internal TyreBook? Book { get; init; }
+
+    internal Guid? By { get; init; }
+
     public List<TyreSet> AddedSets { get; } = [];
     public List<TyreSet> ChangedSets { get; } = [];
     public List<TyreInstallation> AddedInstallations { get; } = [];
@@ -17,6 +35,20 @@ public sealed class TyreSave
     public List<TyreEntry> AddedEntries { get; } = [];
     public List<TyreEntry> ChangedEntries { get; } = [];
     public List<OdometerReading> AddedReadings { get; } = [];
+
+    /// <summary>Expenses a line's amount made (#288), with their new <see cref="Expense.Cost"/>; a line and its expense are saved together.</summary>
+    public List<Expense> AddedExpenses { get; } = [];
+
+    /// <summary>Linked expenses changed with their line (their date, amount, reading, trash); <see cref="ExpenseChanges"/> holds what an expense's own edit let go of.</summary>
+    public List<Expense> ChangedExpenses { get; } = [];
+
+    /// <summary>The costs and readings an expense's own edit created or let go of (an expense changed from the Expenses tab).</summary>
+    public List<LinkedChanges> ExpenseChanges { get; } = [];
+
+    public void Change(Expense expense)
+    {
+        if (!AddedExpenses.Contains(expense) && !ChangedExpenses.Contains(expense)) ChangedExpenses.Add(expense);
+    }
     public List<OdometerReading> RemovedReadings { get; } = [];
 
     public void Take(TyreChanges changes)
@@ -82,6 +114,9 @@ public interface ITyreRepository
 
     /// <summary>A tyre log line, the trash included, with its reading.</summary>
     Task<TyreEntry?> FindEntryAsync(Guid id, CancellationToken ct);
+
+    /// <summary>The lines that made these expenses (#288), the trash included.</summary>
+    Task<IReadOnlyList<TyreEntry>> ListEntriesByExpenseAsync(IReadOnlyCollection<Guid> expenseIds, CancellationToken ct);
 
     /// <summary>The tyre log lines with these ids, the trash included.</summary>
     Task<IReadOnlyList<TyreEntry>> ListEntriesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);

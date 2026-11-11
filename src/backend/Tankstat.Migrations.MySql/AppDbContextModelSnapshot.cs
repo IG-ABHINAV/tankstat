@@ -944,6 +944,12 @@ namespace Tankstat.Migrations.MySql
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<Guid?>("ExpenseId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("ExpenseTrashedWithEntry")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("char(36)");
 
@@ -984,6 +990,8 @@ namespace Tankstat.Migrations.MySql
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt");
+
+                    b.HasIndex("ExpenseId");
 
                     b.HasIndex("OdometerReadingId")
                         .IsUnique();

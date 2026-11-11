@@ -21,7 +21,7 @@ namespace Tankstat.Application.Recognition;
 /// </summary>
 public sealed class LogPhotoFiller(
     ILogPhotoRepository photos, IPhotoReadingRepository readings, IRefuelingRepository refuelings, IExpenseRepository expenses,
-    IVehicleRepository vehicles, RecognitionSetup setup, Notifier notifier, INotificationRepository notifications, TimeProvider clock,
+    IVehicleRepository vehicles, RecognitionSetup setup, Notifier notifier, INotificationRepository notifications, Tyres.TyreService tyres, TimeProvider clock,
     ILogger<LogPhotoFiller> logger)
 {
     /// <summary>
@@ -109,6 +109,8 @@ public sealed class LogPhotoFiller(
             var moved = log.FinishReading(pending);
             if (log.FilledFromPhoto == before && !moved) return;
             await expenses.UpdateAsync(log, changes, ct);
+            // A tyre log line's expense (#288) holds the line's reading: one a photo filled in becomes the line's too.
+            if (changes.CreatedReading is { } reading) await tyres.ExpenseReadingFilledAsync(logId, reading, ct);
             logger.LogDebug("Expense {ExpenseId} of vehicle {VehicleId} took {Values} from its photos and is {ReviewState}",
                 logId, log.VehicleId, Names(log.FilledFromPhoto & ~before), log.ReviewState);
             if (moved) await NotifyAsync(NotificationRef.Expense(logId), log.VehicleId, log.CreatedById, log.Date, log.ReviewState, log.FilledFromPhoto, log.Missing, ct, log.Title);

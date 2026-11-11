@@ -71,6 +71,8 @@ internal sealed class TyreEntryConfiguration : IEntityTypeConfiguration<TyreEntr
         b.HasIndex(e => new { e.VehicleId, e.Day });
         b.HasIndex(e => e.SetId);
         b.HasIndex(e => e.OwnerId);
+        b.HasIndex(e => e.ExpenseId); // an expense's line (its chip), and the link cleared when the expense is purged; no key, as for RecurringCompletion
+        b.Ignore(e => e.TakesAmount);
         // The reading is owned by the line; clearing it, or purging the line, removes it in code (as an expense's).
         b.HasOne(e => e.OdometerReading).WithOne().HasForeignKey<TyreEntry>(e => e.OdometerReadingId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
         TrashColumn.Map(b, e => e.DeletedAt);

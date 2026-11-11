@@ -5,6 +5,7 @@ using Tankstat.Application.Odometers;
 using Tankstat.Application.Photos;
 using Tankstat.Application.Recognition;
 using Tankstat.Application.Sync;
+using Tankstat.Application.Tyres;
 using Tankstat.Application.Vehicles;
 using Tankstat.Domain;
 using Tankstat.Domain.Access;
@@ -27,7 +28,7 @@ public sealed record ExpenseInput(DateOnly Date, string Title, string? Category,
 /// </summary>
 public sealed class ExpenseService(
     LogAccessGuard guard, IExpenseRepository expenses, AccessService access, OdometerService odometer, LogPhotoService photos, LogPhotoFiller filler,
-    TimeProvider clock, ILogger<ExpenseService> logger)
+    TyreService tyres, TimeProvider clock, ILogger<ExpenseService> logger)
 {
     private DateOnly LatestAllowedDate => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime).AddDays(1);
 
@@ -83,6 +84,8 @@ public sealed class ExpenseService(
     public async Task<Expense> UpdateAsync(Guid id, ExpenseInput input, CancellationToken ct, int? expectedVersion = null)
     {
         var expense = await EditableAsync(id, includeDeleted: false, ct);
+        // An expense a tyre log line made (#288) shares the line's day and reading: the two change together.
+        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) return await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion);
         VersionCheck.Require(expectedVersion, expense.Version);
         await ValidateAsync(expense.VehicleId, input, exceptReadingId: expense.OdometerReadingId, ct);
         var readingPhotos = (input.Amount is null || input.Odometer is null) && await filler.MayWaitForLogPhotosAsync(LogType.Expense, id, ct);
@@ -104,6 +107,7 @@ public sealed class ExpenseService(
     public async Task<Expense> DeleteAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {
         var expense = await EditableAsync(id, includeDeleted: false, ct);
+        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) return await tyres.TrashExpenseAsync(line, id, ct, expectedVersion); // its line keeps the reading
         VersionCheck.Require(expectedVersion, expense.Version);
         expense.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
         await expenses.UpdateAsync(expense, LinkedChanges.None, ct);
@@ -120,7 +124,8 @@ public sealed class ExpenseService(
     {
         var expense = await EditableAsync(id, includeDeleted: true, ct);
         VersionCheck.Require(expectedVersion, expense.Version);
-        if (expense.Odometer is { } value) await odometer.ValidateAsync(expense.VehicleId, expense.Date, value, exceptReadingId: null, ct);
+        if (expense.Odometer is { } value) await odometer.ValidateAsync(expense.VehicleId, expense.Date, value, exceptReadingId: expense.OdometerReadingId, ct);
+        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) return await tyres.RestoreExpenseAsync(line, id, ct, expectedVersion);
         expense.Restore((await access.RequirePrincipalAsync(ct)).Id);
         await expenses.UpdateAsync(expense, LinkedChanges.None, ct);
         logger.LogDebug("Expense {ExpenseId} of vehicle {VehicleId} restored from the trash", id, expense.VehicleId);

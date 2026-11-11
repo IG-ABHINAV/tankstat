@@ -6,7 +6,9 @@ using Tankstat.Application.Odometers;
 using Tankstat.Application.Tyres;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
+using Tankstat.Application.Expenses;
 using Tankstat.Domain;
+using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Sync;
 using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Users;
@@ -264,5 +266,76 @@ public class TyreRepositoryTests
         Assert.Empty(after.Sets);
         Assert.Empty(after.Entries);
         Assert.Empty(after.Readings);
+    }
+
+    /// <summary>A line with an expense of its amount (#288): one reading row, held by both.</summary>
+    private static async Task<(TyreEntry Line, Expense Expense)> LineWithExpense(TestDatabase db, Vehicle car)
+    {
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.PunctureRepaired, null, D(2026, 9, 20), 148_200, "Rear left");
+        var expense = Expense.Create(car.OwnerId, car.OwnerId, car.Id, line.Day, "Puncture repaired", "Tyres", Cost.Create(car.OwnerId, car.Id, line.Day, 25, "EUR"), line.OdometerReading);
+        line.LinkExpense(expense.Id);
+        var save = new TyreSave();
+        save.AddedEntries.Add(line);
+        save.AddedReadings.Add(line.OdometerReading!);
+        save.AddedExpenses.Add(expense);
+        Assert.True(await db.Get<ITyreRepository>().SaveAsync(save, default));
+        return (line, expense);
+    }
+
+    [Fact]
+    public async Task ALineAndItsExpense_AreSavedTogether_HoldingOneReadingRow_LoadedAsOneObject()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var (line, expense) = await LineWithExpense(db, car);
+
+        var book = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
+        var loaded = book.Entries.Single(e => e.Id == line.Id);
+        var linked = Assert.Single(book.LinkedExpenses);
+        Assert.Equal(expense.Id, linked.Id);
+        Assert.Same(loaded.OdometerReading, linked.OdometerReading); // one object: the two are saved as one row
+        Assert.Equal([new ReadingPoint(D(2026, 9, 20), 148_200)], book.Readings);
+        Assert.Equal(25m, (await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Amount);
+        Assert.Equal(line.Id, Assert.Single(await db.Get<ITyreRepository>().ListEntriesByExpenseAsync([expense.Id], default)).Id);
+
+        // A change of the two saved together: the line's day and reading, the expense following.
+        loaded.Update(loaded.Kind, null, D(2026, 9, 21), 148_300, null);
+        linked.FollowLine(loaded.Day, loaded.OdometerReading);
+        var save = new TyreSave();
+        save.ChangedEntries.Add(loaded);
+        save.ChangedExpenses.Add(linked);
+        await db.Get<ITyreRepository>().SaveAsync(save, default);
+        var after = await db.Get<IExpenseRepository>().FindAsync(expense.Id, default);
+        Assert.Equal((D(2026, 9, 21), (long?)148_300, D(2026, 9, 21)), (after!.Date, after.Odometer, after.Cost!.Date));
+    }
+
+    [Fact]
+    public async Task PurgingTheLine_LeavesTheExpenseWithTheReading_AndPurgingTheExpense_LeavesTheLineWithItButUnlinked()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        var (line, expense) = await LineWithExpense(db, car);
+        var (other, otherExpense) = await LineWithExpense(db, car);
+
+        // The first line purged: its expense, live, keeps the reading.
+        var first = (await repo.LoadAsync(car.Id, default)).Entries.Single(e => e.Id == line.Id);
+        first.MarkDeleted(_clock.GetUtcNow());
+        first.OdometerReading!.Restore(); // still held by the live expense
+        var trash = new TyreSave();
+        trash.ChangedEntries.Add(first);
+        await repo.SaveAsync(trash, default);
+        await repo.PurgeAsync(OwnerScope.All, default);
+        Assert.Equal(148_200, (await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Odometer);
+
+        // The second line's expense purged: the line keeps its reading, without the link.
+        var expenses = db.Get<IExpenseRepository>();
+        var gone = (await expenses.FindAsync(otherExpense.Id, default))!;
+        gone.MarkDeleted(_clock.GetUtcNow());
+        gone.OdometerReading!.Restore(); // the live line holds it
+        await expenses.UpdateAsync(gone, LinkedChanges.None, default);
+        await expenses.PurgeAsync(OwnerScope.All, default);
+        var kept = (await repo.LoadAsync(car.Id, default)).Entries.Single(e => e.Id == other.Id);
+        Assert.Equal((148_200L, (Guid?)null), (kept.Odometer!.Value, kept.ExpenseId));
     }
 }

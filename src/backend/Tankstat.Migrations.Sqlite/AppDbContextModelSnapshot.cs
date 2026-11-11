@@ -942,6 +942,12 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ExpenseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("ExpenseTrashedWithEntry")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("TEXT");
 
@@ -982,6 +988,8 @@ namespace Tankstat.Migrations.Sqlite
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt");
+
+                    b.HasIndex("ExpenseId");
 
                     b.HasIndex("OdometerReadingId")
                         .IsUnique();

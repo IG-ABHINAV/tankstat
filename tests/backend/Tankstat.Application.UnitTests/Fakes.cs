@@ -397,7 +397,8 @@ internal sealed class InMemoryReadings(InMemoryRefuelings refuelings, InMemoryEx
     internal IEnumerable<OdometerReading> Live(Guid vehicleId) =>
         refuelings.Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId && r.OdometerReading is not null).Select(r => r.OdometerReading!)
             .Concat(expenses.Items.Where(e => !e.IsDeleted && e.VehicleId == vehicleId && e.OdometerReading is not null).Select(e => e.OdometerReading!))
-            .Concat(tyres is null ? [] : tyres.Entries.Where(e => e.VehicleId == vehicleId && e.OdometerReading is { DeletedAt: null }).Select(e => e.OdometerReading!));
+            .Concat(tyres is null ? [] : tyres.Entries.Where(e => e.VehicleId == vehicleId && e.OdometerReading is { DeletedAt: null }).Select(e => e.OdometerReading!))
+            .DistinctBy(r => r.Id); // a tyre log line and its expense hold one reading (#288)
 
     public Task<OdometerReading?> PreviousAsync(Guid vehicleId, DateOnly date, Guid? except, CancellationToken ct) =>
         Task.FromResult(Live(vehicleId).Where(r => r.Date < date && r.Id != except).OrderByDescending(r => r.Date).ThenByDescending(r => r.Value).FirstOrDefault());
@@ -424,6 +425,9 @@ internal sealed class InMemoryTyres : ITyreRepository
     public List<TyreInstallation> Installations { get; } = [];
     public List<TyreEntry> Entries { get; } = [];
     public InMemoryReadings? Readings { get; set; }
+
+    /// <summary>The expenses the lines' amounts make (#288), the world's.</summary>
+    public InMemoryExpenses? Expenses { get; set; }
     public int Saves { get; private set; }
 
     private static readonly System.Reflection.MethodInfo Clone = typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
@@ -441,9 +445,28 @@ internal sealed class InMemoryTyres : ITyreRepository
     public Task<TyreBook> LoadAsync(Guid vehicleId, CancellationToken ct)
     {
         var readings = Readings?.Live(vehicleId).Select(r => new ReadingPoint(r.Date, r.Value)) ?? [];
+        var entries = Entries.Where(e => e.VehicleId == vehicleId).Select(CopyEntry).ToList();
         return Task.FromResult(new TyreBook(
             [.. Sets.Where(s => s.VehicleId == vehicleId).Select(Copy)], [.. Installations.Where(s => s.VehicleId == vehicleId).Select(Copy)],
-            [.. Entries.Where(e => e.VehicleId == vehicleId).Select(CopyEntry)], TyreCalculator.Sorted(readings)));
+            [.. entries], TyreCalculator.Sorted(readings), LinkedExpenses(entries)));
+    }
+
+    /// <summary>The lines' expenses, copied as the database would load them, each holding its line's reading object.</summary>
+    private List<Expense> LinkedExpenses(IReadOnlyCollection<TyreEntry> entries)
+    {
+        var ids = entries.Where(e => e.ExpenseId is not null).Select(e => e.ExpenseId!.Value).ToHashSet();
+        var copies = (Expenses?.Items ?? []).Where(x => ids.Contains(x.Id)).Select(CopyExpense).ToList();
+        foreach (var copy in copies)
+            if (entries.FirstOrDefault(e => e.ExpenseId == copy.Id)?.OdometerReading is { } reading) copy.ShareReadingObject(reading);
+        return copies;
+    }
+
+    private static Expense CopyExpense(Expense expense)
+    {
+        var copy = Copy(expense);
+        if (expense.Cost is { } cost) typeof(Expense).GetProperty(nameof(Expense.Cost))!.SetValue(copy, Copy(cost));
+        if (expense.OdometerReading is { } reading) typeof(Expense).GetProperty(nameof(Expense.OdometerReading))!.SetValue(copy, Copy(reading));
+        return copy;
     }
 
     public Task<TyreSet?> FindSetAsync(Guid id, CancellationToken ct) => Task.FromResult(Sets.FirstOrDefault(s => s.Id == id) is { } s ? Copy(s) : null);
@@ -458,6 +481,9 @@ internal sealed class InMemoryTyres : ITyreRepository
 
     public Task<TyreEntry?> FindEntryAsync(Guid id, CancellationToken ct) => Task.FromResult(Entries.FirstOrDefault(e => e.Id == id) is { } e ? CopyEntry(e) : null);
 
+    public Task<IReadOnlyList<TyreEntry>> ListEntriesByExpenseAsync(IReadOnlyCollection<Guid> expenseIds, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<TyreEntry>>([.. Entries.Where(e => e.ExpenseId is { } id && expenseIds.Contains(id)).Select(CopyEntry)]);
+
     public Task<IReadOnlyList<TyreEntry>> ListEntriesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<TyreEntry>>([.. Entries.Where(e => ids.Contains(e.Id)).Select(CopyEntry)]);
 
@@ -470,7 +496,7 @@ internal sealed class InMemoryTyres : ITyreRepository
         MeanwhileBeforeSave = null;
         // As the database's primary keys: an add whose id is there by now saves nothing.
         if (save.AddedSets.Any(s => Sets.Any(x => x.Id == s.Id)) || save.AddedInstallations.Any(s => Installations.Any(x => x.Id == s.Id))
-            || save.AddedEntries.Any(e => Entries.Any(x => x.Id == e.Id)))
+            || save.AddedEntries.Any(e => Entries.Any(x => x.Id == e.Id)) || save.AddedExpenses.Any(e => Expenses?.Items.Any(x => x.Id == e.Id) == true))
             return Task.FromResult(false);
         static void Put<T>(List<T> list, T item, Func<T, Guid> id) where T : class
         {
@@ -483,6 +509,17 @@ internal sealed class InMemoryTyres : ITyreRepository
         {
             Entries.RemoveAll(x => x.Id == e.Id);
             Entries.Add(CopyEntry(e));
+        }
+        if (Expenses is { } stored)
+        {
+            foreach (var e in save.AddedExpenses.Concat(save.ChangedExpenses))
+            {
+                stored.Items.RemoveAll(x => x.Id == e.Id);
+                stored.Items.Add(CopyExpense(e));
+            }
+            // One row for a line's and its expense's reading, as the database has it: the stored expense holds the stored line's object.
+            foreach (var expense in stored.Items.Where(x => x.OdometerReadingId is not null))
+                if (Entries.FirstOrDefault(e => e.OdometerReadingId == expense.OdometerReadingId)?.OdometerReading is { } reading) expense.ShareReadingObject(reading);
         }
         Saves++;
         return Task.FromResult(true);
@@ -956,7 +993,7 @@ internal sealed class World
     public VehicleService VehicleService { get; }
     public RefuelingService RefuelingService { get; }
     public ExpenseService ExpenseService { get; }
-    public TyreService TyreService => new(LogGuard, Tyres, Access, Odometer, Clock, Log.For<TyreService>());
+    public TyreService TyreService => new(LogGuard, Tyres, Expenses, Access, Odometer, Clock, Log.For<TyreService>());
     public StatsService Stats { get; }
     public InMemoryRecurring Recurring { get; }
     public InMemoryNotifications Notifications { get; } = new();
@@ -1015,6 +1052,7 @@ internal sealed class World
         ImportSessions = new ImportSessionStore(Clock);
         var readings = new InMemoryReadings(Refuelings, Expenses, Tyres);
         Tyres.Readings = readings;
+        Tyres.Expenses = Expenses;
         Odometer = new OdometerService(readings);
         var resets = new PasswordResetService(Tokens, Users, Email, options, Clock, Log.For<PasswordResetService>());
         var logPhotoAccess = new LogPhotoAccess(LogGuard, Expenses, Refuelings, LogPhotos);
@@ -1022,9 +1060,9 @@ internal sealed class World
         Drafts = new PhotoDraftService(LogGuard, PhotoDrafts, ImageService, Access, Clock, Log.For<PhotoDraftService>());
         Photos = new LogPhotoService(logPhotoAccess, LogPhotos, ImageService, Drafts, Access, Clock, Log.For<LogPhotoService>());
         VehicleService = new VehicleService(Vehicles, Refuelings, Tyres, Access, Odometer, ImageService, Clock, Log.For<VehicleService>());
-        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create()), Notifier, Notifications, Clock, Log.For<LogPhotoFiller>());
+        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create()), Notifier, Notifications, TyreService, Clock, Log.For<LogPhotoFiller>());
         RefuelingService = new RefuelingService(Vehicles, LogGuard, Refuelings, Access, Odometer, Photos, Filler, Clock, Log.For<RefuelingService>());
-        ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, Clock, Log.For<ExpenseService>());
+        ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
         RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
         Imports = new ImportService([new FuelioCsvParser()], ImportSessions, Access, VehicleService, RefuelingService, ExpenseService, RecurringService, Refuelings, Expenses, Defaults.Create(), Log.For<ImportService>());
         Stats = new StatsService(Vehicles, new InMemoryStats(Refuelings, Expenses), Access, Clock);
