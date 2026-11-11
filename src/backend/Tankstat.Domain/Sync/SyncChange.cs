@@ -43,7 +43,12 @@ public enum SyncChangeKind
     UpdateTyreInstallation,
     DeleteTyreInstallation,
     RestoreTyreInstallation,
-    SetTyreLogDay,
+
+    // Tyre log entries (#288).
+    AddTyreEntry,
+    UpdateTyreEntry,
+    DeleteTyreEntry,
+    RestoreTyreEntry,
 }
 
 /// <summary>Applied: the server has it. Parked: the server could not apply it and keeps it (with why) for a person to decide.</summary>

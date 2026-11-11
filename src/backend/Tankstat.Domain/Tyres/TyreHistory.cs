@@ -7,6 +7,12 @@ public sealed class TyreChanges
     public List<TyreInstallation> Changed { get; } = [];
     public List<TyreInstallation> Trashed { get; } = [];
 
+    /// <summary>
+    /// The installations a join took away from their first day (#288): trashed into the set's installation before them, or moved to an
+    /// earlier day. What their lines held for that day (a reading, a note) stays on that day.
+    /// </summary>
+    public List<(TyreInstallation Installation, DateOnly Day)> JoinedAway { get; } = [];
+
     public bool Any => Created.Count + Changed.Count + Trashed.Count > 0;
 
     internal void Change(TyreInstallation s)
@@ -95,6 +101,7 @@ public sealed class TyreHistory
         {
             before.Update(before.From, after.Until, pairOneFront, by);
             changes.Change(before);
+            changes.JoinedAway.Add((after, after.From));
             after.MarkDeleted(now, by);
             _live.Remove(after);
             changes.Trashed.Add(after);
@@ -106,6 +113,7 @@ public sealed class TyreHistory
         }
         else if (after is not null)
         {
+            changes.JoinedAway.Add((after, after.From));
             after.Update(day, after.Until, pairOneFront, by);
             changes.Change(after);
         }
@@ -146,6 +154,29 @@ public sealed class TyreHistory
         var created = TyreInstallation.Create(_ownerId, by, _vehicleId, set.Id, day, until, pairOneFront, id);
         _live.Add(created);
         changes.Created.Add(created);
+        return Checked(changes);
+    }
+
+    /// <summary>
+    /// The swap that began <paramref name="installation"/> moves to <paramref name="day"/> (#288, its line's day changed): the installation
+    /// starts then, and the one that came off on its old first day (the set before it on the car) comes off then instead.
+    /// </summary>
+    public TyreChanges MoveSwap(TyreInstallation installation, DateOnly day, Guid by)
+    {
+        if (!_live.Contains(installation)) throw new DomainException("tyres.installationTrashedCannotEdit", "An installation in the trash cannot be changed; restore it first.");
+        var changes = new TyreChanges();
+        if (day == installation.From) return changes;
+        var before = _live.FirstOrDefault(s => s != installation && s.Until == installation.From);
+        if (before is not null)
+        {
+            if (day <= before.From)
+                throw new DomainException("tyres.swapBeforePrevious", "The swap cannot move to or before the day the set before it went on the car.",
+                    new { Set = _sets[before.SetId].Name, From = Iso(before.From) });
+            before.Update(before.From, day, before.PairOneFront, by);
+            changes.Change(before);
+        }
+        installation.Update(day, installation.Until, installation.PairOneFront, by);
+        changes.Change(installation);
         return Checked(changes);
     }
 
