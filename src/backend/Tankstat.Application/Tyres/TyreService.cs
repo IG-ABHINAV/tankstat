@@ -792,18 +792,6 @@ public sealed class TyreService(
         return await expenses.FindIncludingDeletedAsync(expense.Id, ct) ?? expense;
     }
 
-    /// <summary>A photo of a line's expense filled in the odometer the two had none of (#288): the line takes that very reading.</summary>
-    public async Task ExpenseReadingFilledAsync(Guid expenseId, OdometerReading reading, CancellationToken ct)
-    {
-        if (await LineOfExpenseAsync(expenseId, ct) is not { IsDeleted: false } found) return;
-        var book = await tyres.LoadAsync(found.VehicleId, ct);
-        var line = book.Entries.First(e => e.Id == found.Id);
-        if (!line.TakeReading(reading)) return;
-        var save = new TyreSave();
-        save.Change(line);
-        await SaveAsync(save, ct);
-    }
-
     /// <summary>
     /// The readings one change saves are each checked against the stored ones (<see cref="OdometerService.ValidateAsync"/>), but not
     /// against each other: in day order they must not fall either (readings of one day are not compared, as everywhere).

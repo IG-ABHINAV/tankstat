@@ -355,7 +355,7 @@ public class TyreExpenseTests
         typeof(Expense).GetProperty(nameof(Expense.OdometerReading))!.SetValue(expense, reading); // as the filler leaves it
         typeof(Expense).GetProperty(nameof(Expense.OdometerReadingId))!.SetValue(expense, reading.Id);
 
-        await s.Tyres.ExpenseReadingFilledAsync(expense.Id, reading, default);
+        await new TyreExpenseReadings(s.W.Tyres).FilledAsync(expense.Id, reading, default);
 
         Assert.Equal(reading.Id, s.W.Tyres.Entries.Single(l => l.Id == line).OdometerReadingId);
         PairHolds(s, line);
