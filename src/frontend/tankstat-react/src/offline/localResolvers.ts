@@ -178,12 +178,15 @@ export function withChanges(kind: LogKind, rows: readonly LogRow[], vehicleId?: 
       // Version 1, as the server will create it: an edit or trash of it made here goes after the visit, from that version.
       byId.set(visit.targetId, { ...added('expenses', { ...visit, input: { ...visit.input, category: visit.input?.category || null, note: null } }), version: 1 })
     // A tyre log line's amount (#288) makes an expense with the line's day and reading, titled and filed as the dialog said; it carries its
-    // line, so the list shows its chip. An edit of a line it was on changes the row the device holds.
+    // line, so the list shows its chip. An edit of a line it was on changes the row the device holds: only what follows the line (the
+    // server's `Expense.FollowLine`), so its title, its note and what was read from its photos stay as they are.
     for (const { change, fee } of fees) {
-      const values = { date: fee.day, title: fee.title, category: fee.category, amount: fee.amount, currency: fee.currency, odometer: fee.odometer, note: null }
+      const followed = { date: fee.day, category: fee.category, amount: fee.amount, currency: fee.currency, odometer: fee.odometer }
       const row = byId.get(fee.expenseId)
       const tyreEntry = { __typename: 'TyreEntryRef', id: fee.lineId, kind: fee.kind, setName: null, trashed: false }
-      byId.set(fee.expenseId, row ? withValues('expenses', row, values) : { ...added('expenses', { ...change, targetId: fee.expenseId, input: values }), version: 1, tyreEntry })
+      byId.set(fee.expenseId, row
+        ? { ...row, ...followed, currency: fee.currency ?? row.currency }
+        : { ...added('expenses', { ...change, targetId: fee.expenseId, input: { ...followed, title: fee.title, note: null } }), version: 1, tyreEntry })
     }
   }
   for (const change of waiting) {
