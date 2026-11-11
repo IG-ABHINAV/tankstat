@@ -63,16 +63,17 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
   }
   for (const c of changes) if (c.entity === 'recurring' && c.input?.title && c.action !== 'markDone') schedules.set(c.targetId, String(c.input.title))
 
-  // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change.
+  // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change. An answer an
+  // older build kept (#288: its sets have stretches, no installations) still names the sets.
   const tyreSets = new Map<string, string>()
   const installationSet = new Map<string, string>()
   for (const vehicleId of new Set(changes.filter((c) => c.entity === 'tyres').map((c) => c.vehicleId))) {
     const kept = (await deviceData.read(snapshotKey('VehicleTyres', { vehicleId })))?.data as
-      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; installations: { installation: { id: string } }[] }[] } | null }
+      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; installations?: { installation: { id: string } }[] }[] } | null }
       | undefined
     for (const s of kept?.vehicleTyres?.sets ?? []) {
       tyreSets.set(s.set.id, s.set.name)
-      for (const x of s.installations) installationSet.set(x.installation.id, s.set.id)
+      for (const x of s.installations ?? []) installationSet.set(x.installation.id, s.set.id)
     }
   }
   for (const c of changes) {
