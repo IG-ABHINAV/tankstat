@@ -291,12 +291,12 @@ function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string>; 
   return { tyres: { ...base, sets, entries, readings, hasReadings: readings.length > 0 }, touched, added }
 }
 
-/** One tyre change over the vehicle's tyres as they are shown: what the device checks before it keeps the change (the server's refusals). */
 /** A kept answer of an older build's shape (#288 renamed a set's stretches to installations, and made the tyre log's days lines) counts as none, never throws. */
 export const isCurrentShape = (tyres: Tyres): boolean => Array.isArray(tyres.entries) && tyres.sets.every((s) => Array.isArray(s.installations))
 
 const current = (tyres: Tyres): Tyres => (isCurrentShape(tyres) ? tyres : noTyres(tyres.vehicleId))
 
+/** One tyre change over the vehicle's tyres as they are shown: what the device checks before it keeps the change (the server's refusals). */
 export function applyTyreChange(given: Tyres, change: Change): Tyres {
   const tyres = current(given)
   const m = modelOf(tyres)

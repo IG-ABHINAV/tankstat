@@ -68,7 +68,8 @@ public sealed class MigrationUpgradeTests : IAsyncDisposable
 
     /// <summary>
     /// #288: a database from before the rename (tyre stretches, from v0.21.0-preview-1) comes up with its rows as installations, its tombstones
-    /// and its parked tyre changes renamed too (their kind, reason and the payload's field names), so the server reads them as before.
+    /// and its parked tyre changes renamed too (their kind, reason and the payload's field names, and their notifications' arguments), so the
+    /// server reads them as before.
     /// </summary>
     [Fact]
     public async Task TyreStretchesOfAnOlderDatabase_ComeUpAsInstallations_WithTheirTombstonesAndParkedChangesRenamed()
@@ -76,7 +77,7 @@ public sealed class MigrationUpgradeTests : IAsyncDisposable
         Services();
         await AtMigration("AddTyres");
         string G(Guid g) => g.ToString().ToUpperInvariant(); // how EF Core stores a Guid in SQLite
-        var (vehicle, owner, set, stretch, gone, parked, pastSwaps) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var (vehicle, owner, set, stretch, gone, parked, pastSwaps, notice) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
         await using (var db = await Db())
         {
             await db.Database.OpenConnectionAsync();
@@ -95,6 +96,10 @@ public sealed class MigrationUpgradeTests : IAsyncDisposable
                 INSERT INTO "SyncChanges" ("Id", "Kind", "OwnerId", "Payload", "ReasonArgs", "ReceivedAt", "Status", "SubmittedById", "VehicleId")
                 VALUES ('{{{G(pastSwaps)}}}', 'AddPastTyreSwaps', '{{{G(owner)}}}', '{"id":"{{{pastSwaps}}}","addPastTyreSwaps":{"swaps":[{"day":"2025-11-15","stretchId":"{{{gone}}}"}]}}', '{}',
                         '2026-11-10 12:00:00', 'Parked', '{{{G(owner)}}}', '{{{G(vehicle)}}}');
+                INSERT INTO "Notifications" ("Id", "RecipientId", "Kind", "Topic", "SubjectType", "SubjectId", "ContextType", "ContextId", "Occurrence", "Count", "Args", "CreatedAt", "UpdatedAt")
+                VALUES ('{{{G(notice)}}}', '{{{G(owner)}}}', 'SyncChangeParked', 'Sync', 'SyncChange', '{{{G(parked)}}}', 'Vehicle', '{{{G(vehicle)}}}', 'parked', 1,
+                        '{"change":"UPDATE_TYRE_STRETCH","vehicleName":"Octavia","submitterName":"Alice","reason":"tyres.stretchNotFound","reasonArgs":"{}"}',
+                        '2026-11-10 12:00:00', '2026-11-10 12:00:00');
                 """;
             await insert.ExecuteNonQueryAsync();
         }
@@ -111,6 +116,9 @@ public sealed class MigrationUpgradeTests : IAsyncDisposable
         var past = await after.SyncChanges.SingleAsync(c => c.Id == pastSwaps);
         Assert.Contains("\"installationId\":", past.Payload);
         Assert.DoesNotContain("stretch", past.Payload + update.Payload, StringComparison.OrdinalIgnoreCase);
+        // The parked change's notification is worded from its kind and reason: both under the names the app has texts for.
+        var args = (await after.Notifications.SingleAsync(n => n.Id == notice)).Args;
+        Assert.Equal(("UPDATE_TYRE_INSTALLATION", "tyres.installationNotFound", "Octavia"), (args["change"], args["reason"], args["vehicleName"]));
     }
 
     [Fact]
