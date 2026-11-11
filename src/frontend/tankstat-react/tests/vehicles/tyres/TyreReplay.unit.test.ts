@@ -154,3 +154,11 @@ describe('every other tyre change, shown as the server will make it', () => {
     expect(r.added.size).toBe(0)
   })
 })
+
+describe('an answer an older build kept', () => {
+  it('a set with stretches, not installations, counts as no tyres instead of throwing (#288)', () => {
+    const old = { ...base, sets: base.sets.map(({ installations, ...s }) => ({ ...s, stretches: installations })) } as unknown as Tyres
+    expect(() => replayTyres(old, [change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-11-10', pairOneFront: null, replace: false, installationId: 'n' })])).not.toThrow()
+    expect(replayTyres(old, []).tyres.sets).toEqual([])
+  })
+})

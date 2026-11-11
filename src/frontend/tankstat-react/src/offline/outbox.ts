@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { collapse, discard, keptPhotosOf, markOf, type Change, type ChangeEntity, type PendingMark } from './changes.ts'
 import { deviceData } from './deviceData.ts'
 import type { RowStore } from './deviceStorage.ts'
+import { isTyreAction } from './tyreChanges.ts'
 import { keptPhotos } from './keptPhotos.ts'
 
 /**
@@ -22,9 +23,15 @@ function notify() {
   listeners.forEach((listener) => listener())
 }
 
+/**
+ * A change this build can send: a tyre change kept by an older build under an action it no longer has (#288 renamed them; the owner: a
+ * preview's changes need not survive) is left out, never sent and never in the way of the others.
+ */
+const understood = (c: Change) => c.entity !== 'tyres' || isTyreAction(c.action)
+
 async function load() {
   rows = await deviceData.rows()
-  changes = rows ? await rows.changes().catch(() => []) : []
+  changes = rows ? (await rows.changes().catch(() => [])).filter(understood) : []
   nextSeq = changes.reduce((max, c) => Math.max(max, c.seq), 0) + 1
   notify()
   // A photo kept for a change that is gone (the app closed between the two writes) is removed; no dialog holds one yet.
@@ -44,7 +51,7 @@ if (tabs) tabs.onmessage = () => void exclusive(async () => notify())
 async function fresh() {
   if (!rows) return
   try {
-    changes = await rows.changes()
+    changes = (await rows.changes()).filter(understood)
     nextSeq = changes.reduce((max, c) => Math.max(max, c.seq), nextSeq - 1) + 1
   } catch {
     // What this tab holds stays the best it knows.

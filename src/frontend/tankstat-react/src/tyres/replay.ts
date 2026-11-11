@@ -240,14 +240,19 @@ function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string>; 
 }
 
 /** One tyre change over the vehicle's tyres as they are shown: what the device checks before it keeps the change (the server's refusals). */
-export function applyTyreChange(tyres: Tyres, change: Change): Tyres {
+/** A kept answer of an older build's shape (#288 renamed a set's stretches to installations) counts as none, never throws. */
+const current = (tyres: Tyres): Tyres => (tyres.sets.every((s) => Array.isArray(s.installations)) ? tyres : noTyres(tyres.vehicleId))
+
+export function applyTyreChange(given: Tyres, change: Change): Tyres {
+  const tyres = current(given)
   const m = modelOf(tyres)
   apply(m, change, tyres.vehicleId)
   return answerOf(tyres, m).tyres
 }
 
 /** The tyre changes waiting for this vehicle, in the order they were made, over the server's last answer. */
-export function replayTyres(base: Tyres, changes: readonly Change[]): Replayed {
+export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed {
+  const base = current(given)
   const m = modelOf(base)
   const skipped: string[] = []
   for (const change of [...changes].filter((c) => c.entity === 'tyres' && c.vehicleId === base.vehicleId).sort((a, b) => a.seq - b.seq)) {
