@@ -85,7 +85,14 @@ public sealed class ExpenseService(
     {
         var expense = await EditableAsync(id, includeDeleted: false, ct);
         // An expense a tyre log line made (#288) shares the line's day and reading: the two change together.
-        if (await tyres.LineOfExpenseAsync(id, ct) is { } line) return await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion);
+        if (await tyres.LineOfExpenseAsync(id, ct) is { } line)
+        {
+            var before = expense.ReviewState;
+            var saved = await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion);
+            // A person saved it: what they were told about its photos counts as read, as for any expense.
+            if (before != ReviewState.None && saved.ReviewState == ReviewState.None) await filler.ReviewedAsync(LogType.Expense, id, saved.CreatedById, ct);
+            return saved;
+        }
         VersionCheck.Require(expectedVersion, expense.Version);
         await ValidateAsync(expense.VehicleId, input, exceptReadingId: expense.OdometerReadingId, ct);
         var readingPhotos = (input.Amount is null || input.Odometer is null) && await filler.MayWaitForLogPhotosAsync(LogType.Expense, id, ct);
