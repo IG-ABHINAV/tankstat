@@ -34,6 +34,9 @@ public class DataGeneratorTests
             Assert.All(installations, s => Assert.NotNull(s.PairOneFront));
             Assert.All(installations.Skip(1), s => Assert.True(s.From.Month is 3 or 4 or 10 or 11, $"a swap around April or November, not {s.From}"));
             new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, installations).Check(); // the app's own checks pass
+            // Every installation has its line in the tyre log, a swap with its id and first day (#288).
+            Assert.Equal(installations.Select(s => (s.Id, TyreEntryKind.Swap, s.From, (Guid?)s.SetId)),
+                g.TyreEntries!.OrderBy(e => e.Day).Select(e => (e.Id, e.Kind, e.Day, e.SetId)));
         });
     }
 

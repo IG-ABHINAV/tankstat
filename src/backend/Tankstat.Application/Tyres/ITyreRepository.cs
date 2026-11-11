@@ -4,8 +4,8 @@ using Tankstat.Domain.Tyres;
 
 namespace Tankstat.Application.Tyres;
 
-/// <summary>A vehicle's tyres as stored: every set and installation (the trash included), the tyre log's days with their readings, and the vehicle's live odometer readings.</summary>
-public sealed record TyreBook(IReadOnlyList<TyreSet> Sets, IReadOnlyList<TyreInstallation> Installations, IReadOnlyList<TyreLogDay> Days, IReadOnlyList<ReadingPoint> Readings);
+/// <summary>A vehicle's tyres as stored: every set, installation and tyre log line (the trash included; the lines with their readings), and the vehicle's live odometer readings.</summary>
+public sealed record TyreBook(IReadOnlyList<TyreSet> Sets, IReadOnlyList<TyreInstallation> Installations, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings);
 
 /// <summary>What one change saves, in one transaction (the entities are detached; new ones are added, the others updated).</summary>
 public sealed class TyreSave
@@ -14,9 +14,8 @@ public sealed class TyreSave
     public List<TyreSet> ChangedSets { get; } = [];
     public List<TyreInstallation> AddedInstallations { get; } = [];
     public List<TyreInstallation> ChangedInstallations { get; } = [];
-    public List<TyreLogDay> AddedDays { get; } = [];
-    public List<TyreLogDay> ChangedDays { get; } = [];
-    public List<TyreLogDay> RemovedDays { get; } = [];
+    public List<TyreEntry> AddedEntries { get; } = [];
+    public List<TyreEntry> ChangedEntries { get; } = [];
     public List<OdometerReading> AddedReadings { get; } = [];
     public List<OdometerReading> RemovedReadings { get; } = [];
 
@@ -26,17 +25,39 @@ public sealed class TyreSave
         foreach (var s in changes.Changed.Concat(changes.Trashed))
             if (!AddedInstallations.Contains(s) && !ChangedInstallations.Contains(s)) ChangedInstallations.Add(s);
     }
+
+    public void Take(TyreLogChanges changes)
+    {
+        foreach (var e in changes.Created)
+            if (!AddedEntries.Contains(e)) AddedEntries.Add(e);
+        foreach (var e in changes.Changed) Change(e);
+    }
+
+    public void Change(TyreEntry entry)
+    {
+        if (!AddedEntries.Contains(entry) && !ChangedEntries.Contains(entry)) ChangedEntries.Add(entry);
+    }
+
+    public void Change(TyreInstallation installation)
+    {
+        if (!AddedInstallations.Contains(installation) && !ChangedInstallations.Contains(installation)) ChangedInstallations.Add(installation);
+    }
 }
 
-/// <summary>A row of the Trash page's Tyres tab: a trashed set, or a trashed installation of a set that is not in the trash.</summary>
+/// <summary>A row of the Trash page's Tyres tab: a trashed set, or a trashed tyre log line of no set or of a set that is not in the trash.</summary>
+/// <param name="SetName">The set's name; null for a line of no set.</param>
+/// <param name="EntryKind">For a line: what it says was done.</param>
+/// <param name="Day">For a line: its day.</param>
+/// <param name="Until">For a swap's line: the day its installation came off (null while it would still be on the car).</param>
 /// <param name="InstallationCount">For a set: its installations that come back with it.</param>
 public sealed record TyreTrashRow(
-    TyreTrashKind Kind, Guid Id, Guid VehicleId, string SetName, DateOnly? From, DateOnly? Until, int InstallationCount, DateTimeOffset DeletedAt, int Version);
+    TyreTrashKind Kind, Guid Id, Guid VehicleId, string? SetName, TyreEntryKind? EntryKind, DateOnly? Day, DateOnly? Until, int InstallationCount,
+    DateTimeOffset DeletedAt, int Version);
 
 public enum TyreTrashKind
 {
     Set,
-    Installation,
+    Entry,
 }
 
 /// <summary>What the Tyres tab of the Trash page sorts by: when a row was moved to the trash (then the id).</summary>
@@ -59,10 +80,14 @@ public interface ITyreRepository
     /// <summary>The installations with these ids, the trash included.</summary>
     Task<IReadOnlyList<TyreInstallation>> ListInstallationsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
 
-    Task<TyreLogDay?> FindDayAsync(Guid id, CancellationToken ct);
+    /// <summary>A tyre log line, the trash included, with its reading.</summary>
+    Task<TyreEntry?> FindEntryAsync(Guid id, CancellationToken ct);
+
+    /// <summary>The tyre log lines with these ids, the trash included.</summary>
+    Task<IReadOnlyList<TyreEntry>> ListEntriesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
 
     /// <summary>
-    /// Saves one change in one transaction. False when a set, installation or day it adds could not be inserted because a row with its id is
+    /// Saves one change in one transaction. False when a set, installation or line it adds could not be inserted because a row with its id is
     /// there by now (the same add, saved by another request at once): nothing is saved, as with <c>AddOnceAsync</c>.
     /// </summary>
     Task<bool> SaveAsync(TyreSave save, CancellationToken ct);
@@ -75,6 +100,9 @@ public interface ITyreRepository
 
     Task<int> CountTrashAsync(OwnerScope scope, CancellationToken ct);
 
-    /// <summary>Removes the trashed sets (with their installations) and installations in scope for good; returns how many rows of the list went.</summary>
+    /// <summary>
+    /// Removes the trashed sets (with their installations and lines) and the trashed lines (a swap's with its installation) in scope for
+    /// good, with the readings of the lines; returns how many rows of the list went.
+    /// </summary>
     Task<int> PurgeAsync(OwnerScope scope, CancellationToken ct);
 }

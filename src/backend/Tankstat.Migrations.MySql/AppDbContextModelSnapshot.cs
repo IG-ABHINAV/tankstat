@@ -924,6 +924,81 @@ namespace Tankstat.Migrations.MySql
                     b.ToTable("Tombstones", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("ChangedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid?>("ChangedById")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid?>("InstallationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("LastChange")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<Guid?>("OdometerReadingId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("SetId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime(6)")
+                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeletedAt");
+
+                    b.HasIndex("OdometerReadingId")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("SetId");
+
+                    b.HasIndex("VehicleId", "Day");
+
+                    b.HasIndex("VehicleId", "UpdatedAt");
+
+                    b.ToTable("TyreEntries", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -985,64 +1060,6 @@ namespace Tankstat.Migrations.MySql
                     b.HasIndex("VehicleId", "UpdatedAt");
 
                     b.ToTable("TyreInstallations", (string)null);
-                });
-
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreLogDay", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("ChangedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<Guid?>("ChangedById")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("CreatedById")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateOnly>("Day")
-                        .HasColumnType("date");
-
-                    b.Property<string>("LastChange")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<Guid?>("OdometerReadingId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
-
-                    b.Property<Guid>("VehicleId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OdometerReadingId")
-                        .IsUnique();
-
-                    b.HasIndex("OwnerId");
-
-                    b.HasIndex("VehicleId", "Day")
-                        .IsUnique();
-
-                    b.HasIndex("VehicleId", "UpdatedAt");
-
-                    b.ToTable("TyreLogDays", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreSet", b =>
@@ -1653,20 +1670,11 @@ namespace Tankstat.Migrations.MySql
                         .OnDelete(DeleteBehavior.Cascade);
                 });
 
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
-                {
-                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
-                        .WithMany()
-                        .HasForeignKey("SetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreLogDay", b =>
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
                         .WithOne()
-                        .HasForeignKey("Tankstat.Domain.Tyres.TyreLogDay", "OdometerReadingId")
+                        .HasForeignKey("Tankstat.Domain.Tyres.TyreEntry", "OdometerReadingId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
@@ -1676,6 +1684,15 @@ namespace Tankstat.Migrations.MySql
                         .IsRequired();
 
                     b.Navigation("OdometerReading");
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
+                        .WithMany()
+                        .HasForeignKey("SetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreSet", b =>

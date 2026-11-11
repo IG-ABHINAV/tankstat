@@ -1,3 +1,4 @@
+using Tankstat.Domain.Tyres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -110,6 +111,79 @@ public sealed class MigrationUpgradeTests : IAsyncDisposable
         var past = await after.SyncChanges.SingleAsync(c => c.Id == pastSwaps);
         Assert.Contains("\"installationId\":", past.Payload);
         Assert.DoesNotContain("stretch", past.Payload + update.Payload, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TheTyreLogsDays_ComeUpAsLines_EveryInstallationWithItsOwn()
+    {
+        Services();
+        await AtMigration("RenameTyreInstallations");
+        string G(Guid g) => g.ToString().ToUpperInvariant(); // how EF Core stores a Guid in SQLite
+        var (vehicle, owner, summer, trashedSet) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var (autumn, spring, gone, oldOne) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var (garage, may, older) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var (onSwapDay, otherDay, onTrashedSetsDay, parked) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await using (var db = await Db())
+        {
+            await db.Database.OpenConnectionAsync();
+            await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;"); // the vehicle and the user are not the point
+            await using var insert = db.Database.GetDbConnection().CreateCommand();
+            string Set(Guid id, string name, string? deleted) => $$$"""
+                INSERT INTO "TyreSets" ("Id", "OwnerId", "VehicleId", "CreatedById", "Name", "Season", "Since", "RoughDistance", "Version", "UpdatedAt", "DeletedAt")
+                VALUES ('{{{G(id)}}}', '{{{G(owner)}}}', '{{{G(vehicle)}}}', '{{{G(owner)}}}', '{{{name}}}', 'Summer', '2023-03-01', 0, 1, '2026-11-10 12:00:00', {{{deleted ?? "NULL"}}});
+                """;
+            string Installation(Guid id, Guid set, string from, string? until, string? deleted) => $$$"""
+                INSERT INTO "TyreInstallations" ("Id", "OwnerId", "VehicleId", "SetId", "CreatedById", "From", "Until", "PairOneFront", "Version", "UpdatedAt", "DeletedAt", "LastChange")
+                VALUES ('{{{G(id)}}}', '{{{G(owner)}}}', '{{{G(vehicle)}}}', '{{{G(set)}}}', '{{{G(owner)}}}', '{{{from}}}', {{{(until is null ? "NULL" : $"'{until}'")}}}, 1, 2,
+                        '2026-11-10 12:00:00', {{{deleted ?? "NULL"}}}, 'Edited');
+                """;
+            string Reading(Guid id, string date, long value) => $$$"""
+                INSERT INTO "OdometerReadings" ("Id", "OwnerId", "VehicleId", "Date", "Value") VALUES ('{{{G(id)}}}', '{{{G(owner)}}}', '{{{G(vehicle)}}}', '{{{date}}}', {{{value}}});
+                """;
+            string Day(Guid id, string day, Guid? reading, string? note) => $$$"""
+                INSERT INTO "TyreLogDays" ("Id", "OwnerId", "VehicleId", "CreatedById", "Day", "Note", "OdometerReadingId", "Version", "UpdatedAt")
+                VALUES ('{{{G(id)}}}', '{{{G(owner)}}}', '{{{G(vehicle)}}}', '{{{G(owner)}}}', '{{{day}}}', {{{(note is null ? "NULL" : $"'{note}'")}}},
+                        {{{(reading is { } r ? $"'{G(r)}'" : "NULL")}}}, 3, '2026-11-10 12:00:00');
+                """;
+            insert.CommandText = string.Concat(
+                Set(summer, "Michelin", null), Set(trashedSet, "Pirelli", "'2026-11-01 08:00:00'"),
+                Installation(autumn, summer, "2025-11-15", "2026-03-28", null), // the pairs changed on 2026-03-28: the same set again
+                Installation(spring, summer, "2026-03-28", null, null),
+                Installation(gone, summer, "2025-01-01", "2025-02-01", "'2026-10-01 08:00:00'"),
+                Installation(oldOne, trashedSet, "2024-05-01", "2024-10-01", null),
+                Reading(garage, "2026-03-28", 148_200), Reading(may, "2026-05-02", 150_000), Reading(older, "2024-05-01", 100_000),
+                Day(onSwapDay, "2026-03-28", garage, "At the garage"), Day(otherDay, "2026-05-02", may, null), Day(onTrashedSetsDay, "2024-05-01", older, "Old tyres"),
+                $$$"""
+                INSERT INTO "Tombstones" ("Id", "EntityId", "EntityType", "PurgedAt", "VehicleId")
+                VALUES ('{{{G(Guid.NewGuid())}}}', '{{{G(Guid.NewGuid())}}}', 'TyreLogDay', '2026-11-10 12:00:00', '{{{G(vehicle)}}}');
+                INSERT INTO "SyncChanges" ("Id", "Kind", "OwnerId", "Payload", "ReasonArgs", "ReceivedAt", "Status", "SubmittedById", "VehicleId")
+                VALUES ('{{{G(parked)}}}', 'SetTyreLogDay', '{{{G(owner)}}}', '{"id":"{{{parked}}}","setTyreLogDay":{"day":"2026-05-02"}}', '{}',
+                        '2026-11-10 12:00:00', 'Parked', '{{{G(owner)}}}', '{{{G(vehicle)}}}');
+                """);
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        await using (var db = await Db()) await db.Database.MigrateAsync();
+
+        await using var after = await Db();
+        var lines = await after.TyreEntries.IgnoreQueryFilters().Include(e => e.OdometerReading).ToListAsync();
+        string Line(Guid id) => lines.Single(e => e.Id == id) is var e
+            ? $"{e.Kind} {e.SetId == summer} {e.InstallationId == id} {e.Day:yyyy-MM-dd} {e.Odometer} {e.Note} {e.IsDeleted}"
+            : "";
+        Assert.Equal("Swap True True 2025-11-15   False", Line(autumn));
+        Assert.Equal("PositionsChanged True True 2026-03-28 148200 At the garage False", Line(spring)); // the day's line went onto it
+        Assert.Equal("Swap True True 2025-01-01   True", Line(gone)); // in the trash with its installation
+        Assert.Equal(oldOne, lines.Single(e => e.Id == oldOne).InstallationId); // hidden through its set, as the installation is
+        Assert.Equal(TyreEntryKind.Swap, lines.Single(e => e.Id == oldOne).Kind);
+        // A day line on no live swap's day becomes a Note line of its own (its id), keeping the reading.
+        var noteOnly = lines.Single(e => e.Id == otherDay);
+        Assert.Equal((TyreEntryKind.Note, (Guid?)null, 150_000L, (Guid?)null), (noteOnly.Kind, noteOnly.SetId, noteOnly.Odometer!.Value, noteOnly.InstallationId));
+        Assert.Equal((TyreEntryKind.Note, 100_000L, "Old tyres"), (lines.Single(e => e.Id == onTrashedSetsDay).Kind, lines.Single(e => e.Id == onTrashedSetsDay).Odometer!.Value,
+            lines.Single(e => e.Id == onTrashedSetsDay).Note));
+        Assert.DoesNotContain(lines, e => e.Id == onSwapDay);
+        Assert.Equal(6, lines.Count);
+        Assert.Empty(await after.SyncChanges.Where(c => c.Id == parked).ToListAsync());
+        Assert.DoesNotContain(await after.Tombstones.Select(t => t.VehicleId).ToListAsync(), v => v == vehicle);
     }
 
     private async Task<string?> LastApplied()
