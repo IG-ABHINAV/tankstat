@@ -175,6 +175,12 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Equal((expense, 25.5m, "EUR", "Tyres", false),
             (shown.GetProperty("expenseId").GetString(), shown.GetProperty("amount").GetDecimal(), shown.GetProperty("currency").GetString(), shown.GetProperty("category").GetString(), shown.GetProperty("expenseTrashed").GetBoolean()));
         Assert.Equal("Tyres", added.GetProperty("expenseCategory").GetString());
+        var costs = (await Send("query($id: UUID!) { vehicleTyres(vehicleId: $id) { spentAll { currency amount } spentNoSet { amount } sets { set { name } spent { currency amount } repairs } } }",
+            new { id = vehicle })).GetProperty("data").GetProperty("vehicleTyres");
+        var michelin = costs.GetProperty("sets").EnumerateArray().Single(x => x.GetProperty("set").GetProperty("name").GetString() == "Michelin");
+        Assert.Equal(("EUR", 25.5m, 1), (michelin.GetProperty("spent")[0].GetProperty("currency").GetString(), michelin.GetProperty("spent")[0].GetProperty("amount").GetDecimal(),
+            michelin.GetProperty("repairs").GetInt32()));
+        Assert.Equal((25.5m, 0), (costs.GetProperty("spentAll")[0].GetProperty("amount").GetDecimal(), costs.GetProperty("spentNoSet").GetArrayLength()));
 
         var linked = (await Send("query($id: UUID!) { expense(id: $id) { title amount odometer date tyreEntry { id kind setName trashed } } }", new { id = expense }))
             .GetProperty("data").GetProperty("expense");

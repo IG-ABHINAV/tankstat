@@ -122,6 +122,10 @@ public sealed class VehicleTyresType : ObjectType<TyreOverview>
     {
         descriptor.Name("VehicleTyres");
         descriptor.Field(o => o.Readings).Description("The vehicle's odometer readings by date (the highest of a day decides), to work out the odometer of a day as the server does.");
+        descriptor.Field(o => o.SpentAll).Type<NonNullType<ListType<NonNullType<ObjectType<TyreSpent>>>>>().Resolve(c => c.Parent<TyreOverview>().SpentAll ?? [])
+            .Description("What the tyres cost altogether (#288), per currency: every set's and every line of no set's.");
+        descriptor.Field(o => o.SpentNoSet).Type<NonNullType<ListType<NonNullType<ObjectType<TyreSpent>>>>>().Resolve(c => c.Parent<TyreOverview>().SpentNoSet ?? [])
+            .Description("What the lines of no set cost, per currency.");
     }
 }
 
@@ -132,7 +136,13 @@ public sealed class ReadingPointType : ObjectType<ReadingPoint>
 
 public sealed class TyreSetViewType : ObjectType<TyreSetView>
 {
-    protected override void Configure(IObjectTypeDescriptor<TyreSetView> descriptor) => descriptor.Name("TyreSetInfo");
+    protected override void Configure(IObjectTypeDescriptor<TyreSetView> descriptor)
+    {
+        descriptor.Name("TyreSetInfo");
+        descriptor.Field(v => v.Spent).Type<NonNullType<ListType<NonNullType<ObjectType<TyreSpent>>>>>().Resolve(c => c.Parent<TyreSetView>().Spent ?? [])
+            .Description("What the set cost (#288): the expenses of its tyre log lines, one figure per currency, the largest first.");
+        descriptor.Field(v => v.Repairs).Description("Its punctures repaired and valves replaced.");
+    }
 }
 
 public sealed class TyreInstallationViewType : ObjectType<TyreInstallationView>

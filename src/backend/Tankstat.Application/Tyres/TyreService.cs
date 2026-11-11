@@ -54,7 +54,10 @@ public sealed record TyreEntryInput(TyreEntryKind Kind, Guid? SetId, DateOnly Da
 public sealed record TyreInstallationView(TyreInstallation Installation, InstallationDistance Distance);
 
 /// <summary>A set with its figures and its live installations (none while it is in the trash).</summary>
-public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyList<TyreInstallationView> Installations, bool OnTheCar);
+/// <param name="Spent">What it cost (#288 step 4): its live lines' live expenses, per currency.</param>
+/// <param name="Repairs">Its live punctures repaired and valves replaced.</param>
+public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyList<TyreInstallationView> Installations, bool OnTheCar,
+    IReadOnlyList<TyreSpent>? Spent = null, int Repairs = 0);
 
 /// <summary>
 /// A vehicle's tyres as the Tyres tab shows them: the sets that are not in the trash and the tyre log's lines (those not in the trash, of
@@ -63,8 +66,11 @@ public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyL
 /// log line), never saving it.
 /// </summary>
 /// <param name="ExpenseCategory">The category of the latest expense a line's amount made (#288), to offer for the next; none before the first.</param>
+/// <param name="SpentAll">What the tyres cost altogether, per currency: every set's and every line of no set's (#288 step 4).</param>
+/// <param name="SpentNoSet">What the lines of no set cost, per currency.</param>
 public sealed record TyreOverview(
-    Guid VehicleId, IReadOnlyList<TyreSetView> Sets, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings, string? ExpenseCategory = null)
+    Guid VehicleId, IReadOnlyList<TyreSetView> Sets, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings, string? ExpenseCategory = null,
+    IReadOnlyList<TyreSpent>? SpentAll = null, IReadOnlyList<TyreSpent>? SpentNoSet = null)
 {
     public bool HasReadings => Readings.Count > 0;
 }
@@ -455,20 +461,24 @@ public sealed class TyreService(
     private static TyreOverview Overview(Guid vehicleId, TyreBook book)
     {
         var live = book.Installations.Where(s => !s.IsDeleted).ToList();
+        var liveSets = book.Sets.Where(s => !s.IsDeleted).Select(s => s.Id).ToHashSet();
+        var entries = book.Entries.Where(e => !e.IsDeleted && (e.SetId is null || liveSets.Contains(e.SetId.Value)))
+            .OrderByDescending(e => e.Day).ThenBy(e => e.IsSwapLine ? 0 : 1).ThenBy(e => e.Id).ToList();
+        // What they cost (#288 step 4): the shown lines, each with its expense's amount while that is not in the trash.
+        var costs = TyreCostCalculator.Costs(entries.Select(e =>
+            book.ExpenseOf(e) is { IsDeleted: false } x ? new TyreLineCost(e.SetId, e.Kind, x.Amount, x.Currency) : new TyreLineCost(e.SetId, e.Kind, null, null)));
         var sets = book.Sets.Where(s => !s.IsDeleted).OrderBy(s => s.IsRetired).ThenBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(s => s.Id)
             .Select(set =>
             {
                 var own = live.Where(s => s.SetId == set.Id).OrderByDescending(s => s.From).ToList();
                 return new TyreSetView(set, TyreCalculator.SetFigures(book.Readings, set, own),
-                    [.. own.Select(s => new TyreInstallationView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen));
+                    [.. own.Select(s => new TyreInstallationView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen),
+                    costs.SpentOn(set.Id), costs.RepairsOf(set.Id));
             })
             .ToList();
-        var liveSets = book.Sets.Where(s => !s.IsDeleted).Select(s => s.Id).ToHashSet();
-        var entries = book.Entries.Where(e => !e.IsDeleted && (e.SetId is null || liveSets.Contains(e.SetId.Value)))
-            .OrderByDescending(e => e.Day).ThenBy(e => e.IsSwapLine ? 0 : 1).ThenBy(e => e.Id).ToList();
         var category = book.Entries.Where(e => !e.IsDeleted && e.ExpenseId is not null).OrderByDescending(e => e.Day).ThenByDescending(e => e.UpdatedAt)
             .Select(book.ExpenseOf).FirstOrDefault(x => x is { IsDeleted: false })?.Category;
-        return new TyreOverview(vehicleId, sets, entries, book.Readings, category);
+        return new TyreOverview(vehicleId, sets, entries, book.Readings, category, costs.All, costs.NoSet);
     }
 
     private static TyreHistory History(Vehicle vehicle, TyreBook book, TyreSet? extra = null) =>

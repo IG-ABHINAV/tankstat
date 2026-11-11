@@ -1058,10 +1058,19 @@ type TyreSetFigures {
 }
 
 type TyreSetInfo {
+  "What the set cost (#288): the expenses of its tyre log lines, one figure per currency, the largest first."
+  spent: [TyreSpent!]! @cost(weight: "10")
+  "Its punctures repaired and valves replaced."
+  repairs: Int!
   set: TyreSet!
   figures: TyreSetFigures!
   installations: [TyreInstallationInfo!]!
   onTheCar: Boolean!
+}
+
+type TyreSpent {
+  currency: String!
+  amount: Decimal!
 }
 
 type TyreTrashRow {
@@ -1207,6 +1216,10 @@ type VehicleSummary {
 type VehicleTyres {
   "The vehicle's odometer readings by date (the highest of a day decides), to work out the odometer of a day as the server does."
   readings: [OdometerPoint!]!
+  "What the tyres cost altogether (#288), per currency: every set's and every line of no set's."
+  spentAll: [TyreSpent!]! @cost(weight: "10")
+  "What the lines of no set cost, per currency."
+  spentNoSet: [TyreSpent!]! @cost(weight: "10")
   vehicleId: UUID!
   sets: [TyreSetInfo!]!
   entries: [TyreEntry!]!

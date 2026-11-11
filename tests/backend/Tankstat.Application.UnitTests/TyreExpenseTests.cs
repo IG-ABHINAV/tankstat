@@ -288,4 +288,32 @@ public class TyreExpenseTests
         Assert.Equal(reading.Id, s.W.Tyres.Entries.Single(l => l.Id == line).OdometerReadingId);
         PairHolds(s, line);
     }
+
+    [Fact]
+    public async Task ASetsSpent_IsTheLiveExpensesOfItsLiveLines_PerCurrency_AndRepairsCountPuncturesAndValves()
+    {
+        var s = await Setup();
+        var add = (TyreEntryKind kind, Guid? set, decimal? amount, string currency) => s.Tyres.AddEntryAsync(s.Car.Id,
+            new TyreEntryInput(kind, set, D(2026, 9, 20), null, null, amount is null ? null : new TyreFee(amount, currency, "Tyres", "t", Guid.NewGuid())), default, Guid.NewGuid());
+        await add(TyreEntryKind.PunctureRepaired, s.Summer, 25, "EUR");
+        await add(TyreEntryKind.ValveReplaced, s.Summer, null, "EUR");
+        await add(TyreEntryKind.StorageFee, s.Summer, 15_000, "HUF");
+        await add(TyreEntryKind.WheelBalancing, s.Winter, 40, "EUR");
+        await add(TyreEntryKind.Other, null, 8, "EUR");
+        var gone = Guid.NewGuid();
+        await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 21), null, null, Fee(99, Guid.NewGuid())), default, gone);
+        await s.Tyres.TrashEntryAsync(gone, default); // a line in the trash counts for nothing
+        var kept = Guid.NewGuid();
+        var overview = await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Other, s.Winter, D(2026, 9, 22), null, null, Fee(77, Guid.NewGuid())), default, kept);
+        await s.W.ExpenseService.DeleteAsync(ExpenseOf(s, kept).Id, default); // nor an expense in the trash
+        overview = (await s.Tyres.OverviewAsync(s.Car.Id, default))!;
+
+        var summer = overview.Sets.Single(x => x.Set.Id == s.Summer);
+        var winter = overview.Sets.Single(x => x.Set.Id == s.Winter);
+        Assert.Equal([new TyreSpent("HUF", 15_000), new TyreSpent("EUR", 25)], summer.Spent!);
+        Assert.Equal([new TyreSpent("EUR", 40)], winter.Spent!);
+        Assert.Equal((2, 0), (summer.Repairs, winter.Repairs));
+        Assert.Equal([new TyreSpent("EUR", 8)], overview.SpentNoSet);
+        Assert.Equal([new TyreSpent("HUF", 15_000), new TyreSpent("EUR", 73)], overview.SpentAll); // the rows add up
+    }
 }
