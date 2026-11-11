@@ -188,4 +188,76 @@ public class TyreGraphQLTests(ApiFixture api)
         var after = (await Send("query($id: UUID!) { expense(id: $id) { tyreEntry { trashed } } }", new { id = expense })).GetProperty("data").GetProperty("expense");
         Assert.True(after.GetProperty("tyreEntry").GetProperty("trashed").GetBoolean());
     }
+
+    [Fact]
+    public async Task TheLineAndItsExpense_OnARealDatabase_ShareOneDayAndReading_FromEitherSide_AndPartWhenTheExpenseWasEditedAlone()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true, day: "2026-03-28"), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var (line, expense) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        async Task<JsonElement> Ok(string q, object v)
+        {
+            var body = await Send(q, v);
+            Assert.False(body.TryGetProperty("errors", out var errors), errors.ToString());
+            return body.GetProperty("data");
+        }
+        async Task<JsonElement> Line() => (await Ok("query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { id day odometer amount expenseId expenseTrashed } readings { date value } } }", new { v = vehicle }))
+            .GetProperty("vehicleTyres");
+        JsonElement Of(JsonElement tyres) => tyres.GetProperty("entries").EnumerateArray().Single(e => e.GetProperty("id").GetString() == line);
+        async Task<JsonElement> Expense() => (await Ok("query($id: UUID!) { expense(id: $id) { date odometer amount tyreEntry { id } } }", new { id = expense }))
+            .GetProperty("expense");
+        const string updateLine = "mutation($i: UpdateTyreEntryInput!) { updateTyreEntry(input: $i) { vehicleId } }";
+        const string updateExpense = "mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { id } }";
+        object Fee(decimal? amount) => new { amount, currency = "EUR", category = "Tyres", title = "Puncture", expenseId = expense };
+
+        await Ok("mutation($i: AddTyreEntryInput!) { addTyreEntry(input: $i) { vehicleId } }",
+            new { i = new { vehicleId = vehicle, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_200, id = line, fee = Fee(25) } });
+
+        // The odometer cleared on the Expenses tab clears the line's; typed on the line it is the expense's again; cleared there, gone from both.
+        await Ok(updateExpense, new { i = new { id = expense, date = "2026-09-20", title = "Puncture", amount = 25m, currency = "EUR", odometer = (long?)null } });
+        Assert.Equal(JsonValueKind.Null, Of(await Line()).GetProperty("odometer").ValueKind);
+        await Ok(updateLine, new { i = new { id = line, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_300, fee = Fee(25) } });
+        Assert.Equal(148_300, (await Expense()).GetProperty("odometer").GetInt64());
+        await Ok(updateLine, new { i = new { id = line, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", fee = Fee(25) } });
+        Assert.Equal(JsonValueKind.Null, (await Expense()).GetProperty("odometer").ValueKind);
+        Assert.Empty((await Line()).GetProperty("readings").EnumerateArray());
+
+        // The amount emptied: the expense to the trash; typed again: back, with the new amount.
+        await Ok(updateLine, new { i = new { id = line, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_300, fee = Fee(null) } });
+        Assert.True(Of(await Line()).GetProperty("expenseTrashed").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, (await Expense()).ValueKind);
+        await Ok(updateLine, new { i = new { id = line, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", odometer = 148_300, fee = Fee(40) } });
+        Assert.Equal((40m, 148_300L), ((await Expense()).GetProperty("amount").GetDecimal(), (await Expense()).GetProperty("odometer").GetInt64()));
+        Assert.Single((await Line()).GetProperty("readings").EnumerateArray()); // one reading row for the two
+
+        // Edited on its own while its line is in the trash, the expense gets a day and a reading of its own; restoring the line parts the two.
+        await Ok("mutation($i: DeleteTyreEntryInput!) { deleteTyreEntry(input: $i) { vehicleId } }", new { i = new { id = line, withExpense = false } });
+        await Ok(updateExpense, new { i = new { id = expense, date = "2026-09-25", title = "Puncture", amount = 40m, currency = "EUR", odometer = 148_900 } });
+        await Ok("mutation($id: UUID!) { restoreTyreEntry(id: $id) { vehicleId } }", new { id = line });
+        var parted = await Line();
+        Assert.Equal((JsonValueKind.Null, 148_300L), (Of(parted).GetProperty("expenseId").ValueKind, Of(parted).GetProperty("odometer").GetInt64()));
+        Assert.Equal(JsonValueKind.Null, (await Expense()).GetProperty("tyreEntry").ValueKind);
+        Assert.Equal([148_300L, 148_900L], parted.GetProperty("readings").EnumerateArray().Select(r => r.GetProperty("value").GetInt64()).Order());
+    }
+
+    [Fact]
+    public async Task ASwapAJoinMovesOnARealDatabase_TakesItsFeeToTheNewDay_AndLeavesItsReadingOnItsOldDay()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true, day: "2026-03-28"), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var winter = SetNamed(await AddSet(vehicle, "Continental", fitted: false), "Continental").GetProperty("set").GetProperty("id").GetString()!;
+        const string swap = "mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }";
+        var (later, expense) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        Assert.False((await Send(swap, new { i = new { vehicleId = vehicle, setId = winter, day = "2026-06-01", pairOneFront = true, installationId = Guid.NewGuid() } })).TryGetProperty("errors", out _));
+        Assert.False((await Send(swap, new { i = new { vehicleId = vehicle, setId = summer, day = "2026-08-01", pairOneFront = true, installationId = Guid.NewGuid() } })).TryGetProperty("errors", out _));
+        Assert.False((await Send(swap, new { i = new { vehicleId = vehicle, setId = winter, day = "2026-09-10", pairOneFront = true, odometer = 147_500, installationId = later,
+            fee = new { amount = 70m, currency = "EUR", title = "Tyre swap", expenseId = expense } } })).TryGetProperty("errors", out _));
+
+        Assert.False((await Send(swap, new { i = new { vehicleId = vehicle, setId = winter, day = "2026-08-20", pairOneFront = true, installationId = Guid.NewGuid() } })).TryGetProperty("errors", out _));
+
+        var moved = (await Send("query($id: UUID!) { expense(id: $id) { date odometer } }", new { id = expense })).GetProperty("data").GetProperty("expense");
+        Assert.Equal(("2026-08-20", JsonValueKind.Null), (moved.GetProperty("date").GetString(), moved.GetProperty("odometer").ValueKind));
+        var lines = (await Send($"query($id: UUID!) {{ vehicleTyres(vehicleId: $id) {{ {Tyres} }} }}", new { id = vehicle })).GetProperty("data").GetProperty("vehicleTyres").GetProperty("entries");
+        Assert.Contains(lines.EnumerateArray(), e => e.GetProperty("kind").GetString() == "NOTE" && e.GetProperty("day").GetString() == "2026-09-10" && e.GetProperty("odometer").GetInt64() == 147_500);
+    }
 }

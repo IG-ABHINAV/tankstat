@@ -246,6 +246,31 @@ public class TyreExpenseTests
         Assert.NotEqual(stored.OdometerReadingId, ExpenseOf(s, line).OdometerReadingId);
         Assert.NotNull(stored.OdometerReading!.DeletedAt); // nothing live holds the line's any more
         PairHolds(s, line);
+
+        // Trashed alone, it stays on its own day; restoring the line then parts the two (the owner's choice), each with its own reading.
+        await s.W.ExpenseService.DeleteAsync(expense.Id, default);
+        Assert.Equal(D(2026, 9, 25), s.W.Expenses.Items.Single(e => e.Id == expense.Id).Date);
+        await s.W.ExpenseService.RestoreAsync(expense.Id, default);
+        await s.Tyres.RestoreEntryAsync(line, default);
+        var restored = s.W.Tyres.Entries.Single(l => l.Id == line);
+        Assert.Equal(((Guid?)null, (long?)148_200, D(2026, 9, 20)), (restored.ExpenseId, restored.Odometer, restored.Day));
+        Assert.Equal((D(2026, 9, 25), (long?)148_500), (s.W.Expenses.Items.Single(e => e.Id == expense.Id).Date, s.W.Expenses.Items.Single(e => e.Id == expense.Id).Odometer));
+    }
+
+    [Fact]
+    public async Task TheExpensesAmountChangedWhileItsLineIsInTheTrash_KeepsThePair()
+    {
+        var s = await Setup();
+        var line = await Puncture(s);
+        await s.Tyres.TrashEntryAsync(line, default, withExpense: false);
+        var expense = ExpenseOf(s, line);
+
+        await s.W.ExpenseService.UpdateAsync(expense.Id, new ExpenseInput(D(2026, 9, 20), "Puncture", "Tyres", 30, "EUR", 148_200, null), default);
+        await s.Tyres.RestoreEntryAsync(line, default);
+
+        Assert.Equal(expense.Id, s.W.Tyres.Entries.Single(l => l.Id == line).ExpenseId);
+        Assert.Equal(30m, ExpenseOf(s, line).Amount);
+        PairHolds(s, line);
     }
 
     [Fact]

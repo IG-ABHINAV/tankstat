@@ -529,6 +529,7 @@ public sealed class TyreService(
                 && ExpenseOf(save, book, line) is { IsDeleted: false } expense)
             {
                 expense.MarkDeleted(clock.GetUtcNow(), by);
+                expense.FollowLine(line.Day, line.OdometerReading, by: by); // a join's kept line took the reading of the day: the expense lets go of it
                 line.MarkExpenseTrashedWithEntry(true);
                 save.Change(expense);
             }
@@ -580,8 +581,8 @@ public sealed class TyreService(
         foreach (var line in save.AddedEntries.Concat(save.ChangedEntries).Where(l => l.ExpenseId is not null).ToList())
         {
             if (ExpenseOf(save, book, line) is not { } expense) continue;
-            // An expense left live while its line is in the trash goes on on its own; otherwise it is on its line's day, with its reading.
-            if (!(line.IsDeleted && !expense.IsDeleted) && expense.FollowLine(line.Day, line.OdometerReading, by: save.By)) save.Change(expense);
+            // A line in the trash pulls nothing: its expense goes on as it is (alone, or in the trash with it); a live line's is on its day, with its reading.
+            if (!line.IsDeleted && expense.FollowLine(line.Day, line.OdometerReading, by: save.By)) save.Change(expense);
             TyreExpenses.Settle(line, expense, clock.GetUtcNow());
         }
     }
@@ -685,10 +686,15 @@ public sealed class TyreService(
             await RequireReadingFitsAsync(vehicle, line, ct);
             line.Restore(by);
             save.Change(line);
-            if (line.ExpenseTrashedWithEntry && book.ExpenseOf(line) is { IsDeleted: true } expense)
+            if (book.ExpenseOf(line) is { } expense)
             {
-                expense.Restore(by);
-                save.Change(expense);
+                if (expense.Date != line.Day || expense.OdometerReadingId != line.OdometerReadingId)
+                    line.UnlinkExpense(); // edited on its own while the line was in the trash: the two part (the owner's choice)
+                else if (line.ExpenseTrashedWithEntry && expense.IsDeleted)
+                {
+                    expense.Restore(by);
+                    save.Change(expense);
+                }
             }
             line.MarkExpenseTrashedWithEntry(false);
         }
@@ -700,8 +706,8 @@ public sealed class TyreService(
 
     /// <summary>
     /// A person's edit of an expense a tyre log line made (#288), from the Expenses tab: its date and odometer are its line's, so they change
-    /// both (a swap's line moving its swap by the history's rules). While the line is in the trash the expense is edited on its own, and a
-    /// reading it is then given is its own.
+    /// both (a swap's line moving its swap by the history's rules). While the line is in the trash the expense is edited on its own: a new
+    /// day or odometer is then its own, and restoring the line parts the two (the owner's choice).
     /// </summary>
     public async Task<Expense> UpdateExpenseAsync(TyreEntry found, Guid expenseId, ExpenseInput input, CancellationToken ct, int? expectedVersion = null)
     {
@@ -714,7 +720,14 @@ public sealed class TyreService(
         RequireNotFuture(input.Date);
         var save = new TyreSave { Book = book, By = by };
         var (currency, discount) = (input.Currency ?? expense.Currency, input.Discount ?? expense.Discount);
-        if (line.IsDeleted)
+        var sameDayAndReading = input.Date == line.Day && input.Odometer == line.Odometer && expense.OdometerReadingId == line.OdometerReadingId;
+        if (line.IsDeleted && sameDayAndReading)
+        {
+            // Its amount, title, category or note: the day and the reading are still the line's, held for it.
+            save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount));
+            save.Change(expense);
+        }
+        else if (line.IsDeleted)
         {
             if (line.OdometerReadingId is { } shared && expense.OdometerReadingId == shared) expense.LeaveSharedReading();
             if (input.Odometer is { } own) await odometer.ValidateAsync(vehicle.Id, input.Date, own, exceptReadingId: expense.OdometerReadingId, ct);
