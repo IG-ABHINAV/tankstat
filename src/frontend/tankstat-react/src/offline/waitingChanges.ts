@@ -65,24 +65,24 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
 
   // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change.
   const tyreSets = new Map<string, string>()
-  const stretchSet = new Map<string, string>()
+  const installationSet = new Map<string, string>()
   for (const vehicleId of new Set(changes.filter((c) => c.entity === 'tyres').map((c) => c.vehicleId))) {
     const kept = (await deviceData.read(snapshotKey('VehicleTyres', { vehicleId })))?.data as
-      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; stretches: { stretch: { id: string } }[] }[] } | null }
+      | { vehicleTyres?: { sets?: { set: { id: string; name: string }; installations: { installation: { id: string } }[] }[] } | null }
       | undefined
     for (const s of kept?.vehicleTyres?.sets ?? []) {
       tyreSets.set(s.set.id, s.set.name)
-      for (const x of s.stretches) stretchSet.set(x.stretch.id, s.set.id)
+      for (const x of s.installations) installationSet.set(x.installation.id, s.set.id)
     }
   }
   for (const c of changes) {
     if (c.action === 'addTyreSet' || c.action === 'updateTyreSet') tyreSets.set(String(c.input?.id), String(c.input?.name))
-    for (const id of createdBy(c)) if (typeof c.input?.setId === 'string') stretchSet.set(id, c.input.setId)
-    if (c.action === 'addTyreSet' && typeof c.input?.stretchId === 'string') stretchSet.set(c.input.stretchId, String(c.input.id))
+    for (const id of createdBy(c)) if (typeof c.input?.setId === 'string') installationSet.set(id, c.input.setId)
+    if (c.action === 'addTyreSet' && typeof c.input?.installationId === 'string') installationSet.set(c.input.installationId, String(c.input.id))
   }
   const tyreSetOf = (c: Change, input: Record<string, unknown>) => {
     const swaps = Array.isArray(input.swaps) ? (input.swaps as { setId: string }[]) : []
-    const ids = [input.setId, ...swaps.map((s) => s.setId), stretchSet.get(c.targetId), input.id].filter((id): id is string => typeof id === 'string')
+    const ids = [input.setId, ...swaps.map((s) => s.setId), installationSet.get(c.targetId), input.id].filter((id): id is string => typeof id === 'string')
     return [...new Set(ids.map((id) => tyreSets.get(id)).filter((n): n is string => !!n))].join(', ') || undefined
   }
 

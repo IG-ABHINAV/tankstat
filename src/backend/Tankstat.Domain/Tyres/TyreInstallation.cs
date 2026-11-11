@@ -5,14 +5,14 @@ namespace Tankstat.Domain.Tyres;
 
 /// <summary>
 /// A tyre set's time on the car (#287): from <see cref="From"/> to <see cref="Until"/>, the day it came off (which is the day the next set
-/// went on; null while it is on the car). Both stretches of that day use the same odometer value for it, so no distance is lost or counted
-/// twice. A stretch lasts at least one day. A whole set records its pairs: <see cref="PairOneFront"/> true when pair 1 (the two tyres at
+/// went on; null while it is on the car). Both installations of that day use the same odometer value for it, so no distance is lost or counted
+/// twice. An installation lasts at least one day. A whole set records its pairs: <see cref="PairOneFront"/> true when pair 1 (the two tyres at
 /// the front when the pairs were first recorded) is at the front, false when it is at the rear, null when not recorded. The vehicle and
 /// owner are denormalized for access filtering and sync; the only cascading key is the set's.
 /// </summary>
-public sealed class TyreStretch : IOwned, ISoftDeletable, ISynced
+public sealed class TyreInstallation : IOwned, ISoftDeletable, ISynced
 {
-    private TyreStretch() { } // EF Core
+    private TyreInstallation() { } // EF Core
 
     public Guid Id { get; private set; }
 
@@ -59,7 +59,7 @@ public sealed class TyreStretch : IOwned, ISoftDeletable, ISynced
     void ISynced.Saved() => _loadedVersion = null;
 
     Guid ISynced.SyncVehicleId => VehicleId;
-    OfflineEntityType ISynced.SyncType => OfflineEntityType.TyreStretch;
+    OfflineEntityType ISynced.SyncType => OfflineEntityType.TyreInstallation;
 
     private void Bump(EntityChange what, Guid? by)
     {
@@ -69,10 +69,10 @@ public sealed class TyreStretch : IOwned, ISoftDeletable, ISynced
     }
 
     /// <param name="id">The id the client chose beforehand, if any (see <see cref="EntityId"/>).</param>
-    public static TyreStretch Create(Guid ownerId, Guid createdById, Guid vehicleId, Guid setId, DateOnly from, DateOnly? until, bool? pairOneFront, Guid? id = null)
+    public static TyreInstallation Create(Guid ownerId, Guid createdById, Guid vehicleId, Guid setId, DateOnly from, DateOnly? until, bool? pairOneFront, Guid? id = null)
     {
         RequireDays(from, until);
-        return new TyreStretch
+        return new TyreInstallation
         {
             Id = EntityId.OrNew(id), Version = 1, OwnerId = ownerId, CreatedById = createdById, VehicleId = vehicleId, SetId = setId,
             From = from, Until = until, PairOneFront = pairOneFront, LastChange = EntityChange.Created, ChangedById = createdById,
@@ -92,21 +92,21 @@ public sealed class TyreStretch : IOwned, ISoftDeletable, ISynced
 
     public void MarkDeleted(DateTimeOffset now, Guid? by = null)
     {
-        if (IsDeleted) throw new DomainException("tyres.stretchAlreadyTrashed", "This stretch is already in the trash.");
+        if (IsDeleted) throw new DomainException("tyres.installationAlreadyTrashed", "This installation is already in the trash.");
         DeletedAt = now;
         Bump(EntityChange.Trashed, by);
     }
 
     public void Restore(Guid? by = null)
     {
-        if (!IsDeleted) throw new DomainException("tyres.stretchNotTrashed", "This stretch is not in the trash.");
+        if (!IsDeleted) throw new DomainException("tyres.installationNotTrashed", "This installation is not in the trash.");
         DeletedAt = null;
         Bump(EntityChange.Restored, by);
     }
 
     private void RequireLive()
     {
-        if (IsDeleted) throw new DomainException("tyres.stretchTrashedCannotEdit", "A stretch in the trash cannot be changed; restore it first.");
+        if (IsDeleted) throw new DomainException("tyres.installationTrashedCannotEdit", "An installation in the trash cannot be changed; restore it first.");
     }
 
     private static void RequireDays(DateOnly from, DateOnly? until)

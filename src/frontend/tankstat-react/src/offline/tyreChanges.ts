@@ -15,10 +15,10 @@ export const TYRE_ACTIONS = [
   'swapTyres',
   'changeTyrePositions',
   'addPastTyreSwaps',
-  'addTyreStretch',
-  'updateTyreStretch',
-  'deleteTyreStretch',
-  'restoreTyreStretch',
+  'addTyreInstallation',
+  'updateTyreInstallation',
+  'deleteTyreInstallation',
+  'restoreTyreInstallation',
   'setTyreLogDay',
 ] as const
 
@@ -27,21 +27,21 @@ export type TyreAction = (typeof TYRE_ACTIONS)[number]
 export const isTyreAction = (action: string): action is TyreAction => (TYRE_ACTIONS as readonly string[]).includes(action)
 
 /** The actions whose `ChangeInput` field is a bare id (`deleteTyreSet: "<id>"`), kept as `{ id }`. */
-export const BARE_ID: ReadonlySet<TyreAction> = new Set(['unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet', 'deleteTyreStretch', 'restoreTyreStretch'])
+export const BARE_ID: ReadonlySet<TyreAction> = new Set(['unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet', 'deleteTyreInstallation', 'restoreTyreInstallation'])
 
 type Input = Record<string, unknown> | undefined
 
 const str = (v: unknown): string[] => (typeof v === 'string' && v !== '' ? [v] : [])
 const swapsOf = (input: Input) => (Array.isArray(input?.swaps) ? (input.swaps as Record<string, unknown>[]) : [])
 
-/** The set or stretch a change is about, as the server files it (`SyncGraphQL` `Tyres`): a swap's is the stretch it creates. */
+/** The set or installation a change is about, as the server files it (`SyncGraphQL` `Tyres`): a swap's is the installation it creates. */
 export function tyreTarget(action: TyreAction, input: Input): string {
   switch (action) {
     case 'swapTyres':
     case 'changeTyrePositions':
-      return str(input?.stretchId)[0] ?? ''
+      return str(input?.installationId)[0] ?? ''
     case 'addPastTyreSwaps':
-      return str(swapsOf(input)[0]?.stretchId)[0] ?? ''
+      return str(swapsOf(input)[0]?.installationId)[0] ?? ''
     case 'setTyreLogDay':
       return str(input?.id)[0] ?? `${String(input?.vehicleId)}:${String(input?.day)}`
     default:
@@ -49,24 +49,24 @@ export function tyreTarget(action: TyreAction, input: Input): string {
   }
 }
 
-/** The ids of the sets and stretches a change creates. */
+/** The ids of the sets and installations a change creates. */
 export function tyreCreates(action: TyreAction, input: Input): string[] {
   switch (action) {
     case 'addTyreSet':
-      return [...str(input?.id), ...str(input?.stretchId)]
+      return [...str(input?.id), ...str(input?.installationId)]
     case 'swapTyres':
     case 'changeTyrePositions':
-      return str(input?.stretchId)
+      return str(input?.installationId)
     case 'addPastTyreSwaps':
-      return swapsOf(input).flatMap((s) => str(s.stretchId))
-    case 'addTyreStretch':
+      return swapsOf(input).flatMap((s) => str(s.installationId))
+    case 'addTyreInstallation':
       return str(input?.id)
     default:
       return []
   }
 }
 
-/** The ids of the sets and stretches a change is made on (any of them may have been added here, and must reach the server first). */
+/** The ids of the sets and installations a change is made on (any of them may have been added here, and must reach the server first). */
 export function tyreNeeds(action: TyreAction, input: Input): string[] {
   const creates = new Set(tyreCreates(action, input))
   const ids = [...str(input?.id), ...str(input?.setId), ...swapsOf(input).flatMap((s) => str(s.setId))]

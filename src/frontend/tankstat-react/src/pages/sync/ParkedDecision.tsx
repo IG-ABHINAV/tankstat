@@ -138,7 +138,7 @@ export function ParkedActions({ parked, change, label, onResolved }: { parked: P
   const run = async (input: Omit<ResolveSyncChangeInput, 'id'>) => {
     try {
       await resolve({ variables: { input: { id: parked.id, ...input } }, refetchQueries: ['ParkedChanges'], awaitRefetchQueries: true })
-      // Decided: what was made on it here (when it was an add, or a tyre change that created sets and stretches) may go to the server now.
+      // Decided: what was made on it here (when it was an add, or a tyre change that created sets and installations) may go to the server now.
       void (async () => {
         for (const id of new Set([parked.targetId ?? '', ...createdBy(change)])) await unblockAdd(id) // one at a time: each rewrites the list
       })().catch(() => undefined)

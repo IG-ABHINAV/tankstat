@@ -50,7 +50,7 @@ internal sealed class OfflineFeedRepository(IDbContextFactory<AppDbContext> dbFa
         var tombstones = (await db.Tombstones.AsNoTracking().Where(t => t.VehicleId == vehicleId && t.PurgedAt >= since)
             .Select(t => new { t.EntityType, t.EntityId }).Distinct().ToListAsync(ct))
             // Tyre rows come whole with every first page (OfflinePage.Tyres), so their tombstones are not sent.
-            .Where(t => t.EntityType is not (OfflineEntityType.TyreSet or OfflineEntityType.TyreStretch or OfflineEntityType.TyreLogDay)).ToList();
+            .Where(t => t.EntityType is not (OfflineEntityType.TyreSet or OfflineEntityType.TyreInstallation or OfflineEntityType.TyreLogDay)).ToList();
         if (tombstones.Count == 0) return [];
         // A device may have added something with the same id again (a replayed add): what exists is not removed.
         var ids = tombstones.Select(t => t.EntityId).ToList();

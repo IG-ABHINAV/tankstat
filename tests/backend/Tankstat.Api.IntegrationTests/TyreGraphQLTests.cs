@@ -22,7 +22,7 @@ public class TyreGraphQLTests(ApiFixture api)
     private const string Tyres = """
         vehicleId hasReadings
         sets { onTheCar set { id name season roughDistance roughUntil version } figures { distance approximate pairOneFront pairOneRear pairsUnknown suggestion { distance until } }
-               stretches { stretch { id from until pairOneFront version } distance { distance approximate measure } } }
+               installations { installation { id from until pairOneFront version } distance { distance approximate measure } } }
         days { day odometer note }
         """;
 
@@ -48,14 +48,14 @@ public class TyreGraphQLTests(ApiFixture api)
 
         var swapped = (await Send($"mutation($i: SwapTyresInput!) {{ swapTyres(input: $i) {{ {Tyres} }} }}", new
         {
-            i = new { vehicleId = vehicle, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, note = "At the garage", stretchId = Guid.NewGuid() },
+            i = new { vehicleId = vehicle, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, note = "At the garage", installationId = Guid.NewGuid() },
         })).GetProperty("data").GetProperty("swapTyres");
 
         Assert.True(SetNamed(swapped, "Continental").GetProperty("onTheCar").GetBoolean());
         var summer = SetNamed(swapped, "Michelin");
-        Assert.Equal("2026-09-20", summer.GetProperty("stretches")[0].GetProperty("stretch").GetProperty("until").GetString());
+        Assert.Equal("2026-09-20", summer.GetProperty("installations")[0].GetProperty("installation").GetProperty("until").GetString());
         Assert.Equal(32_900, summer.GetProperty("figures").GetProperty("distance").GetInt64()); // no reading before 20 Sep: nothing measured yet
-        Assert.Equal("NOT_MEASURED", summer.GetProperty("stretches")[0].GetProperty("distance").GetProperty("measure").GetString());
+        Assert.Equal("NOT_MEASURED", summer.GetProperty("installations")[0].GetProperty("distance").GetProperty("measure").GetString());
         var day = Assert.Single(swapped.GetProperty("days").EnumerateArray());
         Assert.Equal((148_200L, "At the garage"), (day.GetProperty("odometer").GetInt64(), day.GetProperty("note").GetString()));
         Assert.True(swapped.GetProperty("hasReadings").GetBoolean());
@@ -81,12 +81,12 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.False((await Send(swap, new { i = new { vehicleId = vehicle, setId = winter, day = "2026-09-20", replace = true } })).TryGetProperty("errors", out _));
         var trash = (await Send("{ tyreTrash { kind setName from until canDelete vehicle { id } } tyreTrashCount }")).GetProperty("data");
         var row = trash.GetProperty("tyreTrash").EnumerateArray().Single(r => r.GetProperty("vehicle").GetProperty("id").GetString() == vehicle);
-        Assert.Equal(("STRETCH", "Michelin", "2026-09-20"), (row.GetProperty("kind").GetString(), row.GetProperty("setName").GetString(), row.GetProperty("from").GetString()));
+        Assert.Equal(("INSTALLATION", "Michelin", "2026-09-20"), (row.GetProperty("kind").GetString(), row.GetProperty("setName").GetString(), row.GetProperty("from").GetString()));
         Assert.True(row.GetProperty("canDelete").GetBoolean());
     }
 
     [Fact]
-    public async Task PastSwaps_AndAStretch_GoIntoTheHistory_AndASetIsRetired()
+    public async Task PastSwaps_AndAInstallation_GoIntoTheHistory_AndASetIsRetired()
     {
         var vehicle = await AddVehicle();
         var first = await AddSet(vehicle, "Michelin", fitted: true, day: "2026-03-28", rough: 32_900);
@@ -98,8 +98,8 @@ public class TyreGraphQLTests(ApiFixture api)
         {
             i = new { vehicleId = vehicle, swaps = new object[] { new { day = "2025-11-15", setId = winter }, new { day = "2025-03-29", setId = summer, odometer = 128_150 } } },
         })).GetProperty("data").GetProperty("addPastTyreSwaps");
-        Assert.Equal(["2025-03-29", "2026-03-28"], SetNamed(past, "Michelin").GetProperty("stretches").EnumerateArray()
-            .Select(s => s.GetProperty("stretch").GetProperty("from").GetString()).Order());
+        Assert.Equal(["2025-03-29", "2026-03-28"], SetNamed(past, "Michelin").GetProperty("installations").EnumerateArray()
+            .Select(s => s.GetProperty("installation").GetProperty("from").GetString()).Order());
 
         var retired = await Send($"mutation($id: UUID!) {{ retireTyreSet(id: $id, day: \"2026-10-01\") {{ {Tyres} }} }}", new { id = winter });
         Assert.False(retired.TryGetProperty("errors", out _));
@@ -122,12 +122,12 @@ public class TyreGraphQLTests(ApiFixture api)
         await Ok("mutation($i: UpdateTyreSetInput!) { updateTyreSet(input: $i) { vehicleId } }", new { i = new { id = summer, name = "Michelin Primacy 4", season = "SUMMER", since = "2023-03-25" } });
         await Ok("mutation($i: SetTyreRoughDistanceInput!) { setTyreRoughDistance(input: $i) { vehicleId } }", new { i = new { id = summer, distance = 31_000 } });
         await Ok("mutation($i: SwapTyresInput!) { changeTyrePositions(input: $i) { vehicleId } }", new { i = new { vehicleId = vehicle, setId = summer, day = "2026-06-01", pairOneFront = false } });
-        var added = await Ok($"mutation($i: AddTyreStretchInput!) {{ addTyreStretch(input: $i) {{ {Tyres} }} }}", new { i = new { setId = summer, from = "2025-03-29", until = "2025-11-15", odometerFrom = 128_150 } });
-        var stretch = SetNamed(added.GetProperty("addTyreStretch"), "Michelin Primacy 4").GetProperty("stretches").EnumerateArray()
-            .Single(x => x.GetProperty("stretch").GetProperty("from").GetString() == "2025-03-29").GetProperty("stretch").GetProperty("id").GetString();
-        await Ok("mutation($i: UpdateTyreStretchInput!) { updateTyreStretch(input: $i) { vehicleId } }", new { i = new { id = stretch, from = "2025-04-01", until = "2025-11-15" } });
-        await Ok("mutation($id: UUID!) { deleteTyreStretch(id: $id) { vehicleId } }", new { id = stretch });
-        await Ok("mutation($id: UUID!) { restoreTyreStretch(id: $id) { vehicleId } }", new { id = stretch });
+        var added = await Ok($"mutation($i: AddTyreInstallationInput!) {{ addTyreInstallation(input: $i) {{ {Tyres} }} }}", new { i = new { setId = summer, from = "2025-03-29", until = "2025-11-15", odometerFrom = 128_150 } });
+        var installation = SetNamed(added.GetProperty("addTyreInstallation"), "Michelin Primacy 4").GetProperty("installations").EnumerateArray()
+            .Single(x => x.GetProperty("installation").GetProperty("from").GetString() == "2025-03-29").GetProperty("installation").GetProperty("id").GetString();
+        await Ok("mutation($i: UpdateTyreInstallationInput!) { updateTyreInstallation(input: $i) { vehicleId } }", new { i = new { id = installation, from = "2025-04-01", until = "2025-11-15" } });
+        await Ok("mutation($id: UUID!) { deleteTyreInstallation(id: $id) { vehicleId } }", new { id = installation });
+        await Ok("mutation($id: UUID!) { restoreTyreInstallation(id: $id) { vehicleId } }", new { id = installation });
         var day = await Ok("mutation($i: SetTyreLogDayInput!) { setTyreLogDay(input: $i) { days { day odometer note } } }", new { i = new { vehicleId = vehicle, day = "2025-03-29", note = "From the receipt" } });
         Assert.Equal("From the receipt", day.GetProperty("setTyreLogDay").GetProperty("days")[0].GetProperty("note").GetString()); // the reading went: left out clears it
 

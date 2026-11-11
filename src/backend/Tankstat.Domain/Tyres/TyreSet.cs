@@ -12,10 +12,10 @@ public enum TyreSeason
 }
 
 /// <summary>
-/// A set of tyres of a vehicle (#287). It is tracked as one thing: its time on the car is a list of <see cref="TyreStretch"/>es, and its
+/// A set of tyres of a vehicle (#287). It is tracked as one thing: its time on the car is a list of <see cref="TyreInstallation"/>es, and its
 /// distance is worked out from them and the vehicle's odometer readings (<see cref="TyreCalculator"/>), never stored. A used set starts
 /// with a rough figure for what it ran before tracking (<see cref="RoughDistance"/>, in the vehicle's distance unit), which stands for the
-/// time before <see cref="RoughUntil"/>. Trashing it hides its stretches through it; retiring it ends its life on the car and keeps everything.
+/// time before <see cref="RoughUntil"/>. Trashing it hides its installations through it; retiring it ends its life on the car and keeps everything.
 /// </summary>
 public sealed class TyreSet : IOwned, ISoftDeletable, ISynced
 {
@@ -49,7 +49,7 @@ public sealed class TyreSet : IOwned, ISoftDeletable, ISynced
     /// <summary>What the set ran before it was tracked, roughly, in the vehicle's distance unit (0 for a new set).</summary>
     public long RoughDistance { get; private set; }
 
-    /// <summary>The first day <see cref="RoughDistance"/> does not cover: from it on, the stretches measure the distance. Null without a rough figure.</summary>
+    /// <summary>The first day <see cref="RoughDistance"/> does not cover: from it on, the installations measure the distance. Null without a rough figure.</summary>
     public DateOnly? RoughUntil { get; private set; }
 
     /// <summary>The day it was retired; a retired set takes no swap.</summary>
@@ -115,7 +115,7 @@ public sealed class TyreSet : IOwned, ISoftDeletable, ISynced
         Bump(EntityChange.Edited, by);
     }
 
-    /// <summary>Sets the rough figure and the first day it does not cover (the caller picks that day: never in the future, by default before the set's first stretch).</summary>
+    /// <summary>Sets the rough figure and the first day it does not cover (the caller picks that day: never in the future, by default before the set's first installation).</summary>
     public void SetRough(long roughDistance, DateOnly? roughUntil, Guid? by = null)
     {
         RequireLive();

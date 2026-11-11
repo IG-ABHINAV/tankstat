@@ -37,10 +37,10 @@ export const SYNC_KINDS: Record<SyncChangeKind, [ChangeEntity, ChangeAction]> = 
   SWAP_TYRES: ['tyres', 'swapTyres'],
   CHANGE_TYRE_POSITIONS: ['tyres', 'changeTyrePositions'],
   ADD_PAST_TYRE_SWAPS: ['tyres', 'addPastTyreSwaps'],
-  ADD_TYRE_STRETCH: ['tyres', 'addTyreStretch'],
-  UPDATE_TYRE_STRETCH: ['tyres', 'updateTyreStretch'],
-  DELETE_TYRE_STRETCH: ['tyres', 'deleteTyreStretch'],
-  RESTORE_TYRE_STRETCH: ['tyres', 'restoreTyreStretch'],
+  ADD_TYRE_INSTALLATION: ['tyres', 'addTyreInstallation'],
+  UPDATE_TYRE_INSTALLATION: ['tyres', 'updateTyreInstallation'],
+  DELETE_TYRE_INSTALLATION: ['tyres', 'deleteTyreInstallation'],
+  RESTORE_TYRE_INSTALLATION: ['tyres', 'restoreTyreInstallation'],
   SET_TYRE_LOG_DAY: ['tyres', 'setTyreLogDay'],
 }
 

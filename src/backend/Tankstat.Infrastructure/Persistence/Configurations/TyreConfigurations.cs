@@ -30,15 +30,15 @@ internal sealed class TyreSetConfiguration : IEntityTypeConfiguration<TyreSet>
         b.HasIndex(s => s.OwnerId);
         TrashColumn.Map(b, s => s.DeletedAt);
         b.HasIndex(s => s.DeletedAt);
-        // Unlike a log, a trashed set is read by its own queries (its stretches hide through it), so there is no query filter.
+        // Unlike a log, a trashed set is read by its own queries (its installations hide through it), so there is no query filter.
     }
 }
 
-internal sealed class TyreStretchConfiguration : IEntityTypeConfiguration<TyreStretch>
+internal sealed class TyreInstallationConfiguration : IEntityTypeConfiguration<TyreInstallation>
 {
-    public void Configure(EntityTypeBuilder<TyreStretch> b)
+    public void Configure(EntityTypeBuilder<TyreInstallation> b)
     {
-        b.ToTable("TyreStretches");
+        b.ToTable("TyreInstallations");
         SyncMapping.MapUpdatedAt(b);
         b.HasIndex(s => new { s.VehicleId, s.UpdatedAt });
         b.HasKey(s => s.Id);

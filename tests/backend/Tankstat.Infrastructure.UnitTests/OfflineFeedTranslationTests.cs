@@ -43,7 +43,7 @@ public class OfflineFeedTranslationTests
 
     [Theory]
     [MemberData(nameof(Providers))]
-    public void TheTyreTrash_IsOneQuery_OverSetsAndStretches_PagedInTheDatabase(DatabaseProvider provider)
+    public void TheTyreTrash_IsOneQuery_OverSetsAndInstallations_PagedInTheDatabase(DatabaseProvider provider)
     {
         using var db = Context(provider);
         var scope = Tankstat.Application.Access.OwnerScope.Of([Guid.NewGuid()], [Guid.NewGuid()]);
@@ -52,6 +52,6 @@ public class OfflineFeedTranslationTests
 
         Assert.Contains("UNION ALL", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ORDER BY", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("TyreStretches", sql);
+        Assert.Contains("TyreInstallations", sql);
     }
 }

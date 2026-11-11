@@ -8,7 +8,7 @@ public enum OfflineEntityType
     Expense,
     RecurringExpense,
     TyreSet,
-    TyreStretch,
+    TyreInstallation,
     TyreLogDay,
 }
 

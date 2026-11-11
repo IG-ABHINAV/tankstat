@@ -23,10 +23,10 @@ import { keyedOf, type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, 
 
 type Mode = 'same' | 'cross' | 'unsure'
 
-/** The pairs a set is at now (`rotate`) or was at the last time on the car: its newest stretch's. */
+/** The pairs a set is at now (`rotate`) or was at the last time on the car: its newest installation's. */
 const pairsOf = (info: TyreSetInfo | undefined, rotate: boolean) => {
-  const newest = info?.stretches[0]?.stretch // newest first
-  return rotate ? (info?.stretches.find((s) => s.stretch.until == null)?.stretch.pairOneFront ?? null) : (newest?.pairOneFront ?? null)
+  const newest = info?.installations[0]?.installation // newest first
+  return rotate ? (info?.installations.find((s) => s.installation.until == null)?.installation.pairOneFront ?? null) : (newest?.pairOneFront ?? null)
 }
 
 /**
@@ -57,7 +57,7 @@ export function SwapDialog({
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
-  const stretchId = useClientId(open)
+  const installationId = useClientId(open)
   const choices = tyres.sets.filter((s) => !s.set.isRetired && (rotate ? s.onTheCar : !s.onTheCar))
   const [picked, setChosen] = useState(setId ?? choices[0]?.set.id ?? '')
   const chosen = choices.some((s) => s.set.id === picked) ? picked : (choices[0]?.set.id ?? '')
@@ -103,7 +103,7 @@ export function SwapDialog({
         replace: replace !== null,
         odometer: wholeOrNull(text('odometer')),
         note: text('note') || null,
-        stretchId,
+        installationId,
       }
       const saved = rotate ? await run(ChangeTyrePositionsDocument, { input }) : await run(SwapTyresDocument, { input })
       setOpen(false)

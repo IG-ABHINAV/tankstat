@@ -18,7 +18,7 @@ import { TyreRuleError } from './tyreHistory.ts'
 export type Tyres = VehicleTyresFieldsFragment
 export type TyreSetInfo = Tyres['sets'][number]
 export type TyreSet = TyreSetInfo['set']
-export type TyreStretchInfo = TyreSetInfo['stretches'][number]
+export type TyreInstallationInfo = TyreSetInfo['installations'][number]
 export type TyreLogDay = Tyres['days'][number]
 
 /** A tyre change saved: sent (the server applied it), or kept on this device to be sent once the server can be reached. */
@@ -38,16 +38,16 @@ const actionOf = (document: DocumentNode): TyreAction => {
 }
 
 const SET_ACTIONS = new Set<TyreAction>(['updateTyreSet', 'setTyreRoughDistance', 'retireTyreSet', 'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet'])
-const STRETCH_ACTIONS = new Set<TyreAction>(['updateTyreStretch', 'deleteTyreStretch', 'restoreTyreStretch'])
+const INSTALLATION_ACTIONS = new Set<TyreAction>(['updateTyreInstallation', 'deleteTyreInstallation', 'restoreTyreInstallation'])
 const DAY_ACTIONS = new Set<TyreAction>(['setTyreLogDay'])
 
-/** The version of the set, stretch or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
+/** The version of the set, installation or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
 function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: Record<string, unknown>): number | null {
   const sets = shown?.sets ?? []
   const version = SET_ACTIONS.has(action)
     ? sets.find((s) => s.set.id === input.id)?.set.version
-    : STRETCH_ACTIONS.has(action)
-      ? sets.flatMap((s) => s.stretches).find((x) => x.stretch.id === input.id)?.stretch.version
+    : INSTALLATION_ACTIONS.has(action)
+      ? sets.flatMap((s) => s.installations).find((x) => x.installation.id === input.id)?.installation.version
       : DAY_ACTIONS.has(action)
         ? shown?.days.find((d) => d.id === input.id)?.version
         : undefined

@@ -46,14 +46,14 @@ public class TyreSwapContractTests
             if (DayOrNull(s.GetProperty("retiredOn")) is { } retired) set.Retire(retired);
             return set;
         }).ToList();
-        var stretches = c.GetProperty("stretches").EnumerateArray().Select(s =>
+        var installations = c.GetProperty("installations").EnumerateArray().Select(s =>
         {
             names[IdOf(s.GetProperty("id").GetString()!)] = s.GetProperty("id").GetString()!;
-            return TyreStretch.Create(Owner, Owner, Car, IdOf(s.GetProperty("set").GetString()!), Day(s.GetProperty("from")), DayOrNull(s.GetProperty("until")),
+            return TyreInstallation.Create(Owner, Owner, Car, IdOf(s.GetProperty("set").GetString()!), Day(s.GetProperty("from")), DayOrNull(s.GetProperty("until")),
                 Pairs(s.GetProperty("pairOneFront")), IdOf(s.GetProperty("id").GetString()!));
         }).ToList();
         names[IdOf("new")] = "new";
-        var history = new TyreHistory(Owner, Car, sets, stretches);
+        var history = new TyreHistory(Owner, Car, sets, installations);
         TyreSet SetOf(JsonElement op) => sets.Single(s => s.Id == IdOf(op.GetProperty("set").GetString()!));
 
         void Run()
@@ -70,7 +70,7 @@ public class TyreSwapContractTests
                     history.ChangePositions(SetOf(positions), Day(positions.GetProperty("day")), Pairs(positions.GetProperty("pairOneFront")), Owner, IdOf("new"));
                     break;
                 default:
-                    var moving = c.TryGetProperty("moving", out var ids) ? ids.EnumerateArray().Select(m => stretches.Single(s => s.Id == IdOf(m.GetString()!))).ToList() : null;
+                    var moving = c.TryGetProperty("moving", out var ids) ? ids.EnumerateArray().Select(m => installations.Single(s => s.Id == IdOf(m.GetString()!))).ToList() : null;
                     history.Check(moving);
                     break;
             }

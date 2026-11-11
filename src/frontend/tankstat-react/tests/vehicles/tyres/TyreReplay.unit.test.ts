@@ -4,15 +4,15 @@ import { applyTyreChange, noTyres, replayTyres } from '../../../src/tyres/replay
 import { TyreRuleError } from '../../../src/tyres/tyreHistory.ts'
 import type { Tyres } from '../../../src/tyres/tyres.ts'
 
-const stretch = (id: string, setId: string, from: string, until: string | null, distance = 1000) => ({
-  stretch: { id, setId, from, until, pairOneFront: true, version: 3 },
+const installation = (id: string, setId: string, from: string, until: string | null, distance = 1000) => ({
+  installation: { id, setId, from, until, pairOneFront: true, version: 3 },
   distance: { distance, approximate: false, measure: 'MEASURED' as const },
 })
-const set = (id: string, name: string, onTheCar: boolean, stretches: ReturnType<typeof stretch>[]) => ({
+const set = (id: string, name: string, onTheCar: boolean, installations: ReturnType<typeof installation>[]) => ({
   onTheCar,
   set: { id, vehicleId: 'v1', name, season: 'SUMMER' as const, size: null, since: '2023-03-01', madeWeek: null, madeYear: null, roughDistance: 0, roughUntil: null, retiredOn: null, isRetired: false, version: 2 },
   figures: { distance: 9000, approximate: false, measured: 9000, pairOneFront: 9000, pairOneRear: 0, pairsUnknown: 0, suggestion: null },
-  stretches,
+  installations,
 })
 const base: Tyres = {
   vehicleId: 'v1',
@@ -20,8 +20,8 @@ const base: Tyres = {
   readings: [{ date: '2026-03-01', value: 140_000 }],
   days: [],
   sets: [
-    set('s2', 'Continental WinterContact', false, [stretch('r2', 's2', '2025-11-15', '2026-03-28')]),
-    set('s1', 'Michelin Primacy 4', true, [stretch('r1', 's1', '2026-03-28', null)]),
+    set('s2', 'Continental WinterContact', false, [installation('r2', 's2', '2025-11-15', '2026-03-28')]),
+    set('s1', 'Michelin Primacy 4', true, [installation('r1', 's1', '2026-03-28', null)]),
   ],
 }
 let seq = 0
@@ -29,7 +29,7 @@ const change = (action: Change['action'], input: Record<string, unknown>): Chang
 
 describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
   it('a swap puts the set on the car and the other in storage, marks both, and keeps the day’s reading', () => {
-    const { tyres, touched, skipped } = replayTyres(base, [change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-11-10', pairOneFront: false, replace: false, odometer: 150_000, note: null, stretchId: 'n1' })])
+    const { tyres, touched, skipped } = replayTyres(base, [change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-11-10', pairOneFront: false, replace: false, odometer: 150_000, note: null, installationId: 'n1' })])
 
     expect(skipped).toEqual([])
     expect([...touched].sort()).toEqual(['s1', 's2'])
@@ -37,18 +37,18 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
     const summer = tyres.sets.find((s) => s.set.id === 's1')!
     expect(winter.onTheCar).toBe(true)
     expect(summer.onTheCar).toBe(false)
-    expect(winter.stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until, x.distance.measure])).toEqual([
+    expect(winter.installations.map((x) => [x.installation.id, x.installation.from, x.installation.until, x.distance.measure])).toEqual([
       ['n1', '2026-11-10', null, 'NOT_MEASURED'], // newest first, as the server lists them; its distance is the server's to work out
       ['r2', '2025-11-15', '2026-03-28', 'MEASURED'], // unchanged: the server's
     ])
-    expect(summer.stretches[0].stretch.until).toBe('2026-11-10')
+    expect(summer.installations[0].installation.until).toBe('2026-11-10')
     expect(tyres.days).toMatchObject([{ day: '2026-11-10', odometer: 150_000 }])
     expect(tyres.readings.at(-1)).toMatchObject({ date: '2026-11-10', value: 150_000 })
-    expect(base.sets[1].stretches[0].stretch.until).toBeNull() // what it was given stays as it was
+    expect(base.sets[1].installations[0].installation.until).toBeNull() // what it was given stays as it was
   })
 
   it('a set added on the car, then trashed, leaves nothing; a change that no longer fits is left out, not thrown', () => {
-    const added = change('addTyreSet', { id: 'n', stretchId: 'ns', vehicleId: 'v1', name: 'Nokian', season: 'WINTER', size: null, since: '2026-11-01', madeWeek: null, madeYear: null, fitted: true, day: '2026-11-10', roughDistance: 0, replace: false })
+    const added = change('addTyreSet', { id: 'n', installationId: 'ns', vehicleId: 'v1', name: 'Nokian', season: 'WINTER', size: null, since: '2026-11-01', madeWeek: null, madeYear: null, fitted: true, day: '2026-11-10', roughDistance: 0, replace: false })
     const shown = replayTyres(base, [added]).tyres
     expect(shown.sets.map((s) => [s.set.name, s.onTheCar])).toEqual([
       ['Continental WinterContact', false],
@@ -56,15 +56,15 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
       ['Nokian', true],
     ])
 
-    const stale = change('changeTyrePositions', { vehicleId: 'v1', setId: 'gone', day: '2026-11-10', pairOneFront: false, replace: false, stretchId: 'x' })
+    const stale = change('changeTyrePositions', { vehicleId: 'v1', setId: 'gone', day: '2026-11-10', pairOneFront: false, replace: false, installationId: 'x' })
     const { tyres, skipped } = replayTyres(base, [added, change('deleteTyreSet', { id: 'n' }), stale])
     expect(skipped).toEqual([stale.id])
     expect(tyres.sets.map((s) => s.set.name)).toEqual(['Continental WinterContact', 'Michelin Primacy 4'])
-    expect(tyres.sets[1].stretches[0].stretch.until).toBe('2026-11-10') // the add's swap still ended its stretch: trashing a set takes only its own
+    expect(tyres.sets[1].installations[0].installation.until).toBe('2026-11-10') // the add's swap still ended its installation: trashing a set takes only its own
   })
 
   it('refuses what the server would: a second swap on a day, retiring the set on the car', () => {
-    const second = change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-03-28', pairOneFront: null, replace: false, stretchId: 'n2' })
+    const second = change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-03-28', pairOneFront: null, replace: false, installationId: 'n2' })
     expect(() => applyTyreChange(base, second)).toThrow(TyreRuleError)
     try {
       applyTyreChange(base, second)
@@ -73,7 +73,7 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
     }
     expect(() => applyTyreChange(base, change('retireTyreSet', { id: 's1', day: '2026-11-10' }))).toThrow(expect.objectContaining({ key: 'tyres.retireOnCar' }))
     const replaced = applyTyreChange(base, { ...second, input: { ...second.input, replace: true } })
-    expect(replaced.sets.find((s) => s.set.id === 's1')!.stretches).toEqual([]) // the swap it replaced moves to the trash
+    expect(replaced.sets.find((s) => s.set.id === 's1')!.installations).toEqual([]) // the swap it replaced moves to the trash
   })
 
   it('a day’s reading cleared takes the line and its reading; a vehicle the device knows no tyres of starts empty', () => {
@@ -106,7 +106,7 @@ describe('tyre changes waiting on the device, shown as done (#287 Q3)', () => {
     expect(added.sets.find((s) => s.set.id === 'n')!.set).toMatchObject({ roughDistance: 15_000, roughUntil: '2026-11-10' })
   })
 
-  it('retiring refuses a set whose stretch runs past the day, as the server does; back from retirement only a retired one', () => {
+  it('retiring refuses a set whose installation runs past the day, as the server does; back from retirement only a retired one', () => {
     expect(() => applyTyreChange(base, change('retireTyreSet', { id: 's2', day: '2026-03-01' }))).toThrow(expect.objectContaining({ key: 'tyres.retireOnCar' }))
     expect(() => applyTyreChange(base, change('unretireTyreSet', { id: 's2' }))).toThrow(expect.objectContaining({ key: 'tyres.notRetired' }))
     const back = replayTyres(base, [change('retireTyreSet', { id: 's2', day: '2026-11-10' }), change('unretireTyreSet', { id: 's2' })])
@@ -124,33 +124,33 @@ describe('every other tyre change, shown as the server will make it', () => {
     ['updateTyreSet', { id: 's2', name: 'Continental TS 870', season: 'ALL_SEASON', size: '205/55 R16', since: '2023-03-01', madeWeek: 5, madeYear: 2023 }, (r: ReturnType<typeof after>) => expect(winter(r).set).toMatchObject({ name: 'Continental TS 870', season: 'ALL_SEASON', size: '205/55 R16', madeWeek: 5, version: 0 })],
     ['setTyreRoughDistance', { id: 's2', distance: 12_000, until: '2025-11-15' }, (r: ReturnType<typeof after>) => expect(winter(r).set).toMatchObject({ roughDistance: 12_000, roughUntil: '2025-11-15' })],
     ['retireTyreSet', { id: 's2', day: '2026-11-10' }, (r: ReturnType<typeof after>) => expect(winter(r).set).toMatchObject({ isRetired: true, retiredOn: '2026-11-10' })],
-    ['changeTyrePositions', { vehicleId: 'v1', setId: 's1', day: '2026-06-01', pairOneFront: false, replace: false, stretchId: 'p1' }, (r: ReturnType<typeof after>) =>
-      expect(summer(r).stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until, x.stretch.pairOneFront, x.stretch.version])).toEqual([
+    ['changeTyrePositions', { vehicleId: 'v1', setId: 's1', day: '2026-06-01', pairOneFront: false, replace: false, installationId: 'p1' }, (r: ReturnType<typeof after>) =>
+      expect(summer(r).installations.map((x) => [x.installation.id, x.installation.from, x.installation.until, x.installation.pairOneFront, x.installation.version])).toEqual([
         ['p1', '2026-06-01', null, false, 0],
         ['r1', '2026-03-28', '2026-06-01', true, 0], // changed here: sent again without the version the server will have moved on from
       ])],
-    ['addPastTyreSwaps', { vehicleId: 'v1', replace: false, swaps: [{ day: '2025-04-01', setId: 's1', odometer: 120_000, stretchId: 'q1' }, { day: '2025-01-10', setId: 's2', odometer: null, stretchId: 'q0' }] }, (r: ReturnType<typeof after>) => {
-      expect(winter(r).stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until])).toEqual([['r2', '2025-11-15', '2026-03-28'], ['q0', '2025-01-10', '2025-04-01']])
-      expect(summer(r).stretches.map((x) => [x.stretch.id, x.stretch.from, x.stretch.until])).toEqual([['r1', '2026-03-28', null], ['q1', '2025-04-01', '2025-11-15']])
+    ['addPastTyreSwaps', { vehicleId: 'v1', replace: false, swaps: [{ day: '2025-04-01', setId: 's1', odometer: 120_000, installationId: 'q1' }, { day: '2025-01-10', setId: 's2', odometer: null, installationId: 'q0' }] }, (r: ReturnType<typeof after>) => {
+      expect(winter(r).installations.map((x) => [x.installation.id, x.installation.from, x.installation.until])).toEqual([['r2', '2025-11-15', '2026-03-28'], ['q0', '2025-01-10', '2025-04-01']])
+      expect(summer(r).installations.map((x) => [x.installation.id, x.installation.from, x.installation.until])).toEqual([['r1', '2026-03-28', null], ['q1', '2025-04-01', '2025-11-15']])
       expect(r.tyres.days).toMatchObject([{ day: '2025-04-01', odometer: 120_000 }])
     }],
-    ['addTyreStretch', { id: 'a1', setId: 's2', from: '2024-11-09', until: '2025-03-29', pairOneFront: null, odometerFrom: 110_000, odometerUntil: null }, (r: ReturnType<typeof after>) =>
-      expect(winter(r).stretches.map((x) => x.stretch.id)).toEqual(['r2', 'a1'])],
-    ['updateTyreStretch', { id: 'r2', from: '2025-11-01', until: '2026-03-28', pairOneFront: false, odometerFrom: null, odometerUntil: null }, (r: ReturnType<typeof after>) =>
-      expect(winter(r).stretches[0].stretch).toMatchObject({ from: '2025-11-01', pairOneFront: false, version: 0 })],
-    ['deleteTyreStretch', { id: 'r2' }, (r: ReturnType<typeof after>) => expect(winter(r).stretches).toEqual([])],
+    ['addTyreInstallation', { id: 'a1', setId: 's2', from: '2024-11-09', until: '2025-03-29', pairOneFront: null, odometerFrom: 110_000, odometerUntil: null }, (r: ReturnType<typeof after>) =>
+      expect(winter(r).installations.map((x) => x.installation.id)).toEqual(['r2', 'a1'])],
+    ['updateTyreInstallation', { id: 'r2', from: '2025-11-01', until: '2026-03-28', pairOneFront: false, odometerFrom: null, odometerUntil: null }, (r: ReturnType<typeof after>) =>
+      expect(winter(r).installations[0].installation).toMatchObject({ from: '2025-11-01', pairOneFront: false, version: 0 })],
+    ['deleteTyreInstallation', { id: 'r2' }, (r: ReturnType<typeof after>) => expect(winter(r).installations).toEqual([])],
     ['restoreTyreSet', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.tyres.sets).toHaveLength(2)], // the trash is the server's: shown once synced
-    ['restoreTyreStretch', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.touched.size).toBe(0)],
+    ['restoreTyreInstallation', { id: 'gone' }, (r: ReturnType<typeof after>) => expect(r.touched.size).toBe(0)],
   ] as const)('%s', (action, input, check) => {
     const replayed = after(change(action, input))
     expect(replayed.skipped).toEqual([])
     check(replayed)
   })
 
-  it('a set or stretch untouched keeps the server’s version, so a change of it is checked against it', () => {
+  it('a set or installation untouched keeps the server’s version, so a change of it is checked against it', () => {
     const r = after(change('setTyreLogDay', { vehicleId: 'v1', day: '2026-06-01', odometer: 143_000, note: null }))
     expect(summer(r).set.version).toBe(2)
-    expect(summer(r).stretches[0].stretch.version).toBe(3)
+    expect(summer(r).installations[0].installation.version).toBe(3)
     expect(r.added.size).toBe(0)
   })
 })

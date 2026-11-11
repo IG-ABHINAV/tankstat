@@ -63,7 +63,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<VehicleDashboardLayout> VehicleDashboardLayouts => Set<VehicleDashboardLayout>();
     public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
     public DbSet<TyreSet> TyreSets => Set<TyreSet>();
-    public DbSet<TyreStretch> TyreStretches => Set<TyreStretch>();
+    public DbSet<TyreInstallation> TyreInstallations => Set<TyreInstallation>();
     public DbSet<TyreLogDay> TyreLogDays => Set<TyreLogDay>();
     public DbSet<OdometerReading> OdometerReadings => Set<OdometerReading>();
     public DbSet<Cost> Costs => Set<Cost>();

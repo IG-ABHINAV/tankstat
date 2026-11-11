@@ -39,10 +39,10 @@ public enum SyncChangeKind
     SwapTyres,
     ChangeTyrePositions,
     AddPastTyreSwaps,
-    AddTyreStretch,
-    UpdateTyreStretch,
-    DeleteTyreStretch,
-    RestoreTyreStretch,
+    AddTyreInstallation,
+    UpdateTyreInstallation,
+    DeleteTyreInstallation,
+    RestoreTyreInstallation,
     SetTyreLogDay,
 }
 

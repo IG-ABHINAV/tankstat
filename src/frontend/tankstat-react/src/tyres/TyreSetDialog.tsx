@@ -47,7 +47,7 @@ export function TyreSetDialog({
   const format = useFormat()
   const [open, setOpen] = useDialogState()
   const id = useClientId(open)
-  const stretchId = useClientId(open)
+  const installationId = useClientId(open)
   const run = useTyreMutation(vehicleId)
   const words = useTyreWords(unit)
   const [season, setSeason] = useState<TyreSeason>(edit?.season ?? 'SUMMER')
@@ -84,7 +84,7 @@ export function TyreSetDialog({
       const saved = await run(AddTyreSetDocument, {
         input: {
           id,
-          stretchId: where === 'car' ? stretchId : null,
+          installationId: where === 'car' ? installationId : null,
           vehicleId,
           name: text('name'),
           season,

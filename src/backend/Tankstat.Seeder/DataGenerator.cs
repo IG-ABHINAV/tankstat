@@ -11,10 +11,10 @@ namespace Tankstat.Seeder;
 
 /// <param name="Expenses">The visits of its schedules and the one-off expenses, in date order.</param>
 /// <param name="Completions">The links from each schedule to the expenses of its visits, as marking it done leaves them.</param>
-/// <param name="TyreSets">A summer and a winter set (#287), with <paramref name="TyreStretches"/>: their time on the car.</param>
+/// <param name="TyreSets">A summer and a winter set (#287), with <paramref name="TyreInstallations"/>: their time on the car.</param>
 public sealed record GeneratedVehicle(
     Vehicle Vehicle, IReadOnlyList<Refueling> Refuelings, IReadOnlyList<RecurringExpense> Recurring, IReadOnlyList<Expense> Expenses,
-    IReadOnlyList<RecurringCompletion> Completions, IReadOnlyList<TyreSet>? TyreSets = null, IReadOnlyList<TyreStretch>? TyreStretches = null);
+    IReadOnlyList<RecurringCompletion> Completions, IReadOnlyList<TyreSet>? TyreSets = null, IReadOnlyList<TyreInstallation>? TyreInstallations = null);
 
 /// <summary>
 /// Creates random but internally consistent test data through the domain's own factories (so every rule of the
@@ -60,8 +60,8 @@ public sealed class DataGenerator(TimeProvider clock)
             var trajectory = OdometerTrajectory.Of(log, DefaultKmPerDay * market.DistancePerKm);
             var schedules = vehicle.IsDeleted ? [] : Recurring(scheduleRandom, vehicle, market, trajectory, options.RecurringPerVehicle, today);
             var (expenses, completions) = Expenses(expenseRandom, vehicle, market, trajectory, schedules, options.ExpensesPerVehicle, today);
-            var (sets, stretches) = vehicle.IsDeleted || log.Count == 0 ? ([], []) : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
-            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, sets, stretches);
+            var (sets, installations) = vehicle.IsDeleted || log.Count == 0 ? ([], []) : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
+            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, sets, installations);
         }
     }
 
@@ -190,7 +190,7 @@ public sealed class DataGenerator(TimeProvider clock)
     /// through the history's own rules (<see cref="TyreHistory"/>) around the start of April and of November from the log's first day to today,
     /// each set's pairs exchanged front to rear every other season. No reading is typed: the distances come from the log's readings.
     /// </summary>
-    private (List<TyreSet> Sets, List<TyreStretch> Stretches) Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
+    private (List<TyreSet> Sets, List<TyreInstallation> Installations) Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
     {
         var owner = vehicle.OwnerId;
         var size = TyreSizes[random.Next(TyreSizes.Length)];

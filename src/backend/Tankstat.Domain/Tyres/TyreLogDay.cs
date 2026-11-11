@@ -5,7 +5,7 @@ using Tankstat.Domain.Sync;
 namespace Tankstat.Domain.Tyres;
 
 /// <summary>
-/// The tyre log's line for a day (#287): it owns the odometer reading typed with a swap, a past swap or a stretch on that day (one of the
+/// The tyre log's line for a day (#287): it owns the odometer reading typed with a swap, a past swap or an installation on that day (one of the
 /// car's readings, so it counts wherever the others do and is checked against them), and a note. One per vehicle and day, created only when
 /// a reading or a note is given. It is never trashed: clearing both deletes it, and clearing the reading deletes the reading for good, as
 /// clearing an expense's odometer does.

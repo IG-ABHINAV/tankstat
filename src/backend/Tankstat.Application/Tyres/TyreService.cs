@@ -18,19 +18,19 @@ public sealed record TyreSetInput(string Name, TyreSeason Season, string? Size, 
 /// <param name="Replace">A fitted set on a day that has a swap replaces it (as <see cref="TyreSwapInput.Replace"/>).</param>
 public sealed record NewTyreSet(Guid VehicleId, TyreSetInput Set, bool Fitted, DateOnly Day, long? Odometer, bool? PairOneFront, bool Replace = false);
 
-/// <param name="Replace">A swap logged on that day already is replaced (its stretch goes to the trash) instead of refused.</param>
+/// <param name="Replace">A swap logged on that day already is replaced (its installation goes to the trash) instead of refused.</param>
 public sealed record TyreSwapInput(Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note);
 
-public sealed record TyrePastSwap(DateOnly Day, Guid SetId, long? Odometer, Guid? StretchId = null);
+public sealed record TyrePastSwap(DateOnly Day, Guid SetId, long? Odometer, Guid? InstallationId = null);
 
 /// <param name="OdometerFrom">A reading for the first day, kept on that day's tyre log line; null leaves the day as it is.</param>
-public sealed record TyreStretchInput(DateOnly From, DateOnly? Until, bool? PairOneFront, long? OdometerFrom, long? OdometerUntil);
+public sealed record TyreInstallationInput(DateOnly From, DateOnly? Until, bool? PairOneFront, long? OdometerFrom, long? OdometerUntil);
 
-/// <summary>A stretch with its distance, worked out on read.</summary>
-public sealed record TyreStretchView(TyreStretch Stretch, StretchDistance Distance);
+/// <summary>An installation with its distance, worked out on read.</summary>
+public sealed record TyreInstallationView(TyreInstallation Installation, InstallationDistance Distance);
 
-/// <summary>A set with its figures and its live stretches (none while it is in the trash).</summary>
-public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyList<TyreStretchView> Stretches, bool OnTheCar);
+/// <summary>A set with its figures and its live installations (none while it is in the trash).</summary>
+public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyList<TyreInstallationView> Installations, bool OnTheCar);
 
 /// <summary>
 /// A vehicle's tyres as the Tyres tab shows them: the sets that are not in the trash and the tyre log's days, with the vehicle's readings
@@ -58,13 +58,13 @@ public sealed class TyreService(
         await guard.ForVehicleAsync(vehicleId, ct) is null ? null : Overview(vehicleId, await tyres.LoadAsync(vehicleId, ct));
 
     /// <param name="id">The set's id chosen by the client: an add sent again is answered with what it created.</param>
-    /// <param name="stretchId">The id of the stretch a fitted set starts with.</param>
-    public async Task<TyreOverview> AddSetAsync(NewTyreSet input, CancellationToken ct, Guid? id = null, Guid? stretchId = null)
+    /// <param name="installationId">The id of the installation a fitted set starts with.</param>
+    public async Task<TyreOverview> AddSetAsync(NewTyreSet input, CancellationToken ct, Guid? id = null, Guid? installationId = null)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        async Task<bool> Repeat() => await RepeatedSetAsync(id, vehicle.Id, by, ct) | await RepeatedAsync(book, stretchId, vehicle.Id, by, ct);
+        async Task<bool> Repeat() => await RepeatedSetAsync(id, vehicle.Id, by, ct) | await RepeatedAsync(book, installationId, vehicle.Id, by, ct);
         if (await Repeat()) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         RequireNotFuture(input.Day);
         RequireNotFuture(input.Set.Since);
@@ -75,7 +75,7 @@ public sealed class TyreService(
         if (input.Fitted)
         {
             var history = History(vehicle, book, extra: set);
-            save.Take(history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId));
+            save.Take(history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId));
             await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, note: null, keepNote: true, by, ct);
         }
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -90,7 +90,7 @@ public sealed class TyreService(
         RequireNotFuture(input.Since);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         set.Update(input.Name, input.Season, input.Size, input.Since, input.MadeWeek, input.MadeYear, by);
-        History(vehicle, book).Check(); // a later "in use since" may no longer fit its stretches
+        History(vehicle, book).Check(); // a later "in use since" may no longer fit its installations
         var save = new TyreSave();
         save.ChangedSets.Add(set);
         await SaveAsync(save, ct);
@@ -100,14 +100,14 @@ public sealed class TyreService(
 
     /// <summary>
     /// Sets the rough figure; <paramref name="until"/> (accepting a suggestion) moves the first day it does not cover. Without one it keeps
-    /// the day it had, else it covers the time before the set's first stretch (today when it has none), never time already measured.
+    /// the day it had, else it covers the time before the set's first installation (today when it has none), never time already measured.
     /// </summary>
     public async Task<TyreOverview> SetRoughAsync(Guid id, long distance, DateOnly? until, CancellationToken ct, int? expectedVersion = null)
     {
         var (vehicle, set, book) = await EditableSetAsync(id, ct);
         VersionCheck.Require(expectedVersion, set.Version);
         if (until is { } given) RequireNotFuture(given);
-        var first = book.Stretches.Where(s => s.SetId == id && !s.IsDeleted).Select(s => (DateOnly?)s.From).Min();
+        var first = book.Installations.Where(s => s.SetId == id && !s.IsDeleted).Select(s => (DateOnly?)s.From).Min();
         set.SetRough(distance, until ?? set.RoughUntil ?? first ?? Today, (await access.RequirePrincipalAsync(ct)).Id);
         var save = new TyreSave();
         save.ChangedSets.Add(set);
@@ -115,38 +115,38 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <param name="stretchId">The id of the stretch the swap creates, if it creates one: a swap sent again finds it and changes nothing.</param>
+    /// <param name="installationId">The id of the installation the swap creates, if it creates one: a swap sent again finds it and changes nothing.</param>
     /// <param name="repeat">Sent from a device's queue (the sync): the set already on the car that day with the pairs asked for is a retry's answer, not an error.</param>
-    public async Task<TyreOverview> SwapAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null, bool repeat = false)
+    public async Task<TyreOverview> SwapAsync(TyreSwapInput input, CancellationToken ct, Guid? installationId = null, bool repeat = false)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        Task<bool> Repeat() => RepeatedAsync(book, stretchId, vehicle.Id, by, ct);
+        Task<bool> Repeat() => RepeatedAsync(book, installationId, vehicle.Id, by, ct);
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
-        save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), stretchId, repeatable: repeat));
+        save.Take(History(vehicle, book).Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId, repeatable: repeat));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <param name="repeat">Sent from a device's queue (the sync): pairs already as asked on the day their stretch began are a retry's answer.
+    /// <param name="repeat">Sent from a device's queue (the sync): pairs already as asked on the day their installation began are a retry's answer.
     /// Online, they are <c>tyres.positionsUnchanged</c>.</param>
-    public async Task<TyreOverview> ChangePositionsAsync(TyreSwapInput input, CancellationToken ct, Guid? stretchId = null, bool repeat = false)
+    public async Task<TyreOverview> ChangePositionsAsync(TyreSwapInput input, CancellationToken ct, Guid? installationId = null, bool repeat = false)
     {
         var vehicle = await EditableVehicleAsync(input.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        Task<bool> Repeat() => RepeatedAsync(book, stretchId, vehicle.Id, by, ct);
+        Task<bool> Repeat() => RepeatedAsync(book, installationId, vehicle.Id, by, ct);
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave();
-        save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, stretchId, repeatable: repeat));
+        save.Take(History(vehicle, book).ChangePositions(set, input.Day, input.PairOneFront, by, installationId, repeatable: repeat));
         await SetDayAsync(vehicle, book, save, input.Day, input.Odometer, input.Note, keepNote: input.Note is null, by, ct);
         await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -162,14 +162,14 @@ public sealed class TyreService(
         if (rows.Count == 0) throw new DomainException("tyres.pastSwapsRequired", "Enter at least one swap.");
         if (rows.Count > MaxPastSwaps)
             throw new DomainException("tyres.pastSwapsTooMany", $"Enter at most {MaxPastSwaps} swaps at once.", new { Max = MaxPastSwaps });
-        // Each row creates a stretch of its own: two with one id could never both be saved (refused, so a device's change is parked, not stuck).
-        if (rows.Where(r => r.StretchId is not null).GroupBy(r => r.StretchId).Any(g => g.Count() > 1))
-            throw new DomainException("tyres.stretchIdTwice", "Two of these swaps carry the same id.");
+        // Each row creates an installation of its own: two with one id could never both be saved (refused, so a device's change is parked, not stuck).
+        if (rows.Where(r => r.InstallationId is not null).GroupBy(r => r.InstallationId).Any(g => g.Count() > 1))
+            throw new DomainException("tyres.installationIdTwice", "Two of these swaps carry the same id.");
         var book = await tyres.LoadAsync(vehicle.Id, ct);
         async Task<bool> Repeat()
         {
             var repeated = false;
-            foreach (var row in rows) repeated |= await RepeatedAsync(book, row.StretchId, vehicle.Id, by, ct);
+            foreach (var row in rows) repeated |= await RepeatedAsync(book, row.InstallationId, vehicle.Id, by, ct);
             return repeated;
         }
         if (await Repeat()) return Overview(vehicle.Id, book);
@@ -181,7 +181,7 @@ public sealed class TyreService(
         foreach (var row in rows.OrderBy(r => r.Day))
         {
             RequireNotFuture(row.Day);
-            save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.StretchId, pairsGiven: false, repeatable: repeat));
+            save.Take(history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.InstallationId, pairsGiven: false, repeatable: repeat));
             if (row.Odometer is not null) await SetDayAsync(vehicle, book, save, row.Day, row.Odometer, note: null, keepNote: true, by, ct);
         }
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -189,7 +189,7 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    public async Task<TyreOverview> AddStretchAsync(Guid setId, TyreStretchInput input, CancellationToken ct, Guid? id = null)
+    public async Task<TyreOverview> AddInstallationAsync(Guid setId, TyreInstallationInput input, CancellationToken ct, Guid? id = null)
     {
         var (vehicle, set, book) = await EditableSetAsync(setId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
@@ -197,48 +197,48 @@ public sealed class TyreService(
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireDays(input);
         var save = new TyreSave();
-        save.AddedStretches.Add(History(vehicle, book).Add(set, input.From, input.Until, input.PairOneFront, by, id));
-        await StretchReadingsAsync(vehicle, book, save, input, by, ct);
+        save.AddedInstallations.Add(History(vehicle, book).Add(set, input.From, input.Until, input.PairOneFront, by, id));
+        await InstallationReadingsAsync(vehicle, book, save, input, by, ct);
         await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    public async Task<TyreOverview> UpdateStretchAsync(Guid id, TyreStretchInput input, CancellationToken ct, int? expectedVersion = null)
+    public async Task<TyreOverview> UpdateInstallationAsync(Guid id, TyreInstallationInput input, CancellationToken ct, int? expectedVersion = null)
     {
-        var (vehicle, stretch, book) = await EditableStretchAsync(id, ct);
-        VersionCheck.Require(expectedVersion, stretch.Version);
+        var (vehicle, installation, book) = await EditableInstallationAsync(id, ct);
+        VersionCheck.Require(expectedVersion, installation.Version);
         RequireDays(input);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var save = new TyreSave();
-        if (History(vehicle, book).Edit(stretch, input.From, input.Until, input.PairOneFront, by)) save.ChangedStretches.Add(stretch);
-        await StretchReadingsAsync(vehicle, book, save, input, by, ct);
+        if (History(vehicle, book).Edit(installation, input.From, input.Until, input.PairOneFront, by)) save.ChangedInstallations.Add(installation);
+        await InstallationReadingsAsync(vehicle, book, save, input, by, ct);
         await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <summary>Moves a stretch to the trash; the reading of its day stays (it is one of the car's readings, on the tyre log's line).</summary>
-    public async Task<TyreOverview> TrashStretchAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    /// <summary>Moves an installation to the trash; the reading of its day stays (it is one of the car's readings, on the tyre log's line).</summary>
+    public async Task<TyreOverview> TrashInstallationAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {
-        var (vehicle, stretch, _) = await EditableStretchAsync(id, ct);
-        VersionCheck.Require(expectedVersion, stretch.Version);
-        stretch.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
+        var (vehicle, installation, _) = await EditableInstallationAsync(id, ct);
+        VersionCheck.Require(expectedVersion, installation.Version);
+        installation.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
         var save = new TyreSave();
-        save.ChangedStretches.Add(stretch);
+        save.ChangedInstallations.Add(installation);
         await SaveAsync(save, ct);
-        logger.LogDebug("Tyre stretch {StretchId} of vehicle {VehicleId} moved to the trash", id, vehicle.Id);
+        logger.LogDebug("Tyre installation {InstallationId} of vehicle {VehicleId} moved to the trash", id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    public async Task<TyreOverview> RestoreStretchAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    public async Task<TyreOverview> RestoreInstallationAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {
-        var (vehicle, stretch, book) = await EditableStretchAsync(id, ct, trashed: true);
-        VersionCheck.Require(expectedVersion, stretch.Version);
-        if (book.Sets.FirstOrDefault(s => s.Id == stretch.SetId) is not { IsDeleted: false })
-            throw new NotFoundException("tyres.stretchNotFound", $"Tyre stretch {id} does not exist.", new { Id = id }); // its set is in the trash: restore that
-        stretch.Restore((await access.RequirePrincipalAsync(ct)).Id);
-        History(vehicle, book).CheckRestored([stretch]);
+        var (vehicle, installation, book) = await EditableInstallationAsync(id, ct, trashed: true);
+        VersionCheck.Require(expectedVersion, installation.Version);
+        if (book.Sets.FirstOrDefault(s => s.Id == installation.SetId) is not { IsDeleted: false })
+            throw new NotFoundException("tyres.installationNotFound", $"Tyre installation {id} does not exist.", new { Id = id }); // its set is in the trash: restore that
+        installation.Restore((await access.RequirePrincipalAsync(ct)).Id);
+        History(vehicle, book).CheckRestored([installation]);
         var save = new TyreSave();
-        save.ChangedStretches.Add(stretch);
+        save.ChangedInstallations.Add(installation);
         await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -281,7 +281,7 @@ public sealed class TyreService(
         var (vehicle, set, book) = await EditableSetAsync(id, ct);
         VersionCheck.Require(expectedVersion, set.Version);
         RequireNotFuture(day);
-        if (book.Stretches.Any(s => s.SetId == id && !s.IsDeleted && (s.Until is null || s.Until > day)))
+        if (book.Installations.Any(s => s.SetId == id && !s.IsDeleted && (s.Until is null || s.Until > day)))
             throw new DomainException("tyres.retireOnCar", "A tyre set on the car cannot be retired; swap it off first.", new { Set = set.Name });
         set.Retire(day, (await access.RequirePrincipalAsync(ct)).Id);
         await SaveSetAsync(set, ct);
@@ -298,7 +298,7 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <summary>Moves a set to the trash; its stretches hide through it and come back with it (one trashed on its own before stays there).</summary>
+    /// <summary>Moves a set to the trash; its installations hide through it and come back with it (one trashed on its own before stays there).</summary>
     public async Task<TyreOverview> TrashSetAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {
         var (vehicle, set, _) = await EditableSetAsync(id, ct);
@@ -314,8 +314,8 @@ public sealed class TyreService(
         var (vehicle, set, book) = await EditableSetAsync(id, ct, trashed: true);
         VersionCheck.Require(expectedVersion, set.Version);
         set.Restore((await access.RequirePrincipalAsync(ct)).Id);
-        var history = new TyreHistory(vehicle.OwnerId, vehicle.Id, book.Sets, book.Stretches);
-        history.CheckRestored([.. history.Live.Where(s => s.SetId == id)]); // the set's own live stretches now count again
+        var history = new TyreHistory(vehicle.OwnerId, vehicle.Id, book.Sets, book.Installations);
+        history.CheckRestored([.. history.Live.Where(s => s.SetId == id)]); // the set's own live installations now count again
         await SaveSetAsync(set, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
@@ -324,12 +324,12 @@ public sealed class TyreService(
     public async Task<TyreSet?> SetInTrashAsync(Guid id, CancellationToken ct) =>
         await tyres.FindSetAsync(id, ct) is { IsDeleted: true } set && await guard.ForVehicleAsync(set.VehicleId, ct) is { Level: >= AccessLevel.Edit } ? set : null;
 
-    /// <summary>The stretch when it is in the trash (on its own, or with its set) and the user may restore it, else null.</summary>
-    public async Task<TyreStretch?> StretchInTrashAsync(Guid id, CancellationToken ct) =>
-        await tyres.FindStretchAsync(id, ct) is { } stretch
-        && (stretch.IsDeleted || await tyres.FindSetAsync(stretch.SetId, ct) is { IsDeleted: true })
-        && await guard.ForVehicleAsync(stretch.VehicleId, ct) is { Level: >= AccessLevel.Edit }
-            ? stretch
+    /// <summary>The installation when it is in the trash (on its own, or with its set) and the user may restore it, else null.</summary>
+    public async Task<TyreInstallation?> InstallationInTrashAsync(Guid id, CancellationToken ct) =>
+        await tyres.FindInstallationAsync(id, ct) is { } installation
+        && (installation.IsDeleted || await tyres.FindSetAsync(installation.SetId, ct) is { IsDeleted: true })
+        && await guard.ForVehicleAsync(installation.VehicleId, ct) is { Level: >= AccessLevel.Edit }
+            ? installation
             : null;
 
     public async Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(int skip, int take, CancellationToken ct, bool descending = true) =>
@@ -339,7 +339,7 @@ public sealed class TyreService(
 
     public async Task<int> CountDeletableTrashAsync(CancellationToken ct) => await tyres.CountTrashAsync(await access.LogScopeAsync(AccessLevel.Delete, ct), ct);
 
-    /// <summary>Permanently removes the trashed sets and stretches the user has Delete access to.</summary>
+    /// <summary>Permanently removes the trashed sets and installations the user has Delete access to.</summary>
     public async Task<int> EmptyTrashAsync(CancellationToken ct)
     {
         var user = await access.RequirePrincipalAsync(ct);
@@ -355,29 +355,29 @@ public sealed class TyreService(
 
     private static TyreOverview Overview(Guid vehicleId, TyreBook book)
     {
-        var live = book.Stretches.Where(s => !s.IsDeleted).ToList();
+        var live = book.Installations.Where(s => !s.IsDeleted).ToList();
         var sets = book.Sets.Where(s => !s.IsDeleted).OrderBy(s => s.IsRetired).ThenBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(s => s.Id)
             .Select(set =>
             {
                 var own = live.Where(s => s.SetId == set.Id).OrderByDescending(s => s.From).ToList();
                 return new TyreSetView(set, TyreCalculator.SetFigures(book.Readings, set, own),
-                    [.. own.Select(s => new TyreStretchView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen));
+                    [.. own.Select(s => new TyreInstallationView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen));
             })
             .ToList();
         return new TyreOverview(vehicleId, sets, [.. book.Days.OrderByDescending(d => d.Day)], book.Readings);
     }
 
     private static TyreHistory History(Vehicle vehicle, TyreBook book, TyreSet? extra = null) =>
-        new(vehicle.OwnerId, vehicle.Id, extra is null ? book.Sets : [.. book.Sets, extra], book.Stretches);
+        new(vehicle.OwnerId, vehicle.Id, extra is null ? book.Sets : [.. book.Sets, extra], book.Installations);
 
     /// <summary>
-    /// A change that creates a stretch with this id came again: it was applied already (same creator and vehicle), else the id is taken
+    /// A change that creates an installation with this id came again: it was applied already (same creator and vehicle), else the id is taken
     /// (<c>sync.idTaken</c>), looked up beyond the vehicle too.
     /// </summary>
     private async Task<bool> RepeatedAsync(TyreBook book, Guid? id, Guid vehicleId, Guid by, CancellationToken ct)
     {
         if (id is not { } given) return false;
-        if ((book.Stretches.FirstOrDefault(s => s.Id == given) ?? await tyres.FindStretchAsync(given, ct)) is not { } existing) return false;
+        if ((book.Installations.FirstOrDefault(s => s.Id == given) ?? await tyres.FindInstallationAsync(given, ct)) is not { } existing) return false;
         ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
         return true;
     }
@@ -421,7 +421,7 @@ public sealed class TyreService(
         else if (!save.ChangedDays.Contains(existing)) save.ChangedDays.Add(existing);
     }
 
-    private async Task StretchReadingsAsync(Vehicle vehicle, TyreBook book, TyreSave save, TyreStretchInput input, Guid by, CancellationToken ct)
+    private async Task InstallationReadingsAsync(Vehicle vehicle, TyreBook book, TyreSave save, TyreInstallationInput input, Guid by, CancellationToken ct)
     {
         if (input.OdometerFrom is not null) await SetDayAsync(vehicle, book, save, input.From, input.OdometerFrom, null, keepNote: true, by, ct);
         if (input.OdometerUntil is not null && input.Until is { } until) await SetDayAsync(vehicle, book, save, until, input.OdometerUntil, null, keepNote: true, by, ct);
@@ -484,7 +484,7 @@ public sealed class TyreService(
         if (day > LatestAllowedDate) throw new DomainException("refueling.dateInFuture", "The date cannot be in the future.");
     }
 
-    private void RequireDays(TyreStretchInput input)
+    private void RequireDays(TyreInstallationInput input)
     {
         RequireNotFuture(input.From);
         if (input.Until is { } until) RequireNotFuture(until);
@@ -504,16 +504,16 @@ public sealed class TyreService(
         return (vehicle, book.Sets.First(s => s.Id == id), book);
     }
 
-    private async Task<(Vehicle, TyreStretch, TyreBook)> EditableStretchAsync(Guid id, CancellationToken ct, bool trashed = false)
+    private async Task<(Vehicle, TyreInstallation, TyreBook)> EditableInstallationAsync(Guid id, CancellationToken ct, bool trashed = false)
     {
-        var stretch = await tyres.FindStretchAsync(id, ct);
-        NotFoundException Missing() => new("tyres.stretchNotFound", $"Tyre stretch {id} does not exist.", new { Id = id });
-        var vehicle = LogAccessGuard.RequireEdit(await guard.ForVehicleAsync(stretch?.VehicleId, ct), Missing).Vehicle;
+        var installation = await tyres.FindInstallationAsync(id, ct);
+        NotFoundException Missing() => new("tyres.installationNotFound", $"Tyre installation {id} does not exist.", new { Id = id });
+        var vehicle = LogAccessGuard.RequireEdit(await guard.ForVehicleAsync(installation?.VehicleId, ct), Missing).Vehicle;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        var loaded = book.Stretches.First(s => s.Id == id);
+        var loaded = book.Installations.First(s => s.Id == id);
         var setTrashed = book.Sets.First(s => s.Id == loaded.SetId).IsDeleted;
         if (setTrashed && !trashed) throw Missing(); // hidden through its set
-        if (loaded.IsDeleted != trashed) throw trashed ? new DomainException("tyres.stretchNotTrashed", "This stretch is not in the trash.") : Missing();
+        if (loaded.IsDeleted != trashed) throw trashed ? new DomainException("tyres.installationNotTrashed", "This installation is not in the trash.") : Missing();
         return (vehicle, loaded, book);
     }
 }

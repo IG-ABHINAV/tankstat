@@ -9,12 +9,12 @@ namespace Tankstat.Api.GraphQL;
 /// <param name="RoughDistance">What a used set ran before it is tracked, roughly, in the vehicle's distance unit (0 or left out for a new set).</param>
 /// <param name="Fitted">On the car from <paramref name="Day"/> (a swap that day); else in storage.</param>
 /// <param name="Day">The day tracking starts (the device's today): the rough figure stands for the time before it.</param>
-/// <param name="Replace">A fitted set on a day that has a swap replaces that swap (its stretch goes to the trash) instead of being refused.</param>
+/// <param name="Replace">A fitted set on a day that has a swap replaces that swap (its installation goes to the trash) instead of being refused.</param>
 /// <param name="Id">The set's id chosen by the client: the same add sent again answers with what it created.</param>
-/// <param name="StretchId">The id of the stretch a fitted set starts with.</param>
+/// <param name="InstallationId">The id of the installation a fitted set starts with.</param>
 public sealed record AddTyreSetInput(
     Guid VehicleId, string Name, TyreSeason Season, string? Size, DateOnly Since, int? MadeWeek, int? MadeYear, bool Fitted, DateOnly Day,
-    long RoughDistance = 0, long? Odometer = null, bool? PairOneFront = null, bool Replace = false, Guid? Id = null, Guid? StretchId = null);
+    long RoughDistance = 0, long? Odometer = null, bool? PairOneFront = null, bool Replace = false, Guid? Id = null, Guid? InstallationId = null);
 
 /// <param name="Day">The device's today.</param>
 public sealed record RetireTyreSetInput(Guid Id, DateOnly Day);
@@ -27,27 +27,27 @@ public sealed record SetTyreRoughDistanceInput(Guid Id, long Distance, DateOnly?
 /// <param name="PairOneFront">True: pair 1 at the front; false: pair 2 at the front; null: not recorded ("Not sure").</param>
 /// <param name="Replace">A swap logged on that day already is replaced instead of refused with <c>tyres.swapExists</c>.</param>
 /// <param name="Odometer">The reading of that day, kept on the tyre log's line for it as one of the car's readings.</param>
-/// <param name="StretchId">The id of the stretch it creates, if it creates one: the same change sent again changes nothing.</param>
+/// <param name="InstallationId">The id of the installation it creates, if it creates one: the same change sent again changes nothing.</param>
 public sealed record SwapTyresInput(
-    Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront = null, bool Replace = false, long? Odometer = null, string? Note = null, Guid? StretchId = null);
+    Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront = null, bool Replace = false, long? Odometer = null, string? Note = null, Guid? InstallationId = null);
 
-public sealed record PastTyreSwapInput(DateOnly Day, Guid SetId, long? Odometer = null, Guid? StretchId = null);
+public sealed record PastTyreSwapInput(DateOnly Day, Guid SetId, long? Odometer = null, Guid? InstallationId = null);
 
 /// <param name="Swaps">One per day (two on one day are refused), 1 to 25, applied in day order, all or nothing.</param>
 public sealed record AddPastTyreSwapsInput(Guid VehicleId, IReadOnlyList<PastTyreSwapInput> Swaps, bool Replace = false);
 
 /// <param name="OdometerFrom">A reading for the first day, kept on that day's tyre log line; left out leaves the day as it is.</param>
-public sealed record AddTyreStretchInput(
+public sealed record AddTyreInstallationInput(
     Guid SetId, DateOnly From, DateOnly? Until = null, bool? PairOneFront = null, long? OdometerFrom = null, long? OdometerUntil = null, Guid? Id = null);
 
-public sealed record UpdateTyreStretchInput(
+public sealed record UpdateTyreInstallationInput(
     Guid Id, DateOnly From, DateOnly? Until = null, bool? PairOneFront = null, long? OdometerFrom = null, long? OdometerUntil = null);
 
 /// <param name="Odometer">The reading; left out clears it (for good). A day left with neither a reading nor a note is deleted.</param>
 /// <param name="Id">The id of the line if it is created (the client's).</param>
 public sealed record SetTyreLogDayInput(Guid VehicleId, DateOnly Day, long? Odometer = null, string? Note = null, Guid? Id = null);
 
-/// <summary>The stored set; the stretch, the reading and the version's bookkeeping stay internal.</summary>
+/// <summary>The stored set; the installation, the reading and the version's bookkeeping stay internal.</summary>
 public sealed class TyreSetType : ObjectType<TyreSet>
 {
     protected override void Configure(IObjectTypeDescriptor<TyreSet> descriptor)
@@ -57,9 +57,9 @@ public sealed class TyreSetType : ObjectType<TyreSet>
     }
 }
 
-public sealed class TyreStretchType : ObjectType<TyreStretch>
+public sealed class TyreInstallationType : ObjectType<TyreInstallation>
 {
-    protected override void Configure(IObjectTypeDescriptor<TyreStretch> descriptor)
+    protected override void Configure(IObjectTypeDescriptor<TyreInstallation> descriptor)
     {
         descriptor.Ignore(s => s.SavedVersion);
         descriptor.Ignore(s => s.IsDeleted);
@@ -100,9 +100,9 @@ public sealed class TyreSetViewType : ObjectType<TyreSetView>
     protected override void Configure(IObjectTypeDescriptor<TyreSetView> descriptor) => descriptor.Name("TyreSetInfo");
 }
 
-public sealed class TyreStretchViewType : ObjectType<TyreStretchView>
+public sealed class TyreInstallationViewType : ObjectType<TyreInstallationView>
 {
-    protected override void Configure(IObjectTypeDescriptor<TyreStretchView> descriptor) => descriptor.Name("TyreStretchInfo");
+    protected override void Configure(IObjectTypeDescriptor<TyreInstallationView> descriptor) => descriptor.Name("TyreInstallationInfo");
 }
 
 [ExtendObjectType<TyreSet>]
@@ -126,10 +126,10 @@ public sealed class TyreTrashRowExtensions
 [ExtendObjectType(OperationTypeNames.Query)]
 public sealed class TyreQueries
 {
-    /// <summary>A vehicle's tyre sets, their stretches and the tyre log's days; null when the vehicle cannot be seen.</summary>
+    /// <summary>A vehicle's tyre sets, their installations and the tyre log's days; null when the vehicle cannot be seen.</summary>
     public Task<TyreOverview?> GetVehicleTyres(Guid vehicleId, [Service] TyreService tyres, CancellationToken ct) => tyres.OverviewAsync(vehicleId, ct);
 
-    /// <summary>The trashed tyre sets and the trashed stretches of sets not in the trash, by when they were trashed (newest first by default).</summary>
+    /// <summary>The trashed tyre sets and the trashed installations of sets not in the trash, by when they were trashed (newest first by default).</summary>
     public Task<IReadOnlyList<TyreTrashRow>> GetTyreTrash(
         [Service] TyreService tyres, CancellationToken ct,
         TyreTrashSortField orderBy = TyreTrashSortField.DeletedAt, Tankstat.Domain.SortDirection direction = Tankstat.Domain.SortDirection.Desc,
@@ -152,20 +152,20 @@ public sealed class TyreMutations
     public Task<TyreOverview> SetTyreRoughDistance(SetTyreRoughDistanceInput input, [Service] TyreService tyres, CancellationToken ct) =>
         tyres.SetRoughAsync(input.Id, input.Distance, input.Until, ct);
 
-    public Task<TyreOverview> SwapTyres(SwapTyresInput input, [Service] TyreService tyres, CancellationToken ct) => tyres.SwapAsync(TyreChanges.Swap(input), ct, input.StretchId);
+    public Task<TyreOverview> SwapTyres(SwapTyresInput input, [Service] TyreService tyres, CancellationToken ct) => tyres.SwapAsync(TyreChanges.Swap(input), ct, input.InstallationId);
 
     public Task<TyreOverview> ChangeTyrePositions(SwapTyresInput input, [Service] TyreService tyres, CancellationToken ct) =>
-        tyres.ChangePositionsAsync(TyreChanges.Swap(input), ct, input.StretchId);
+        tyres.ChangePositionsAsync(TyreChanges.Swap(input), ct, input.InstallationId);
 
     public Task<TyreOverview> AddPastTyreSwaps(AddPastTyreSwapsInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.Past(input, tyres, ct);
 
-    public Task<TyreOverview> AddTyreStretch(AddTyreStretchInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.AddStretch(input, tyres, ct);
+    public Task<TyreOverview> AddTyreInstallation(AddTyreInstallationInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.AddInstallation(input, tyres, ct);
 
-    public Task<TyreOverview> UpdateTyreStretch(UpdateTyreStretchInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.UpdateStretch(input, tyres, ct);
+    public Task<TyreOverview> UpdateTyreInstallation(UpdateTyreInstallationInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.UpdateInstallation(input, tyres, ct);
 
-    public Task<TyreOverview> DeleteTyreStretch(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.TrashStretchAsync(id, ct);
+    public Task<TyreOverview> DeleteTyreInstallation(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.TrashInstallationAsync(id, ct);
 
-    public Task<TyreOverview> RestoreTyreStretch(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreStretchAsync(id, ct);
+    public Task<TyreOverview> RestoreTyreInstallation(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreInstallationAsync(id, ct);
 
     public Task<TyreOverview> SetTyreLogDay(SetTyreLogDayInput input, [Service] TyreService tyres, CancellationToken ct) =>
         tyres.SetLogDayAsync(input.VehicleId, input.Day, input.Odometer, input.Note, ct, input.Id);
@@ -179,7 +179,7 @@ public sealed class TyreMutations
 
     public Task<TyreOverview> RestoreTyreSet(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreSetAsync(id, ct);
 
-    /// <summary>Permanently removes the trashed tyre sets and stretches the user has Delete access to; returns how many rows of the list went.</summary>
+    /// <summary>Permanently removes the trashed tyre sets and installations the user has Delete access to; returns how many rows of the list went.</summary>
     public Task<int> EmptyTyreTrash([Service] TyreService tyres, CancellationToken ct) => tyres.EmptyTrashAsync(ct);
 }
 
@@ -190,17 +190,17 @@ internal static class TyreChanges
 
     public static Task<TyreOverview> Add(AddTyreSetInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddSetAsync(new NewTyreSet(i.VehicleId, new TyreSetInput(i.Name, i.Season, i.Size, i.Since, i.MadeWeek, i.MadeYear, i.RoughDistance), i.Fitted, i.Day, i.Odometer, i.PairOneFront, i.Replace),
-            ct, i.Id, i.StretchId);
+            ct, i.Id, i.InstallationId);
 
     public static Task<TyreOverview> Update(UpdateTyreSetInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
         tyres.UpdateSetAsync(i.Id, new TyreSetInput(i.Name, i.Season, i.Size, i.Since, i.MadeWeek, i.MadeYear), ct, version);
 
     public static Task<TyreOverview> Past(AddPastTyreSwapsInput i, TyreService tyres, CancellationToken ct, bool repeat = false) =>
-        tyres.AddPastSwapsAsync(i.VehicleId, [.. i.Swaps.Select(s => new TyrePastSwap(s.Day, s.SetId, s.Odometer, s.StretchId))], i.Replace, ct, repeat);
+        tyres.AddPastSwapsAsync(i.VehicleId, [.. i.Swaps.Select(s => new TyrePastSwap(s.Day, s.SetId, s.Odometer, s.InstallationId))], i.Replace, ct, repeat);
 
-    public static Task<TyreOverview> AddStretch(AddTyreStretchInput i, TyreService tyres, CancellationToken ct) =>
-        tyres.AddStretchAsync(i.SetId, new TyreStretchInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, i.Id);
+    public static Task<TyreOverview> AddInstallation(AddTyreInstallationInput i, TyreService tyres, CancellationToken ct) =>
+        tyres.AddInstallationAsync(i.SetId, new TyreInstallationInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, i.Id);
 
-    public static Task<TyreOverview> UpdateStretch(UpdateTyreStretchInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
-        tyres.UpdateStretchAsync(i.Id, new TyreStretchInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, version);
+    public static Task<TyreOverview> UpdateInstallation(UpdateTyreInstallationInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
+        tyres.UpdateInstallationAsync(i.Id, new TyreInstallationInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, version);
 }

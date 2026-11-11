@@ -132,7 +132,7 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), sh
   await expect(winter.getByRole('button', { name: 'Swap tyres' })).toBeVisible() // on the car now
   await expectSoundLayout(page) // the tab with its marks
 
-  // The stretch the swap cut, moved to the trash: made on what a waiting change changed.
+  // The installation the swap cut, moved to the trash: made on what a waiting change changed.
   await summer.getByRole('button', { name: 'History' }).click()
   const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
   await history.getByRole('button', { name: 'Move to the trash' }).click()
@@ -154,12 +154,12 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), sh
 
   await context.setOffline(false)
   // Once the server answers again the device sends the four changes in order: every one applied, none parked.
-  type Tyres = { vehicleTyres: { sets: { onTheCar: boolean; set: { name: string; isRetired: boolean }; stretches: { stretch: { from: string } }[] }[]; days: { day: string; odometer: number | null }[] } }
+  type Tyres = { vehicleTyres: { sets: { onTheCar: boolean; set: { name: string; isRetired: boolean }; installations: { installation: { from: string } }[] }[]; days: { day: string; odometer: number | null }[] } }
   await expect
     .poll(
       async () => {
-        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { name isRetired } stretches { stretch { from } } } days { day odometer } } }', { v: vehicle.id })
-        return { sets: vehicleTyres.sets.map((s) => [s.set.name, s.onTheCar, s.set.isRetired, s.stretches.length]), days: vehicleTyres.days }
+        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { name isRetired } installations { installation { from } } } days { day odometer } } }', { v: vehicle.id })
+        return { sets: vehicleTyres.sets.map((s) => [s.set.name, s.onTheCar, s.set.isRetired, s.installations.length]), days: vehicleTyres.days }
       },
       { timeout: 60_000 },
     )

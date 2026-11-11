@@ -22,7 +22,7 @@ import {
   TrashDocument,
   EmptyTyreTrashDocument,
   RestoreTyreSetDocument,
-  RestoreTyreStretchDocument,
+  RestoreTyreInstallationDocument,
   TyreTrashDocument,
   type TyreTrashQuery,
   type TyreTrashQueryVariables,
@@ -275,7 +275,7 @@ function ExpenseTrash({ run, setNotice }: Shared) {
 }
 
 /**
- * Tyre sets and stretches in the trash (#287): a set comes back with its stretches, a stretch alone; a restore that no longer fits the
+ * Tyre sets and installations in the trash (#287): a set comes back with its installations, an installation alone; a restore that no longer fits the
  * history is refused with the server's reason (`tyres.restoreConflict`), shown in the page's alert. Online only until #287's part 4.
  */
 function TyreTrash({ run, setNotice }: Shared) {
@@ -283,9 +283,9 @@ function TyreTrash({ run, setNotice }: Shared) {
   const format = useFormat()
   const tyreRefetch = { refetchQueries: ['TyreTrash', 'VehicleTyres'], awaitRefetchQueries: true }
   const [restoreSet] = useMutation(RestoreTyreSetDocument, tyreRefetch)
-  const [restoreStretch] = useMutation(RestoreTyreStretchDocument, tyreRefetch)
+  const [restoreInstallation] = useMutation(RestoreTyreInstallationDocument, tyreRefetch)
   const [emptyTrash] = useMutation(EmptyTyreTrashDocument, tyreRefetch)
-  const what = useCallback((r: TyreRow) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName })), [t])
+  const what = useCallback((r: TyreRow) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.installation', { set: r.setName })), [t])
 
   const columns = useMemo<GridColumn<TyreRow, TyreTrashQueryVariables, TyreTrashSortField>[]>(() => {
     const none = t('common.none')
@@ -296,7 +296,7 @@ function TyreTrash({ run, setNotice }: Shared) {
         label: 'trash.tyres.when',
         cell: (r) =>
           r.kind === 'SET'
-            ? t('trash.tyres.withStretches', { count: r.stretchCount })
+            ? t('trash.tyres.withInstallations', { count: r.installationCount })
             : r.from && r.until
               ? t('trash.tyres.range', { from: format.date(r.from), until: format.date(r.until) })
               : r.from
@@ -331,7 +331,7 @@ function TyreTrash({ run, setNotice }: Shared) {
         <Button
           variant="soft"
           aria-label={t('trash.restoreAria', { name: what(r) })}
-          onClick={() => void run(() => (r.kind === 'SET' ? restoreSet({ variables: { id: r.id } }) : restoreStretch({ variables: { id: r.id } })))}
+          onClick={() => void run(() => (r.kind === 'SET' ? restoreSet({ variables: { id: r.id } }) : restoreInstallation({ variables: { id: r.id } })))}
         >
           {t('trash.restore')}
         </Button>

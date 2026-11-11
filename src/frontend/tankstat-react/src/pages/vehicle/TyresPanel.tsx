@@ -168,10 +168,10 @@ function SetCard({
   const run = useTyreMutation(vehicleId)
   const [error, setError] = useState<unknown>()
   const { set, figures } = info
-  const open = info.stretches.find((s) => s.stretch.until == null)
-  const last = info.stretches[0]?.stretch
-  const measuredFrom = info.stretches.length > 0 ? info.stretches[info.stretches.length - 1].stretch.from : null
-  const nothingMeasured = !tyres.hasReadings || (info.stretches.length > 0 && info.stretches.every((s) => s.distance.measure === 'NOT_MEASURED'))
+  const open = info.installations.find((s) => s.installation.until == null)
+  const last = info.installations[0]?.installation
+  const measuredFrom = info.installations.length > 0 ? info.installations[info.installations.length - 1].installation.from : null
+  const nothingMeasured = !tyres.hasReadings || (info.installations.length > 0 && info.installations.every((s) => s.distance.measure === 'NOT_MEASURED'))
 
   const retire = async () => {
     setError(undefined)
@@ -202,9 +202,9 @@ function SetCard({
           ? t('tyres.retiredOn', { date: format.date(set.retiredOn) })
           : open
             ? t('tyres.onSince', {
-                date: format.date(open.stretch.from),
+                date: format.date(open.installation.from),
                 distance: pending ? t('tyres.updatedOnSync') : words.distance(open.distance.distance, open.distance.approximate),
-                pairs: words.pairs(open.stretch.pairOneFront),
+                pairs: words.pairs(open.installation.pairOneFront),
               })
             : t('tyres.storedLast', { pairs: words.pairs(last?.pairOneFront) })}
       </Typography>
@@ -278,7 +278,7 @@ function SetCard({
 }
 
 /**
- * A line per day a set went on (from the stretches) and per day with only a reading or a note left (its stretches in the trash), newest
+ * A line per day a set went on (from the installations) and per day with only a reading or a note left (its installations in the trash), newest
  * first. A day's note shows on its line; a line with a reading or a note has the pencil, which edits or clears both (the owner's choice).
  */
 function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: string; unit: DistanceUnit; canLog: boolean }) {
@@ -288,11 +288,11 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
   const sorted = sortedReadings(tyres.readings)
   const lines = new Map<string, { day: string; title: string; sub: string }>()
   for (const info of tyres.sets)
-    for (const s of info.stretches) {
-      const key = `${s.stretch.from}|${info.set.id}`
+    for (const s of info.installations) {
+      const key = `${s.installation.from}|${info.set.id}`
       if (lines.has(key)) continue
-      const pairs = s.stretch.pairOneFront == null ? t('tyres.wholeSet') : t('tyres.wholeSetPairs', { pairs: words.pairs(s.stretch.pairOneFront) })
-      lines.set(key, { day: s.stretch.from, title: t('tyres.onTheCarLine', { set: info.set.name }), sub: pairs })
+      const pairs = s.installation.pairOneFront == null ? t('tyres.wholeSet') : t('tyres.wholeSetPairs', { pairs: words.pairs(s.installation.pairOneFront) })
+      lines.set(key, { day: s.installation.from, title: t('tyres.onTheCarLine', { set: info.set.name }), sub: pairs })
     }
   for (const d of tyres.days)
     if (![...lines.values()].some((l) => l.day === d.day)) lines.set(`${d.day}|`, { day: d.day, title: d.odometer != null ? t('tyres.readingOnly') : t('tyres.noteOnly'), sub: '' })

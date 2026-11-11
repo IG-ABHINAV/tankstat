@@ -554,12 +554,12 @@ it('merging a vehicle takes the other value into a text field and a choice alike
 it('a tyre swap waiting here is named by its set and day; one the server parked because another swap got there first can replace it (#287)', async () => {
   await downloaded()
   await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v1' }), {
-    vehicleTyres: { vehicleId: 'v1', sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, stretches: [] }], days: [], readings: [], hasReadings: false },
+    vehicleTyres: { vehicleId: 'v1', sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, installations: [] }], days: [], readings: [], hasReadings: false },
   })
-  const swap = { vehicleId: 'v1', setId: 's2', day: '2026-10-20', pairOneFront: null, replace: false, odometer: null, note: null, stretchId: 'st1' }
+  const swap = { vehicleId: 'v1', setId: 's2', day: '2026-10-20', pairOneFront: null, replace: false, odometer: null, note: null, installationId: 'st1' }
   await outbox.enqueue({ id: 'w1', entity: 'tyres', action: 'swapTyres', vehicleId: 'v1', targetId: 'st1', input: swap })
   connectivity.reset()
-  const parkedSwap = parkedRow('p1', 'SWAP_TYRES', { id: 'p1', swapTyres: { ...swap, stretchId: 'st0', day: '2026-10-06' } }, 'tyres.swapExists', { targetId: 'st0' })
+  const parkedSwap = parkedRow('p1', 'SWAP_TYRES', { id: 'p1', swapTyres: { ...swap, installationId: 'st0', day: '2026-10-06' } }, 'tyres.swapExists', { targetId: 'st0' })
   parkedSwap.reason = { __typename: 'SyncReasonInfo', key: 'tyres.swapExists', args: [{ __typename: 'SyncReasonArg', name: 'date', value: '2026-10-06' }, { __typename: 'SyncReasonArg', name: 'set', value: 'Michelin Primacy 4' }] } as never
   const resolved: unknown[] = []
   server.use(
@@ -585,5 +585,5 @@ it('a tyre swap waiting here is named by its set and day; one the server parked 
   await ui.click(within(confirm).getByRole('button', { name: 'Replace the swap' }))
 
   expect(await screen.findByText('Applied.')).toBeInTheDocument()
-  expect(resolved).toEqual([{ id: 'p1', action: 'APPLY', change: { id: 'p1', expectedVersion: null, swapTyres: { ...swap, stretchId: 'st0', day: '2026-10-06', replace: true } } }])
+  expect(resolved).toEqual([{ id: 'p1', action: 'APPLY', change: { id: 'p1', expectedVersion: null, swapTyres: { ...swap, installationId: 'st0', day: '2026-10-06', replace: true } } }])
 })

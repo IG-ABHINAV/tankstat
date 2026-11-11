@@ -17,13 +17,13 @@ import { FieldDate } from '../forms/FieldDate.tsx'
 import { FieldInput } from '../forms/FieldInput.tsx'
 import { Form } from '../forms/Form.tsx'
 import {
-  AddTyreStretchDocument,
+  AddTyreInstallationDocument,
   DeleteTyreSetDocument,
-  DeleteTyreStretchDocument,
+  DeleteTyreInstallationDocument,
   RestoreTyreSetDocument,
-  RestoreTyreStretchDocument,
+  RestoreTyreInstallationDocument,
   SetTyreRoughDistanceDocument,
-  UpdateTyreStretchDocument,
+  UpdateTyreInstallationDocument,
   type DistanceUnit,
 } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
@@ -31,11 +31,11 @@ import { ErrorMessage } from '../messages.tsx'
 import { TyreSetDialog } from './TyreSetDialog.tsx'
 import { OfflineNote } from '../components/OfflineNote.tsx'
 import { todayIso } from '../forms/dates.ts'
-import { type Tyres, type TyreSetInfo, type TyreStretchInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
+import { type Tyres, type TyreSetInfo, type TyreInstallationInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 /**
- * A set's history (#287): its figures (the distance and how it is made up, each pair's front and rear share) and every stretch on the car
- * with its distance; whoever may log changes, adds or moves a stretch to the trash (its day's reading stays: one of the car's readings),
+ * A set's history (#287): its figures (the distance and how it is made up, each pair's front and rear share) and every installation on the car
+ * with its distance; whoever may log changes, adds or moves an installation to the trash (its day's reading stays: one of the car's readings),
  * changes the rough figure, or moves the set to the trash. Every change is checked by the server; a refusal says why.
  */
 export function HistoryDialog({
@@ -56,7 +56,7 @@ export function HistoryDialog({
   const { t } = useTranslation()
   const format = useFormat()
   const words = useTyreWords(unit)
-  const stretchDistance = useStretchDistance(unit)
+  const installationDistance = useInstallationDistance(unit)
   const readingText = useReadingText(unit)
   const notify = useTyreToasts()
   const run = useTyreMutation(vehicleId)
@@ -65,13 +65,13 @@ export function HistoryDialog({
   const info = tyres.sets.find((s) => s.set.id === setId)
   if (!info) return <DialogTrigger trigger={trigger} open={false} onOpen={() => undefined} />
   const { set, figures } = info
-  const measuredFrom = info.stretches.length > 0 ? info.stretches[info.stretches.length - 1].stretch.from : null
+  const measuredFrom = info.installations.length > 0 ? info.installations[info.installations.length - 1].installation.from : null
 
-  const trashStretch = async (stretch: TyreStretchInfo['stretch']) => {
+  const trashInstallation = async (installation: TyreInstallationInfo['installation']) => {
     setError(undefined)
     try {
-      const saved = await run(DeleteTyreStretchDocument, { id: stretch.id })
-      notify.undoable(saved, t('tyres.toast.trashed'), () => run(RestoreTyreStretchDocument, { id: stretch.id }))
+      const saved = await run(DeleteTyreInstallationDocument, { id: installation.id })
+      notify.undoable(saved, t('tyres.toast.trashed'), () => run(RestoreTyreInstallationDocument, { id: installation.id }))
     } catch (err) {
       setError(err)
     }
@@ -125,37 +125,37 @@ export function HistoryDialog({
                 {t('tyres.history')}
               </Typography>
               <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-                {info.stretches.map((s) => (
-                  <Box component="li" key={s.stretch.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
+                {info.installations.map((s) => (
+                  <Box component="li" key={s.installation.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {t('tyres.dialogs.stretchLine', { pairs: words.pairs(s.stretch.pairOneFront) })}
+                        {t('tyres.dialogs.installationLine', { pairs: words.pairs(s.installation.pairOneFront) })}
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {t('tyres.dialogs.stretchRange', {
-                          from: format.date(s.stretch.from),
-                          until: s.stretch.until ? format.date(s.stretch.until) : t('tyres.dialogs.now'),
-                          distance: stretchDistance(s, format.date(tyres.readings[0]?.date ?? s.stretch.from)),
+                        {t('tyres.dialogs.installationRange', {
+                          from: format.date(s.installation.from),
+                          until: s.installation.until ? format.date(s.installation.until) : t('tyres.dialogs.now'),
+                          distance: installationDistance(s, format.date(tyres.readings[0]?.date ?? s.installation.from)),
                         })}
                       </Typography>
                     </Box>
                     {canLog && (
                       <>
-                        <StretchDialog
+                        <InstallationDialog
                           vehicleId={vehicleId}
                           unit={unit}
                           tyres={tyres}
                           setId={set.id}
-                          stretch={s.stretch}
+                          installation={s.installation}
                           trigger={
                             <IconAction label={t('tyres.dialogs.edit')}>
                               <Pencil size={16} aria-hidden />
                             </IconAction>
                           }
                         />
-                        <TrashStretch
-                          text={`${t('tyres.dialogs.trashStretchText', { set: set.name, from: format.date(s.stretch.from) })}${readingText(tyres, s.stretch.from)}`}
-                          onConfirm={() => void trashStretch(s.stretch)}
+                        <TrashInstallation
+                          text={`${t('tyres.dialogs.trashInstallationText', { set: set.name, from: format.date(s.installation.from) })}${readingText(tyres, s.installation.from)}`}
+                          onConfirm={() => void trashInstallation(s.installation)}
                         />
                       </>
                     )}
@@ -167,7 +167,7 @@ export function HistoryDialog({
             {canLog && (
               <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
                 <TyreSetDialog vehicleId={vehicleId} unit={unit} edit={set} trigger={<Button variant="soft" startIcon={<Pencil size={16} aria-hidden />}>{t('tyres.dialogs.editSet')}</Button>} />
-                <StretchDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} trigger={<Button variant="soft" startIcon={<Plus size={16} aria-hidden />}>{t('tyres.dialogs.stretchAdd')}</Button>} />
+                <InstallationDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} trigger={<Button variant="soft" startIcon={<Plus size={16} aria-hidden />}>{t('tyres.dialogs.installationAdd')}</Button>} />
                 <ConfirmDialog
                   trigger={
                     <Button variant="soft" color="error" startIcon={<Trash2 size={16} aria-hidden />}>
@@ -201,11 +201,11 @@ export function HistoryDialog({
   )
 }
 
-/** A stretch's distance in words: measured (≈ when worked out), counted from the fuel log's start, or not measured. */
-function useStretchDistance(unit: DistanceUnit) {
+/** An installation's distance in words: measured (≈ when worked out), counted from the fuel log's start, or not measured. */
+function useInstallationDistance(unit: DistanceUnit) {
   const { t } = useTranslation()
   const words = useTyreWords(unit)
-  return (s: TyreStretchInfo, logStart: string) =>
+  return (s: TyreInstallationInfo, logStart: string) =>
     s.distance.measure === 'NOT_MEASURED'
       ? t('tyres.notMeasured')
       : s.distance.measure === 'FROM_FIRST_READING'
@@ -213,17 +213,17 @@ function useStretchDistance(unit: DistanceUnit) {
         : words.distance(s.distance.distance, s.distance.approximate)
 }
 
-/** A sentence about the reading typed on a stretch's first day, which stays when the stretch goes (#287 Q1). */
+/** A sentence about the reading typed on an installation's first day, which stays when the installation goes (#287 Q1). */
 function useReadingText(unit: DistanceUnit) {
   const { t } = useTranslation()
   const words = useTyreWords(unit)
   return (tyres: Tyres, day: string) => {
     const typed = tyres.days.find((d) => d.day === day)?.odometer
-    return typed == null ? '' : ` ${t('tyres.dialogs.trashStretchReading', { value: words.distance(typed) })}`
+    return typed == null ? '' : ` ${t('tyres.dialogs.trashInstallationReading', { value: words.distance(typed) })}`
   }
 }
 
-function TrashStretch({ text, onConfirm }: { text: string; onConfirm: () => void }) {
+function TrashInstallation({ text, onConfirm }: { text: string; onConfirm: () => void }) {
   const { t } = useTranslation()
   return (
     <ConfirmDialog
@@ -232,7 +232,7 @@ function TrashStretch({ text, onConfirm }: { text: string; onConfirm: () => void
           <Trash2 size={16} aria-hidden />
         </IconAction>
       }
-      title={t('tyres.dialogs.trashStretchTitle')}
+      title={t('tyres.dialogs.trashInstallationTitle')}
       description={text}
       confirmLabel={t('tyres.dialogs.toTrash')}
       onConfirm={onConfirm}
@@ -244,21 +244,21 @@ type Pairs = 'none' | 'one' | 'two'
 const pairsValue = (p: boolean | null | undefined): Pairs => (p === true ? 'one' : p === false ? 'two' : 'none')
 const pairsOf = (v: Pairs) => (v === 'one' ? true : v === 'two' ? false : null)
 
-/** Adds a stretch to a set's history, or changes one: its days, its pairs, and the readings of its days (kept on the tyre log's lines). */
-function StretchDialog({
+/** Adds an installation to a set's history, or changes one: its days, its pairs, and the readings of its days (kept on the tyre log's lines). */
+function InstallationDialog({
   trigger,
   vehicleId,
   unit,
   tyres,
   setId,
-  stretch,
+  installation,
 }: {
   trigger: ReactNode
   vehicleId: string
   unit: DistanceUnit
   tyres: Tyres
   setId: string
-  stretch?: TyreStretchInfo['stretch']
+  installation?: TyreInstallationInfo['installation']
 }) {
   const { t } = useTranslation()
   const notify = useTyreToasts()
@@ -266,9 +266,9 @@ function StretchDialog({
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
   const id = useClientId(open)
-  const [from, setFrom] = useState(stretch?.from ?? '')
-  const [until, setUntil] = useState(stretch?.until ?? '')
-  const [pairs, setPairs] = useState<Pairs>(pairsValue(stretch?.pairOneFront))
+  const [from, setFrom] = useState(installation?.from ?? '')
+  const [until, setUntil] = useState(installation?.until ?? '')
+  const [pairs, setPairs] = useState<Pairs>(pairsValue(installation?.pairOneFront))
   const [error, setError] = useState<unknown>()
   const [busy, setBusy] = useState(false)
 
@@ -286,9 +286,9 @@ function StretchDialog({
     setBusy(true)
     setError(undefined)
     try {
-      const saved = stretch
-        ? await run(UpdateTyreStretchDocument, { input: { id: stretch.id, ...values } })
-        : await run(AddTyreStretchDocument, { input: { id, setId, ...values } })
+      const saved = installation
+        ? await run(UpdateTyreInstallationDocument, { input: { id: installation.id, ...values } })
+        : await run(AddTyreInstallationDocument, { input: { id, setId, ...values } })
       setOpen(false)
       notify.saved(saved, t('toast.saved'))
     } catch (err) {
@@ -305,15 +305,15 @@ function StretchDialog({
         open={open}
         onClose={() => setOpen(false)}
         onClosed={() => {
-          setFrom(stretch?.from ?? '')
-          setUntil(stretch?.until ?? '')
-          setPairs(pairsValue(stretch?.pairOneFront))
+          setFrom(installation?.from ?? '')
+          setUntil(installation?.until ?? '')
+          setPairs(pairsValue(installation?.pairOneFront))
           setError(undefined)
         }}
         busy={busy}
         maxWidth={480}
-        title={stretch ? t('tyres.dialogs.stretchEdit') : t('tyres.dialogs.stretchAdd')}
-        description={t('tyres.dialogs.stretchDescription')}
+        title={installation ? t('tyres.dialogs.installationEdit') : t('tyres.dialogs.installationAdd')}
+        description={t('tyres.dialogs.installationDescription')}
       >
         {open && (
           <Form onSubmit={submit} refusal={error}>
@@ -359,7 +359,7 @@ function StretchDialog({
 }
 
 /**
- * The rough figure: what cannot be measured, the time before the first stretch the fuel log measures. When stretches now measure time it
+ * The rough figure: what cannot be measured, the time before the first installation the fuel log measures. When installations now measure time it
  * stood for, the suggestion (keeping the total as it was) is filled in, and saving it moves the day it stands for; never changed by itself.
  */
 export function RoughDialog({

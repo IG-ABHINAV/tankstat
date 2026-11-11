@@ -34,7 +34,7 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             db.Expenses.AddRange(batch.SelectMany(b => b.Expenses));
             db.RecurringCompletions.AddRange(batch.SelectMany(b => b.Completions));
             db.TyreSets.AddRange(batch.SelectMany(b => b.TyreSets ?? []));
-            db.TyreStretches.AddRange(batch.SelectMany(b => b.TyreStretches ?? []));
+            db.TyreInstallations.AddRange(batch.SelectMany(b => b.TyreInstallations ?? []));
             await db.SaveChangesAsync(ct);
 
             vehicles += batch.Count(b => !b.Vehicle.IsDeleted);

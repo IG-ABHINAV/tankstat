@@ -3,16 +3,16 @@ import { graphql } from './graphql.ts'
 import { gqlError } from './mocks.tsx'
 
 // A vehicle's tyres (#287) as the server answers them; the fake records what was sent and answers with the state it was given.
-export type FakeTyreStretch = { id: string; setId: string; from: string; until: string | null; pairOneFront: boolean | null; distance: number; measure?: string }
-export type FakeTyreSet = { id: string; name: string; season: string; roughDistance: number; onTheCar: boolean; isRetired?: boolean; stretches: FakeTyreStretch[]; suggestion?: { distance: number; until: string; measuredBefore: number } }
+export type FakeTyreInstallation = { id: string; setId: string; from: string; until: string | null; pairOneFront: boolean | null; distance: number; measure?: string }
+export type FakeTyreSet = { id: string; name: string; season: string; roughDistance: number; onTheCar: boolean; isRetired?: boolean; installations: FakeTyreInstallation[]; suggestion?: { distance: number; until: string; measuredBefore: number } }
 
 export const tyreSummer: FakeTyreSet = {
   id: 's1', name: 'Michelin Primacy 4', season: 'SUMMER', roughDistance: 32_900, onTheCar: true,
-  stretches: [{ id: 'r1', setId: 's1', from: '2026-03-28', until: null, pairOneFront: true, distance: 7_700 }],
+  installations: [{ id: 'r1', setId: 's1', from: '2026-03-28', until: null, pairOneFront: true, distance: 7_700 }],
 }
 export const tyreWinter: FakeTyreSet = {
   id: 's2', name: 'Continental WinterContact', season: 'WINTER', roughDistance: 20_200, onTheCar: false,
-  stretches: [{ id: 'r2', setId: 's2', from: '2025-11-15', until: '2026-03-28', pairOneFront: true, distance: 4_512 }],
+  installations: [{ id: 'r2', setId: 's2', from: '2025-11-15', until: '2026-03-28', pairOneFront: true, distance: 4_512 }],
 }
 
 /** The server's answers as the tab reads them; the fake only records what was sent and answers with the state it was given. */
@@ -35,14 +35,14 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
         roughDistance: s.roughDistance, roughUntil: '2026-03-28', retiredOn: s.isRetired ? '2026-10-01' : null, isRetired: s.isRetired ?? false, version: 1,
       },
       figures: {
-        __typename: 'TyreSetFigures', distance: s.roughDistance + s.stretches.reduce((a, x) => a + x.distance, 0), approximate: true,
-        measured: s.stretches.reduce((a, x) => a + x.distance, 0), pairOneFront: s.stretches.reduce((a, x) => a + x.distance, 0), pairOneRear: 0, pairsUnknown: 0,
+        __typename: 'TyreSetFigures', distance: s.roughDistance + s.installations.reduce((a, x) => a + x.distance, 0), approximate: true,
+        measured: s.installations.reduce((a, x) => a + x.distance, 0), pairOneFront: s.installations.reduce((a, x) => a + x.distance, 0), pairOneRear: 0, pairsUnknown: 0,
         suggestion: s.suggestion ? { __typename: 'RoughSuggestion', ...s.suggestion } : null,
       },
-      stretches: s.stretches.map((x) => ({
-        __typename: 'TyreStretchInfo',
-        stretch: { __typename: 'TyreStretch', id: x.id, setId: x.setId, from: x.from, until: x.until, pairOneFront: x.pairOneFront, version: 1 },
-        distance: { __typename: 'StretchDistance', distance: x.distance, approximate: false, measure: x.measure ?? 'MEASURED' },
+      installations: s.installations.map((x) => ({
+        __typename: 'TyreInstallationInfo',
+        installation: { __typename: 'TyreInstallation', id: x.id, setId: x.setId, from: x.from, until: x.until, pairOneFront: x.pairOneFront, version: 1 },
+        distance: { __typename: 'InstallationDistance', distance: x.distance, approximate: false, measure: x.measure ?? 'MEASURED' },
       })),
     })),
   })
@@ -59,12 +59,12 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
     mutation('SwapTyres', 'swapTyres'),
     mutation('ChangeTyrePositions', 'changeTyrePositions'),
     mutation('AddPastTyreSwaps', 'addPastTyreSwaps'),
-    mutation('DeleteTyreStretch', 'deleteTyreStretch'),
-    mutation('RestoreTyreStretch', 'restoreTyreStretch'),
+    mutation('DeleteTyreInstallation', 'deleteTyreInstallation'),
+    mutation('RestoreTyreInstallation', 'restoreTyreInstallation'),
     mutation('SetTyreLogDay', 'setTyreLogDay'),
     mutation('RetireTyreSet', 'retireTyreSet'),
-    mutation('AddTyreStretch', 'addTyreStretch'),
-    mutation('UpdateTyreStretch', 'updateTyreStretch'),
+    mutation('AddTyreInstallation', 'addTyreInstallation'),
+    mutation('UpdateTyreInstallation', 'updateTyreInstallation'),
     mutation('SetTyreRoughDistance', 'setTyreRoughDistance'),
     mutation('DeleteTyreSet', 'deleteTyreSet'),
     mutation('RestoreTyreSet', 'restoreTyreSet'),

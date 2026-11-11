@@ -421,7 +421,7 @@ internal sealed class InMemoryReadings(InMemoryRefuelings refuelings, InMemoryEx
 internal sealed class InMemoryTyres : ITyreRepository
 {
     public List<TyreSet> Sets { get; } = [];
-    public List<TyreStretch> Stretches { get; } = [];
+    public List<TyreInstallation> Installations { get; } = [];
     public List<TyreLogDay> Days { get; } = [];
     public InMemoryReadings? Readings { get; set; }
     public int Saves { get; private set; }
@@ -442,19 +442,19 @@ internal sealed class InMemoryTyres : ITyreRepository
     {
         var readings = Readings?.Live(vehicleId).Select(r => new ReadingPoint(r.Date, r.Value)) ?? [];
         return Task.FromResult(new TyreBook(
-            [.. Sets.Where(s => s.VehicleId == vehicleId).Select(Copy)], [.. Stretches.Where(s => s.VehicleId == vehicleId).Select(Copy)],
+            [.. Sets.Where(s => s.VehicleId == vehicleId).Select(Copy)], [.. Installations.Where(s => s.VehicleId == vehicleId).Select(Copy)],
             [.. Days.Where(d => d.VehicleId == vehicleId).Select(CopyDay)], TyreCalculator.Sorted(readings)));
     }
 
     public Task<TyreSet?> FindSetAsync(Guid id, CancellationToken ct) => Task.FromResult(Sets.FirstOrDefault(s => s.Id == id) is { } s ? Copy(s) : null);
 
-    public Task<TyreStretch?> FindStretchAsync(Guid id, CancellationToken ct) => Task.FromResult(Stretches.FirstOrDefault(s => s.Id == id) is { } s ? Copy(s) : null);
+    public Task<TyreInstallation?> FindInstallationAsync(Guid id, CancellationToken ct) => Task.FromResult(Installations.FirstOrDefault(s => s.Id == id) is { } s ? Copy(s) : null);
 
     public Task<IReadOnlyList<TyreSet>> ListSetsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<TyreSet>>([.. Sets.Where(s => ids.Contains(s.Id)).Select(Copy)]);
 
-    public Task<IReadOnlyList<TyreStretch>> ListStretchesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<TyreStretch>>([.. Stretches.Where(s => ids.Contains(s.Id)).Select(Copy)]);
+    public Task<IReadOnlyList<TyreInstallation>> ListInstallationsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<TyreInstallation>>([.. Installations.Where(s => ids.Contains(s.Id)).Select(Copy)]);
 
     public Task<TyreLogDay?> FindDayAsync(Guid id, CancellationToken ct) => Task.FromResult(Days.FirstOrDefault(d => d.Id == id) is { } d ? CopyDay(d) : null);
 
@@ -466,7 +466,7 @@ internal sealed class InMemoryTyres : ITyreRepository
         MeanwhileBeforeSave?.Invoke(save);
         MeanwhileBeforeSave = null;
         // As the database's primary keys: an add whose id is there by now saves nothing.
-        if (save.AddedSets.Any(s => Sets.Any(x => x.Id == s.Id)) || save.AddedStretches.Any(s => Stretches.Any(x => x.Id == s.Id))
+        if (save.AddedSets.Any(s => Sets.Any(x => x.Id == s.Id)) || save.AddedInstallations.Any(s => Installations.Any(x => x.Id == s.Id))
             || save.AddedDays.Any(d => Days.Any(x => x.Id == d.Id)))
             return Task.FromResult(false);
         static void Put<T>(List<T> list, T item, Func<T, Guid> id) where T : class
@@ -475,7 +475,7 @@ internal sealed class InMemoryTyres : ITyreRepository
             list.Add(Copy(item));
         }
         foreach (var s in save.AddedSets.Concat(save.ChangedSets)) Put(Sets, s, x => x.Id);
-        foreach (var s in save.AddedStretches.Concat(save.ChangedStretches)) Put(Stretches, s, x => x.Id);
+        foreach (var s in save.AddedInstallations.Concat(save.ChangedInstallations)) Put(Installations, s, x => x.Id);
         foreach (var d in save.AddedDays.Concat(save.ChangedDays))
         {
             Days.RemoveAll(x => x.Id == d.Id);
@@ -490,9 +490,9 @@ internal sealed class InMemoryTyres : ITyreRepository
 
     private IEnumerable<TyreTrashRow> Trash(OwnerScope scope) =>
         Sets.Where(s => s.IsDeleted && scope.Contains(s.OwnerId, s.VehicleId))
-            .Select(s => new TyreTrashRow(TyreTrashKind.Set, s.Id, s.VehicleId, s.Name, null, null, Stretches.Count(x => x.SetId == s.Id && !x.IsDeleted), s.DeletedAt!.Value, s.Version))
-            .Concat(Stretches.Where(x => x.IsDeleted && scope.Contains(x.OwnerId, x.VehicleId) && Sets.Any(s => s.Id == x.SetId && !s.IsDeleted))
-                .Select(x => new TyreTrashRow(TyreTrashKind.Stretch, x.Id, x.VehicleId, Sets.First(s => s.Id == x.SetId).Name, x.From, x.Until, 0, x.DeletedAt!.Value, x.Version)));
+            .Select(s => new TyreTrashRow(TyreTrashKind.Set, s.Id, s.VehicleId, s.Name, null, null, Installations.Count(x => x.SetId == s.Id && !x.IsDeleted), s.DeletedAt!.Value, s.Version))
+            .Concat(Installations.Where(x => x.IsDeleted && scope.Contains(x.OwnerId, x.VehicleId) && Sets.Any(s => s.Id == x.SetId && !s.IsDeleted))
+                .Select(x => new TyreTrashRow(TyreTrashKind.Installation, x.Id, x.VehicleId, Sets.First(s => s.Id == x.SetId).Name, x.From, x.Until, 0, x.DeletedAt!.Value, x.Version)));
 
     // As the repository orders it: by when it was trashed either way, then always by id.
     public Task<IReadOnlyList<TyreTrashRow>> ListTrashAsync(OwnerScope scope, int skip, int take, CancellationToken ct, bool descending = true) =>
@@ -504,7 +504,7 @@ internal sealed class InMemoryTyres : ITyreRepository
     {
         var rows = Trash(scope).ToList();
         var sets = rows.Where(r => r.Kind == TyreTrashKind.Set).Select(r => r.Id).ToHashSet();
-        Stretches.RemoveAll(x => sets.Contains(x.SetId) || rows.Any(r => r.Kind == TyreTrashKind.Stretch && r.Id == x.Id));
+        Installations.RemoveAll(x => sets.Contains(x.SetId) || rows.Any(r => r.Kind == TyreTrashKind.Installation && r.Id == x.Id));
         Sets.RemoveAll(s => sets.Contains(s.Id));
         return Task.FromResult(rows.Count);
     }

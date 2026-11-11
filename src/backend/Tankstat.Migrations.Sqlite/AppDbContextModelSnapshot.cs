@@ -922,6 +922,69 @@ namespace Tankstat.Migrations.Sqlite
                     b.ToTable("Tombstones", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ChangedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ChangedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("From")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastChange")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("PairOneFront")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("Until")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeletedAt");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.HasIndex("SetId", "From");
+
+                    b.HasIndex("VehicleId", "UpdatedAt");
+
+                    b.ToTable("TyreInstallations", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreLogDay", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1057,69 +1120,6 @@ namespace Tankstat.Migrations.Sqlite
                     b.HasIndex("VehicleId", "UpdatedAt");
 
                     b.ToTable("TyreSets", (string)null);
-                });
-
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreStretch", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("ChangedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ChangedById")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("CreatedById")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateOnly>("From")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastChange")
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool?>("PairOneFront")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("SetId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateOnly?>("Until")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
-
-                    b.Property<Guid>("VehicleId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeletedAt");
-
-                    b.HasIndex("OwnerId");
-
-                    b.HasIndex("VehicleId");
-
-                    b.HasIndex("SetId", "From");
-
-                    b.HasIndex("VehicleId", "UpdatedAt");
-
-                    b.ToTable("TyreStretches", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Users.PasswordResetToken", b =>
@@ -1651,6 +1651,15 @@ namespace Tankstat.Migrations.Sqlite
                         .OnDelete(DeleteBehavior.Cascade);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
+                        .WithMany()
+                        .HasForeignKey("SetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreLogDay", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
@@ -1672,15 +1681,6 @@ namespace Tankstat.Migrations.Sqlite
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
                         .WithMany()
                         .HasForeignKey("VehicleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreStretch", b =>
-                {
-                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
-                        .WithMany()
-                        .HasForeignKey("SetId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

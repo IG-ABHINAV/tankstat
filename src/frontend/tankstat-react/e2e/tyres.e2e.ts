@@ -3,7 +3,7 @@ import { expect, test } from './support/test.ts'
 import { addVehicle, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
-// A vehicle's tyres (#287): sets added, swapped with their pairs, a past swap from papers, a stretch moved to the trash and back from the
+// A vehicle's tyres (#287): sets added, swapped with their pairs, a past swap from papers, an installation moved to the trash and back from the
 // Trash page. Every test signs in as a user of its own.
 
 test.beforeEach(async ({ page }) => {
@@ -28,7 +28,7 @@ async function typeDate(page: Page, field: Locator, iso: string) {
 
 const dateField = (dialog: Locator, name: RegExp) => dialog.getByRole('group', { name })
 
-test('adds two sets, swaps with the pairs, enters a past swap, and brings a trashed stretch back from the trash', async ({ page }) => {
+test('adds two sets, swaps with the pairs, enters a past swap, and brings a trashed installation back from the trash', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
   await logRefueling(page, vehicle.id, { date: '2026-06-01', odometer: 6000 })
@@ -82,22 +82,22 @@ test('adds two sets, swaps with the pairs, enters a past swap, and brings a tras
   await past.getByRole('button', { name: 'Save swaps' }).click()
   await expect(past).toBeHidden()
 
-  // Its history: the stretch from 20 January moved to the trash.
+  // Its history: the installation from 20 January moved to the trash.
   await summer.getByRole('button', { name: 'History' }).click()
   const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
-  const stretch = history.getByRole('listitem').filter({ hasText: /Jan 20, 2026/ })
-  await expect(stretch).toBeVisible()
+  const installation = history.getByRole('listitem').filter({ hasText: /Jan 20, 2026/ })
+  await expect(installation).toBeVisible()
   await expectSoundLayout(page)
-  await stretch.getByRole('button', { name: 'Move to the trash' }).click()
+  await installation.getByRole('button', { name: 'Move to the trash' }).click()
   await page.getByRole('alertdialog', { name: 'Move to the trash?' }).getByRole('button', { name: 'Move to the trash' }).click()
-  await expect(stretch).toBeHidden()
+  await expect(installation).toBeHidden()
   await history.getByRole('button', { name: 'Cancel' }).click()
   await expectSoundLayout(page) // the tab itself, with seven tabs on a phone
 
   // The Trash page's Tyres tab brings it back.
   await page.goto('/trash?tab=tyres')
   await pageLoaded(page)
-  // Two rows of the set: the stretch the swap replaced, and the one from 20 January, trashed last: the first, newest first (a phone hides
+  // Two rows of the set: the installation the swap replaced, and the one from 20 January, trashed last: the first, newest first (a phone hides
   // the column with its days).
   const row = page.getByRole('row').filter({ hasText: 'Michelin Primacy 4: on the car' }).first()
   await expect(row).toBeVisible()

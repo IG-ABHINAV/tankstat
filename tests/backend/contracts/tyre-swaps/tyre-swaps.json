@@ -1,5 +1,5 @@
 {
-  "_comment": "The rules of a vehicle's tyre history (#287): a swap, a change of positions and the checks every change passes, read by the server (Domain TyreSwapContractTests, over TyreHistory) and by the device (frontend TyreHistory.unit, over src/tyres/tyreHistory.ts), so a tyre change made offline shows as the server will make it. 'new' is the id of the stretch an operation creates; 'expect' lists the live stretches after it, by first day; 'error' is the refusal, its key and its args; 'moving' lists the stretches a check is about (added, edited or restored), so an overlap names the other one.",
+  "_comment": "The rules of a vehicle's tyre history (#287): a swap, a change of positions and the checks every change passes, read by the server (Domain TyreSwapContractTests, over TyreHistory) and by the device (frontend TyreHistory.unit, over src/tyres/tyreHistory.ts), so a tyre change made offline shows as the server will make it. 'new' is the id of the installation an operation creates; 'expect' lists the live installations after it, by first day; 'error' is the refusal, its key and its args; 'moving' lists the installations a check is about (added, edited or restored), so an overlap names the other one.",
   "cases": [
     {
       "name": "a swap ends what is on the car and puts the set on",
@@ -20,7 +20,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -73,7 +73,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -108,7 +108,7 @@
       "op": "swap"
     },
     {
-      "name": "a past swap that cuts a stretch runs until that stretch would have ended",
+      "name": "a past swap that cuts an installation runs until that installation would have ended",
       "sets": [
         {
           "id": "summer",
@@ -126,7 +126,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -193,7 +193,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -237,7 +237,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "b1",
           "set": "winter",
@@ -279,7 +279,7 @@
       "op": "swap"
     },
     {
-      "name": "the set joins its stretch that ended that day",
+      "name": "the set joins its installation that ended that day",
       "sets": [
         {
           "id": "summer",
@@ -297,7 +297,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -325,7 +325,7 @@
       "op": "swap"
     },
     {
-      "name": "a swap into a gap never joins the set’s next stretch: that one began with a swap of its own",
+      "name": "a swap into a gap never joins the set’s next installation: that one began with a swap of its own",
       "sets": [
         {
           "id": "summer",
@@ -343,7 +343,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -378,7 +378,7 @@
       "op": "swap"
     },
     {
-      "name": "a swap that cuts a stretch joins the set’s stretch that follows it",
+      "name": "a swap that cuts an installation joins the set’s installation that follows it",
       "sets": [
         {
           "id": "summer",
@@ -396,7 +396,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -470,7 +470,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -523,7 +523,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -583,7 +583,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -629,7 +629,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -675,7 +675,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -719,7 +719,7 @@
           "retiredOn": "2026-01-01"
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -744,7 +744,7 @@
       "op": "swap"
     },
     {
-      "name": "positions changed on the stretch’s first day change in place",
+      "name": "positions changed on the installation’s first day change in place",
       "sets": [
         {
           "id": "summer",
@@ -762,7 +762,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -788,7 +788,7 @@
       "op": "positions"
     },
     {
-      "name": "positions changed later split the stretch",
+      "name": "positions changed later split the installation",
       "sets": [
         {
           "id": "summer",
@@ -806,7 +806,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -857,7 +857,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -896,7 +896,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -938,7 +938,7 @@
           "retiredOn": "2026-01-01"
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "c1",
           "set": "allseason",
@@ -992,7 +992,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -1038,7 +1038,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -1066,7 +1066,7 @@
       "op": "check"
     },
     {
-      "name": "an overlap names the stretch already on the car, not the one being added or moved",
+      "name": "an overlap names the installation already on the car, not the one being added or moved",
       "sets": [
         {
           "id": "summer",
@@ -1084,7 +1084,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -1115,7 +1115,7 @@
       "op": "check"
     },
     {
-      "name": "a retired set’s stretch past its retirement is refused",
+      "name": "a retired set’s installation past its retirement is refused",
       "sets": [
         {
           "id": "summer",
@@ -1133,7 +1133,7 @@
           "retiredOn": "2026-01-01"
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "c1",
           "set": "allseason",
