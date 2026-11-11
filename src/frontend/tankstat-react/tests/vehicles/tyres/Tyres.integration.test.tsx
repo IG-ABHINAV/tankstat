@@ -660,10 +660,35 @@ it('shows what each set cost and its repairs, and what the tyres cost altogether
   const card = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
   expect(within(card).getByText('Spent').nextSibling).toHaveTextContent(/HUF.*120,000.*·.*€40\.00/)
   expect(within(card).getByText('Repairs').nextSibling).toHaveTextContent('2')
-  expect(within(screen.getByRole('article', { name: 'Continental WinterContact' })).getByText('Spent').nextSibling).toHaveTextContent('—')
+  expect(within(screen.getByRole('article', { name: 'Continental WinterContact' })).getByText('Spent').nextSibling).toHaveTextContent('–')
   const block = screen.getByRole('heading', { name: 'Spent on tyres' }).parentElement!
   expect(within(block).getByText('All').nextSibling).toHaveTextContent(/HUF.*120,000.*·.*€48\.00/)
-  expect(within(block).getByText('Continental WinterContact').nextSibling).toHaveTextContent('—') // every set has its row
+  expect(within(block).getByText('Continental WinterContact').nextSibling).toHaveTextContent('–') // every set has its row
   expect(within(block).getByText('Not tied to a set').nextSibling).toHaveTextContent('€8.00')
   expect(within(block).getByText("The amounts are the expenses linked to the tyre log's lines.")).toBeInTheDocument()
+})
+
+it('marks the costs a repair kept on the device puts out of date, and only those (#288)', async () => {
+  const { ui, state } = setup([{ ...summer, spent: [{ currency: 'EUR', amount: 40 }], repairs: 1 }, { ...winter, spent: [{ currency: 'EUR', amount: 15 }] }])
+  await screen.findByRole('article', { name: 'Continental WinterContact' })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(screen.getByRole('button', { name: 'Add entry' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add entry' })
+  await typeDate(ui, await findDateField(/^Day/, dialog), '2026-06-01')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' })) // a puncture on the set on the car, no amount
+
+  expect(await screen.findByText('Saved on this device · syncs when online.')).toBeInTheDocument()
+  expect(state.calls.AddTyreEntry).toBeUndefined()
+  const summerCard = screen.getByRole('article', { name: 'Michelin Primacy 4' })
+  await waitFor(() => expect(within(summerCard).getByText('Repairs').nextSibling).toHaveTextContent('updated once synced'))
+  expect(within(summerCard).getByText('Spent').nextSibling).toHaveTextContent('updated once synced')
+  const winterCard = screen.getByRole('article', { name: 'Continental WinterContact' })
+  expect(within(winterCard).getByText('Spent').nextSibling).toHaveTextContent('€15.00') // its lines are as they were
+  const block = screen.getByRole('heading', { name: 'Spent on tyres' }).parentElement!
+  expect(within(block).getByText('All').nextSibling).toHaveTextContent('updated once synced')
+  expect(within(block).getByText('Michelin Primacy 4').nextSibling).toHaveTextContent('updated once synced')
+  expect(within(block).getByText('Continental WinterContact').nextSibling).toHaveTextContent('€15.00')
+  expect(within(block).queryByText('Not tied to a set')).not.toBeInTheDocument()
 })

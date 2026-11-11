@@ -16,6 +16,12 @@ export interface Replayed {
   touched: Set<string>
   /** The sets the waiting changes added (not in the server's answer). */
   added: Set<string>
+  /**
+   * Whose costs the waiting changes make out of date (#288 step 4): the sets (`NO_SET` for the lines of no set) of every line added, trashed or
+   * changed (both sets of one moved), and of every line whose expense an edit, trash or restore waiting on the Expenses tab names. The server
+   * works the costs out, so these rows say they are updated once synced.
+   */
+  costs: Set<string>
   /** The waiting changes that no longer fit (what they were made on is gone, or a rule now refuses them): left out, never thrown. */
   skipped: string[]
 }
@@ -371,6 +377,30 @@ export function applyTyreChange(given: Tyres, change: Change): Tyres {
 }
 
 /** The tyre changes waiting for this vehicle, in the order they were made, over the server's last answer. */
+/** The key of the lines of no set in `Replayed.costs`. */
+export const NO_SET = ''
+
+const costKey = (e: Entry) => e.setId ?? NO_SET
+const costShape = (e: Entry) => JSON.stringify([e.kind, e.setId ?? null, e.amount ?? null, e.currency ?? null, e.expenseId ?? null, e.expenseTrashed ?? false])
+
+/** The sets whose costs differ between the server's lines and the replayed ones, or whose line's expense a waiting change names. */
+function costsOf(base: Tyres, entries: readonly Entry[], changes: readonly Change[]): Set<string> {
+  const costs = new Set<string>()
+  const was = new Map(base.entries.map((e) => [e.id, e] as const))
+  const now = new Map(entries.map((e) => [e.id, e] as const))
+  for (const [id, e] of was) {
+    const after = now.get(id)
+    if (!after || costShape(after) !== costShape(e)) costs.add(costKey(e))
+  }
+  for (const [id, e] of now) {
+    const before = was.get(id)
+    if (!before || costShape(before) !== costShape(e)) costs.add(costKey(e))
+  }
+  const expenses = new Set(changes.filter((c) => c.entity === 'expenses' && c.vehicleId === base.vehicleId).map((c) => c.targetId))
+  for (const e of [...base.entries, ...entries]) if (e.expenseId && expenses.has(e.expenseId)) costs.add(costKey(e))
+  return costs
+}
+
 export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed {
   const base = current(given)
   const m = modelOf(base)
@@ -384,7 +414,8 @@ export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed 
       skipped.push(change.id) // no longer fits: the server will say why once it is sent
     }
   }
-  return { ...answerOf(base, m), skipped }
+  const answer = answerOf(base, m)
+  return { ...answer, skipped, costs: costsOf(base, answer.tyres.entries, changes) }
 }
 
 /** The answer of a vehicle the server has no tyres of yet as far as this device knows (added here, or never downloaded): nothing. */

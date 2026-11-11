@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Change } from '../../../src/offline/changes.ts'
-import { applyTyreChange, noTyres, replayTyres } from '../../../src/tyres/replay.ts'
+import { applyTyreChange, NO_SET, noTyres, replayTyres } from '../../../src/tyres/replay.ts'
 import { TyreRuleError } from '../../../src/tyres/tyreHistory.ts'
 import type { Tyres } from '../../../src/tyres/tyres.ts'
 
@@ -247,5 +247,49 @@ describe('a line’s amount waiting on the device (#288)', () => {
     const withFee: Tyres = { ...base, entries: base.entries.map((e) => (e.id === 'r1' ? { ...e, expenseId: 'x1', amount: 60, currency: 'EUR' } : e)) }
     const moved = applyTyreChange(withFee, change('updateTyreEntry', { id: 'r1', kind: 'SWAP', setId: 's1', day: '2026-04-02' }))
     expect(moved.entries.find((e) => e.id === 'r1')).toMatchObject({ day: '2026-04-02', expenseId: 'x1', amount: 60 })
+  })
+})
+
+describe('whose costs waiting changes put out of date (#288 step 4)', () => {
+  const paid = { ...line('p1', 's1', '2026-05-01', 'PUNCTURE_REPAIRED'), expenseId: 'x1', amount: 25, currency: 'EUR' }
+  const withPaid: Tyres = { ...base, entries: [paid, ...base.entries] }
+  const expense = (action: Change['action'], targetId: string): Change => ({ id: `c${++seq}`, seq, createdAt: seq, entity: 'expenses', action, vehicleId: 'v1', targetId, input: action === 'update' ? { amount: 30 } : null })
+
+  it('nothing waiting, nothing out of date', () => {
+    expect([...replayTyres(withPaid, []).costs]).toEqual([])
+  })
+
+  it('a repair added without an amount: its set (the repairs count)', () => {
+    const { costs } = replayTyres(base, [change('addTyreEntry', { vehicleId: 'v1', id: 'e1', kind: 'VALVE_REPLACED', setId: 's2', day: '2026-06-01', odometer: null, note: null })])
+    expect([...costs]).toEqual(['s2'])
+  })
+
+  it('a line of no set with an amount: the lines of no set', () => {
+    const { costs } = replayTyres(base, [change('addTyreEntry', { vehicleId: 'v1', id: 'e1', kind: 'OTHER', setId: null, day: '2026-06-01', odometer: null, note: null,
+      fee: { amount: 8, currency: 'EUR', category: 'Tyres', title: 't', expenseId: 'x9' } })])
+    expect([...costs]).toEqual([NO_SET])
+  })
+
+  it('a line moved to another set: both sets', () => {
+    const { costs } = replayTyres(withPaid, [change('updateTyreEntry', { id: 'p1', kind: 'PUNCTURE_REPAIRED', setId: 's2', day: '2026-05-01', odometer: null, note: null })])
+    expect([...costs].sort()).toEqual(['s1', 's2'])
+  })
+
+  it('a line with its expense trashed: its set', () => {
+    const { costs } = replayTyres(withPaid, [change('deleteTyreEntry', { id: 'p1', withExpense: true })])
+    expect([...costs]).toEqual(['s1'])
+  })
+
+  it('its expense edited, trashed or restored on the Expenses tab: its set; another expense, nothing', () => {
+    expect([...replayTyres(withPaid, [expense('update', 'x1')]).costs]).toEqual(['s1'])
+    expect([...replayTyres(withPaid, [expense('trash', 'x1')]).costs]).toEqual(['s1'])
+    expect([...replayTyres(withPaid, [expense('restore', 'x1')]).costs]).toEqual(['s1'])
+    expect([...replayTyres(withPaid, [expense('trash', 'other')]).costs]).toEqual([])
+  })
+
+  it('a change of a set that leaves its lines as they were: not its costs', () => {
+    const { costs, touched } = replayTyres(base, [change('updateTyreSet', { id: 's2', name: 'Winter', season: 'WINTER', size: null, since: '2023-03-01', madeWeek: null, madeYear: null, roughDistance: 0, day: null })])
+    expect([...touched]).toEqual(['s2'])
+    expect([...costs]).toEqual([])
   })
 })
