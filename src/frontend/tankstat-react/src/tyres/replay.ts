@@ -379,7 +379,6 @@ export function applyTyreChange(given: Tyres, change: Change): Tyres {
   return answerOf(tyres, m).tyres
 }
 
-/** The tyre changes waiting for this vehicle, in the order they were made, over the server's last answer. */
 /** The key of the lines of no set in `Replayed.costs`. */
 export const NO_SET = ''
 
@@ -404,6 +403,7 @@ function costsOf(base: Tyres, entries: readonly Entry[], changes: readonly Chang
   return costs
 }
 
+/** The tyre changes waiting for this vehicle, in the order they were made, over the server's last answer. */
 export function replayTyres(given: Tyres, changes: readonly Change[]): Replayed {
   const base = current(given)
   const m = modelOf(base)
