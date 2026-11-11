@@ -205,4 +205,19 @@ public class TyreSyncTests : IDisposable
 
         Assert.Equal("sync.kindMismatch", Key(moved));
     }
+
+    [Fact]
+    public async Task TwentyFivePastSwaps_WithTheirInstallationIds_FitOneChangeOfTheQueue()
+    {
+        var (people, car, summer, winter, _) = await Car(_app);
+        // The most a change carries: 25 rows, alternating sets, a reading on every one (#288: installationId is longer than stretchId was).
+        var rows = Enumerable.Range(0, 25).Select(i => new
+        {
+            day = new DateOnly(2020, 1, 1).AddDays(i * 30).ToString("yyyy-MM-dd"), setId = i % 2 == 0 ? winter : summer, odometer = 100_000L + i * 1000, installationId = Guid.NewGuid(),
+        }).ToArray();
+
+        var sent = await Send(people.Alice, new { id = Guid.NewGuid(), addPastTyreSwaps = new { vehicleId = car, replace = false, swaps = rows } });
+
+        Assert.Equal(("APPLIED", null), Result(sent));
+    }
 }
