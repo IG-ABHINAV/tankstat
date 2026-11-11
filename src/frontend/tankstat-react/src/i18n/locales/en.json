@@ -358,13 +358,15 @@
     "tyresEmpty": "No tyres in the trash.",
     "tyres": {
       "what": "What",
-      "when": "When on the car",
+      "when": "When",
       "set": "Set: {{name}}",
-      "installation": "{{set}}: on the car",
       "withInstallations_one": "with {{count}} installation",
       "withInstallations_other": "with {{count}} installations",
-      "range": "{{from}} to {{until}}",
-      "rangeOpen": "from {{from}}"
+      "entry": "{{kind}}: {{set}}",
+      "entryNoSet": "{{kind}}",
+      "day": "{{day}}",
+      "swapUntil": "{{day}} · on the car until {{until}}",
+      "swapNow": "{{day}} · on the car now"
     },
     "tyreDescription_one": "This permanently deletes {{count}} item of the tyres. It cannot be undone.",
     "tyreDescription_other": "This permanently deletes {{count}} items of the tyres. It cannot be undone.",
@@ -1087,7 +1089,15 @@
       "retireOnCar": "{{set}} is on the car: swap it off before retiring it.",
       "setNotFound": "This tyre set does not exist any more.",
       "installationNotFound": "This installation does not exist any more.",
-      "installationIdTwice": "Two of these swaps carry the same id. Enter each swap once."
+      "installationIdTwice": "Two of these swaps carry the same id. Enter each swap once.",
+      "entryKindNotAllowed": "A swap and a change of positions are logged as such, not as a line.",
+      "entryKindUnknown": "This kind of tyre log line does not exist.",
+      "swapLineLocked": "A swap keeps its set. For another set, move the swap to the trash and log it again.",
+      "swapBeforePrevious": "The swap cannot move to or before {{from}}, the day {{set}} went on the car before it.",
+      "entryNotFound": "This line of the tyre log does not exist any more.",
+      "entryTrashedCannotEdit": "A line in the trash cannot be changed; restore it first.",
+      "entryAlreadyTrashed": "This line of the tyre log is already in the trash.",
+      "entryNotTrashed": "This line of the tyre log is not in the trash."
     }
   },
   "a11y": {
@@ -1965,7 +1975,10 @@
         "updateTyreInstallation": "Changed installation of a tyre set",
         "deleteTyreInstallation": "Installation of a tyre set to the trash",
         "restoreTyreInstallation": "Installation of a tyre set back from the trash",
-        "setTyreLogDay": "Reading in the tyre log"
+        "addTyreEntry": "New line in the tyre log",
+        "updateTyreEntry": "Changed line in the tyre log",
+        "deleteTyreEntry": "Tyre log line to the trash",
+        "restoreTyreEntry": "Tyre log line back from the trash"
       }
     },
     "remove": "Remove the change",
@@ -2518,14 +2531,10 @@
     },
     "wholeSet": "the whole set",
     "wholeSetPairs": "the whole set, {{pairs}}",
-    "onTheCarLine": "{{set}}: on the car",
     "approx": "≈ {{value}}",
     "notMeasured": "before the fuel log, not measured",
     "countedFrom": "{{distance}}, counted from {{date}}",
     "beforeLog": "before the fuel log",
-    "readingTyped": "reading typed here",
-    "readingOnly": "Reading typed with a swap",
-    "editReading": "Edit the reading and note of {{date}}",
     "viewOnly": "You can see these tyres. Only someone who may log for this vehicle can change them.",
     "noReading": "Only the rough figure so far. The time on the car is measured once the car has a reading after it went on: log a refuelling or an expense with the odometer.",
     "roughNote": "Its history now reaches further back, so the rough figure only stands for the time before {{date}}.",
@@ -2595,7 +2604,6 @@
       "after": "At least {{previous}}.",
       "beforeOnly": "At most {{next}}."
     },
-    "readingOn": "{{value}} on {{date}}",
     "dialogs": {
       "addTitle": "Add a tyre set",
       "addDescription": "A used set starts with a rough figure for what it has already run.",
@@ -2620,16 +2628,8 @@
       "edit": "Edit",
       "toTrash": "Move to the trash",
       "trashSet": "Move the set to the trash",
-      "trashInstallationTitle": "Move to the trash?",
-      "trashInstallationText": "{{set}}: on the car from {{from}}. Its distance no longer counts.",
-      "trashInstallationReading": "The reading typed that day ({{value}}) stays: it is one of the car's readings, on the tyre log's line for that day.",
       "trashSetTitle": "Move the set to the trash?",
       "trashSetText": "{{set}} goes to the trash with its installations, and comes back with them. It can be restored from the trash.",
-      "readingTitle": "Reading of {{date}}",
-      "readingText": "Typed with a swap. It is one of the car's readings: it counts in the dashboard's distance and is checked against the readings before and after it.",
-      "removeReading": "Remove the reading",
-      "removeReadingTitle": "Remove the reading?",
-      "removeReadingText": "The reading of {{date}} ({{value}}) is deleted for good. Distances of that day are worked out from the fuel log again.",
       "roughTitle": "The rough figure",
       "roughText": "The rough figure stands for what cannot be measured: the time before {{date}}. Everything after that comes from the installations and the fuel log, {{measured}} so far.",
       "roughTextAll": "The rough figure stands for what the set ran before it was tracked.",
@@ -2646,8 +2646,7 @@
       "retireSet": "Retire set",
       "editSet": "Edit set",
       "editDescription": "Correct the set’s own details. Where it is and what it ran come from its history.",
-      "saveChanges": "Save changes",
-      "lineClearHint": "With neither a reading nor a note, the line is removed."
+      "saveChanges": "Save changes"
     },
     "toast": {
       "swapped": "Saved. {{set}} is on the car from {{date}}.",
@@ -2658,6 +2657,36 @@
     },
     "noneOnCar": "No set is on the car. Fit one from storage.",
     "updatedOnSync": "updated once synced",
-    "noteOnly": "Note"
+    "entries": {
+      "add": "Add entry",
+      "addTitle": "Add entry",
+      "editTitle": "Edit entry",
+      "description": "A line of the tyre log: what was done, on which day and to which set.",
+      "kind": "What was done",
+      "set": "Set",
+      "noSet": "No set",
+      "kinds": {
+        "SWAP": "Tyre swap",
+        "POSITIONS_CHANGED": "Positions changed",
+        "PUNCTURE_REPAIRED": "Puncture repaired",
+        "VALVE_REPLACED": "Valve replaced",
+        "WHEEL_BALANCING": "Wheel balancing",
+        "STORAGE_FEE": "Storage fee",
+        "BOUGHT": "Bought",
+        "OTHER": "Other",
+        "NOTE": "Note"
+      },
+      "odometerHint": "Optional. It becomes one of the car's readings.",
+      "lockedHint": "A swap keeps its set. For another set, move the swap to the trash and log it again.",
+      "swapDayHint": "Changing the day moves the swap: the set is on the car from that day.",
+      "lineName": "{{kind}}, {{set}}, {{day}}",
+      "lineNameNoSet": "{{kind}}, {{day}}",
+      "trashName": "Move to the trash: {{kind}}, {{day}}",
+      "trashTitle": "Move to the trash?",
+      "trashSwap": "This removes the swap: {{set}} on the car from {{from}}. Its distance no longer counts.",
+      "trashSwapUntil": "This removes the swap: {{set}} on the car from {{from}} to {{until}}. Its distance no longer counts.",
+      "trashReading": "The reading of {{value}} no longer counts among the car's readings until the line is restored.",
+      "restorable": "It can be restored from the trash."
+    }
   }
 }

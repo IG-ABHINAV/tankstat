@@ -19,9 +19,7 @@ import { Form } from '../forms/Form.tsx'
 import {
   AddTyreInstallationDocument,
   DeleteTyreSetDocument,
-  DeleteTyreInstallationDocument,
   RestoreTyreSetDocument,
-  RestoreTyreInstallationDocument,
   SetTyreRoughDistanceDocument,
   UpdateTyreInstallationDocument,
   type DistanceUnit,
@@ -29,6 +27,7 @@ import {
 import { useFormat } from '../i18n/format.ts'
 import { ErrorMessage } from '../messages.tsx'
 import { TyreSetDialog } from './TyreSetDialog.tsx'
+import { TrashEntryDialog } from './EntryDialog.tsx'
 import { OfflineNote } from '../components/OfflineNote.tsx'
 import { todayIso } from '../forms/dates.ts'
 import { type Tyres, type TyreSetInfo, type TyreInstallationInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
@@ -57,7 +56,6 @@ export function HistoryDialog({
   const format = useFormat()
   const words = useTyreWords(unit)
   const installationDistance = useInstallationDistance(unit)
-  const readingText = useReadingText(unit)
   const notify = useTyreToasts()
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
@@ -67,15 +65,8 @@ export function HistoryDialog({
   const { set, figures } = info
   const measuredFrom = info.installations.length > 0 ? info.installations[info.installations.length - 1].installation.from : null
 
-  const trashInstallation = async (installation: TyreInstallationInfo['installation']) => {
-    setError(undefined)
-    try {
-      const saved = await run(DeleteTyreInstallationDocument, { id: installation.id })
-      notify.undoable(saved, t('tyres.toast.trashed'), () => run(RestoreTyreInstallationDocument, { id: installation.id }))
-    } catch (err) {
-      setError(err)
-    }
-  }
+  /** The installation's line in the tyre log (#288): its bin is the line's, which takes the installation along. */
+  const lineOf = (installationId: string) => tyres.entries.find((e) => e.id === installationId)
 
   return (
     <>
@@ -153,10 +144,9 @@ export function HistoryDialog({
                             </IconAction>
                           }
                         />
-                        <TrashInstallation
-                          text={`${t('tyres.dialogs.trashInstallationText', { set: set.name, from: format.date(s.installation.from) })}${readingText(tyres, s.installation.from)}`}
-                          onConfirm={() => void trashInstallation(s.installation)}
-                        />
+                        {lineOf(s.installation.id) && (
+                          <TrashEntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} entry={lineOf(s.installation.id)!} onError={setError} />
+                        )}
                       </>
                     )}
                   </Box>
@@ -211,33 +201,6 @@ function useInstallationDistance(unit: DistanceUnit) {
       : s.distance.measure === 'FROM_FIRST_READING'
         ? t('tyres.countedFrom', { distance: words.distance(s.distance.distance, true), date: logStart })
         : words.distance(s.distance.distance, s.distance.approximate)
-}
-
-/** A sentence about the reading typed on an installation's first day, which stays when the installation goes (#287 Q1). */
-function useReadingText(unit: DistanceUnit) {
-  const { t } = useTranslation()
-  const words = useTyreWords(unit)
-  return (tyres: Tyres, day: string) => {
-    const typed = tyres.days.find((d) => d.day === day)?.odometer
-    return typed == null ? '' : ` ${t('tyres.dialogs.trashInstallationReading', { value: words.distance(typed) })}`
-  }
-}
-
-function TrashInstallation({ text, onConfirm }: { text: string; onConfirm: () => void }) {
-  const { t } = useTranslation()
-  return (
-    <ConfirmDialog
-      trigger={
-        <IconAction label={t('tyres.dialogs.toTrash')} tone="error">
-          <Trash2 size={16} aria-hidden />
-        </IconAction>
-      }
-      title={t('tyres.dialogs.trashInstallationTitle')}
-      description={text}
-      confirmLabel={t('tyres.dialogs.toTrash')}
-      onConfirm={onConfirm}
-    />
-  )
 }
 
 type Pairs = 'none' | 'one' | 'two'

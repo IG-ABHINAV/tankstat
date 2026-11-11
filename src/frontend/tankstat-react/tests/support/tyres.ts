@@ -15,9 +15,26 @@ export const tyreWinter: FakeTyreSet = {
   installations: [{ id: 'r2', setId: 's2', from: '2025-11-15', until: '2026-03-28', pairOneFront: true, distance: 4_512 }],
 }
 
-/** The server's answers as the tab reads them; the fake only records what was sent and answers with the state it was given. */
-export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer: number | null; note: string | null }[] = []) {
-  const state = { sets: initial, days, calls: {} as Record<string, Record<string, unknown>[]>, failNext: [] as { key: string; args?: Record<string, unknown> }[] }
+/** A tyre log line (#288) besides the swap lines every installation has (`lines` gives those a reading or a note). */
+export type FakeTyreEntry = { id: string; kind: string; setId: string | null; day: string; odometer: number | null; note: string | null }
+
+/**
+ * The server's answers as the tab reads them; the fake only records what was sent and answers with the state it was given. Every
+ * installation has its swap line, with its id (`swapLines` adds a reading or a note to one), and `entries` are the other lines.
+ */
+export function fakeTyres(initial: FakeTyreSet[], entries: FakeTyreEntry[] = [], swapLines: Record<string, { odometer?: number; note?: string }> = {}) {
+  const state = { sets: initial, entries, swapLines, calls: {} as Record<string, Record<string, unknown>[]>, failNext: [] as { key: string; args?: Record<string, unknown> }[] }
+  const lines = () =>
+    [
+      ...state.sets.flatMap((s) =>
+        s.installations.map((x) => ({
+          id: x.id, kind: 'SWAP', setId: s.id, installationId: x.id, day: x.from, odometer: state.swapLines[x.id]?.odometer ?? null, note: state.swapLines[x.id]?.note ?? null,
+        })),
+      ),
+      ...state.entries.map((e) => ({ ...e, installationId: null })),
+    ]
+      .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : a.id < b.id ? -1 : 1))
+      .map((e) => ({ __typename: 'TyreEntry', version: 1, ...e }))
   const answer = () => ({
     __typename: 'VehicleTyres',
     vehicleId: 'v1',
@@ -26,7 +43,7 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
       { __typename: 'OdometerPoint', date: '2026-03-01', value: 140_000 },
       { __typename: 'OdometerPoint', date: '2026-09-01', value: 147_000 },
     ],
-    days: state.days.map((d, i) => ({ __typename: 'TyreLogDay', id: `d${i}`, version: 1, ...d })),
+    entries: lines(),
     sets: state.sets.map((s) => ({
       __typename: 'TyreSetInfo',
       onTheCar: s.onTheCar,
@@ -61,7 +78,10 @@ export function fakeTyres(initial: FakeTyreSet[], days: { day: string; odometer:
     mutation('AddPastTyreSwaps', 'addPastTyreSwaps'),
     mutation('DeleteTyreInstallation', 'deleteTyreInstallation'),
     mutation('RestoreTyreInstallation', 'restoreTyreInstallation'),
-    mutation('SetTyreLogDay', 'setTyreLogDay'),
+    mutation('AddTyreEntry', 'addTyreEntry'),
+    mutation('UpdateTyreEntry', 'updateTyreEntry'),
+    mutation('DeleteTyreEntry', 'deleteTyreEntry'),
+    mutation('RestoreTyreEntry', 'restoreTyreEntry'),
     mutation('RetireTyreSet', 'retireTyreSet'),
     mutation('AddTyreInstallation', 'addTyreInstallation'),
     mutation('UpdateTyreInstallation', 'updateTyreInstallation'),

@@ -1,35 +1,30 @@
 import { useQuery } from '@apollo/client/react'
 import Box from '@mui/material/Box'
+import ButtonBase from '@mui/material/ButtonBase'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { Archive, ArrowLeftRight, ArrowUpDown, CircleDot, CloudUpload, History, Pencil, Plus, Snowflake, Sun, Trash2 } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { Archive, ArrowLeftRight, ArrowUpDown, CircleDot, CloudUpload, History, NotebookPen, Plus, Snowflake, Sun } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx'
-import { IconAction } from '../../components/IconAction.tsx'
 import { Loading } from '../../components/Loading.tsx'
-import { DialogButtons, DialogCancel, DialogFrame } from '../../dialogs/DialogFrame.tsx'
-import { DialogTrigger } from '../../dialogs/DialogTrigger.tsx'
-import { useDialogState } from '../../dialogs/useDialogState.ts'
 import { todayIso } from '../../forms/dates.ts'
-import { Field } from '../../forms/Field.tsx'
-import { FieldInput } from '../../forms/FieldInput.tsx'
-import { Form } from '../../forms/Form.tsx'
-import { RetireTyreSetDocument, SetTyreLogDayDocument, UnretireTyreSetDocument, VehicleTyresDocument, type DistanceUnit, type TyreSeason } from '../../gql/generated.ts'
+import { RetireTyreSetDocument, UnretireTyreSetDocument, VehicleTyresDocument, type DistanceUnit, type TyreSeason } from '../../gql/generated.ts'
 import { useFormat } from '../../i18n/format.ts'
 import { ErrorMessage } from '../../messages.tsx'
 import { HistoryDialog, RoughDialog } from '../../tyres/HistoryDialog.tsx'
-import { neighbours, odometerOn, sortedReadings } from '../../tyres/odometer.ts'
+import { odometerOn, sortedReadings } from '../../tyres/odometer.ts'
 import { PastSwapsDialog } from '../../tyres/PastSwapsDialog.tsx'
 import { SwapDialog } from '../../tyres/SwapDialog.tsx'
 import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
 import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
-import { OfflineNote } from '../../components/OfflineNote.tsx'
-import { isLocalLine, noTyres } from '../../tyres/replay.ts'
-import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from '../../tyres/tyres.ts'
+import { noTyres } from '../../tyres/replay.ts'
+import { EntryDialog, TrashEntryDialog } from '../../tyres/EntryDialog.tsx'
+import { isSwapLine, useEntryWords } from '../../tyres/entries.ts'
+import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords } from '../../tyres/tyres.ts'
 
 const SEASON_ICON: Record<TyreSeason, ReactNode> = {
   SUMMER: <Sun size={14} aria-hidden />,
@@ -39,7 +34,7 @@ const SEASON_ICON: Record<TyreSeason, ReactNode> = {
 
 /**
  * A vehicle's tyres (#287): the sets on the car, in storage and retired, each tracked as one thing with its distance (worked out by the
- * server from the vehicle's readings, ≈ where a day's odometer was worked out) and age, and the tyre log, a line per day a set went on.
+ * server from the vehicle's readings, ≈ where a day's odometer was worked out) and age, and the tyre log, a line per thing done (#288).
  * Whoever may log for the vehicle swaps, changes positions, enters past swaps and changes a set's history; anyone else sees it.
  */
 export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: { distance: DistanceUnit } }; canLog: boolean }) {
@@ -110,6 +105,16 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
           {canLog && (
             <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
               {addSet(t('tyres.addSet'))}
+              <EntryDialog
+                vehicleId={vehicle.id}
+                unit={unit}
+                tyres={tyres}
+                trigger={
+                  <Button variant="soft" startIcon={<NotebookPen size={16} aria-hidden />}>
+                    {t('tyres.entries.add')}
+                  </Button>
+                }
+              />
               {live.length > 0 && (
                 <PastSwapsDialog
                   vehicleId={vehicle.id}
@@ -278,179 +283,82 @@ function SetCard({
 }
 
 /**
- * A line per day a set went on (from the installations) and per day with only a reading or a note left (its installations in the trash), newest
- * first. A day's note shows on its line; a line with a reading or a note has the pencil, which edits or clears both (the owner's choice).
+ * The tyre log (#288): its lines, newest day first, each what was done (a chip), the set and the day, then the reading and the note. A swap's
+ * line without a typed reading shows the day's odometer worked out from the fuel log (≈). Whoever may log for the vehicle opens a line to
+ * change it and has its bin beside it.
  */
 function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: string; unit: DistanceUnit; canLog: boolean }) {
   const { t } = useTranslation()
   const format = useFormat()
   const words = useTyreWords(unit)
+  const entryWords = useEntryWords()
+  const [error, setError] = useState<unknown>()
   const sorted = sortedReadings(tyres.readings)
-  const lines = new Map<string, { day: string; title: string; sub: string }>()
-  for (const info of tyres.sets)
-    for (const s of info.installations) {
-      const key = `${s.installation.from}|${info.set.id}`
-      if (lines.has(key)) continue
-      const pairs = s.installation.pairOneFront == null ? t('tyres.wholeSet') : t('tyres.wholeSetPairs', { pairs: words.pairs(s.installation.pairOneFront) })
-      lines.set(key, { day: s.installation.from, title: t('tyres.onTheCarLine', { set: info.set.name }), sub: pairs })
-    }
-  for (const d of tyres.days)
-    if (![...lines.values()].some((l) => l.day === d.day)) lines.set(`${d.day}|`, { day: d.day, title: d.odometer != null ? t('tyres.readingOnly') : t('tyres.noteOnly'), sub: '' })
-  const sortedLines = [...lines.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
 
   return (
     <Stack component="section" aria-labelledby="tyre-log-title" sx={{ gap: 1, minWidth: 0 }}>
       <Typography id="tyre-log-title" component="h2" variant="overline" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
         {t('tyres.log')}
       </Typography>
-      {sortedLines.length === 0 ? (
+      {error !== undefined && <ErrorMessage error={error} />}
+      {tyres.entries.length === 0 ? (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('tyres.empty.log')}
         </Typography>
       ) : (
-        <Box component="ol" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {sortedLines.map((line) => {
-            const day = tyres.days.find((d) => d.day === line.day)
-            const on = odometerOn(sorted, line.day)
-            const odometer = day?.odometer != null ? words.distance(day.odometer) : on ? words.distance(on.value, on.approximate) : t('tyres.beforeLog')
-            return (
-              <Box component="li" key={`${line.day}${line.title}`} sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 1, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-                    {line.title}
+        <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {tyres.entries.map((entry) => {
+            const set = entryWords.setName(tyres, entry.setId)
+            // A swap's line without a typed reading says the day's odometer worked out from the fuel log, or that the day is before it.
+            const worked = entry.odometer == null && isSwapLine(entry)
+            const on = worked ? odometerOn(sorted, entry.day) : null
+            const odometer = entry.odometer != null ? words.distance(entry.odometer) : on ? words.distance(on.value, on.approximate) : worked ? t('tyres.beforeLog') : null
+            const body = (
+              <Box sx={{ flex: 1, minWidth: 0, textAlign: 'start' }}>
+                <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Typography component="span" variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                    {format.date(entry.day)}
                   </Typography>
-                  {line.sub && (
-                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                      {line.sub}
+                  <Chip size="small" variant="soft" label={entryWords.kind(entry.kind)} />
+                  {set && (
+                    <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                      {set}
                     </Typography>
                   )}
-                  {day?.note && (
-                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                      {day.note}
-                    </Typography>
-                  )}
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
-                    {format.date(line.day)} · {odometer}
-                    {day?.odometer != null && ` · ${t('tyres.readingTyped')}`}
+                </Stack>
+                {(odometer || entry.note) && (
+                  <Typography component="span" variant="body2" sx={{ display: 'block', color: 'text.secondary', overflowWrap: 'anywhere' }}>
+                    {[odometer, entry.note].filter(Boolean).join(' · ')}
                   </Typography>
-                </Box>
-                {canLog && day && (day.odometer != null || day.note) && (
-                  <ReadingDialog vehicleId={vehicleId} unit={unit} tyres={tyres} day={line.day} lineId={day.id} value={day.odometer ?? null} note={day.note ?? null} />
                 )}
+              </Box>
+            )
+            return (
+              <Box component="li" key={entry.id} sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 0.5, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
+                {canLog ? (
+                  <EntryDialog
+                    vehicleId={vehicleId}
+                    unit={unit}
+                    tyres={tyres}
+                    entry={entry}
+                    trigger={
+                      <ButtonBase
+                        aria-label={entryWords.name(tyres, entry)}
+                        sx={{ flex: 1, minWidth: 0, minHeight: 44, justifyContent: 'flex-start', borderRadius: 2, px: 1, py: 0.75, '&:hover': { bgcolor: 'action.hover' } }}
+                      >
+                        {body}
+                      </ButtonBase>
+                    }
+                  />
+                ) : (
+                  <Box sx={{ flex: 1, minWidth: 0, px: 1, py: 0.75 }}>{body}</Box>
+                )}
+                {canLog && <TrashEntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} entry={entry} onError={setError} />}
               </Box>
             )
           })}
         </Box>
       )}
     </Stack>
-  )
-}
-
-/**
- * A tyre log day's reading and note: edited, the reading removed (the note stays), or both cleared, which removes the line. The change
- * names the line (its id, and through it its version, `useTyreMutation`), so one made from a line the server has since changed is parked,
- * never written over it; a line a waiting change wrote on this device has no id the server knows yet, so it is sent without one.
- */
-function ReadingDialog({
-  vehicleId,
-  unit,
-  tyres,
-  day,
-  lineId,
-  value,
-  note,
-}: {
-  vehicleId: string
-  unit: DistanceUnit
-  tyres: Tyres
-  day: string
-  lineId: string
-  value: number | null
-  note: string | null
-}) {
-  const { t } = useTranslation()
-  const format = useFormat()
-  const notify = useTyreToasts()
-  const words = useTyreWords(unit)
-  const run = useTyreMutation(vehicleId)
-  const [open, setOpen] = useDialogState()
-  const [error, setError] = useState<unknown>()
-  const [busy, setBusy] = useState(false)
-  const { previous, next } = neighbours(sortedReadings(tyres.readings), day)
-  const hint =
-    previous && next
-      ? t('tyres.odoHint.neighbours', { previous: t('tyres.readingOn', { value: words.distance(previous.value), date: format.date(previous.date) }), next: t('tyres.readingOn', { value: words.distance(next.value), date: format.date(next.date) }) })
-      : previous
-        ? t('tyres.odoHint.after', { previous: t('tyres.readingOn', { value: words.distance(previous.value), date: format.date(previous.date) }) })
-        : next
-          ? t('tyres.odoHint.beforeOnly', { next: t('tyres.readingOn', { value: words.distance(next.value), date: format.date(next.date) }) })
-          : undefined
-
-  const save = async (odometer: number | null, nextNote: string | null) => {
-    setBusy(true)
-    setError(undefined)
-    try {
-      const saved = await run(SetTyreLogDayDocument, { input: { vehicleId, day, odometer, note: nextNote, ...(isLocalLine(lineId) ? {} : { id: lineId }) } })
-      setOpen(false)
-      notify.saved(saved, t('toast.saved'))
-    } catch (err) {
-      setError(err)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const submit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    void save(wholeOrNull(String(form.get('odometer') ?? '')), String(form.get('note') ?? '').trim() || null)
-  }
-
-  return (
-    <>
-      <DialogTrigger
-        trigger={
-          <IconAction label={t('tyres.editReading', { date: format.date(day) })}>
-            <Pencil size={16} aria-hidden />
-          </IconAction>
-        }
-        open={open}
-        onOpen={() => setOpen(true)}
-      />
-      <DialogFrame open={open} onClose={() => setOpen(false)} onClosed={() => setError(undefined)} busy={busy} maxWidth={460} title={t('tyres.dialogs.readingTitle', { date: format.date(day) })} description={t('tyres.dialogs.readingText')}>
-        {open && (
-          <Form onSubmit={submit} refusal={error}>
-            <OfflineNote />
-            <Stack sx={{ gap: 1.5 }}>
-              <Field name="odometer" label={t('tyres.fields.odometerPlain', { unit: words.unitShort })} hint={hint} invalid={wholeInvalid(t('forms.numberInvalid'))}>
-                <FieldInput inputMode="numeric" autoComplete="off" defaultValue={value == null ? '' : String(value)} />
-              </Field>
-              <Field name="note" label={t('tyres.fields.note')} hint={t('tyres.dialogs.lineClearHint')}>
-                <FieldInput maxLength={500} autoComplete="off" defaultValue={note ?? ''} />
-              </Field>
-              {error !== undefined && <ErrorMessage error={error} />}
-              <DialogButtons>
-                {value != null && (
-                  <ConfirmDialog
-                    trigger={
-                      <Button variant="soft" color="error" startIcon={<Trash2 size={16} aria-hidden />} sx={{ mr: 'auto' }}>
-                        {t('tyres.dialogs.removeReading')}
-                      </Button>
-                    }
-                    title={t('tyres.dialogs.removeReadingTitle')}
-                    description={t('tyres.dialogs.removeReadingText', { date: format.date(day), value: words.distance(value) })}
-                    confirmLabel={t('tyres.dialogs.removeReading')}
-                    onConfirm={() => void save(null, note)}
-                  />
-                )}
-                <DialogCancel />
-                <Button type="submit" disabled={busy}>
-                  {t('tyres.dialogs.save')}
-                </Button>
-              </DialogButtons>
-            </Stack>
-          </Form>
-        )}
-      </DialogFrame>
-    </>
   )
 }
