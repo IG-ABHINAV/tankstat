@@ -91,7 +91,7 @@ export function EntryDialog({
       // A note takes no amount: one it had (another kind before) goes, with its expense, to the trash.
       const fee = kind === 'NOTE'
         ? entry?.expenseId ? { amount: null } : null
-        : feeOf(form, entryWords.feeTitle(kind, entryWords.setName(tyres, setId || null)), expenseId)
+        : feeOf(form, entryWords.feeTitle(kind, entryWords.setName(tyres, setId || null)), entry?.expenseId ?? expenseId) // its own expense, when it has one
       const values = { kind, setId: setId || null, day: text('day'), odometer: wholeOrNull(text('odometer')), note: text('note') || null, ...(fee ? { fee } : {}) }
       const saved = entry
         ? await run(UpdateTyreEntryDocument, { input: { id: entry.id, ...values } })

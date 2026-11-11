@@ -237,6 +237,26 @@ describe('a visit waiting on this device', () => {
     expect(outbox.markOf('expenses', 'x9')).toBe('new')
   })
 
+  it('a waiting edit of a line with an expense (#288) changes that expense\'s row and adds none', async () => {
+    const { outbox } = await import('../../src/offline/outbox.ts')
+    const { deviceData } = await import('../../src/offline/deviceData.ts')
+    const { withChanges } = await import('../../src/offline/localResolvers.ts')
+    deviceData.reset(memoryStorage())
+    await deviceData.signedIn('u1')
+    await outbox.reload()
+    const stored = { __typename: 'Expense', id: 'x9', vehicleId: 'v1', date: '2026-10-05', title: 'Puncture repaired', category: 'Tyres', amount: 25, discount: null, currency: 'EUR',
+      odometer: null, note: null, deletedAt: null, version: 3, updatedAt: '2026-10-05T10:00:00Z', createdBy: null, photos: [], pulledAt: 0, schedules: [] } as unknown as LogRow
+    const input = { id: 'l1', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-10-05', note: 'Rear left',
+      fee: { amount: 30, currency: 'EUR', category: 'Tyres', title: 'Puncture repaired', expenseId: 'x9' } }
+    await outbox.enqueue({ id: 'edit', entity: 'tyres', action: 'updateTyreEntry', vehicleId: 'v1', targetId: 'l1', input })
+
+    const rows = withChanges('expenses', [stored], 'v1')
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: 'x9', amount: 30 })
+    expect(outbox.markOf('expenses', 'x9')).toBe('changed')
+  })
+
   it('moves its schedules on as the server will: no longer due, the new baseline, one version more', async () => {
     const { outbox } = await import('../../src/offline/outbox.ts')
     const { deviceData } = await import('../../src/offline/deviceData.ts')

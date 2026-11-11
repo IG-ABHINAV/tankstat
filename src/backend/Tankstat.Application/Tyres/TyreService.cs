@@ -709,7 +709,8 @@ public sealed class TyreService(
     /// both (a swap's line moving its swap by the history's rules). While the line is in the trash the expense is edited on its own: a new
     /// day or odometer is then its own, and restoring the line parts the two (the owner's choice).
     /// </summary>
-    public async Task<Expense> UpdateExpenseAsync(TyreEntry found, Guid expenseId, ExpenseInput input, CancellationToken ct, int? expectedVersion = null)
+    /// <param name="readingPhotos">One of its photos is still being read (as <see cref="ExpenseService.UpdateAsync"/> finds): it may wait for it.</param>
+    public async Task<Expense> UpdateExpenseAsync(TyreEntry found, Guid expenseId, ExpenseInput input, CancellationToken ct, int? expectedVersion = null, bool readingPhotos = false)
     {
         var vehicle = await EditableVehicleAsync(found.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
@@ -724,14 +725,14 @@ public sealed class TyreService(
         if (line.IsDeleted && sameDayAndReading)
         {
             // Its amount, title, category or note: the day and the reading are still the line's, held for it.
-            save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount));
+            save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount, readingPhotos));
             save.Change(expense);
         }
         else if (line.IsDeleted)
         {
             if (line.OdometerReadingId is { } shared && expense.OdometerReadingId == shared) expense.LeaveSharedReading();
             if (input.Odometer is { } own) await odometer.ValidateAsync(vehicle.Id, input.Date, own, exceptReadingId: expense.OdometerReadingId, ct);
-            save.ExpenseChanges.Add(expense.Update(input.Date, input.Title, input.Category, input.Amount, currency, input.Odometer, input.Note, by: by, discount: discount));
+            save.ExpenseChanges.Add(expense.Update(input.Date, input.Title, input.Category, input.Amount, currency, input.Odometer, input.Note, readingPhotos, by, discount));
             save.Change(expense);
             save.Change(line); // its reading leaves the car's readings once nothing live holds it
             TyreExpenses.Settle(line, expense, clock.GetUtcNow());
@@ -748,7 +749,7 @@ public sealed class TyreService(
             if (added is not null) save.AddedReadings.Add(added);
             if (removed is not null) save.RemovedReadings.Add(removed);
             save.Change(line);
-            save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount));
+            save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount, readingPhotos));
             save.Change(expense);
         }
         await SaveAsync(save, ct);

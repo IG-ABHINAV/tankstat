@@ -88,10 +88,13 @@ public sealed class ExpenseService(
         if (await tyres.LineOfExpenseAsync(id, ct) is { } line)
         {
             var before = expense.ReviewState;
-            var saved = await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion);
-            // A person saved it: what they were told about its photos counts as read, as for any expense.
+            var waits = (input.Amount is null || input.Odometer is null) && await filler.MayWaitForLogPhotosAsync(LogType.Expense, id, ct);
+            var saved = await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion, waits);
+            // A person saved it: what they were told about its photos counts as read, as for any expense; one still waiting takes what was read.
             if (before != ReviewState.None && saved.ReviewState == ReviewState.None) await filler.ReviewedAsync(LogType.Expense, id, saved.CreatedById, ct);
-            return saved;
+            if (saved.ReviewState != ReviewState.AwaitingPhotos) return saved;
+            await filler.FillAsync(LogType.Expense, id, ct);
+            return await expenses.FindAsync(id, ct) ?? saved;
         }
         VersionCheck.Require(expectedVersion, expense.Version);
         await ValidateAsync(expense.VehicleId, input, exceptReadingId: expense.OdometerReadingId, ct);

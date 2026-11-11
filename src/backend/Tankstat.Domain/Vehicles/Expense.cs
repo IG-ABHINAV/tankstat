@@ -205,14 +205,15 @@ public sealed class Expense : IOwned, ISoftDeletable, ISynced
     /// to the date and value asked for, or none), never one of its own.
     /// </summary>
     public LinkedChanges UpdateWithLineReading(
-        DateOnly date, string title, string? category, decimal? amount, string? currency, OdometerReading? lineReading, string? note, Guid? by, decimal? discount)
+        DateOnly date, string title, string? category, decimal? amount, string? currency, OdometerReading? lineReading, string? note, Guid? by, decimal? discount,
+        bool readingPhotos = false)
     {
         if (IsDeleted) throw new DomainException("expense.trashedCannotEdit", "An expense in the trash cannot be edited; restore it first.");
         Cost.RequireAmountForDiscount(amount, discount);
         Apply(date, title, category, note);
         var (createdCost, removedCost) = SetCost(date, amount, currency, discount);
         (OdometerReading, OdometerReadingId) = (lineReading, lineReading?.Id);
-        ReviewState = LogReview.AfterSave(Missing, Fillable, readingPhotos: false);
+        ReviewState = LogReview.AfterSave(Missing, Fillable, readingPhotos);
         FilledFromPhoto = LogValues.None;
         Bump(EntityChange.Edited, by);
         return new LinkedChanges(null, null, createdCost, removedCost);
