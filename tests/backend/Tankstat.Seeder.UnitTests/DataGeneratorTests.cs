@@ -36,7 +36,12 @@ public class DataGeneratorTests
             new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, installations).Check(); // the app's own checks pass
             // Every installation has its line in the tyre log, a swap with its id and first day (#288).
             Assert.Equal(installations.Select(s => (s.Id, TyreEntryKind.Swap, s.From, (Guid?)s.SetId)),
-                g.TyreEntries!.OrderBy(e => e.Day).Select(e => (e.Id, e.Kind, e.Day, e.SetId)));
+                g.TyreEntries!.Where(e => e.IsSwapLine).OrderBy(e => e.Day).Select(e => (e.Id, e.Kind, e.Day, e.SetId)));
+            // A Bought line per set and the amounts (#288): each linked expense on its line's day, in the vehicle's currency, filed under Tyres.
+            Assert.Equal(2, g.TyreEntries!.Count(e => e.Kind == TyreEntryKind.Bought));
+            var linked = g.TyreEntries!.Where(e => e.ExpenseId is not null).ToList();
+            Assert.Equal(linked.Select(e => (e.ExpenseId!.Value, e.Day)).Order(), g.TyreExpenses!.Select(x => (x.Id, x.Date)).Order());
+            Assert.All(g.TyreExpenses!, x => Assert.Equal(("Tyres", (long?)null), (x.Category, x.Odometer)));
         });
     }
 

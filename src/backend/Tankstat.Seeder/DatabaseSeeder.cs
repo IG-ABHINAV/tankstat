@@ -36,13 +36,14 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             db.TyreSets.AddRange(batch.SelectMany(b => b.TyreSets ?? []));
             db.TyreInstallations.AddRange(batch.SelectMany(b => b.TyreInstallations ?? []));
             db.TyreEntries.AddRange(batch.SelectMany(b => b.TyreEntries ?? []));
+            db.Expenses.AddRange(batch.SelectMany(b => b.TyreExpenses ?? []));
             await db.SaveChangesAsync(ct);
 
             vehicles += batch.Count(b => !b.Vehicle.IsDeleted);
             trashed += batch.Count(b => b.Vehicle.IsDeleted);
             refuelings += batch.Sum(b => b.Refuelings.Count);
             recurring += batch.Sum(b => b.Recurring.Count);
-            expenses += batch.Sum(b => b.Expenses.Count);
+            expenses += batch.Sum(b => b.Expenses.Count + (b.TyreExpenses?.Count ?? 0)); // a tyre log line's amount is an expense too (#288)
             tyreSets += batch.Sum(b => b.TyreSets?.Count ?? 0);
             notified.AddRange(batch.Select(b => b.Vehicle).Where(v => !v.IsDeleted).Take(NotifiedVehicles - notified.Count));
         }
