@@ -26,6 +26,7 @@ import { CarPicture, TyreButton } from './CarPicture.tsx'
 import { CROSS, EXACT, isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from './singleTyres.ts'
 import ButtonBase from '@mui/material/ButtonBase'
 import Chip from '@mui/material/Chip'
+import { COARSE } from '../theme/components.ts'
 
 type CornerMode = 'same' | 'cross' | 'unsure' | 'own'
 type CornerMap = Record<string, string | null>
@@ -83,7 +84,11 @@ export function SwapDialog({
   const broken = !!info?.set.brokenUpOn
   const [cornerMode, setCornerMode] = useState<CornerMode>(rotate ? 'cross' : 'same')
   const [own, setOwn] = useState<CornerMap>({})
-  const baseCorners: CornerMap = Object.fromEntries(liveTyresOf(info).map((x) => [x.tyre.id, x.corner ?? null]))
+  // As before the swap's day, as the server's own default (`TyrePlaces.CornerBefore`): a back-dated swap goes by the corners then, not now;
+  // a tyre never on the car before it, by the corner the overview gives it.
+  const cornerBefore = (x: ReturnType<typeof liveTyresOf>[number]) =>
+    [...x.places].filter((p) => p.place.from < day).sort((a, b) => (a.place.from < b.place.from ? 1 : -1))[0]?.place.corner ?? x.corner ?? null
+  const baseCorners: CornerMap = Object.fromEntries(liveTyresOf(info).map((x) => [x.tyre.id, cornerBefore(x)]))
   const cornersNow: CornerMap =
     cornerMode === 'own' ? own
       : cornerMode === 'unsure' ? Object.fromEntries(Object.keys(baseCorners).map((id) => [id, null]))
@@ -198,6 +203,7 @@ export function SwapDialog({
               </Field>
               {broken && info ? (
                 <WhereEachTyre
+                  key={info.set.id} // another set's tyres: nothing picked carries over
                   info={info}
                   rotate={rotate}
                   base={baseCorners}
@@ -380,7 +386,7 @@ function WhereEachTyre({
               aria-label={t('tyres.single.chipName', { label: x.tyre.label })}
               aria-pressed={picked === x.tyre.id}
               onClick={() => setPicked(picked === x.tyre.id ? null : x.tyre.id)}
-              sx={{ fontWeight: 700 }}
+              sx={{ fontWeight: 700, [COARSE]: { height: 44, minWidth: 44, px: 1 } }} // 44 px to a finger both ways, as every control
             />
           ))}
         </Stack>

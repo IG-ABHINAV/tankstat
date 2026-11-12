@@ -65,9 +65,12 @@ public sealed class SyncTargetService(
         var sets = await tyres.ListSetsAsync(Ids(OfflineEntityType.TyreSet), ct);
         var installations = await tyres.ListInstallationsAsync(Ids(OfflineEntityType.TyreInstallation), ct);
         var entries = await tyres.ListEntriesAsync(Ids(OfflineEntityType.TyreEntry), ct);
-        // Single tyres and their places (#289): a place of a tyre in the trash, a tyre of a set in the trash, is in the trash with it.
+        // Single tyres and their places (#289): a place of a tyre or an installation in the trash, a tyre of a set in the trash, is in the trash with it.
         var places = await tyres.ListPlacesAsync(Ids(OfflineEntityType.TyrePlace), ct);
-        var singleTyres = await tyres.ListTyresAsync([.. Ids(OfflineEntityType.Tyre).Concat(places.Select(p => p.TyreId)).Distinct()], ct);
+        var tyreIds = Ids(OfflineEntityType.Tyre);
+        var singleTyres = await tyres.ListTyresAsync([.. tyreIds.Concat(places.Select(p => p.TyreId)).Distinct()], ct);
+        var trashedPlaceInstallations = (await tyres.ListInstallationsAsync([.. places.Select(p => p.InstallationId).Distinct()], ct))
+            .Where(s => s.IsDeleted).Select(s => s.Id).ToHashSet();
         var setsOfInstallations = await tyres.ListSetsAsync(
             [.. installations.Select(s => s.SetId).Concat(entries.Where(e => e.SetId is not null).Select(e => e.SetId!.Value)).Concat(singleTyres.Select(t => t.SetId)).Distinct()], ct);
         var tyreVehicles = await vehicles.ListByIdsAsync(
@@ -87,11 +90,15 @@ public sealed class SyncTargetService(
             if (MaySeeTyres(entry.VehicleId, trashed)) result[new SyncTargetKey(OfflineEntityType.TyreEntry, entry.Id)] = new SyncTarget(entry, trashed);
         }
         bool TyreTrashed(Domain.Tyres.Tyre tyre) => tyre.IsDeleted || setsOfInstallations.Any(s => s.Id == tyre.SetId && s.IsDeleted);
-        foreach (var tyre in singleTyres.Where(t => Ids(OfflineEntityType.Tyre).Contains(t.Id)))
-            if (MaySeeTyres(tyre.VehicleId, TyreTrashed(tyre))) result[new SyncTargetKey(OfflineEntityType.Tyre, tyre.Id)] = new SyncTarget(tyre, TyreTrashed(tyre));
+        foreach (var tyre in singleTyres.Where(t => tyreIds.Contains(t.Id)))
+        {
+            var trashed = TyreTrashed(tyre);
+            if (MaySeeTyres(tyre.VehicleId, trashed)) result[new SyncTargetKey(OfflineEntityType.Tyre, tyre.Id)] = new SyncTarget(tyre, trashed);
+        }
         foreach (var place in places)
         {
-            var trashed = place.IsDeleted || singleTyres.FirstOrDefault(t => t.Id == place.TyreId) is not { } of || TyreTrashed(of);
+            var trashed = place.IsDeleted || trashedPlaceInstallations.Contains(place.InstallationId)
+                || singleTyres.FirstOrDefault(t => t.Id == place.TyreId) is not { } of || TyreTrashed(of);
             if (MaySeeTyres(place.VehicleId, trashed)) result[new SyncTargetKey(OfflineEntityType.TyrePlace, place.Id)] = new SyncTarget(place, trashed);
         }
 
