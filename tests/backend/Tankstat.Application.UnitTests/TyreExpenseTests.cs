@@ -679,4 +679,29 @@ public class TyreExpenseTests
             new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 22), 148_100, "Screws in the tread"), default));
         Assert.StartsWith("odometer.", refused.Key);
     }
+
+    [Fact]
+    public async Task AnAmountTypedOnOneLineOfAGroupAlone_ItsOwnRow_AndTheExpensesNewDayMovesOnlyThatLine()
+    {
+        var s = await Setup();
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        var breakUp = new TyreBreakUpInput(s.Summer, D(2026, 9, 20), [
+            new(tyres[0], "S1", TyreCorner.FrontLeft), new(tyres[1], "S2", TyreCorner.FrontRight), new(tyres[2], "S3", TyreCorner.RearLeft), new(tyres[3], "S4", TyreCorner.RearRight)]);
+        var (s3, s4, expenseId) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws", null,
+            [new(tyres[2], s3), new(tyres[3], s4)], breakUp), default);
+
+        // An amount on S3 alone: its expense, not S4's; a row of its own.
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws",
+            new TyreFee(9_000, "HUF", "Tyres", "Puncture repaired", expenseId)), default);
+        Assert.Equal(((Guid?)expenseId, (Guid?)null), (Line(s, s3).ExpenseId, Line(s, s4).ExpenseId));
+        Assert.Null(Line(s, s3).GroupId);
+
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 21), "Puncture repaired", "Tyres", 9_000, "HUF", 148_300, null), default);
+
+        Assert.Equal((D(2026, 9, 21), 148_300L), (Line(s, s3).Day, Line(s, s3).Odometer!.Value));
+        Assert.Equal((D(2026, 9, 20), 148_200L), (Line(s, s4).Day, Line(s, s4).Odometer!.Value)); // S4 holds no part of it
+        Assert.NotEqual(Line(s, s3).OdometerReadingId, Line(s, s4).OdometerReadingId);
+        Assert.Equal(Line(s, s3).OdometerReadingId, s.W.Expenses.Items.Single(e => e.Id == expenseId).OdometerReadingId);
+    }
 }

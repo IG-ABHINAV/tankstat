@@ -429,4 +429,30 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.All([byId[s3.ToString()], byId[s4.ToString()]], l => Assert.True(l.GetProperty("expenseTrashed").GetBoolean()));
         Assert.Empty(trashed.GetProperty("spentAll").EnumerateArray());
     }
+
+    [Fact]
+    public async Task OneTyresLineOfAGroupWithoutAnAmount_MovedAlone_TakesARowOfItsOwn_TheOtherStaysOnASavedRow()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var (s3, s4) = (Guid.NewGuid(), Guid.NewGuid());
+        await Mutate("addTyreEntry", "AddTyreEntryInput", new
+        {
+            vehicleId = vehicle, kind = "PUNCTURE_REPAIRED", day = "2026-09-20", setId = summer, odometer = 148_200,
+            tyres = new object[] { new { tyreId = tyres[2], id = s3 }, new { tyreId = tyres[3], id = s4 } },
+            breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        }, "vehicleId");
+
+        var moved = await Mutate("updateTyreEntry", "UpdateTyreEntryInput", new { id = s3, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-22", odometer = 148_400 },
+            "entries { id day odometer groupId } readings { date value }");
+
+        var byId = moved.GetProperty("entries").EnumerateArray().ToDictionary(e => e.GetProperty("id").GetString()!);
+        Assert.Equal(("2026-09-22", 148_400L), (byId[s3.ToString()].GetProperty("day").GetString(), byId[s3.ToString()].GetProperty("odometer").GetInt64()));
+        Assert.Equal(("2026-09-20", 148_200L), (byId[s4.ToString()].GetProperty("day").GetString(), byId[s4.ToString()].GetProperty("odometer").GetInt64()));
+        var readings = moved.GetProperty("readings").EnumerateArray().Select(r => (r.GetProperty("date").GetString(), r.GetProperty("value").GetInt64())).ToList();
+        Assert.Contains(("2026-09-20", 148_200L), readings);
+        Assert.Contains(("2026-09-22", 148_400L), readings);
+    }
 }

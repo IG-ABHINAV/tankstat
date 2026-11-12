@@ -438,7 +438,9 @@ public sealed class TyreService(
         var group = entry.GroupId is { } g ? book.Entries.Where(e => e.GroupId == g && book.IsLive(e)).ToList() : [];
         var ownDays = input.Day != entry.Day || input.Odometer != entry.Odometer;
         var parted = !allHolders && ownDays && entry.ExpenseId is not null;
-        var changesAny = ownDays || input.Kind != entry.Kind || Trimmed(input.Note) != entry.Note || input.SetId != entry.SetId;
+        // An amount typed for these lines alone makes an expense the rest of the group does not hold: a change of their own too.
+        var ownAmount = input.Fee is { Amount: not null } && entry.ExpenseId is null;
+        var changesAny = ownDays || ownAmount || input.Kind != entry.Kind || Trimmed(input.Note) != entry.Note || input.SetId != entry.SetId;
         foreach (var line in lines)
         {
             if (!allHolders && ownDays && line.ExpenseId is not null)
@@ -1208,7 +1210,12 @@ public sealed class TyreService(
                 Follow(save, book, history, places.MoveSwap(book.Installations.First(s => s.Id == line.InstallationId), input.Date, by), by);
             }
             if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Date, value, exceptReadingId: line.OdometerReadingId, ct);
-            if (input.Date != line.Day || input.Odometer != line.Odometer) KeepReadingsOfOthers(save, book, live); // only when the row moves
+            if (input.Date != line.Day || input.Odometer != line.Odometer) // only when the row moves
+            {
+                // A live line not holding the expense that still shares its row (made together, then an amount typed alone) stays put.
+                TakeOwnReadings(save, book, live);
+                KeepReadingsOfOthers(save, book, live);
+            }
             OdometerReading? made = null;
             foreach (var holder in live)
             {
