@@ -1,5 +1,5 @@
 {
-  "_comment": "The rules of single tyres (#289), read by the server (Domain TyrePlacesContractTests, over TyrePlaces and TyreHistory) and by the device (frontend TyrePlaces.unit, over src/tyres/tyrePlaces.ts), so a change made offline shows as the server will make it. Ids are short names each side maps to ids of its own; 'new' is the installation an operation creates. A case gives the sets ('brokenUpOn' set for a broken-up one), the live installations, the tyres and their places (a place's id names it in 'editPlace' and 'moving'), then one 'op': 'breakUp', 'swap' ('corners' by tyre, or null: as before; a tyre left out has none), 'positions', 'move' (a swap moved by its line's day), 'edit' (an installation's days), 'add' (an installation typed in History), 'addPlace', 'editPlace' or 'check' ('moving' lists the places a check is about, 'restoring' when they come back from the trash). 'expectPlaces' lists the live places after it by tyre, then first day, 'expectRetired' the tyres retired after it; 'error' is the refusal with its key and args. 'placeIds' pins the ids a change works out for the places it makes by itself (TyreIds.PlaceOf: the two ids' hex digits exclusive-or'd pairwise).",
+  "_comment": "The rules of single tyres (#289), read by the server (Domain TyrePlacesContractTests, over TyrePlaces and TyreHistory) and by the device (frontend TyrePlaces.unit, over src/tyres/tyrePlaces.ts), so a change made offline shows as the server will make it. Ids are short names each side maps to ids of its own; 'new' is the installation an operation creates. A case gives the sets ('brokenUpOn' set for a broken-up one), the live installations, the tyres and their places (a place's id names it in 'editPlace' and 'moving'), then one 'op' (a tyre's 'replacedBy' names the tyre that replaced it): 'breakUp', 'swap' ('corners' by tyre, or null: as before; a tyre left out has none), 'positions', 'move' (a swap moved by its line's day), 'edit' (an installation's days), 'add' (an installation typed in History), 'addPlace', 'editPlace', 'replace' (a set's tyres replaced on a day: each 'old' tyre by a new one with its 'id' and 'label', #289) or 'check' ('moving' lists the places a check is about, 'restoring' when they come back from the trash). 'expectPlaces' lists the live places after it by tyre, then first day, 'expectRetired' the tyres retired after it; 'error' is the refusal with its key and args. 'placeIds' pins the ids a change works out for the places it makes by itself (TyreIds.PlaceOf: the two ids' hex digits exclusive-or'd pairwise).",
   "placeIds": [
     {
       "tyre": "11111111-2222-3333-4444-555555555555",
@@ -4590,6 +4590,922 @@
         "t3",
         "t4"
       ]
+    },
+    {
+      "name": "a replacement ends the old tyres' times on the car that day and starts the new ones there, at the same corners",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null,
+          "brokenUpOn": "2026-11-10"
+        }
+      ],
+      "installations": [
+        {
+          "id": "w26",
+          "set": "winter",
+          "from": "2026-11-10",
+          "until": null,
+          "pairOneFront": null
+        }
+      ],
+      "tyres": [
+        {
+          "id": "t1",
+          "set": "winter",
+          "label": "W1",
+          "retiredOn": null
+        },
+        {
+          "id": "t2",
+          "set": "winter",
+          "label": "W2",
+          "retiredOn": null
+        },
+        {
+          "id": "t3",
+          "set": "winter",
+          "label": "W3",
+          "retiredOn": null
+        },
+        {
+          "id": "t4",
+          "set": "winter",
+          "label": "W4",
+          "retiredOn": null
+        }
+      ],
+      "places": [
+        {
+          "id": "t1@w26",
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": null,
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w26",
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": null,
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w26",
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": null,
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w26",
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": null,
+          "corner": "RearRight"
+        }
+      ],
+      "op": "replace",
+      "replace": {
+        "set": "winter",
+        "day": "2027-02-15",
+        "tyres": [
+          {
+            "old": "t1",
+            "id": "t5",
+            "label": "W5"
+          },
+          {
+            "old": "t2",
+            "id": "t6",
+            "label": "W6"
+          }
+        ]
+      },
+      "expectPlaces": [
+        {
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-02-15",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-02-15",
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": null,
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": null,
+          "corner": "RearRight"
+        },
+        {
+          "tyre": "t5",
+          "installation": "w26",
+          "from": "2027-02-15",
+          "until": null,
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t6",
+          "installation": "w26",
+          "from": "2027-02-15",
+          "until": null,
+          "corner": "FrontRight"
+        }
+      ],
+      "expectRetired": [
+        "t1",
+        "t2"
+      ]
+    },
+    {
+      "name": "a replacement hands the old tyre's later times on the car over to the new one whole",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null,
+          "brokenUpOn": "2026-11-10"
+        }
+      ],
+      "installations": [
+        {
+          "id": "w26",
+          "set": "winter",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "pairOneFront": null
+        },
+        {
+          "id": "s27",
+          "set": "summer",
+          "from": "2027-03-28",
+          "until": "2027-11-10",
+          "pairOneFront": null
+        },
+        {
+          "id": "w27",
+          "set": "winter",
+          "from": "2027-11-10",
+          "until": null,
+          "pairOneFront": null
+        }
+      ],
+      "tyres": [
+        {
+          "id": "t1",
+          "set": "winter",
+          "label": "W1",
+          "retiredOn": null
+        },
+        {
+          "id": "t2",
+          "set": "winter",
+          "label": "W2",
+          "retiredOn": null
+        },
+        {
+          "id": "t3",
+          "set": "winter",
+          "label": "W3",
+          "retiredOn": null
+        },
+        {
+          "id": "t4",
+          "set": "winter",
+          "label": "W4",
+          "retiredOn": null
+        }
+      ],
+      "places": [
+        {
+          "id": "t1@w26",
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w26",
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w26",
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w26",
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        },
+        {
+          "id": "t1@w27",
+          "tyre": "t1",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w27",
+          "tyre": "t2",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w27",
+          "tyre": "t3",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w27",
+          "tyre": "t4",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "RearRight"
+        }
+      ],
+      "op": "replace",
+      "replace": {
+        "set": "winter",
+        "day": "2027-02-01",
+        "tyres": [
+          {
+            "old": "t1",
+            "id": "t5",
+            "label": "W5"
+          }
+        ]
+      },
+      "expectPlaces": [
+        {
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-02-01",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t5",
+          "installation": "w26",
+          "from": "2027-02-01",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t5",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        },
+        {
+          "tyre": "t2",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "w27",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "RearRight"
+        }
+      ],
+      "expectRetired": [
+        "t1"
+      ]
+    },
+    {
+      "name": "a tyre replaced in storage goes on at the next swap at the corner the tyre it replaced had",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null,
+          "brokenUpOn": "2026-11-10"
+        }
+      ],
+      "installations": [
+        {
+          "id": "w26",
+          "set": "winter",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "pairOneFront": null
+        },
+        {
+          "id": "s27",
+          "set": "summer",
+          "from": "2027-03-28",
+          "until": null,
+          "pairOneFront": null
+        }
+      ],
+      "tyres": [
+        {
+          "id": "t1",
+          "set": "winter",
+          "label": "W1",
+          "retiredOn": "2027-07-09",
+          "replacedBy": "t5"
+        },
+        {
+          "id": "t2",
+          "set": "winter",
+          "label": "W2",
+          "retiredOn": null
+        },
+        {
+          "id": "t3",
+          "set": "winter",
+          "label": "W3",
+          "retiredOn": null
+        },
+        {
+          "id": "t4",
+          "set": "winter",
+          "label": "W4",
+          "retiredOn": null
+        },
+        {
+          "id": "t5",
+          "set": "winter",
+          "label": "W5",
+          "retiredOn": null
+        }
+      ],
+      "places": [
+        {
+          "id": "t1@w26",
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w26",
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w26",
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w26",
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        }
+      ],
+      "op": "swap",
+      "swap": {
+        "set": "winter",
+        "day": "2027-11-10",
+        "replace": false,
+        "corners": null
+      },
+      "expectPlaces": [
+        {
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        },
+        {
+          "tyre": "t5",
+          "installation": "new",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "new",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "new",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "new",
+          "from": "2027-11-10",
+          "until": null,
+          "corner": "RearRight"
+        }
+      ],
+      "expectRetired": [
+        "t1"
+      ]
+    },
+    {
+      "name": "an installation added later around the day of a replacement: the old tyre until that day, the new one from it, at its corner",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null,
+          "brokenUpOn": "2026-11-10"
+        }
+      ],
+      "installations": [
+        {
+          "id": "w26",
+          "set": "winter",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "pairOneFront": null
+        }
+      ],
+      "tyres": [
+        {
+          "id": "t1",
+          "set": "winter",
+          "label": "W1",
+          "retiredOn": "2027-07-09",
+          "replacedBy": "t5"
+        },
+        {
+          "id": "t2",
+          "set": "winter",
+          "label": "W2",
+          "retiredOn": null
+        },
+        {
+          "id": "t3",
+          "set": "winter",
+          "label": "W3",
+          "retiredOn": null
+        },
+        {
+          "id": "t4",
+          "set": "winter",
+          "label": "W4",
+          "retiredOn": null
+        },
+        {
+          "id": "t5",
+          "set": "winter",
+          "label": "W5",
+          "retiredOn": null
+        }
+      ],
+      "places": [
+        {
+          "id": "t1@w26",
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w26",
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w26",
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w26",
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        }
+      ],
+      "op": "add",
+      "add": {
+        "set": "winter",
+        "from": "2027-06-01",
+        "until": "2027-08-01"
+      },
+      "expectPlaces": [
+        {
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        },
+        {
+          "tyre": "t1",
+          "installation": "new",
+          "from": "2027-06-01",
+          "until": "2027-07-09",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t5",
+          "installation": "new",
+          "from": "2027-07-09",
+          "until": "2027-08-01",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "new",
+          "from": "2027-06-01",
+          "until": "2027-08-01",
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "new",
+          "from": "2027-06-01",
+          "until": "2027-08-01",
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "new",
+          "from": "2027-06-01",
+          "until": "2027-08-01",
+          "corner": "RearRight"
+        }
+      ],
+      "expectRetired": [
+        "t1"
+      ]
+    },
+    {
+      "name": "a tyre that replaced another cannot be on the car before it came",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null,
+          "brokenUpOn": "2026-11-10"
+        }
+      ],
+      "installations": [
+        {
+          "id": "w26",
+          "set": "winter",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "pairOneFront": null
+        }
+      ],
+      "tyres": [
+        {
+          "id": "t1",
+          "set": "winter",
+          "label": "W1",
+          "retiredOn": "2027-07-09",
+          "replacedBy": "t5"
+        },
+        {
+          "id": "t2",
+          "set": "winter",
+          "label": "W2",
+          "retiredOn": null
+        },
+        {
+          "id": "t3",
+          "set": "winter",
+          "label": "W3",
+          "retiredOn": null
+        },
+        {
+          "id": "t4",
+          "set": "winter",
+          "label": "W4",
+          "retiredOn": null
+        },
+        {
+          "id": "t5",
+          "set": "winter",
+          "label": "W5",
+          "retiredOn": null
+        }
+      ],
+      "places": [
+        {
+          "id": "t1@w26",
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w26",
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w26",
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w26",
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        }
+      ],
+      "op": "addPlace",
+      "addPlace": {
+        "tyre": "t5",
+        "from": "2026-12-01",
+        "until": "2027-01-01",
+        "corner": null
+      },
+      "error": {
+        "key": "tyres.tyreNotYet",
+        "args": {
+          "label": "W5",
+          "date": "2027-07-09"
+        }
+      }
+    },
+    {
+      "name": "a retired tyre cannot be replaced again, and a whole set's tyres only once it is tracked tyre by tyre",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null,
+          "brokenUpOn": "2026-11-10"
+        }
+      ],
+      "installations": [
+        {
+          "id": "w26",
+          "set": "winter",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "pairOneFront": null
+        }
+      ],
+      "tyres": [
+        {
+          "id": "t1",
+          "set": "winter",
+          "label": "W1",
+          "retiredOn": "2027-07-09",
+          "replacedBy": "t5"
+        },
+        {
+          "id": "t2",
+          "set": "winter",
+          "label": "W2",
+          "retiredOn": null
+        },
+        {
+          "id": "t3",
+          "set": "winter",
+          "label": "W3",
+          "retiredOn": null
+        },
+        {
+          "id": "t4",
+          "set": "winter",
+          "label": "W4",
+          "retiredOn": null
+        },
+        {
+          "id": "t5",
+          "set": "winter",
+          "label": "W5",
+          "retiredOn": null
+        }
+      ],
+      "places": [
+        {
+          "id": "t1@w26",
+          "tyre": "t1",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "id": "t2@w26",
+          "tyre": "t2",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "id": "t3@w26",
+          "tyre": "t3",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "id": "t4@w26",
+          "tyre": "t4",
+          "installation": "w26",
+          "from": "2026-11-10",
+          "until": "2027-03-28",
+          "corner": "RearRight"
+        }
+      ],
+      "op": "replace",
+      "replace": {
+        "set": "winter",
+        "day": "2027-08-01",
+        "tyres": [
+          {
+            "old": "t1",
+            "id": "t6",
+            "label": "W6"
+          }
+        ]
+      },
+      "error": {
+        "key": "tyres.tyreAlreadyRetired",
+        "args": {
+          "label": "W1"
+        }
+      }
     }
   ]
 }

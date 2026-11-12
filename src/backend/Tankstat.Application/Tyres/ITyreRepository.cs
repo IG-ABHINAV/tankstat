@@ -84,6 +84,7 @@ public sealed class TyreSave
         foreach (var p in changes.Created)
             if (!AddedPlaces.Contains(p)) AddedPlaces.Add(p);
         foreach (var p in changes.Changed) Change(p);
+        foreach (var t in changes.ChangedTyres) Change(t);
     }
 
     public void Change(Tyre tyre)

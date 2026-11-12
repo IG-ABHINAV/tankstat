@@ -7,6 +7,9 @@ public sealed class TyrePlaceChanges
     public List<TyrePlace> Created { get; } = [];
     public List<TyrePlace> Changed { get; } = [];
 
+    /// <summary>The tyres a change retired (a replacement's).</summary>
+    public List<Tyre> ChangedTyres { get; } = [];
+
     public void Change(TyrePlace place)
     {
         if (!Created.Contains(place) && !Changed.Contains(place)) Changed.Add(place);
@@ -15,6 +18,9 @@ public sealed class TyrePlaceChanges
 
 /// <summary>A tyre of a break-up, as the user gave it: a label and its corner (null: not sure).</summary>
 public sealed record NewTyre(Guid? Id, string Label, TyreCorner? Corner);
+
+/// <summary>A new tyre replacing one of a set's (#289): the tyre it replaces, and its own id, label, name (null: the set's) and made date.</summary>
+public sealed record ReplacingTyre(Guid OldId, Guid? Id, string Label, string? Name = null, int? MadeWeek = null, int? MadeYear = null);
 
 /// <summary>
 /// The rules of single tyres (#289) over a vehicle's tyre history: breaking a set up, the places that follow its installations, and the six
@@ -243,6 +249,54 @@ public sealed class TyrePlaces
         return (created, Follow(changes, before, by));
     }
 
+    /// <summary>
+    /// Replaces tyres of a broken-up set on <paramref name="day"/> (#289): each old tyre is retired then, saying why and by which tyre; each
+    /// new one starts on that day with no distance (its own made date, else the day) and takes the old one's times on the car from that day on,
+    /// at the same corner: the one running through the day is split (the new part's id <see cref="TyreIds.PlaceOf"/> of the new tyre and the
+    /// old place), the later ones are handed over whole.
+    /// </summary>
+    public TyrePlaceChanges Replace(TyreSet set, IReadOnlyList<ReplacingTyre> given, TyreRetiredWhy why, DateOnly day, Guid by)
+    {
+        if (!set.IsBrokenUp) throw new DomainException("tyres.notBrokenUp", "Track the set tyre by tyre first.", new { Set = set.Name });
+        if (set.IsRetired) throw new DomainException("tyres.replaceRetiredSet", "A retired set's tyres cannot be replaced.", new { Set = set.Name });
+        if (why == TyreRetiredWhy.SetRetired) throw new DomainException("tyres.whyInvalid", "Say why: damaged, worn or too old.");
+        if (given.Count == 0) throw new DomainException("tyres.tapToReplace", "Tap the tyres to replace.");
+        if (given.Select(g => g.OldId).Distinct().Count() != given.Count) throw new DomainException("tyres.tyreTwice", "Each tyre once.");
+        var labels = given.Select(g => Tyre.CheckedLabel(g.Label)).ToList();
+        if (labels.Distinct(StringComparer.OrdinalIgnoreCase).Count() != labels.Count) throw new DomainException("tyres.labelTwice", "Each tyre needs its own label.");
+        foreach (var label in labels) RequireLabelFree(label, except: null);
+        var changes = new TyrePlaceChanges();
+        for (var i = 0; i < given.Count; i++)
+        {
+            var old = TyresOf(set.Id).FirstOrDefault(t => t.Id == given[i].OldId)
+                ?? throw new DomainException("tyres.tyreNotFound", "This tyre no longer exists.", new { Id = given[i].OldId });
+            if (old.IsRetired) throw new DomainException("tyres.tyreAlreadyRetired", "This tyre is retired already.", new { Label = old.Label });
+            var fresh = Tyre.Create(_ownerId, by, _vehicleId, set.Id, labels[i], given[i].Name, day, given[i].MadeWeek, given[i].MadeYear, 0, null, given[i].Id);
+            _tyres.Add(fresh);
+            changes.CreatedTyres.Add(fresh);
+            foreach (var place in LivePlaces.Where(p => p.TyreId == old.Id && (p.Until is null || p.Until > day)).ToList())
+            {
+                if (place.From < day)
+                {
+                    var rest = TyrePlace.Create(_ownerId, by, _vehicleId, fresh.Id, place.InstallationId, day, place.Until, place.Corner, TyreIds.PlaceOf(fresh.Id, place.Id));
+                    place.Update(place.InstallationId, place.From, day, place.Corner, by);
+                    changes.Change(place);
+                    _places.Add(rest);
+                    changes.Created.Add(rest);
+                }
+                else
+                {
+                    place.HandOver(fresh.Id, by);
+                    changes.Change(place);
+                }
+            }
+            old.Retire(day, why, by, fresh.Id);
+            changes.ChangedTyres.Add(old);
+        }
+        Check([.. changes.Created, .. changes.Changed]);
+        return changes;
+    }
+
     /// <summary>A place typed in a tyre's history: it lies in the set's live installation that holds its days, else it is refused.</summary>
     public TyrePlace Add(Tyre tyre, DateOnly from, DateOnly? until, TyreCorner? corner, Guid by, Guid? id = null)
     {
@@ -292,6 +346,8 @@ public sealed class TyrePlaces
             var tyre = TyreOf(place);
             if (tyre.RetiredOn is { } retired && (place.Until is null || place.Until > retired))
                 throw new DomainException("tyres.tyreRetired", "A retired tyre cannot be on the car then.", new { Label = tyre.Label, Date = Iso(retired) });
+            if (ArrivedOn(tyre) is { } arrived && place.From < arrived)
+                throw new DomainException("tyres.tyreNotYet", "A tyre that replaced another cannot be on the car before it came.", new { Label = tyre.Label, Date = Iso(arrived) });
         }
         TyrePlace Other(TyrePlace a, TyrePlace b) => moving?.Contains(b) == true && moving?.Contains(a) != true ? a : b;
         DomainException Conflict(string key, string message, TyrePlace other, object args) => restoring
@@ -323,20 +379,37 @@ public sealed class TyrePlaces
     private Tyre TyreOf(TyrePlace place) => _tyres.First(t => t.Id == place.TyreId);
 
     /// <summary>The set's live tyres that could be on the car from <paramref name="day"/>: not retired by then.</summary>
-    private IEnumerable<Tyre> OnTheCarFrom(Guid setId, DateOnly day) => TyresOf(setId).Where(t => t.RetiredOn is not { } r || r > day);
+    private IEnumerable<Tyre> OnTheCarFrom(Guid setId, DateOnly day) =>
+        TyresOf(setId).Where(t => (t.RetiredOn is not { } r || r > day) && (ArrivedOn(t) is not { } a || a <= day));
 
-    private TyreCorner? CornerBefore(Guid tyreId, DateOnly day) =>
-        LivePlaces.Where(p => p.TyreId == tyreId && p.From < day).OrderByDescending(p => p.From).FirstOrDefault()?.Corner;
+    /// <summary>The corner a tyre had the last time before the day; a tyre that came as a replacement and was never on before, its predecessor's.</summary>
+    private TyreCorner? CornerBefore(Guid tyreId, DateOnly day)
+    {
+        var own = LivePlaces.Where(p => p.TyreId == tyreId && p.From < day).OrderByDescending(p => p.From).FirstOrDefault();
+        if (own is not null) return own.Corner;
+        return Predecessor(tyreId) is { } replaced ? CornerBefore(replaced.Id, day) : null;
+    }
+
+    /// <summary>The tyre a tyre replaced (#289), if it came as a replacement.</summary>
+    public Tyre? Predecessor(Guid tyreId) => _tyres.FirstOrDefault(t => t.ReplacedById == tyreId && !t.IsDeleted);
+
+    /// <summary>The day a tyre that came as a replacement could first be on the car: the day the tyre it replaced was retired.</summary>
+    public DateOnly? ArrivedOn(Tyre tyre) => Predecessor(tyre.Id)?.RetiredOn;
 
     private void PlaceTyres(TyreInstallation installation, IReadOnlyDictionary<Guid, TyreCorner?>? corners, Guid by, TyrePlaceChanges result)
     {
         if (!_allSets.TryGetValue(installation.SetId, out var set) || !set.IsBrokenUp) return;
         var given = corners ?? CornersFor(set.Id, installation.From, null);
-        foreach (var tyre in OnTheCarFrom(set.Id, installation.From).ToList())
+        // A tyre retired during the installation comes off then; one that replaced it (#289) goes on then, at its corner.
+        var onAtStart = OnTheCarFrom(set.Id, installation.From).ToList();
+        var arriving = TyresOf(set.Id).Where(t => ArrivedOn(t) is { } a && a > installation.From && (installation.Until is null || a < installation.Until)
+            && (t.RetiredOn is not { } r || r > a)).ToList();
+        foreach (var tyre in onAtStart.Concat(arriving))
         {
+            var from = arriving.Contains(tyre) ? ArrivedOn(tyre)!.Value : installation.From;
             var until = tyre.RetiredOn is { } r && (installation.Until is null || installation.Until > r) ? r : installation.Until;
-            var place = TyrePlace.Create(_ownerId, by, _vehicleId, tyre.Id, installation.Id, installation.From, until, given.GetValueOrDefault(tyre.Id),
-                TyreIds.PlaceOf(tyre.Id, installation.Id));
+            var corner = given.TryGetValue(tyre.Id, out var own) ? own : Predecessor(tyre.Id) is { } replaced ? given.GetValueOrDefault(replaced.Id) : null;
+            var place = TyrePlace.Create(_ownerId, by, _vehicleId, tyre.Id, installation.Id, from, until, corner, TyreIds.PlaceOf(tyre.Id, installation.Id));
             _places.Add(place);
             result.Created.Add(place);
         }

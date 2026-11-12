@@ -23,6 +23,8 @@ export interface TyreState {
   setId: string
   label: string
   retiredOn: string | null
+  /** The tyre that replaced it (#289), once it was replaced. */
+  replacedById?: string | null
 }
 
 export interface PlaceState {
@@ -40,6 +42,13 @@ export interface PlaceBook {
   installations: readonly InstallationState[]
   tyres: readonly TyreState[]
   places: readonly PlaceState[]
+}
+
+/** A new tyre replacing one of a set's (#289): the tyre it replaces, and its own id and label. */
+export interface ReplacingTyre {
+  oldId: string
+  id: string
+  label: string
 }
 
 /** A tyre of a break-up as the user gave it. */
@@ -83,11 +92,23 @@ export function requireLabelFree(book: PlaceBook, label: string, exceptId?: stri
   if (book.tyres.some((t) => t.id !== exceptId && t.label.toUpperCase() === label.toUpperCase())) throw new TyreRuleError('tyres.labelTaken', { label })
 }
 
-/** The set's live tyres that could be on the car from a day: not retired by then. */
-const onTheCarFrom = (book: PlaceBook, setId: string, day: string) => book.tyres.filter((t) => t.setId === setId && (t.retiredOn === null || t.retiredOn > day))
+/** The tyre a tyre replaced (#289), if it came as a replacement. */
+export const predecessorOf = (book: PlaceBook, tyreId: string) => book.tyres.find((t) => t.replacedById === tyreId)
 
-const cornerBefore = (book: PlaceBook, tyreId: string, day: string) =>
-  [...livePlaces(book)].filter((p) => p.tyreId === tyreId && p.from < day).sort(byFrom).at(-1)?.corner ?? null
+/** The day a tyre that came as a replacement could first be on the car: the day the tyre it replaced was retired. */
+export const arrivedOn = (book: PlaceBook, tyreId: string): string | null => predecessorOf(book, tyreId)?.retiredOn ?? null
+
+/** The set's live tyres that could be on the car from a day: not retired by then, and come by then. */
+const onTheCarFrom = (book: PlaceBook, setId: string, day: string) =>
+  book.tyres.filter((t) => t.setId === setId && (t.retiredOn === null || t.retiredOn > day) && ((arrivedOn(book, t.id) ?? day) <= day))
+
+/** The corner a tyre had the last time before a day; a tyre that came as a replacement and was never on before, its predecessor's. */
+const cornerBefore = (book: PlaceBook, tyreId: string, day: string): Corner | null => {
+  const own = [...livePlaces(book)].filter((p) => p.tyreId === tyreId && p.from < day).sort(byFrom).at(-1)
+  if (own) return own.corner
+  const replaced = predecessorOf(book, tyreId)
+  return replaced ? cornerBefore(book, replaced.id, day) : null
+}
 
 /** Each live tyre's corner for a swap or change of positions on a day: those given (a tyre left out has none), else as before. */
 export function cornersFor(book: PlaceBook, setId: string, day: string, given: Corners | null): Record<string, Corner | null> {
@@ -130,6 +151,8 @@ export function checkPlaces(book: PlaceBook, moving?: ReadonlySet<string>, resto
     if (p.until !== null && p.until <= p.from) throw new TyreRuleError('tyres.untilBeforeFrom', { from: p.from, until: p.until })
     if (p.from < installation.from || (installation.until !== null && (p.until === null || p.until > installation.until))) throw outside(book, tyre, p.from, p.until)
     if (tyre.retiredOn !== null && (p.until === null || p.until > tyre.retiredOn)) throw new TyreRuleError('tyres.tyreRetired', { label: tyre.label, date: tyre.retiredOn })
+    const arrived = arrivedOn(book, tyre.id)
+    if (arrived !== null && p.from < arrived) throw new TyreRuleError('tyres.tyreNotYet', { label: tyre.label, date: arrived })
   }
   const conflict = (key: string, other: PlaceState, args: Record<string, string | null>) =>
     restoring ? new TyreRuleError('tyres.tyreRestoreConflict', { label: label(other), from: other.from, until: other.until }) : new TyreRuleError(key, args)
@@ -162,10 +185,20 @@ function placeTyres(book: PlaceBook, installation: InstallationState, corners: C
   const set = book.sets.find((s) => s.id === installation.setId)
   if (!set?.brokenUpOn) return []
   const given = corners ?? cornersFor(book, set.id, installation.from, null)
-  return onTheCarFrom(book, set.id, installation.from).map((t) => ({
-    id: placeOf(t.id, installation.id), tyreId: t.id, installationId: installation.id, from: installation.from,
-    until: t.retiredOn !== null && (installation.until === null || installation.until > t.retiredOn) ? t.retiredOn : installation.until, corner: given[t.id] ?? null,
-  }))
+  // A tyre retired during the installation comes off then; one that replaced it (#289) goes on then, at its corner.
+  const onAtStart = onTheCarFrom(book, set.id, installation.from)
+  const arriving = book.tyres.filter((t) => {
+    const a = arrivedOn(book, t.id)
+    return t.setId === set.id && a !== null && a > installation.from && (installation.until === null || a < installation.until) && (t.retiredOn === null || t.retiredOn > a)
+  })
+  return [...onAtStart, ...arriving].map((t) => {
+    const replaced = predecessorOf(book, t.id)
+    return {
+      id: placeOf(t.id, installation.id), tyreId: t.id, installationId: installation.id, from: arriving.includes(t) ? arrivedOn(book, t.id)! : installation.from,
+      until: t.retiredOn !== null && (installation.until === null || installation.until > t.retiredOn) ? t.retiredOn : installation.until,
+      corner: t.id in given ? (given[t.id] ?? null) : replaced ? (given[replaced.id] ?? null) : null,
+    }
+  })
 }
 
 /**
@@ -291,4 +324,39 @@ export function editPlace(book: PlaceBook, placeId: string, from: string, until:
   const tyre = book.tyres.find((t) => t.id === place.tyreId)!
   const installationId = holding(book, tyre, from, until).id
   return done({ ...book, places: book.places.map((p) => (p.id === placeId ? { ...p, installationId, from, until, corner } : p)) }, new Set([placeId]))
+}
+
+/**
+ * Tyres of a broken-up set replaced on a day (#289, `TyrePlaces.Replace`): each old tyre retired then and naming the new one; each new one
+ * takes the old one's times on the car from that day on, at the same corner (the one running through the day split, the new part's id
+ * `placeOf(new tyre, old place)`; the later ones handed over whole).
+ */
+export function replace(book: PlaceBook, setId: string, given: readonly ReplacingTyre[], day: string): PlaceBook {
+  const set = book.sets.find((s) => s.id === setId)
+  if (!set) throw new TyreRuleError('tyres.setNotFound')
+  if (!set.brokenUpOn) throw new TyreRuleError('tyres.notBrokenUp', { set: set.name })
+  if (set.retiredOn) throw new TyreRuleError('tyres.replaceRetiredSet', { set: set.name })
+  if (given.length === 0) throw new TyreRuleError('tyres.tapToReplace')
+  if (new Set(given.map((g) => g.oldId)).size !== given.length) throw new TyreRuleError('tyres.tyreTwice')
+  const labels = given.map((g) => checkedLabel(g.label))
+  if (new Set(labels.map((l) => l.toUpperCase())).size !== labels.length) throw new TyreRuleError('tyres.labelTwice')
+  for (const label of labels) requireLabelFree(book, label)
+  let { tyres, places } = book
+  const changed = new Set<string>()
+  given.forEach((g, i) => {
+    const old = tyres.find((t) => t.id === g.oldId && t.setId === setId)
+    if (!old) throw new TyreRuleError('tyres.tyreNotFound', { id: g.oldId })
+    if (old.retiredOn !== null) throw new TyreRuleError('tyres.tyreAlreadyRetired', { label: old.label })
+    tyres = [...tyres.map((t) => (t === old ? { ...t, retiredOn: day, replacedById: g.id } : t)), { id: g.id, setId, label: labels[i], retiredOn: null, replacedById: null }]
+    const live = new Set(livePlaces({ ...book, tyres, places }).map((p) => p.id))
+    places = places.flatMap((p) => {
+      if (p.tyreId !== old.id || !live.has(p.id) || (p.until !== null && p.until <= day)) return [p]
+      changed.add(p.id)
+      if (p.from >= day) return [{ ...p, tyreId: g.id }]
+      const rest: PlaceState = { id: placeOf(g.id, p.id), tyreId: g.id, installationId: p.installationId, from: day, until: p.until, corner: p.corner }
+      changed.add(rest.id)
+      return [{ ...p, until: day }, rest]
+    })
+  })
+  return done({ ...book, tyres, places }, changed)
 }

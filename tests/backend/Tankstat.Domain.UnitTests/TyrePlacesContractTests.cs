@@ -65,7 +65,8 @@ public class TyrePlacesContractTests
         var tyres = c.GetProperty("tyres").EnumerateArray().Select(t =>
         {
             var tyre = Tyre.Create(Owner, Owner, Car, IdOf(Str(t, "set")), Str(t, "label"), null, new DateOnly(2020, 1, 1), null, null, 0, null, Named(Str(t, "id")));
-            if (DayOrNull(t.GetProperty("retiredOn")) is { } retired) tyre.Retire(retired, TyreRetiredWhy.Damaged);
+            if (DayOrNull(t.GetProperty("retiredOn")) is { } retired)
+                tyre.Retire(retired, TyreRetiredWhy.Damaged, replacedById: t.TryGetProperty("replacedBy", out var by) ? IdOf(by.GetString()!) : null);
             return tyre;
         }).ToList();
         var places = c.GetProperty("places").EnumerateArray().Select(p =>
@@ -106,6 +107,10 @@ public class TyrePlacesContractTests
                     break;
                 case "addPlace":
                     rules.Add(tyres.Single(t => t.Id == IdOf(Str(args, "tyre"))), Day(args.GetProperty("from")), DayOrNull(args.GetProperty("until")), Corner(args.GetProperty("corner")), Owner);
+                    break;
+                case "replace":
+                    rules.Replace(SetOf(args), [.. args.GetProperty("tyres").EnumerateArray().Select(t => new ReplacingTyre(IdOf(Str(t, "old")), Named(Str(t, "id")), Str(t, "label")))],
+                        TyreRetiredWhy.Damaged, Day(args.GetProperty("day")), Owner);
                     break;
                 case "editPlace":
                     rules.Edit(PlaceOf(args), Day(args.GetProperty("from")), DayOrNull(args.GetProperty("until")), Corner(args.GetProperty("corner")), Owner);

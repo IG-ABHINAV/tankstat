@@ -87,6 +87,18 @@ public sealed class TyrePlace : IOwned, ISoftDeletable, ISynced
         return true;
     }
 
+    /// <summary>
+    /// The tyre that replaced its own takes it over (#289): a time on the car from the day of a replacement on is the new tyre's, the place
+    /// and its id kept (never trashed and made again, which would leave a row in the trash that could not come back).
+    /// </summary>
+    public void HandOver(Guid tyreId, Guid? by = null)
+    {
+        RequireLive();
+        if (tyreId == TyreId) return;
+        TyreId = tyreId;
+        Bump(EntityChange.Edited, by);
+    }
+
     public void MarkDeleted(DateTimeOffset now, Guid? by = null)
     {
         if (IsDeleted) throw new DomainException("tyres.placeAlreadyTrashed", "This time on the car is already in the trash.");

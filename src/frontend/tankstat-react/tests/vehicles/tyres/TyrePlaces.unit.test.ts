@@ -3,16 +3,16 @@ import contract from '../../../../../../tests/backend/contracts/tyre-places/tyre
 import type { InstallationState } from '../../../src/tyres/tyreHistory.ts'
 import { TyreRuleError } from '../../../src/tyres/tyreHistory.ts'
 import {
-  addPlace, breakUp, changePositionsPlaced, checkPlaces, editInstallationPlaced, editPlace, livePlaces, moveSwapPlaced, placeOf, swapPlaced,
+  addPlace, breakUp, changePositionsPlaced, checkPlaces, editInstallationPlaced, editPlace, livePlaces, moveSwapPlaced, placeOf, replace, swapPlaced,
   type Corner, type PlaceBook, type PlaceState,
 } from '../../../src/tyres/tyrePlaces.ts'
 
 interface Case {
   name: string
-  op: 'breakUp' | 'swap' | 'positions' | 'move' | 'edit' | 'add' | 'addPlace' | 'editPlace' | 'check'
+  op: 'breakUp' | 'swap' | 'positions' | 'move' | 'edit' | 'add' | 'addPlace' | 'editPlace' | 'replace' | 'check'
   sets: { id: string; name: string; retiredOn: string | null; brokenUpOn: string | null }[]
   installations: { id: string; set: string; from: string; until: string | null; pairOneFront: boolean | null }[]
-  tyres: { id: string; set: string; label: string; retiredOn: string | null }[]
+  tyres: { id: string; set: string; label: string; retiredOn: string | null; replacedBy?: string }[]
   places: { id: string; tyre: string; installation: string; from: string; until: string | null; corner: string | null }[]
   breakUp?: { set: string; day: string; tyres: { id: string; label: string; corner: string | null }[] }
   swap?: { set: string; day: string; replace: boolean; corners: Record<string, string | null> | null }
@@ -22,6 +22,7 @@ interface Case {
   add?: { set: string; from: string; until: string | null }
   addPlace?: { tyre: string; from: string; until: string | null; corner: string | null }
   editPlace?: { place: string; from: string; until: string | null; corner: string | null }
+  replace?: { set: string; day: string; tyres: { old: string; id: string; label: string }[] }
   moving?: string[]
   restoring?: boolean
   expectPlaces?: { tyre: string; installation: string; from: string; until: string | null; corner: string | null }[]
@@ -65,7 +66,7 @@ describe('single tyres follow the contract the server keeps', () => {
     const book: PlaceBook = {
       sets: c.sets.map((s) => ({ id: hex(s.id), name: s.name, retiredOn: s.retiredOn, brokenUpOn: s.brokenUpOn })),
       installations: c.installations.map<InstallationState>((s) => ({ id: hex(s.id), setId: hex(s.set), from: s.from, until: s.until, pairOneFront: s.pairOneFront })),
-      tyres: c.tyres.map((t) => ({ id: hex(t.id), setId: hex(t.set), label: t.label, retiredOn: t.retiredOn })),
+      tyres: c.tyres.map((t) => ({ id: hex(t.id), setId: hex(t.set), label: t.label, retiredOn: t.retiredOn, replacedById: t.replacedBy ? hex(t.replacedBy) : null })),
       places: c.places.map<PlaceState>((p) => ({
         id: placeIds.get(p.id)!, tyreId: hex(p.tyre), installationId: hex(p.installation), from: p.from, until: p.until, corner: corner(p.corner),
       })),
@@ -89,6 +90,8 @@ describe('single tyres follow the contract the server keeps', () => {
         }
         case 'addPlace':
           return addPlace(book, hex(c.addPlace!.tyre), c.addPlace!.from, c.addPlace!.until, corner(c.addPlace!.corner), hex('newPlace'))
+        case 'replace':
+          return replace(book, hex(c.replace!.set), c.replace!.tyres.map((t) => ({ oldId: hex(t.old), id: hex(t.id), label: t.label })), c.replace!.day)
         case 'editPlace':
           return editPlace(book, placeIds.get(c.editPlace!.place)!, c.editPlace!.from, c.editPlace!.until, corner(c.editPlace!.corner))
         default:
