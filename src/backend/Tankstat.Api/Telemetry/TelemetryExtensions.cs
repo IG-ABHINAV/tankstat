@@ -42,7 +42,7 @@ internal static class TelemetryExtensions
 
     public static TelemetryPlan AddTelemetry(this WebApplicationBuilder builder)
     {
-        var plan = TelemetryGate.Decide(key => builder.Configuration[key]);
+        var plan = TelemetryGate.Decide(key => builder.Configuration[key], File.Exists);
         builder.Services.AddSingleton(plan);
         builder.Services.AddHostedService<TelemetryReporter>(); // says at start what became of it, also when it stays off
         if (!plan.On) return plan;

@@ -189,7 +189,7 @@ internal sealed class RestoreStep(
         RestoreMarker marker;
         try
         {
-            marker = RestoreMarker.Read(markerPath);
+            marker = RestoreMarkerFile.Read(markerPath);
             if (string.IsNullOrWhiteSpace(marker.File)) throw new JsonException("The marker names no backup.");
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)

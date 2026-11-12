@@ -91,7 +91,8 @@ public sealed class RecognitionSetup
     /// <summary>A prompt file larger than this is the wrong file, not a prompt.</summary>
     public const int MaxPromptFileBytes = 16 * 1024;
 
-    public RecognitionSetup(IOptions<RecognitionOptions> options)
+    /// <param name="promptFiles">Reads the operator's prompt file (#312: Application reads no file itself).</param>
+    public RecognitionSetup(IOptions<RecognitionOptions> options, IPromptFileReader promptFiles)
     {
         var problems = new List<string>();
         RecognitionOptions? bound = null;
@@ -108,7 +109,7 @@ public sealed class RecognitionSetup
         if (Kind != RecognitionProviderKind.None)
         {
             Check(Options, problems);
-            SystemPrompt = OperatorPrompt(Options.OpenAiCompatible, problems);
+            SystemPrompt = OperatorPrompt(Options.OpenAiCompatible, promptFiles, problems);
         }
         Problems = problems;
     }
@@ -158,29 +159,23 @@ public sealed class RecognitionSetup
         Uri.TryCreate(url, UriKind.Absolute, out var parsed) && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps);
 
     /// <summary>
-    /// The operator's prompt: the file when one is named (a missing, empty or oversized one is a problem), else the setting, else none. Read
-    /// here, in the one place that turns a problem into "off with a warning": it is one small file, once, at startup.
+    /// The operator's prompt: the file when one is named (a missing, empty, oversized or unreadable one is a problem), else the setting, else
+    /// none. The file is read by <paramref name="promptFiles"/>; here, in the one place that turns a problem into "off with a warning", its
+    /// answer is worded: one small file, once, at startup.
     /// </summary>
-    private static string? OperatorPrompt(OpenAiCompatibleRecognitionOptions o, List<string> problems)
+    private static string? OperatorPrompt(OpenAiCompatibleRecognitionOptions o, IPromptFileReader promptFiles, List<string> problems)
     {
-        string? Fail(string problem)
-        {
-            problems.Add(problem); // names the setting only: never the file's content, nor the system's words about it
-            return null;
-        }
-
         if (string.IsNullOrWhiteSpace(o.SystemPromptFile)) return string.IsNullOrWhiteSpace(o.SystemPrompt) ? null : o.SystemPrompt.Trim();
-        try
+        var read = promptFiles.Read(o.SystemPromptFile, MaxPromptFileBytes);
+        if (!string.IsNullOrWhiteSpace(read.Text)) return read.Text.Trim();
+        // Names the setting only: never the file's content, nor the system's words about it. A blank text with no problem is an empty file.
+        problems.Add((read.Problem ?? PromptFileProblem.Empty) switch
         {
-            var file = new FileInfo(o.SystemPromptFile);
-            if (!file.Exists) return Fail("Recognition:OpenAiCompatible:SystemPromptFile does not exist (an absolute path, such as /data/prompt.txt, is safest).");
-            if (file.Length > MaxPromptFileBytes) return Fail($"Recognition:OpenAiCompatible:SystemPromptFile is larger than {MaxPromptFileBytes / 1024} KB: that is not a prompt.");
-            var text = File.ReadAllText(file.FullName).Trim();
-            return text.Length > 0 ? text : Fail("Recognition:OpenAiCompatible:SystemPromptFile is empty.");
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
-        {
-            return Fail("Recognition:OpenAiCompatible:SystemPromptFile cannot be read.");
-        }
+            PromptFileProblem.Missing => "Recognition:OpenAiCompatible:SystemPromptFile does not exist (an absolute path, such as /data/prompt.txt, is safest).",
+            PromptFileProblem.TooLarge => $"Recognition:OpenAiCompatible:SystemPromptFile is larger than {MaxPromptFileBytes / 1024} KB: that is not a prompt.",
+            PromptFileProblem.Empty => "Recognition:OpenAiCompatible:SystemPromptFile is empty.",
+            _ => "Recognition:OpenAiCompatible:SystemPromptFile cannot be read.",
+        });
+        return null;
     }
 }

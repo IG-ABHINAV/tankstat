@@ -14,6 +14,9 @@ namespace Tankstat.Application.UnitTests;
 
 public class SettingsCatalogTests
 {
+    /// <summary>No file is there (#312: the catalog asks its caller, never the disk).</summary>
+    private static bool NoFiles(string path) => false;
+
     /// <summary>The sections the page manages, as the options classes bind them.</summary>
     private static readonly (Type Options, string Section)[] Sections =
     [
@@ -111,7 +114,7 @@ public class SettingsCatalogTests
     [InlineData(TelemetryOptions.TraceDatabaseKey, "yes", "true or false")]
     public void Validate_ChecksTheShapeOfAValue_AndNamesTheSettingAndTheRule(string key, string value, string? refusal)
     {
-        var problem = SettingsCatalog.Validate(SettingsCatalog.Find(key)!, value);
+        var problem = SettingsCatalog.Validate(SettingsCatalog.Find(key)!, value, NoFiles);
 
         if (refusal is null) Assert.Null(problem);
         else
@@ -153,9 +156,9 @@ public class SettingsCatalogTests
         var problems = SettingsCatalog.Problems(key => values.GetValueOrDefault(key));
 
         Assert.Equal(["Auth:Mode", "Smtp:Port"], problems.Select(p => p.Split(' ')[0]));
-        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find("Logging:LogLevel:Microsoft.AspNetCore")!, "Information")); // the page still refuses it
-        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find("Recognition:MinConfidence")!, "zzzz"));
-        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find(OtelSettings.Endpoint)!, "zzzz"));
+        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find("Logging:LogLevel:Microsoft.AspNetCore")!, "Information", NoFiles)); // the page still refuses it
+        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find("Recognition:MinConfidence")!, "zzzz", NoFiles));
+        Assert.NotNull(SettingsCatalog.Validate(SettingsCatalog.Find(OtelSettings.Endpoint)!, "zzzz", NoFiles));
     }
 
     private static IEnumerable<(string Key, SettingKind Kind, string[]? Choices)> Keys(Type type, string prefix)
@@ -207,7 +210,7 @@ public class SettingsCatalogTests
     {
         foreach (var setting in SettingsCatalog.All)
             if (SettingsCatalog.BuiltInDefault(setting.Key) is { } value)
-                Assert.True(SettingsCatalog.Validate(setting, value) is null, $"{setting.Key}'s default {value} is not a value it takes");
+                Assert.True(SettingsCatalog.Validate(setting, value, NoFiles) is null, $"{setting.Key}'s default {value} is not a value it takes");
     }
 }
 
@@ -257,5 +260,12 @@ public class SettingsFileNoticeTests
             .Where(n => !settings.GetProperty("fields").TryGetProperty(n, out _) || !settings.GetProperty("help").TryGetProperty(n, out _)).ToList();
 
         Assert.True(unworded.Count == 0, $"Without a label or a help text in {language}.json: {string.Join(", ", unworded)}");
+    }
+
+    [Fact]
+    public void EveryOpenTelemetrySettingOfTheCatalog_IsInTheTelemetryGroup_WhichProblemsLeavesOut()
+    {
+        // Problems asks no file (#312): it may only because the one kind of setting that names a file, the SDK's, is never among those it checks.
+        Assert.All(SettingsCatalog.All.Where(s => OtelSettings.IsOtelKey(s.Key)), s => Assert.Equal(SettingsGroup.Telemetry, s.Group));
     }
 }

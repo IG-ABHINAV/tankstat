@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Backups;
 using Tankstat.Application.Setup;
+using Tankstat.Infrastructure.Backups;
 
 namespace Tankstat.Api.IntegrationTests;
 
@@ -224,7 +225,7 @@ public sealed class SetupTests : IDisposable
         Assert.Equal("backup.codeRequired", (await client.Gql(Restore, new { i = new { file } })).ErrorKey());
         Assert.Equal(file, (await client.Gql(Restore, new { i = new { file, code } })).Data().GetProperty("restoreBackup").GetProperty("file").GetString());
 
-        Assert.Equal(file, RestoreMarker.Read(RestoreMarker.PathIn(_folder)).File);
+        Assert.Equal(file, RestoreMarkerFile.Read(RestoreMarker.PathIn(_folder)).File);
         Assert.Equal(1, app.Restarts.Count);
     }
 
