@@ -75,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<SetupService>();
         services.AddScoped<RestoreService>();
         services.AddScoped<BackupAdminService>();
+        services.AddSingleton<BackupCommandService>(); // the command line runs from the root services, without a scope
         services.AddScoped<BackupFailureNotifier>();
         services.AddScoped<AccessAdminService>();
         services.AddScoped<SessionService>();

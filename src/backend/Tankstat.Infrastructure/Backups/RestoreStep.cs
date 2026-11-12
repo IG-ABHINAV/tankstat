@@ -23,21 +23,6 @@ using Tankstat.Infrastructure.Persistence;
 
 namespace Tankstat.Infrastructure.Backups;
 
-/// <summary>What the start did with a restore that waited for it (<see cref="RestoreStep.Outcome"/>).</summary>
-public enum RestoreOutcome
-{
-    /// <summary>No restore waited.</summary>
-    None,
-    /// <summary>The data is the backup's.</summary>
-    Applied,
-    /// <summary>Refused before anything was replaced: the data is as it was (<c>restore.refused.&lt;time&gt;</c>).</summary>
-    Refused,
-    /// <summary>
-    /// The data on the server was replaced (or its tables removed), then the restore failed: what was there before is gone, the files may be
-    /// half copied (<c>restore.failed.&lt;time&gt;</c>).
-    /// </summary>
-    Failed,
-}
 
 /// <summary>
 /// A restore that waits in the backups folder (<see cref="RestoreMarker"/>), applied first thing at start, before the database migrations

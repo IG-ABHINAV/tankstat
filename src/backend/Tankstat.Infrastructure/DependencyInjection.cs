@@ -111,6 +111,8 @@ public static class DependencyInjection
         services.AddSingleton<BackupRunner>();
         services.AddSingleton<IBackupRunner>(sp => sp.GetRequiredService<BackupRunner>());
         services.AddSingleton<IBackupKeyMaker, BackupKeyMaker>();
+        services.AddSingleton<IBackupArchive, BackupFileArchive>();
+        services.AddSingleton<IStartupRestore, StartupRestore>();
         services.AddSingleton<IDatabaseFacts, EfDatabaseFacts>();
         services.AddSingleton<IStorageUsage, StorageUsage>();
         services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();

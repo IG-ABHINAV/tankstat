@@ -187,6 +187,7 @@ public sealed class BackupCommandsTests : IDisposable
                 ["Backups:Photos"] = "yes",
                 ["Backups:PassphraseMinLength"] = minimum,
             }).Build())
+            .AddCommands(new FailingWriter(new InvalidOperationException("keygen writes no backup")))
             .BuildServiceProvider();
         async Task<Run> Keygen(ServiceProvider services, string passphrase)
         {
@@ -221,7 +222,7 @@ public sealed class BackupCommandsTests : IDisposable
             ["Backups:Encryption:Recipient and Backups:Encryption:Salt are set together (tankstat backup keygen prints both) or not at all."]);
         using var services = new ServiceCollection()
             .AddSingleton(new SettingsFileStatus("/data/settings.json", Exists: true, Ignored: true, ["Smtp:Port must be a whole number."]))
-            .AddSingleton<IBackupWriter>(new FailingWriter(refusal))
+            .AddCommands(new FailingWriter(refusal))
             .BuildServiceProvider();
         var (output, error) = (new StringWriter(), new StringWriter());
 
@@ -323,5 +324,26 @@ public sealed class BackupCommandsTests : IDisposable
         Assert.Contains("without Smtp:Password", plain.Out);
         Assert.Contains("its secrets IN PLAIN (anyone with the file reads them)", withSecrets.Out);
         Assert.DoesNotContain("zzzz", plain.Out + withSecrets.Out);
+    }
+}
+
+/// <summary>
+/// The command line's own service for a container a test builds by hand (#313): the real key maker and archive, over the given writer. The
+/// key maker's Backups settings throw when read, so a command that needs nothing else of them (keygen) shows it never reads them.
+/// </summary>
+internal static class CommandServices
+{
+    public static IServiceCollection AddCommands(this IServiceCollection services, IBackupWriter writer) => services
+        .AddSingleton<IBackupKeyMaker>(new BackupKeyMaker(new UnreadOptions()))
+        .AddSingleton<IBackupArchive, BackupFileArchive>()
+        .AddSingleton<IStartupRestore>(sp => new StartupRestore(sp))
+        .AddSingleton(writer)
+        .AddSingleton<BackupCommandService>();
+
+    private sealed class UnreadOptions : IOptionsMonitor<BackupOptions>
+    {
+        public BackupOptions CurrentValue => throw new InvalidOperationException("The command read the Backups settings.");
+        public BackupOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<BackupOptions, string?> listener) => null;
     }
 }
