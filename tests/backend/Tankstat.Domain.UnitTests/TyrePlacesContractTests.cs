@@ -132,5 +132,8 @@ public class TyrePlacesContractTests
                 $"{Str(p, "tyre")} {Str(p, "installation")} {Str(p, "from")}..{(p.GetProperty("until").ValueKind == JsonValueKind.Null ? "" : Str(p, "until"))} {Corner(p.GetProperty("corner"))}")
                 .Order(StringComparer.Ordinal),
             rules.LivePlaces.Select(p => $"{label[p.TyreId]} {names[p.InstallationId]} {p.From:yyyy-MM-dd}..{p.Until:yyyy-MM-dd} {p.Corner}").Order(StringComparer.Ordinal));
+        if (c.TryGetProperty("expectRetired", out var retired))
+            Assert.Equal(retired.EnumerateArray().Select(r => r.GetString()!).Order(StringComparer.Ordinal),
+                rules.Tyres.Where(t => t.IsRetired).Select(t => label[t.Id]).Order(StringComparer.Ordinal));
     }
 }

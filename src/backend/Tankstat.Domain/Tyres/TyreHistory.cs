@@ -83,7 +83,7 @@ public sealed class TyreHistory
                 if (repeatable && Same(covering)) return changes; // a retry of a swap that joined this installation to an earlier one
                 throw new DomainException("tyres.alreadyOnCar", "This tyre set is already on the car that day.", new { Set = set.Name, From = Iso(covering.From) });
             }
-            if (pairsGiven && covering.Update(covering.From, covering.Until, pairOneFront, by)) changes.Change(covering);
+            if (pairsGiven && covering.Update(covering.From, covering.Until, PairsOf(covering), by)) changes.Change(covering); // a broken-up set keeps the pairs it recorded
             return Checked(changes);
         }
         DateOnly? until;

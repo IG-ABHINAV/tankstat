@@ -82,11 +82,17 @@ public sealed class TyrePlaces
             throw new DomainException("tyres.unknownCorner", "Give each tyre one of the four corners, or Not sure.");
         set.BreakUp(day, by);
         var changes = new TyrePlaceChanges();
+        // A retired set's tyres are retired with it, so unretiring the set brings them back.
+        void RetiredWithSet(Tyre tyre)
+        {
+            if (set.RetiredOn is { } retired) tyre.Retire(retired, TyreRetiredWhy.SetRetired, by);
+        }
         var installations = _history.Live.Where(s => s.SetId == set.Id).OrderBy(s => s.From).ToList();
         var known = installations.FirstOrDefault(s => s.Until is null) ?? installations.LastOrDefault();
         for (var i = 0; i < given.Count; i++)
         {
             var tyre = Tyre.Create(_ownerId, by, _vehicleId, set.Id, labels[i], null, set.Since, set.MadeWeek, set.MadeYear, set.RoughDistance, set.RoughUntil, given[i].Id);
+            RetiredWithSet(tyre);
             _tyres.Add(tyre);
             changes.CreatedTyres.Add(tyre);
             // The corner tells the pair: at the front where pair 1 was at the front, it is pair 1; at the rear there, pair 2 (and the other way round).
@@ -289,7 +295,7 @@ public sealed class TyrePlaces
         }
         TyrePlace Other(TyrePlace a, TyrePlace b) => moving?.Contains(b) == true && moving?.Contains(a) != true ? a : b;
         DomainException Conflict(string key, string message, TyrePlace other, object args) => restoring
-            ? new DomainException("tyres.restoreConflict", "It cannot be restored as it is: another tyre is on the car then.",
+            ? new DomainException("tyres.tyreRestoreConflict", "It cannot be restored as it is: another tyre is on the car then.",
                 new { Label = TyreOf(other).Label, From = Iso(other.From), Until = other.Until is { } u ? Iso(u) : null })
             : new DomainException(key, message, args);
         for (var i = 0; i < live.Count; i++)
@@ -347,12 +353,15 @@ public sealed class TyrePlaces
     {
         // Names the set that was on the car then instead, when one was: "… was on from … to …".
         var other = _history.Covering(from) is { } covering && covering.SetId != tyre.SetId ? covering : null;
-        return new DomainException("tyres.placeOutsideSet", "A tyre is on the car only while its set is.", new
+        if (other is null)
+            return new DomainException("tyres.placeOutsideSet", "A tyre is on the car only while its set is.", new
+            {
+                Set = _allSets[tyre.SetId].Name, Label = tyre.Label, From = Iso(from), Until = until is { } u ? Iso(u) : null,
+            });
+        return new DomainException("tyres.placeWhileOtherSet", "A tyre is on the car only while its set is: another set was on then.", new
         {
-            Set = _allSets[tyre.SetId].Name, Label = tyre.Label, From = Iso(from), Until = until is { } u ? Iso(u) : null,
-            Other = other is null ? null : _allSets[other.SetId].Name,
-            OtherFrom = other is null ? null : Iso(other.From),
-            OtherUntil = other?.Until is { } ou ? Iso(ou) : null,
+            Set = _allSets[tyre.SetId].Name, Label = tyre.Label, Other = _allSets[other.SetId].Name, OtherFrom = Iso(other.From),
+            OtherUntil = other.Until is { } ou ? Iso(ou) : null,
         });
     }
 

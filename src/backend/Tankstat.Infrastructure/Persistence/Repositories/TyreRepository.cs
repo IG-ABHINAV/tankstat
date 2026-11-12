@@ -263,7 +263,8 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
                 WithExpense = false, Label = t.Label, Corner = null,
             });
         var places = db.TyrePlaces.Where(p => p.DeletedAt != null).InScope(scope, p => p.VehicleId)
-            .Where(p => db.Tyres.Any(t => t.Id == p.TyreId && t.DeletedAt == null && db.TyreSets.Any(s => s.Id == t.SetId && s.DeletedAt == null)))
+            .Where(p => db.Tyres.Any(t => t.Id == p.TyreId && t.DeletedAt == null && db.TyreSets.Any(s => s.Id == t.SetId && s.DeletedAt == null))
+                && db.TyreInstallations.Any(i => i.Id == p.InstallationId && i.DeletedAt == null)) // one hidden through its installation comes back with that
             .Select(p => new TrashRow
             {
                 RowKind = "Place", Id = p.Id, VehicleId = p.VehicleId,

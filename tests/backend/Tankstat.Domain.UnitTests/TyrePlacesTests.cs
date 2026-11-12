@@ -217,7 +217,7 @@ public class TyrePlacesTests
         Assert.Equal((DateOnly?)D(2026, 3, 28), P(places, "W1", last).Until);
 
         var refused = Assert.Throws<DomainException>(() => places.Add(T(places, "W2"), D(2026, 5, 1), D(2026, 6, 1), null, Owner));
-        Assert.Equal("tyres.placeOutsideSet", refused.Key);
+        Assert.Equal("tyres.placeWhileOtherSet", refused.Key);
         Assert.Equal(("Michelin Primacy 4", "Continental WinterContact"), (refused.Args["other"], refused.Args["set"]));
         _ = summer;
     }
@@ -253,7 +253,8 @@ public class TyrePlacesTests
             p.Check();
         }));
         // Outside its set's installations.
-        Assert.Equal("tyres.placeOutsideSet", Refused((_, p, _) => p.Add(T(p, "W1"), D(2026, 5, 1), D(2026, 6, 1), null, Owner)));
+        Assert.Equal("tyres.placeWhileOtherSet", Refused((_, p, _) => p.Add(T(p, "W1"), D(2026, 5, 1), D(2026, 6, 1), null, Owner)));
+        Assert.Equal("tyres.placeOutsideSet", Refused((_, p, _) => p.Add(T(p, "W1"), D(2025, 5, 1), D(2025, 6, 1), null, Owner)));
     }
 
     [Fact]
@@ -267,7 +268,7 @@ public class TyrePlacesTests
         w1.Restore(Owner);
 
         var refused = Assert.Throws<DomainException>(() => places.CheckRestored([w1]));
-        Assert.Equal("tyres.restoreConflict", refused.Key);
+        Assert.Equal("tyres.tyreRestoreConflict", refused.Key);
         Assert.Equal("W2", refused.Args["label"]);
     }
 

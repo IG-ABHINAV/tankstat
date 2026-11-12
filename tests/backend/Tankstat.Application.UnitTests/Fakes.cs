@@ -549,7 +549,8 @@ internal sealed class InMemoryTyres : ITyreRepository
                 .Select(t => new TyreTrashRow(TyreTrashKind.Tyre, t.Id, t.VehicleId, Sets.First(s => s.Id == t.SetId).Name, null, null, null, 0, t.DeletedAt!.Value, t.Version,
                     Label: t.Label)))
             .Concat(Places.Where(p => p.IsDeleted && scope.Contains(p.OwnerId, p.VehicleId)
-                    && Tyres.FirstOrDefault(t => t.Id == p.TyreId) is { IsDeleted: false } tyre && Sets.Any(s => s.Id == tyre.SetId && !s.IsDeleted))
+                    && Tyres.FirstOrDefault(t => t.Id == p.TyreId) is { IsDeleted: false } tyre && Sets.Any(s => s.Id == tyre.SetId && !s.IsDeleted)
+                    && Installations.Any(i => i.Id == p.InstallationId && !i.IsDeleted))
                 .Select(p => new TyreTrashRow(TyreTrashKind.Place, p.Id, p.VehicleId, Sets.First(s => s.Id == Tyres.First(t => t.Id == p.TyreId).SetId).Name, null, p.From, p.Until,
                     0, p.DeletedAt!.Value, p.Version, Label: Tyres.First(t => t.Id == p.TyreId).Label, Corner: p.Corner)));
 

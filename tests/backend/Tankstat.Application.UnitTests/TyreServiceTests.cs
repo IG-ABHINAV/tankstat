@@ -691,7 +691,7 @@ public class TyreServiceTests
         // S1 moves to S2's corner while it is in the trash: S2 can no longer come back.
         var s1Place = Tyre(trashed, "S1").Places.Single().Place;
         await s.Tyres.UpdatePlaceAsync(s1Place.Id, new TyrePlaceInput(s1Place.From, null, TyreCorner.FrontRight), default);
-        Assert.Equal("tyres.restoreConflict", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreTyreAsync(s2, default))).Key);
+        Assert.Equal("tyres.tyreRestoreConflict", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreTyreAsync(s2, default))).Key);
         _ = overview;
     }
 

@@ -298,6 +298,6 @@ public class TyreSyncTests : IDisposable
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyrePlace = s2Place })));
         var s1Place = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[0], Guid.Parse(installation));
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), updateTyrePlace = new { id = s1Place, from = "2026-03-28", corner = "FRONT_RIGHT" } })));
-        Assert.Equal(("PARKED", "tyres.restoreConflict"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyrePlace = s2Place })));
+        Assert.Equal(("PARKED", "tyres.tyreRestoreConflict"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyrePlace = s2Place })));
     }
 }

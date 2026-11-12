@@ -1,5 +1,5 @@
 {
-  "_comment": "The rules of single tyres (#289), read by the server (Domain TyrePlacesContractTests, over TyrePlaces and TyreHistory) and by the device (frontend TyrePlaces.unit, over src/tyres/tyrePlaces.ts), so a change made offline shows as the server will make it. Ids are short names each side maps to ids of its own; 'new' is the installation an operation creates. A case gives the sets ('brokenUpOn' set for a broken-up one), the live installations, the tyres and their places (a place's id names it in 'editPlace' and 'moving'), then one 'op': 'breakUp', 'swap' ('corners' by tyre, or null: as before; a tyre left out has none), 'positions', 'move' (a swap moved by its line's day), 'edit' (an installation's days), 'add' (an installation typed in History), 'addPlace', 'editPlace' or 'check' ('moving' lists the places a check is about, 'restoring' when they come back from the trash). 'expectPlaces' lists the live places after it by tyre, then first day; 'error' is the refusal with its key and args. 'placeIds' pins the ids a change works out for the places it makes by itself (TyreIds.PlaceOf: the two ids' hex digits exclusive-or'd pairwise).",
+  "_comment": "The rules of single tyres (#289), read by the server (Domain TyrePlacesContractTests, over TyrePlaces and TyreHistory) and by the device (frontend TyrePlaces.unit, over src/tyres/tyrePlaces.ts), so a change made offline shows as the server will make it. Ids are short names each side maps to ids of its own; 'new' is the installation an operation creates. A case gives the sets ('brokenUpOn' set for a broken-up one), the live installations, the tyres and their places (a place's id names it in 'editPlace' and 'moving'), then one 'op': 'breakUp', 'swap' ('corners' by tyre, or null: as before; a tyre left out has none), 'positions', 'move' (a swap moved by its line's day), 'edit' (an installation's days), 'add' (an installation typed in History), 'addPlace', 'editPlace' or 'check' ('moving' lists the places a check is about, 'restoring' when they come back from the trash). 'expectPlaces' lists the live places after it by tyre, then first day, 'expectRetired' the tyres retired after it; 'error' is the refusal with its key and args. 'placeIds' pins the ids a change works out for the places it makes by itself (TyreIds.PlaceOf: the two ids' hex digits exclusive-or'd pairwise).",
   "placeIds": [
     {
       "tyre": "11111111-2222-3333-4444-555555555555",
@@ -2903,10 +2903,7 @@
           "set": "Continental WinterContact",
           "label": "W1",
           "from": "2026-02-01",
-          "until": "2026-03-28",
-          "other": null,
-          "otherFrom": null,
-          "otherUntil": null
+          "until": "2026-03-28"
         }
       }
     },
@@ -3470,12 +3467,10 @@
         "corner": null
       },
       "error": {
-        "key": "tyres.placeOutsideSet",
+        "key": "tyres.placeWhileOtherSet",
         "args": {
           "set": "Continental WinterContact",
           "label": "W2",
-          "from": "2026-05-01",
-          "until": "2026-06-01",
           "other": "Michelin Primacy 4",
           "otherFrom": "2026-03-28",
           "otherUntil": "2026-11-10"
@@ -4497,13 +4492,104 @@
       ],
       "restoring": true,
       "error": {
-        "key": "tyres.restoreConflict",
+        "key": "tyres.tyreRestoreConflict",
         "args": {
           "label": "W2",
           "from": "2026-11-10",
           "until": null
         }
       }
+    },
+    {
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null,
+          "brokenUpOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": "2026-12-01",
+          "brokenUpOn": null
+        }
+      ],
+      "installations": [
+        {
+          "id": "w25",
+          "set": "winter",
+          "from": "2025-11-15",
+          "until": "2026-03-28",
+          "pairOneFront": true
+        }
+      ],
+      "tyres": [],
+      "places": [],
+      "name": "a retired set broken up retires its tyres with it, the corners given for its last installation",
+      "op": "breakUp",
+      "breakUp": {
+        "set": "winter",
+        "day": "2027-01-22",
+        "tyres": [
+          {
+            "id": "t1",
+            "label": "W1",
+            "corner": "FrontLeft"
+          },
+          {
+            "id": "t2",
+            "label": "W2",
+            "corner": "FrontRight"
+          },
+          {
+            "id": "t3",
+            "label": "W3",
+            "corner": "RearLeft"
+          },
+          {
+            "id": "t4",
+            "label": "W4",
+            "corner": "RearRight"
+          }
+        ]
+      },
+      "expectPlaces": [
+        {
+          "tyre": "t1",
+          "installation": "w25",
+          "from": "2025-11-15",
+          "until": "2026-03-28",
+          "corner": "FrontLeft"
+        },
+        {
+          "tyre": "t2",
+          "installation": "w25",
+          "from": "2025-11-15",
+          "until": "2026-03-28",
+          "corner": "FrontRight"
+        },
+        {
+          "tyre": "t3",
+          "installation": "w25",
+          "from": "2025-11-15",
+          "until": "2026-03-28",
+          "corner": "RearLeft"
+        },
+        {
+          "tyre": "t4",
+          "installation": "w25",
+          "from": "2025-11-15",
+          "until": "2026-03-28",
+          "corner": "RearRight"
+        }
+      ],
+      "expectRetired": [
+        "t1",
+        "t2",
+        "t3",
+        "t4"
+      ]
     }
   ]
 }
