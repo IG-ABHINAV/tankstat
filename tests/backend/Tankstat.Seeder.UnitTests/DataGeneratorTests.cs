@@ -63,6 +63,9 @@ public class DataGeneratorTests
                 Assert.Single(g.TyreEntries!, e => e.Kind == TyreEntryKind.Bought && e.TyreId == w5.Id && e.ExpenseId is not null);
             }
         });
+        // The guarded cases above do happen: a shared puncture and a replacement on some vehicles at least.
+        Assert.Contains(generated, g => g.TyreEntries?.Count(e => e.Kind == TyreEntryKind.PunctureRepaired && e.GroupId is not null) == 2);
+        Assert.Contains(generated, g => g.Tyres?.Any(t => t.Label == "W5") == true);
     }
 
     [Fact]
