@@ -28,6 +28,9 @@ public readonly record struct InstallationDistance(long Distance, bool Approxima
 /// <param name="PairsUnknown">What ran in installations without recorded pairs.</param>
 public sealed record TyreSetFigures(long Distance, bool Approximate, long Measured, long PairOneFront, long PairOneRear, long PairsUnknown, RoughSuggestion? Suggestion);
 
+/// <summary>A single tyre's figures (#289): the total (rough figure plus places) and what it ran at the front, at the rear, and at no corner recorded.</summary>
+public sealed record TyreFigures(long Distance, bool Approximate, long Measured, long Front, long Rear, long Unknown, RoughSuggestion? Suggestion);
+
 /// <summary>
 /// The installations now measure time the rough figure stood for (past swaps were entered): <see cref="Distance"/> would keep the total as it
 /// was, standing for the time before <see cref="Until"/>. It is suggested to the user, never applied by itself.
@@ -100,32 +103,62 @@ public static class TyreCalculator
     /// <summary>A whole set's figures from its live installations and its rough figure.</summary>
     public static TyreSetFigures SetFigures(IReadOnlyList<ReadingPoint> sorted, TyreSet set, IEnumerable<TyreInstallation> installations)
     {
+        var f = Figures(sorted, set.RoughDistance, set.RoughUntil, installations.Select(s => (s.From, s.Until, s.PairOneFront switch { true => Side.Front, false => Side.Rear, _ => Side.Unknown })));
+        return new TyreSetFigures(f.Distance, f.Approximate, f.Measured, f.Front, f.Rear, f.Unknown, f.Suggestion);
+    }
+
+    /// <summary>
+    /// A single tyre's figures (#289) from its live places and its rough figure: front is a front corner or <see cref="TyreCorner.Front"/>,
+    /// rear the other three, a place without a corner unknown. The rough suggestion works as a set's.
+    /// </summary>
+    public static TyreFigures TyreFigures(IReadOnlyList<ReadingPoint> sorted, Tyre tyre, IEnumerable<TyrePlace> places)
+    {
+        var f = Figures(sorted, tyre.RoughDistance, tyre.RoughUntil, places.Select(p => (p.From, p.Until, p.Corner switch
+        {
+            { } c when c.IsFront() => Side.Front,
+            { } c when c.IsRear() => Side.Rear,
+            _ => Side.Unknown,
+        })));
+        return new TyreFigures(f.Distance, f.Approximate, f.Measured, f.Front, f.Rear, f.Unknown, f.Suggestion);
+    }
+
+    private enum Side
+    {
+        Front,
+        Rear,
+        Unknown,
+    }
+
+    private sealed record Totals(long Distance, bool Approximate, long Measured, long Front, long Rear, long Unknown, RoughSuggestion? Suggestion);
+
+    private static Totals Figures(IReadOnlyList<ReadingPoint> sorted, long rough, DateOnly? roughUntil, IEnumerable<(DateOnly From, DateOnly? Until, Side Side)> spans)
+    {
         long measured = 0, front = 0, rear = 0, unknown = 0, before = 0;
-        var approximate = set.RoughDistance > 0;
+        var approximate = rough > 0;
         DateOnly? firstMeasured = null;
-        foreach (var s in installations)
+        foreach (var s in spans)
         {
             var d = Distance(sorted, s.From, s.Until);
             measured += d.Distance;
             approximate |= d.Approximate || d.Measure == InstallationMeasure.FromFirstReading;
-            switch (s.PairOneFront)
+            switch (s.Side)
             {
-                case true: front += d.Distance; break;
-                case false: rear += d.Distance; break;
+                case Side.Front: front += d.Distance; break;
+                case Side.Rear: rear += d.Distance; break;
                 default: unknown += d.Distance; break;
             }
             if (d.Measure == InstallationMeasure.NotMeasured) continue;
             var measuredFrom = d.Measure == InstallationMeasure.FromFirstReading ? sorted[0].Date : s.From;
             if (firstMeasured is null || measuredFrom < firstMeasured) firstMeasured = measuredFrom;
-            if (set.RoughUntil is { } roughUntil && measuredFrom < roughUntil)
+            if (roughUntil is { } until && measuredFrom < until)
             {
-                var cut = s.Until is { } u && u < roughUntil ? u : roughUntil;
+                var cut = s.Until is { } u && u < until ? u : until;
                 before += Distance(sorted, s.From, cut).Distance;
             }
         }
-        RoughSuggestion? suggestion = before > 0 && set.RoughDistance > 0 && firstMeasured is { } first
-            ? new RoughSuggestion(Math.Max(0, (long)Math.Round((set.RoughDistance - before) / 100.0, MidpointRounding.AwayFromZero) * 100), first, before)
+        RoughSuggestion? suggestion = before > 0 && rough > 0 && firstMeasured is { } first
+            ? new RoughSuggestion(Math.Max(0, (long)Math.Round((rough - before) / 100.0, MidpointRounding.AwayFromZero) * 100), first, before)
             : null;
-        return new TyreSetFigures(set.RoughDistance + measured, approximate, measured, front, rear, unknown, suggestion);
+        return new Totals(rough + measured, approximate, measured, front, rear, unknown, suggestion);
     }
 }

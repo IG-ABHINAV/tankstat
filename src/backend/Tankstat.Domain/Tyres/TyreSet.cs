@@ -55,6 +55,14 @@ public sealed class TyreSet : IOwned, ISoftDeletable, ISynced
     /// <summary>The day it was retired; a retired set takes no swap.</summary>
     public DateOnly? RetiredOn { get; private set; }
 
+    /// <summary>
+    /// The day it was broken up into single tyres (#289), never undone: from then on its tyres (<see cref="Tyre"/>) have their own times on the
+    /// car, inside the set's installations, and a swap places each tyre. Its installations record no pairs from then on.
+    /// </summary>
+    public DateOnly? BrokenUpOn { get; private set; }
+
+    public bool IsBrokenUp => BrokenUpOn is not null;
+
     public DateTimeOffset? DeletedAt { get; private set; }
 
     public bool IsDeleted => DeletedAt is not null;
@@ -129,6 +137,15 @@ public sealed class TyreSet : IOwned, ISoftDeletable, ISynced
         RequireLive();
         if (IsRetired) throw new DomainException("tyres.alreadyRetired", "This tyre set is retired already.");
         RetiredOn = day;
+        Bump(EntityChange.Edited, by);
+    }
+
+    /// <summary>Tracks the set tyre by tyre from <paramref name="day"/> (#289); refused on a set already broken up.</summary>
+    public void BreakUp(DateOnly day, Guid? by = null)
+    {
+        RequireLive();
+        if (IsBrokenUp) throw new DomainException("tyres.alreadyBrokenUp", "This tyre set is tracked tyre by tyre already.", new { Set = Name });
+        BrokenUpOn = day;
         Bump(EntityChange.Edited, by);
     }
 

@@ -270,3 +270,211 @@ test('a swap with a fee keeps it on its line, and the line’s new day moves the
   await page.getByRole('tab', { name: 'Expenses' }).click()
   await expect(page.getByRole('row').filter({ hasText: 'Tyre swap: Continental WinterContact' })).toContainText(/5\/4\/2026|May 4, 2026|2026-05-04/)
 })
+
+test('breaks a set up in its History, shows its tyres at their corners, and swaps it back on placing each tyre (#289)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
+  await openVehicle(page, vehicle.id, 'tyres')
+  await page.getByRole('button', { name: 'Add the tyres on the car' }).click()
+  const add = page.getByRole('dialog', { name: 'Add a tyre set' })
+  await add.getByLabel(/^Name/).fill('Michelin Primacy 4')
+  await typeDate(page, dateField(add, /In use since/), '2023-03-25')
+  await add.getByRole('button', { name: 'Save set' }).click()
+  await expect(add).toBeHidden()
+  await page.getByRole('button', { name: 'Add a tyre set' }).click()
+  const winterAdd = page.getByRole('dialog', { name: 'Add a tyre set' })
+  await winterAdd.getByLabel(/^Name/).fill('Continental WinterContact')
+  await winterAdd.getByRole('radio', { name: 'Winter' }).locator('xpath=..').click()
+  await typeDate(page, dateField(winterAdd, /In use since/), '2022-11-19')
+  await winterAdd.getByRole('button', { name: 'Save set' }).click()
+  await expect(winterAdd).toBeHidden()
+
+  // The summer set has been on since March (its first day moved back in its History), so later swaps go in on other days.
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await summer.getByRole('button', { name: 'History' }).click()
+  const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
+  await history.getByRole('button', { name: 'Edit' }).first().click()
+  const installation = page.getByRole('dialog', { name: 'Edit installation' })
+  await typeDate(page, dateField(installation, /First day on the car/), '2026-03-01')
+  await installation.getByRole('button', { name: 'Save' }).click()
+  await expect(installation).toBeHidden()
+
+  // Track tyres one by one, from the set's History: the S labels suggested, each tyre at its corner.
+  await history.getByRole('button', { name: 'Track tyres one by one' }).click()
+  const breakUp = page.getByRole('dialog', { name: 'Track tyres one by one' })
+  await expect(breakUp.getByLabel(/^Label/).first()).toHaveValue('S1')
+  // S4: not sure where it is (decision 50: a tyre without a corner).
+  await breakUp.getByRole('combobox', { name: 'Where it is now' }).nth(3).click()
+  await page.getByRole('option', { name: 'Not sure' }).click()
+  await expectSoundLayout(page)
+  await breakUp.getByRole('button', { name: 'Track one by one' }).click()
+  await expect(breakUp).toBeHidden()
+  await expect(history).toContainText('Tracked tyre by tyre since')
+  await history.getByRole('button', { name: 'Cancel' }).click()
+  await expect(summer).toContainText('Tracked tyre by tyre · 4 of 4 on the car since')
+  for (const [corner, label] of [['Front left', 'S1'], ['Front right', 'S2'], ['Rear left', 'S3']])
+    await expect(summer.getByRole('button', { name: new RegExp(`^${corner}: tyre ${label},`) })).toBeVisible()
+  await expect(summer.getByRole('button', { name: /^S4.*corner not recorded/ })).toBeVisible() // a row under the picture
+  await expectSoundLayout(page)
+
+  // A tyre's own dialog.
+  await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
+  const tyre = page.getByRole('dialog', { name: 'Tyre S3' })
+  await expect(tyre).toContainText('On the car, rear left')
+  await expectSoundLayout(page)
+  await tyre.getByRole('button', { name: 'Close' }).click()
+
+  // The winter set on in June, then the summer set back on today, S1 and S3 exchanged.
+  await summer.getByRole('button', { name: 'Swap tyres' }).click()
+  const off = page.getByRole('dialog', { name: 'Swap tyres' })
+  await typeDate(page, dateField(off, /^Day/), '2026-06-01')
+  await off.getByRole('button', { name: 'Swap tyres' }).click()
+  await expect(off).toBeHidden()
+  await expect(summer).toContainText('Tracked tyre by tyre · in storage')
+  await summer.getByRole('button', { name: 'Swap to this set' }).click()
+  const on = page.getByRole('dialog', { name: 'Swap tyres' })
+  const where = on.getByRole('group', { name: 'Where each tyre goes' })
+  await expect(where.getByRole('radio', { name: 'Same as last time' })).toBeChecked()
+  await where.getByRole('button', { name: 'Front left: Tyre S1' }).click()
+  await expect(where.getByRole('status')).toHaveText('Tyre S1 is picked. Tap an empty corner, or the tyre it changes places with.') // S4's corner is empty
+  await where.getByRole('button', { name: 'Rear left: Tyre S3' }).click()
+  await expect(where.getByRole('button', { name: 'Rear left: Tyre S1' })).toBeVisible()
+  // S4 has no corner: a chip under the picture, tapped, then the empty corner.
+  await where.getByRole('button', { name: 'Tyre S4, corner not recorded' }).click()
+  await expectSoundLayout(page) // the chip 44 px to a finger on a phone
+  await where.getByRole('button', { name: 'Put S4 at rear right' }).click()
+  await expectSoundLayout(page)
+  await on.getByRole('button', { name: 'Swap tyres' }).click()
+  await expect(on).toBeHidden()
+  await expect(summer.getByRole('button', { name: /^Rear left: tyre S1,/ })).toBeVisible()
+  await expect(summer.getByRole('button', { name: /^Front left: tyre S3,/ })).toBeVisible()
+  await expect(summer.getByRole('button', { name: /^Rear right: tyre S4,/ })).toBeVisible()
+})
+
+/** A vehicle with a fill-up 60 days ago and the summer set on the car since then (through GraphQL), its Tyres tab open. */
+async function summerOnTheCar(page: Page) {
+  const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: day(60), odometer: 1000 })
+  await graphql(page, 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }', {
+    i: { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false, name: 'Michelin Primacy 4', season: 'SUMMER', since: day(400), fitted: true, day: day(60) },
+  })
+  await openVehicle(page, vehicle.id, 'tyres')
+  return { vehicle, day }
+}
+
+test('a flat on one tyre of a whole set: tapped on the car, the set tracked tyre by tyre on save, the line in the tyre’s history (#289)', async ({ page }) => {
+  await summerOnTheCar(page)
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await add.getByRole('checkbox', { name: 'The whole set' }).click()
+  await add.getByRole('button', { name: 'The rear left tyre' }).click()
+  await expect(add.getByRole('button', { name: 'The rear left tyre' })).toHaveAttribute('aria-pressed', 'true')
+  await expectSoundLayout(page)
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  await expect(page.getByText('Saved for S3.')).toBeVisible()
+
+  await expect(summer).toContainText('Tracked tyre by tyre')
+  await expect(page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3,/ })).toBeVisible()
+  await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
+  const tyre = page.getByRole('dialog', { name: 'Tyre S3' })
+  await expect(tyre).toContainText('Puncture repaired')
+  await expectSoundLayout(page)
+})
+
+test('a repair of two tyres with one amount is one row and one expense; one tyre’s day changed alone parts it from the expense (#289)', async ({ page }) => {
+  const { vehicle, day } = await summerOnTheCar(page)
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await add.getByRole('checkbox', { name: 'The whole set' }).click()
+  await add.getByRole('button', { name: 'The rear left tyre' }).click()
+  await add.getByRole('button', { name: 'The rear right tyre' }).click()
+  await add.getByLabel(/^Paid/).fill('13000')
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  await expect(page.getByText('Saved for S3, S4, with one expense.')).toBeVisible()
+  const row = page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ })
+  await expect(row).toBeVisible()
+  await expectSoundLayout(page)
+
+  // The row's bin asks which tyres' lines go; the ask on save of a shared amount emptied for one tyre. Both looked at, then cancelled.
+  await page.getByRole('button', { name: /^Move to the trash: Puncture repaired,/ }).click()
+  const bin = page.getByRole('alertdialog', { name: 'Move to the trash?' })
+  await expect(bin.getByRole('checkbox', { name: 'Tyre S4' })).toBeChecked()
+  await expectSoundLayout(page)
+  await bin.getByRole('button', { name: 'Cancel' }).click()
+  await expect(bin).toBeHidden()
+  await row.click()
+  const both = page.getByRole('dialog', { name: 'Edit entry' })
+  await both.getByRole('checkbox', { name: 'Tyre S4' }).click()
+  await both.getByLabel(/^Paid/).fill('')
+  await both.getByRole('button', { name: 'Save' }).click()
+  const shared = page.getByRole('dialog', { name: 'The amount is shared' })
+  await expect(shared.getByRole('radio', { name: /Only S3 lets go of it/ })).toBeChecked()
+  await expectSoundLayout(page)
+  await shared.getByRole('button', { name: 'Cancel' }).click()
+  await both.getByRole('button', { name: 'Cancel' }).click()
+  await expect(both).toBeHidden()
+
+  // S3's line alone a day earlier: it parts, without an amount; S4 keeps the expense.
+  await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
+  const tyre = page.getByRole('dialog', { name: 'Tyre S3' })
+  await expect(tyre).toContainText('shared with S4')
+  await tyre.getByRole('button', { name: /^Edit entry: Puncture repaired/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit entry' })
+  await expect(edit.getByRole('checkbox', { name: 'Tyre S4' })).not.toBeChecked()
+  await expectSoundLayout(page)
+  await typeDate(page, dateField(edit, /^Day/), day(1))
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(edit).toBeHidden()
+  await tyre.getByRole('button', { name: 'Close' }).click()
+
+  await expect(page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S4,/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3,/ })).toBeVisible()
+  type Lines = { vehicleTyres: { entries: { kind: string; day: string; amount: number | null; groupId: string | null }[] } }
+  const { vehicleTyres } = await graphql<Lines>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { kind day amount groupId } } }', { v: vehicle.id })
+  const lines = vehicleTyres.entries.filter((e) => e.kind === 'PUNCTURE_REPAIRED').map((e) => [e.day, e.amount])
+  expect(lines).toHaveLength(2)
+  expect(lines).toEqual(expect.arrayContaining([[day(1), null], [expect.any(String), 13_000]])) // S3 a day earlier without an amount, S4 with it
+})
+
+test('replaces two tyres of a whole set from its History: the set tracked tyre by tyre, the old ones under Retired, the new ones at 0 (#289)', async ({ page }) => {
+  await summerOnTheCar(page)
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await summer.getByRole('button', { name: 'History' }).click()
+  const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
+  await history.getByRole('button', { name: 'Replace tyres' }).click()
+  const replace = page.getByRole('dialog', { name: 'Replace tyres' })
+  await replace.getByRole('button', { name: 'The front left tyre' }).click()
+  await replace.getByRole('button', { name: 'The front right tyre' }).click()
+  await expect(replace.getByRole('group', { name: 'New tyre S5, for S1' })).toBeVisible()
+  await replace.getByRole('group', { name: 'New tyre S6, for S2' }).getByLabel(/^Name/).fill('Pilot Sport 5')
+  await replace.getByLabel(/^Price/).fill('78000')
+  await expectSoundLayout(page)
+  await replace.getByRole('button', { name: 'Replace' }).click()
+  await expect(replace).toBeHidden()
+  await expect(page.getByText('Replaced. S1, S2 are under Retired.')).toBeVisible()
+  await history.getByRole('button', { name: 'Cancel' }).click()
+
+  await expect(summer).toContainText('Tracked tyre by tyre · 4 of 4 on the car since') // the retired ones are not counted
+  await expect(summer.getByRole('button', { name: /^Front left: tyre S5, 0 km,/ })).toBeVisible()
+  await expect(summer.getByRole('button', { name: /^Front right: tyre S6, 0 km,/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Tyre S1, Michelin Primacy 4, retired on .*: Damaged$/ })).toBeVisible()
+  await summer.getByRole('button', { name: /^Front right: tyre S6,/ }).click()
+  const s6 = page.getByRole('dialog', { name: 'Tyre S6' })
+  await expect(s6.getByText('Pilot Sport 5')).toBeVisible() // its own name
+  await s6.getByRole('button', { name: 'Close' }).click()
+  await expectSoundLayout(page)
+  await page.getByRole('button', { name: /^Tyre S2, Michelin Primacy 4, retired on/ }).click()
+  const retired = page.getByRole('dialog', { name: 'Tyre S2' })
+  await expect(retired).toContainText('Retired on')
+  await expect(retired.getByRole('button', { name: 'Replace this tyre' })).toHaveCount(0)
+  await expectSoundLayout(page)
+})

@@ -388,4 +388,320 @@ public class TyreExpenseTests
         Assert.Equal([new TyreSpent("EUR", 8)], overview.SpentNoSet);
         Assert.Equal([new TyreSpent("HUF", 15_000), new TyreSpent("EUR", 73)], overview.SpentAll); // the rows add up
     }
+
+    /// <summary>
+    /// A flat on two tyres of the whole summer set (#289): the add for S3 and S4 breaks the set up on save and makes a line each, made
+    /// together, sharing one expense of 13,000 and one reading.
+    /// </summary>
+    private static async Task<(Guid S3Line, Guid S4Line, Guid Expense, Guid[] Tyres)> SharedRepair(Scene s, long? odometer = 148_200, bool paid = true)
+    {
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        var breakUp = new TyreBreakUpInput(s.Summer, D(2026, 9, 20), [
+            new(tyres[0], "S1", TyreCorner.FrontLeft), new(tyres[1], "S2", TyreCorner.FrontRight), new(tyres[2], "S3", TyreCorner.RearLeft), new(tyres[3], "S4", TyreCorner.RearRight)]);
+        var (s3, s4, expense) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), odometer, "Screws in the tread",
+            paid ? new TyreFee(13_000, "HUF", "Tyres", "Puncture repaired: Michelin Primacy 4", expense) : null, [new(tyres[2], s3), new(tyres[3], s4)], breakUp), default);
+        return (s3, s4, expense, tyres);
+    }
+
+    private static TyreEntry Line(Scene s, Guid id) => s.W.Tyres.Entries.Single(l => l.Id == id);
+
+    /// <summary>What every change must leave (#289): the live lines holding the expense and the expense on one day, one reading row between them, live while one of them is.</summary>
+    private static void GroupHolds(Scene s, Guid expenseId)
+    {
+        var expense = s.W.Expenses.Items.Single(e => e.Id == expenseId);
+        var holders = s.W.Tyres.Entries.Where(l => l.ExpenseId == expenseId && !l.IsDeleted).ToList();
+        foreach (var line in holders)
+        {
+            if (!expense.IsDeleted) Assert.Equal(line.Day, expense.Date);
+            Assert.Equal(expense.OdometerReadingId, line.OdometerReadingId);
+        }
+        if (holders.FirstOrDefault()?.OdometerReading is { } reading)
+            Assert.Equal(holders.Count > 0 || !expense.IsDeleted, reading.DeletedAt is null);
+    }
+
+    [Fact]
+    public async Task AFlatOnTwoTyresOfAWholeSet_BreaksItUp_MakesALineEach_OneExpenseAndOneReading_CountedOnceForTheSet()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, tyres) = await SharedRepair(s);
+
+        var (a, b) = (Line(s, s3), Line(s, s4));
+        Assert.Equal((tyres[2], tyres[3], (Guid?)s3, (Guid?)s3), (a.TyreId!.Value, b.TyreId!.Value, a.GroupId, b.GroupId)); // the group is the first line's id
+        Assert.Equal((expenseId, expenseId), (a.ExpenseId!.Value, b.ExpenseId!.Value));
+        Assert.Single(s.W.Expenses.Items.Where(e => e.Id == expenseId));
+        GroupHolds(s, expenseId);
+        var overview = (await s.Tyres.OverviewAsync(s.Car.Id, default))!;
+        var summer = overview.Sets.Single(x => x.Set.Id == s.Summer);
+        Assert.Equal(D(2026, 9, 20), summer.Set.BrokenUpOn);
+        Assert.Equal([new TyreSpent("HUF", 13_000)], summer.Spent!); // once
+        Assert.Equal(2, summer.Repairs);
+        var s3View = summer.Tyres!.Single(t => t.Tyre.Id == tyres[2]);
+        Assert.Equal([new TyreSpent("HUF", 6_500)], s3View.Spent!);
+        Assert.Equal(1, s3View.Repairs);
+    }
+
+    [Fact]
+    public async Task ANewAmountOnOneLine_ChangesTheOneExpenseForAll_AndTheExpensesNewDay_MovesEveryLiveLine()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws in the tread",
+            new TyreFee(15_000, "HUF", "Tyres", null)), default);
+        Assert.Equal(15_000, s.W.Expenses.Items.Single(e => e.Id == expenseId).Amount);
+        Assert.Equal((s3, s3), (Line(s, s3).GroupId!.Value, Line(s, s4).GroupId!.Value)); // nothing of its own: still one row
+
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 21), "Puncture repaired", "Tyres", 15_000, "HUF", 148_300, null), default);
+        Assert.All([Line(s, s3), Line(s, s4)], l => Assert.Equal((D(2026, 9, 21), 148_300L), (l.Day, l.Odometer!.Value)));
+        GroupHolds(s, expenseId);
+    }
+
+    [Fact]
+    public async Task ADayOfItsOwn_PartsALineFromTheSharedExpense_TheOtherKeepsIt()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 22), 148_400, "Screws in the tread"), default);
+
+        var (a, b) = (Line(s, s3), Line(s, s4));
+        Assert.Equal(((Guid?)null, (Guid?)null), (a.ExpenseId, a.GroupId)); // parted: its own day and reading, no amount
+        Assert.Equal((D(2026, 9, 22), 148_400L), (a.Day, a.Odometer!.Value));
+        Assert.Equal(((Guid?)expenseId, D(2026, 9, 20), 148_200L), (b.ExpenseId, b.Day, b.Odometer!.Value));
+        Assert.NotEqual(a.OdometerReadingId, b.OdometerReadingId);
+        GroupHolds(s, expenseId);
+    }
+
+    [Fact]
+    public async Task AnAmountEmptiedOnOneLineOfASharedExpense_AsksWhatItDoes_LetGoOrTrash()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        static TyreEntryInput Emptied(Scene of) => new(TyreEntryKind.PunctureRepaired, of.Summer, D(2026, 9, 20), 148_200, "Screws in the tread", new TyreFee(null, null, null, null));
+        var emptied = Emptied(s);
+
+        Assert.Equal("tyres.sharedExpenseChoice", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.UpdateEntryAsync(s3, emptied, default))).Key);
+        await s.Tyres.UpdateEntryAsync(s3, emptied with { SharedExpense = SharedExpenseChoice.LetGo }, default);
+        Assert.Equal(((Guid?)null, (Guid?)expenseId), (Line(s, s3).ExpenseId, Line(s, s4).ExpenseId)); // only S3 let go
+        Assert.False(s.W.Expenses.Items.Single(e => e.Id == expenseId).IsDeleted);
+        GroupHolds(s, expenseId);
+
+        var t = await Setup();
+        var (t3, t4, other, _) = await SharedRepair(t);
+        await t.Tyres.UpdateEntryAsync(t3, Emptied(t) with { SharedExpense = SharedExpenseChoice.Trash }, default);
+        Assert.True(t.W.Expenses.Items.Single(e => e.Id == other).IsDeleted); // no tyre of this repair keeps an amount
+        Assert.Equal(((Guid?)other, (Guid?)other), (Line(t, t3).ExpenseId, Line(t, t4).ExpenseId));
+    }
+
+    [Fact]
+    public async Task OneLineToTheTrash_LeavesTheExpenseWithTheOther_TheLastHoldersTakesItAlong_AndItsRestoreBringsItBack()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+
+        await s.Tyres.TrashEntryAsync(s3, default, withExpense: true); // not the last holder: the box does nothing
+        Assert.False(s.W.Expenses.Items.Single(e => e.Id == expenseId).IsDeleted);
+        Assert.Null(Line(s, s4).OdometerReading!.DeletedAt); // still held live by S4
+        GroupHolds(s, expenseId);
+
+        await s.Tyres.TrashEntryAsync(s4, default, withExpense: true); // the last one: the expense goes along
+        Assert.True(s.W.Expenses.Items.Single(e => e.Id == expenseId).IsDeleted);
+        Assert.True(Line(s, s4).ExpenseTrashedWithEntry);
+        Assert.NotNull(Line(s, s4).OdometerReading!.DeletedAt);
+
+        await s.Tyres.RestoreEntryAsync(s4, default); // they went together: both come back
+        Assert.False(s.W.Expenses.Items.Single(e => e.Id == expenseId).IsDeleted);
+        GroupHolds(s, expenseId);
+    }
+
+    [Fact]
+    public async Task ALinePartingWhileTheDialogStillSendsTheSharedAmount_KeepsNoAmount_AndMakesNoSecondExpense()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 22), 148_400, "Screws in the tread",
+            new TyreFee(13_000, "HUF", "Tyres", "Puncture repaired: Michelin Primacy 4", Guid.NewGuid())), default);
+
+        Assert.Null(Line(s, s3).ExpenseId); // decision 29: it keeps its day without an amount
+        Assert.Equal(expenseId, Line(s, s4).ExpenseId);
+        Assert.Single(s.W.Expenses.Items.Where(e => e.Amount == 13_000));
+    }
+
+    [Fact]
+    public async Task AnOdometerEmptiedOnTheSharedReading_ForAll_RemovesTheOneRow_AndForOneAlone_PartsWithoutAReading()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        var shared = Line(s, s3).OdometerReadingId;
+
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), null, "Screws in the tread", Also: [s4]), default);
+        Assert.All([Line(s, s3), Line(s, s4)], l => Assert.Null(l.OdometerReadingId));
+        Assert.Null(s.W.Expenses.Items.Single(e => e.Id == expenseId).OdometerReadingId);
+        Assert.DoesNotContain(s.W.Tyres.Entries, l => l.OdometerReadingId == shared); // the one row goes, nothing names it
+
+        var t = await Setup();
+        var (t3, t4, other, _) = await SharedRepair(t);
+        await t.Tyres.UpdateEntryAsync(t3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, t.Summer, D(2026, 9, 20), null, "Screws in the tread"), default);
+        Assert.Equal(((Guid?)null, (Guid?)null), (Line(t, t3).OdometerReadingId, Line(t, t3).ExpenseId)); // parted, its own copy gone at once
+        Assert.Equal(148_200, Line(t, t4).Odometer);
+        GroupHolds(t, other);
+    }
+
+    [Fact]
+    public async Task ALineTrashedWhileTheExpenseMovesOnTheExpensesTab_PartsWhenRestored_TheOtherKeepsIt()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        await s.Tyres.TrashEntryAsync(s3, default, withExpense: false);
+
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 21), "Puncture repaired", "Tyres", 13_000, "HUF", 148_300, null), default);
+        Assert.Equal((D(2026, 9, 21), D(2026, 9, 20)), (Line(s, s4).Day, Line(s, s3).Day)); // the trashed line is left alone
+
+        await s.Tyres.RestoreEntryAsync(s3, default);
+        Assert.Null(Line(s, s3).ExpenseId); // #288 as built: restored, it parts
+        Assert.Equal(expenseId, Line(s, s4).ExpenseId);
+        Assert.NotEqual(Line(s, s3).OdometerReadingId, Line(s, s4).OdometerReadingId);
+        GroupHolds(s, expenseId);
+    }
+
+    [Fact]
+    public async Task APhotosReadingOnASharedExpense_ReachesEveryLiveLine_AsOneRow()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s, odometer: null);
+        var reading = Domain.Odometers.OdometerReading.Create(s.Car.OwnerId, s.Car.Id, D(2026, 9, 20), 148_250);
+
+        await new TyreExpenseReadings(s.W.Tyres).FilledAsync(expenseId, reading, default);
+
+        Assert.Equal((reading.Id, reading.Id), (Line(s, s3).OdometerReadingId!.Value, Line(s, s4).OdometerReadingId!.Value));
+    }
+
+    [Fact]
+    public async Task ATrashedLinesOwnCopy_NeverCountsAgainstTheLiveLinesNewReading()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        await s.Tyres.TrashEntryAsync(s3, default, withExpense: false);
+
+        // A later day with a lower odometer than the trashed line kept: the copy is in the trash, it does not count.
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 25), "Puncture repaired", "Tyres", 13_000, "HUF", 148_100, null), default);
+
+        Assert.Equal((D(2026, 9, 25), 148_100L), (Line(s, s4).Day, Line(s, s4).Odometer!.Value));
+        Assert.Equal(148_200, Line(s, s3).OdometerReading!.Value);
+    }
+
+    [Fact]
+    public async Task ADayOfItsOwn_OnALineWithoutAnAmount_TakesAReadingOfItsOwn_TheOtherKeepsItsDayAndValue()
+    {
+        var scene = await Setup();
+        var (t3, t4, _, _) = await SharedRepair(scene, paid: false);
+
+        await scene.Tyres.UpdateEntryAsync(t3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, scene.Summer, D(2026, 9, 22), 148_400, "Screws in the tread"), default);
+
+        var (a, b) = (Line(scene, t3), Line(scene, t4));
+        Assert.NotEqual(a.OdometerReadingId, b.OdometerReadingId); // the one row was the other's too: it stays with it
+        Assert.Equal((D(2026, 9, 22), 148_400L), (a.Day, a.OdometerReading!.Value));
+        Assert.Equal((D(2026, 9, 20), D(2026, 9, 20), 148_200L), (b.Day, b.OdometerReading!.Date, b.OdometerReading.Value));
+        Assert.Null(a.GroupId);
+    }
+
+    [Fact]
+    public async Task AnAmountTypedForEveryLineOfTheGroup_LinksThemAll_EvenWithNothingElseChanged()
+    {
+        var s = await Setup();
+        var (s3, s4, _, _) = await SharedRepair(s, paid: false);
+
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws in the tread",
+            new TyreFee(13_000, "HUF", "Tyres", "Puncture repaired: Michelin Primacy 4", Guid.NewGuid()), Also: [s4]), default);
+
+        Assert.NotNull(Line(s, s3).ExpenseId);
+        Assert.Equal(Line(s, s3).ExpenseId, Line(s, s4).ExpenseId);
+        GroupHolds(s, Line(s, s3).ExpenseId!.Value);
+    }
+
+    [Fact]
+    public async Task TheExpenseOfLinesHiddenWithTheirSet_EditedOnTheExpensesTab_KeepsItsNewDay()
+    {
+        var s = await Setup();
+        var (_, _, expenseId, _) = await SharedRepair(s);
+        await s.Tyres.TrashSetAsync(s.Summer, default);
+
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 25), "Puncture repaired", "Tyres", 13_000, "HUF", 148_500, null), default);
+
+        Assert.Equal((D(2026, 9, 25), 148_500L), (s.W.Expenses.Items.Single(e => e.Id == expenseId).Date, s.W.Expenses.Items.Single(e => e.Id == expenseId).Odometer!.Value));
+    }
+
+    [Fact]
+    public async Task ALineRestoredAfterItsGroupMovedOn_IsARowOfItsOwn()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        await s.Tyres.TrashEntryAsync(s3, default, withExpense: false);
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 21), "Puncture repaired", "Tyres", 13_000, "HUF", 148_300, null), default);
+
+        await s.Tyres.RestoreEntryAsync(s3, default);
+
+        Assert.Null(Line(s, s3).GroupId); // not shown under S4's new day
+        Assert.Equal(s3, Line(s, s4).GroupId);
+
+        var t = await Setup();
+        var (t3, t4, _, _) = await SharedRepair(t);
+        await t.Tyres.TrashEntryAsync(t3, default, withExpense: false);
+        await t.Tyres.RestoreEntryAsync(t3, default);
+        Assert.Equal((t3, t3), (Line(t, t3).GroupId!.Value, Line(t, t4).GroupId!.Value)); // nothing changed meanwhile: one row again
+    }
+
+    [Fact]
+    public async Task OnlyTheAmountChangedWhileALineIsInTheTrash_LeavesItsReading_SoItsRestoreKeepsTheExpenseAndTheRow()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        await s.Tyres.TrashEntryAsync(s3, default, withExpense: false);
+
+        await s.Tyres.UpdateEntryAsync(s4, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws in the tread",
+            new TyreFee(15_000, "HUF", "Tyres", "Puncture repaired: Michelin Primacy 4", null)), default);
+        await s.Tyres.RestoreEntryAsync(s3, default);
+
+        Assert.Equal(((Guid?)expenseId, (Guid?)s3), (Line(s, s3).ExpenseId, Line(s, s3).GroupId));
+        Assert.Equal(Line(s, s4).OdometerReadingId, Line(s, s3).OdometerReadingId);
+        GroupHolds(s, expenseId);
+    }
+
+    [Fact]
+    public async Task ALinesOwnNewReading_IsCheckedAgainstTheRowTheOtherLineKeeps()
+    {
+        var s = await Setup();
+        var (s3, _, _, _) = await SharedRepair(s, paid: false);
+
+        var refused = await Assert.ThrowsAnyAsync<KeyedException>(() => s.Tyres.UpdateEntryAsync(s3,
+            new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 22), 148_100, "Screws in the tread"), default));
+        Assert.StartsWith("odometer.", refused.Key);
+    }
+
+    [Fact]
+    public async Task AnAmountTypedOnOneLineOfAGroupAlone_ItsOwnRow_AndTheExpensesNewDayMovesOnlyThatLine()
+    {
+        var s = await Setup();
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        var breakUp = new TyreBreakUpInput(s.Summer, D(2026, 9, 20), [
+            new(tyres[0], "S1", TyreCorner.FrontLeft), new(tyres[1], "S2", TyreCorner.FrontRight), new(tyres[2], "S3", TyreCorner.RearLeft), new(tyres[3], "S4", TyreCorner.RearRight)]);
+        var (s3, s4, expenseId) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws", null,
+            [new(tyres[2], s3), new(tyres[3], s4)], breakUp), default);
+
+        // An amount on S3 alone: its expense, not S4's; a row of its own.
+        await s.Tyres.UpdateEntryAsync(s3, new TyreEntryInput(TyreEntryKind.PunctureRepaired, s.Summer, D(2026, 9, 20), 148_200, "Screws",
+            new TyreFee(9_000, "HUF", "Tyres", "Puncture repaired", expenseId)), default);
+        Assert.Equal(((Guid?)expenseId, (Guid?)null), (Line(s, s3).ExpenseId, Line(s, s4).ExpenseId));
+        Assert.Null(Line(s, s3).GroupId);
+
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 21), "Puncture repaired", "Tyres", 9_000, "HUF", 148_300, null), default);
+
+        Assert.Equal((D(2026, 9, 21), 148_300L), (Line(s, s3).Day, Line(s, s3).Odometer!.Value));
+        Assert.Equal((D(2026, 9, 20), 148_200L), (Line(s, s4).Day, Line(s, s4).Odometer!.Value)); // S4 holds no part of it
+        Assert.NotEqual(Line(s, s3).OdometerReadingId, Line(s, s4).OdometerReadingId);
+        Assert.Equal(Line(s, s3).OdometerReadingId, s.W.Expenses.Items.Single(e => e.Id == expenseId).OdometerReadingId);
+    }
 }

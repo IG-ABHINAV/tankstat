@@ -621,4 +621,141 @@ public class TyreServiceTests
         Assert.Single(Set(second, summer).Installations);
         Assert.Equal(saves + 1, s.W.Tyres.Saves); // answered without a change (the day's empty log line saves nothing new)
     }
+
+    private static readonly Guid[] Ids = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+
+    /// <summary>The summer set, on the car since 28 Mar 2026 with pair 1 at the front, broken up today (#289).</summary>
+    private static async Task<(TyreOverview Overview, Guid Summer, Guid Winter, TyreBreakUpInput BreakUp)> BrokenUp(Scene s)
+    {
+        var (_, summer, winter) = await TwoSets(s);
+        var input = new TyreBreakUpInput(summer, D(2026, 10, 1), [
+            new(Guid.NewGuid(), "S1", TyreCorner.FrontLeft), new(Guid.NewGuid(), "S2", TyreCorner.FrontRight),
+            new(Guid.NewGuid(), "S3", TyreCorner.RearLeft), new(Guid.NewGuid(), "S4", TyreCorner.RearRight)]);
+        return (await s.Tyres.BreakUpAsync(input, default), summer, winter, input);
+    }
+
+    private static TyreView Tyre(TyreOverview o, string label) => o.Sets.SelectMany(x => x.Tyres ?? []).Single(t => t.Tyre.Label == label);
+
+    [Fact]
+    public async Task BreakingUp_GivesEachTyreTheSetsDistance_AtItsCorner_AndTheSameBreakUpAgainChangesNothing()
+    {
+        var s = await Setup();
+        var (overview, summer, _, input) = await BrokenUp(s);
+
+        var set = Set(overview, summer);
+        Assert.Equal(D(2026, 10, 1), set.Set.BrokenUpOn);
+        Assert.Equal(["S1", "S2", "S3", "S4"], set.Tyres!.Select(t => t.Tyre.Label));
+        // Each starts with the set's rough figure and its installation: the same distance as the set.
+        Assert.All(set.Tyres!, t => Assert.Equal((set.Figures.Distance, true), (t.Figures.Distance, t.OnTheCar)));
+        Assert.Equal((TyreCorner?)TyreCorner.RearLeft, Tyre(overview, "S3").Corner);
+        Assert.Equal((set.Figures.Measured, 0L), (Tyre(overview, "S1").Figures.Front, Tyre(overview, "S1").Figures.Rear));
+
+        var again = await s.Tyres.BreakUpAsync(input, default); // a device's retry
+        Assert.Equal(4, Set(again, summer).Tyres!.Count);
+        Assert.Equal("tyres.alreadyBrokenUp", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.BreakUpAsync(input with { Tyres = [.. input.Tyres.Select(t => t with { Id = Guid.NewGuid() })] }, default))).Key);
+    }
+
+    [Fact]
+    public async Task ASwapOntoABrokenUpSet_PlacesEachTyre_AndTheSwapOffEndsTheirPlaces()
+    {
+        var s = await Setup();
+        var (_, summer, winter, input) = await BrokenUp(s);
+        var swapOff = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 10, 1), null, false, null, null), default, Guid.NewGuid());
+        Assert.All(Set(swapOff, summer).Tyres!, t => Assert.False(t.OnTheCar));
+        Assert.Equal((TyreCorner?)TyreCorner.FrontLeft, Tyre(swapOff, "S1").Corner); // last time
+
+        var s1 = input.Tyres[0].Id!.Value;
+        var s3 = input.Tyres[2].Id!.Value;
+        var corners = new Dictionary<Guid, TyreCorner?> { [s1] = TyreCorner.RearLeft, [s3] = TyreCorner.FrontLeft, [input.Tyres[1].Id!.Value] = TyreCorner.FrontRight };
+        var back = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 10, 2), null, false, null, null, Corners: corners), default, Guid.NewGuid());
+
+        Assert.Equal(((TyreCorner?)TyreCorner.RearLeft, true), (Tyre(back, "S1").Corner, Tyre(back, "S1").OnTheCar));
+        Assert.Null(Tyre(back, "S4").Corner); // left out: not sure
+        Assert.Equal(2, Tyre(back, "S1").Places.Count);
+    }
+
+    [Fact]
+    public async Task ATyresLabel_IsUniqueAmongTheVehiclesTyresNotInTheTrash_AndATrashedTyreLeavesItsCornerEmpty()
+    {
+        var s = await Setup();
+        var (overview, _, _, input) = await BrokenUp(s);
+        var s2 = input.Tyres[1].Id!.Value;
+
+        Assert.Equal("tyres.labelTaken", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.UpdateTyreAsync(s2, "s1", default))).Key);
+        Assert.Equal("S2a", Tyre(await s.Tyres.UpdateTyreAsync(s2, " S2a ", default), "S2a").Tyre.Label);
+
+        var trashed = await s.Tyres.TrashTyreAsync(s2, default);
+        Assert.DoesNotContain(trashed.Sets.SelectMany(x => x.Tyres ?? []), t => t.Tyre.Id == s2);
+        Assert.Equal(TyreTrashKind.Tyre, Assert.Single(await s.Tyres.ListTrashAsync(0, 10, default)).Kind);
+        // S1 moves to S2's corner while it is in the trash: S2 can no longer come back.
+        var s1Place = Tyre(trashed, "S1").Places.Single().Place;
+        await s.Tyres.UpdatePlaceAsync(s1Place.Id, new TyrePlaceInput(s1Place.From, null, TyreCorner.FrontRight), default);
+        Assert.Equal("tyres.tyreRestoreConflict", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreTyreAsync(s2, default))).Key);
+        _ = overview;
+    }
+
+    [Fact]
+    public async Task ATyresOwnTimeOnTheCar_IsAddedChangedTrashedAndRestored_InsideItsSetsInstallations()
+    {
+        var s = await Setup();
+        var (overview, _, _, input) = await BrokenUp(s);
+        var s4 = input.Tyres[3].Id!.Value;
+        var place = Tyre(overview, "S4").Places.Single().Place;
+
+        // S4 came off for a while: its time on the car ends, another starts later. The others keep theirs.
+        await s.Tyres.UpdatePlaceAsync(place.Id, new TyrePlaceInput(place.From, D(2026, 6, 1), TyreCorner.RearRight), default);
+        var placeId = Guid.NewGuid();
+        var added = await s.Tyres.AddPlaceAsync(s4, new TyrePlaceInput(D(2026, 7, 1), null, TyreCorner.RearRight), default, placeId);
+        Assert.Equal(2, Tyre(added, "S4").Places.Count);
+        Assert.Single(Tyre(added, "S1").Places);
+        await s.Tyres.AddPlaceAsync(s4, new TyrePlaceInput(D(2026, 7, 1), null, TyreCorner.RearRight), default, placeId); // sent again: nothing new
+        Assert.Equal("tyres.placeOutsideSet", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.AddPlaceAsync(s4, new TyrePlaceInput(D(2026, 1, 1), D(2026, 2, 1), null), default))).Key);
+
+        var trashed = await s.Tyres.TrashPlaceAsync(placeId, default);
+        Assert.Single(Tyre(trashed, "S4").Places);
+        Assert.Equal(TyreTrashKind.Place, Assert.Single(await s.Tyres.ListTrashAsync(0, 10, default)).Kind);
+        Assert.Equal(2, Tyre(await s.Tyres.RestorePlaceAsync(placeId, default), "S4").Places.Count);
+    }
+
+    [Fact]
+    public async Task RetiringABrokenUpSet_RetiresItsTyres_AndUnretiringBringsThemBack()
+    {
+        var s = await Setup();
+        var (_, summer, winter, _) = await BrokenUp(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 10, 1), null, false, null, null), default, Guid.NewGuid());
+
+        var retired = await s.Tyres.RetireAsync(summer, D(2026, 10, 1), default);
+        Assert.All(Set(retired, summer).Tyres!, t => Assert.Equal(((DateOnly?)D(2026, 10, 1), (TyreRetiredWhy?)TyreRetiredWhy.SetRetired), (t.Tyre.RetiredOn, t.Tyre.RetiredWhy)));
+        Assert.All(Set(await s.Tyres.UnretireAsync(summer, default), summer).Tyres!, t => Assert.False(t.Tyre.IsRetired));
+    }
+
+    [Fact]
+    public async Task SomeoneWithoutEditAccess_CannotBreakUpOrChangeTyres()
+    {
+        var s = await Setup();
+        var (_, summer, _, input) = await BrokenUp(s);
+        s.W.Current.SignInAs(s.Bob);
+        Assert.Equal("tyres.setNotFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.Tyres.BreakUpAsync(input with { SetId = summer }, default))).Key);
+        Assert.Equal("tyres.tyreNotFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.Tyres.UpdateTyreAsync(input.Tyres[0].Id!.Value, "X", default))).Key);
+        Assert.Equal("tyres.tyreNotFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.Tyres.TrashTyreAsync(input.Tyres[0].Id!.Value, default))).Key);
+    }
+
+    [Fact]
+    public async Task ASwapCuttingTheInstallationOfATrashedTyresLaterTime_IsNotRefusedForIt_AndTheTyresRestoreSaysWhy()
+    {
+        var s = await Setup();
+        var (overview, _, winter, input) = await BrokenUp(s);
+        var s4 = input.Tyres[3].Id!.Value;
+        var place = Tyre(overview, "S4").Places.Single().Place;
+        await s.Tyres.UpdatePlaceAsync(place.Id, new TyrePlaceInput(place.From, D(2026, 6, 1), TyreCorner.RearRight), default);
+        await s.Tyres.AddPlaceAsync(s4, new TyrePlaceInput(D(2026, 7, 1), null, TyreCorner.RearRight), default, Guid.NewGuid());
+        await s.Tyres.TrashTyreAsync(s4, default);
+
+        // The winter set on from 15 Jun: the summer set's installation ends before S4's later time began. S4 is in the trash: not a refusal.
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 15), null, false, null, null), default, Guid.NewGuid());
+
+        Assert.NotNull((await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreTyreAsync(s4, default))).Key);
+    }
 }

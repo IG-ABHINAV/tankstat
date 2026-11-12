@@ -30,6 +30,7 @@ internal sealed class TyreSetConfiguration : IEntityTypeConfiguration<TyreSet>
         b.HasIndex(s => s.OwnerId);
         TrashColumn.Map(b, s => s.DeletedAt);
         b.HasIndex(s => s.DeletedAt);
+        b.Ignore(s => s.IsBrokenUp);
         // Unlike a log, a trashed set is read by its own queries (its installations hide through it), so there is no query filter.
     }
 }
@@ -72,11 +73,58 @@ internal sealed class TyreEntryConfiguration : IEntityTypeConfiguration<TyreEntr
         b.HasIndex(e => e.SetId);
         b.HasIndex(e => e.OwnerId);
         b.HasIndex(e => e.ExpenseId); // an expense's line (its chip), and the link cleared when the expense is purged; no key, as for RecurringCompletion
+        b.HasIndex(e => e.TyreId); // a single tyre's lines (#289), no key: hidden through its tyre, cleaned up in code
+        b.HasIndex(e => e.GroupId);
         b.Ignore(e => e.TakesAmount);
-        // The reading is owned by the line; clearing it, or purging the line, removes it in code (as an expense's).
-        b.HasOne(e => e.OdometerReading).WithOne().HasForeignKey<TyreEntry>(e => e.OdometerReadingId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+        // The reading is owned by the line; clearing it, or purging the line, removes it in code (as an expense's). The lines made together
+        // for several tyres (#289) hold one row, so it is not unique; a row goes only when no line or expense holds it.
+        b.HasOne(e => e.OdometerReading).WithMany().HasForeignKey(e => e.OdometerReadingId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
         TrashColumn.Map(b, e => e.DeletedAt);
         b.HasIndex(e => e.DeletedAt);
         b.Ignore(e => e.IsSwapLine);
+    }
+}
+
+internal sealed class TyreConfiguration : IEntityTypeConfiguration<Tyre>
+{
+    public void Configure(EntityTypeBuilder<Tyre> b)
+    {
+        b.ToTable("Tyres");
+        SyncMapping.MapUpdatedAt(b);
+        b.HasIndex(t => new { t.VehicleId, t.UpdatedAt });
+        b.HasKey(t => t.Id);
+        b.Property(t => t.Id).ValueGeneratedNever();
+        b.Property(t => t.Label).HasMaxLength(Tyre.MaxLabelLength).IsRequired();
+        b.Property(t => t.Name).HasMaxLength(Tyre.MaxNameLength);
+        b.Property(t => t.RetiredWhy).HasConversion<string>().HasMaxLength(16);
+        // The set is the only cascading key (#289), as for installations: a key to the vehicle as well would give SQL Server two cascade paths.
+        // A label is unique among the vehicle's tyres not in the trash, without case: checked in code (MySQL has no filtered index).
+        b.HasOne<TyreSet>().WithMany().HasForeignKey(t => t.SetId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(t => t.VehicleId);
+        b.HasIndex(t => t.OwnerId);
+        TrashColumn.Map(b, t => t.DeletedAt);
+        b.HasIndex(t => t.DeletedAt);
+        b.Ignore(t => t.IsRetired);
+    }
+}
+
+internal sealed class TyrePlaceConfiguration : IEntityTypeConfiguration<TyrePlace>
+{
+    public void Configure(EntityTypeBuilder<TyrePlace> b)
+    {
+        b.ToTable("TyrePlaces");
+        SyncMapping.MapUpdatedAt(b);
+        b.HasIndex(p => new { p.VehicleId, p.UpdatedAt });
+        b.HasKey(p => p.Id);
+        b.Property(p => p.Id).ValueGeneratedNever();
+        b.Property(p => p.Corner).HasConversion<string>().HasMaxLength(16);
+        // The tyre's key is the only cascading one (#289): the installation is a plain, indexed column, cleaned up in code (a key to it as
+        // well would give SQL Server two cascade paths from the set).
+        b.HasOne<Tyre>().WithMany().HasForeignKey(p => p.TyreId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(p => new { p.TyreId, p.From });
+        b.HasIndex(p => p.InstallationId);
+        b.HasIndex(p => p.OwnerId);
+        TrashColumn.Map(b, p => p.DeletedAt);
+        b.HasIndex(p => p.DeletedAt);
     }
 }

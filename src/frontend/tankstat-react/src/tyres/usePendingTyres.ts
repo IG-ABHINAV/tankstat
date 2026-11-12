@@ -11,9 +11,11 @@ export interface PendingTyres {
   cards: ReadonlyMap<string, 'new' | 'changed'>
   /** Whose costs are out of date until synced (#288): set ids, `NO_SET` for the lines of no set (`Replayed.costs`). */
   costs: ReadonlySet<string>
+  /** The single tyres a waiting change added or changed (#289): their figures are updated once synced. */
+  tyres: ReadonlySet<string>
 }
 
-const NONE: PendingTyres = { cards: new Map(), costs: new Set() }
+const NONE: PendingTyres = { cards: new Map(), costs: new Set(), tyres: new Set() }
 
 /**
  * The sets of a vehicle that tyre changes waiting on this device touched (#287, Q3), each `new` (added here) or `changed`: the same replay
@@ -34,7 +36,9 @@ export function usePendingTyres(vehicleId: string): PendingTyres {
       if (waiting.length === 0) return setPending(NONE)
       const base = (kept?.data as { vehicleTyres?: Tyres | null } | undefined)?.vehicleTyres ?? noTyres(vehicleId)
       const replayed = replayTyres(base, waiting)
-      setPending({ cards: new Map([...replayed.touched].map((id) => [id, replayed.added.has(id) ? 'new' : 'changed'] as const)), costs: replayed.costs })
+      setPending({
+        cards: new Map([...replayed.touched].map((id) => [id, replayed.added.has(id) ? 'new' : 'changed'] as const)), costs: replayed.costs, tyres: replayed.touchedTyres,
+      })
     })
     return () => {
       live = false

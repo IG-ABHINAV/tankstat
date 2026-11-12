@@ -48,9 +48,46 @@ public sealed record SetTyreRoughDistanceInput(Guid Id, long Distance, DateOnly?
 /// <param name="Odometer">The reading of that day, kept on the swap's line of the tyre log as one of the car's readings.</param>
 /// <param name="InstallationId">The id of the installation it creates, if it creates one: the same change sent again changes nothing.</param>
 /// <param name="Fee">What it cost (#288), on the line of the installation that starts that day.</param>
+/// <param name="Corners">For a set tracked tyre by tyre (#289): where each tyre goes from that day (a tyre left out, or with no corner, is
+/// "Not sure"); left out, each tyre takes the corner it had before. A whole set ignores it.</param>
 public sealed record SwapTyresInput(
     Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront = null, bool Replace = false, long? Odometer = null, string? Note = null, Guid? InstallationId = null,
-    TyreFeeInput? Fee = null);
+    TyreFeeInput? Fee = null, IReadOnlyList<TyreCornerInput>? Corners = null);
+
+/// <param name="Corner">Null: not recorded.</param>
+public sealed record TyreCornerInput(Guid TyreId, TyreCorner? Corner);
+
+/// <param name="Id">The tyre's id chosen by the client: the same break-up sent again answers with what it made.</param>
+/// <param name="Label">Written on the tyre, at most 6 characters, unique among the vehicle's tyres not in the trash (without case).</param>
+/// <param name="Corner">Where it is now on the car, else where it was the last time; null: not sure.</param>
+public sealed record NewTyreInput(string Label, TyreCorner? Corner = null, Guid? Id = null);
+
+/// <param name="Day">The device's today: the set is tracked tyre by tyre from it, for good.</param>
+/// <param name="Tyres">The four tyres.</param>
+public sealed record BreakUpTyreSetInput(Guid SetId, DateOnly Day, IReadOnlyList<NewTyreInput> Tyres);
+
+public sealed record UpdateTyreInput(Guid Id, string Label);
+
+/// <param name="TyreId">The tyre it replaces.</param>
+/// <param name="Id">The new tyre's id chosen by the client: the same replacement sent again answers with what it made.</param>
+/// <param name="Label">The new tyre's label: unique among the vehicle's tyres not in the trash (without case).</param>
+/// <param name="Name">Its name, null for the set's.</param>
+/// <param name="LineId">Its Bought line's id chosen by the client.</param>
+public sealed record ReplaceTyreInput(Guid TyreId, string Label, Guid? Id = null, string? Name = null, int? MadeWeek = null, int? MadeYear = null, Guid? LineId = null);
+
+/// <param name="Why">Damaged, worn or too old (never <c>SET_RETIRED</c>: <c>tyres.whyInvalid</c>).</param>
+/// <param name="Odometer">The day's reading, on the new tyres' Bought lines.</param>
+/// <param name="Price">One expense the new tyres' Bought lines share.</param>
+/// <param name="BreakUp">On a whole set: it is broken up first, and <c>tyres</c> name its new tyres' ids.</param>
+public sealed record ReplaceTyresInput(
+    Guid SetId, DateOnly Day, TyreRetiredWhy Why, IReadOnlyList<ReplaceTyreInput> Tyres, long? Odometer = null, TyreFeeInput? Price = null, BreakUpTyreSetInput? BreakUp = null);
+
+/// <param name="Until">The day it came off; left out while it is on the car.</param>
+/// <param name="Corner">Left out: not recorded.</param>
+/// <param name="Id">The client's id: the same add sent again answers with what it made.</param>
+public sealed record AddTyrePlaceInput(Guid TyreId, DateOnly From, DateOnly? Until = null, TyreCorner? Corner = null, Guid? Id = null);
+
+public sealed record UpdateTyrePlaceInput(Guid Id, DateOnly From, DateOnly? Until = null, TyreCorner? Corner = null);
 
 public sealed record PastTyreSwapInput(DateOnly Day, Guid SetId, long? Odometer = null, Guid? InstallationId = null);
 
@@ -68,12 +105,22 @@ public sealed record UpdateTyreInstallationInput(
 /// <param name="SetId">The set it concerns; left out for none.</param>
 /// <param name="Odometer">The reading of that day, one of the car's readings.</param>
 /// <param name="Id">The line's id chosen by the client: the same add sent again answers with what it created.</param>
+/// <param name="Tyres">For single tyres of the set (#289): a line each, made together, sharing one expense and reading; each line's id the client's.</param>
+/// <param name="BreakUp">For some tyres of a whole set: it is broken up first (the tyres' ids, labels and corners), then the lines are made.</param>
 public sealed record AddTyreEntryInput(
-    Guid VehicleId, TyreEntryKind Kind, DateOnly Day, Guid? SetId = null, long? Odometer = null, string? Note = null, Guid? Id = null, TyreFeeInput? Fee = null);
+    Guid VehicleId, TyreEntryKind Kind, DateOnly Day, Guid? SetId = null, long? Odometer = null, string? Note = null, Guid? Id = null, TyreFeeInput? Fee = null,
+    IReadOnlyList<TyreLineInput>? Tyres = null, BreakUpTyreSetInput? BreakUp = null);
+
+/// <param name="Id">The line's id chosen by the client.</param>
+public sealed record TyreLineInput(Guid TyreId, Guid? Id = null);
 
 /// <param name="Kind">A swap's line keeps its kind and set (<c>tyres.swapLineLocked</c>); its new day moves the swap.</param>
 /// <param name="Odometer">The reading; left out clears it (for good).</param>
-public sealed record UpdateTyreEntryInput(Guid Id, TyreEntryKind Kind, DateOnly Day, Guid? SetId = null, long? Odometer = null, string? Note = null, TyreFeeInput? Fee = null);
+/// <param name="Also">The other lines made together with it that change too (#289, *Also change it for*); left out: this line alone.</param>
+/// <param name="SharedExpense">An amount emptied while other lines share it: whether only these let go of it or it goes to the trash (required then).</param>
+public sealed record UpdateTyreEntryInput(
+    Guid Id, TyreEntryKind Kind, DateOnly Day, Guid? SetId = null, long? Odometer = null, string? Note = null, TyreFeeInput? Fee = null,
+    IReadOnlyList<Guid>? Also = null, SharedExpenseChoice? SharedExpense = null);
 
 /// <summary>The stored set; the installation, the reading and the version's bookkeeping stay internal.</summary>
 public sealed class TyreSetType : ObjectType<TyreSet>
@@ -108,6 +155,11 @@ public sealed class TyreEntryType : ObjectType<TyreEntry>
         descriptor.Ignore(e => e.Update(default, default, default, default, default, default));
         descriptor.Ignore(e => e.MoveTo(default, default));
         descriptor.Ignore(e => e.TakeReading(default!, default));
+        descriptor.Ignore(e => e.ForAnotherTyre(default, default, default));
+        descriptor.Ignore(e => e.LeaveGroup(default));
+        descriptor.Ignore(e => e.KeepOwnReading(default));
+        descriptor.Field(e => e.TyreId).Description("The single tyre it is for (#289); null for a line of the whole set, or of no set.");
+        descriptor.Field(e => e.GroupId).Description("The lines made together for several tyres, sharing one expense: one row of the tyre log.");
         descriptor.Ignore(e => e.ExpenseTrashedWithEntry);
         descriptor.Ignore(e => e.TakesAmount);
         descriptor.Field(e => e.ExpenseId).Description("The expense its amount made (#288), an ordinary one on the Expenses tab; in the trash or not.");
@@ -142,12 +194,59 @@ public sealed class TyreSetViewType : ObjectType<TyreSetView>
         descriptor.Field(v => v.Spent).Type<NonNullType<ListType<NonNullType<ObjectType<TyreSpent>>>>>().Resolve(c => c.Parent<TyreSetView>().Spent ?? [])
             .Description("What the set cost (#288): the expenses of its tyre log lines, one figure per currency, the largest first.");
         descriptor.Field(v => v.Repairs).Description("Its punctures repaired and valves replaced.");
+        descriptor.Field(v => v.Tyres).Type<NonNullType<ListType<NonNullType<TyreViewType>>>>().Resolve(c => c.Parent<TyreSetView>().Tyres ?? [])
+            .Description("A set tracked tyre by tyre (#289): its tyres not in the trash, retired ones included, by label; none for a whole set.");
     }
 }
 
 public sealed class TyreInstallationViewType : ObjectType<TyreInstallationView>
 {
     protected override void Configure(IObjectTypeDescriptor<TyreInstallationView> descriptor) => descriptor.Name("TyreInstallationInfo");
+}
+
+/// <summary>A single tyre of a set tracked tyre by tyre (#289).</summary>
+public sealed class TyreType : ObjectType<Tyre>
+{
+    protected override void Configure(IObjectTypeDescriptor<Tyre> descriptor)
+    {
+        descriptor.Ignore(t => t.SavedVersion);
+        descriptor.Ignore(t => t.IsDeleted);
+        descriptor.Ignore(t => t.DeletedAt);
+        descriptor.Ignore(t => t.Relabel(default!, default));
+        descriptor.Field(t => t.Label).Description("Written on the tyre itself; unique among the vehicle's tyres not in the trash, without case.");
+        descriptor.Field(t => t.Name).Description("Its own model name; null: the set's.");
+    }
+}
+
+/// <summary>A single tyre's time on the car (#289), always inside one installation of its set.</summary>
+public sealed class TyrePlaceType : ObjectType<TyrePlace>
+{
+    protected override void Configure(IObjectTypeDescriptor<TyrePlace> descriptor)
+    {
+        descriptor.Ignore(p => p.SavedVersion);
+        descriptor.Ignore(p => p.IsDeleted);
+        descriptor.Ignore(p => p.DeletedAt);
+        descriptor.Ignore(p => p.Update(default, default, default, default, default));
+        descriptor.Field(p => p.Corner).Description("Where the tyre was; null: not recorded. FRONT and REAR: that end, the side not recorded.");
+    }
+}
+
+public sealed class TyreViewType : ObjectType<TyreView>
+{
+    protected override void Configure(IObjectTypeDescriptor<TyreView> descriptor)
+    {
+        descriptor.Name("TyreInfo");
+        descriptor.Field(v => v.Places).Description("Its times on the car, newest first, each with its distance.");
+        descriptor.Field(v => v.Corner).Description("Its corner now when on the car, else the last one it had; null: not recorded.");
+        descriptor.Field(v => v.Spent).Type<NonNullType<ListType<NonNullType<ObjectType<TyreSpent>>>>>().Resolve(c => c.Parent<TyreView>().Spent ?? [])
+            .Description("What it cost: its lines' expenses, one shared by several tyres by its even share, per currency.");
+        descriptor.Field(v => v.Repairs).Description("Its punctures repaired and valves replaced.");
+    }
+}
+
+public sealed class TyrePlaceViewType : ObjectType<TyrePlaceView>
+{
+    protected override void Configure(IObjectTypeDescriptor<TyrePlaceView> descriptor) => descriptor.Name("TyrePlaceInfo");
 }
 
 /// <summary>A line's amount (#288): its expense's, while that is not in the trash (a line whose expense is there shows none).</summary>
@@ -174,13 +273,20 @@ public sealed class TyreEntryExtensions
 /// <summary>The tyre log line an expense was made from (#288), for its chip and banner on the Expenses tab.</summary>
 /// <param name="SetName">The line's set; none for a line of no set.</param>
 /// <param name="Trashed">The line is in the trash (on its own, or with its set).</param>
-public sealed record TyreEntryRef(Guid Id, TyreEntryKind Kind, string? SetName, bool Trashed);
+/// <param name="TyreLabel">The single tyre it is for (#289), if any.</param>
+/// <param name="GroupId">The lines made together with it, if any.</param>
+public sealed record TyreEntryRef(Guid Id, TyreEntryKind Kind, string? SetName, bool Trashed, string? TyreLabel = null, Guid? GroupId = null);
 
 [ExtendObjectType<Expense>]
 public sealed class ExpenseTyreExtensions
 {
-    /// <summary>The tyre log line it was made from (#288); none for an ordinary expense.</summary>
-    public Task<TyreEntryRef?> GetTyreEntry([Parent] Expense expense, ExpenseTyreEntryLoader lines, CancellationToken ct) => lines.LoadAsync(expense.Id, ct);
+    /// <summary>The tyre log line it was made from (#288); none for an ordinary expense. With several (#289), the first of them, kept for an older app.</summary>
+    public async Task<TyreEntryRef?> GetTyreEntry([Parent] Expense expense, ExpenseTyreEntryLoader lines, CancellationToken ct) =>
+        (await lines.LoadAsync(expense.Id, ct))?.FirstOrDefault();
+
+    /// <summary>The tyre log lines it was made from (#289: one entry for several tyres is a line each, sharing it), live ones first; none for an ordinary expense.</summary>
+    public async Task<IReadOnlyList<TyreEntryRef>> GetTyreEntries([Parent] Expense expense, ExpenseTyreEntryLoader lines, CancellationToken ct) =>
+        await lines.LoadAsync(expense.Id, ct) ?? [];
 }
 
 /// <summary>Each line's expense, the trash included, for a whole response at once (the lines are already authorised).</summary>
@@ -196,16 +302,21 @@ public sealed class TyreEntryExpenseLoader(IExpenseRepository expenses, IBatchSc
 
 /// <summary>Each expense's tyre log line, with its set's name, for a whole page of expenses at once (the expenses are already authorised).</summary>
 public sealed class ExpenseTyreEntryLoader(ITyreRepository tyres, IBatchScheduler scheduler, DataLoaderOptions options)
-    : BatchDataLoader<Guid, TyreEntryRef?>(scheduler, options)
+    : BatchDataLoader<Guid, IReadOnlyList<TyreEntryRef>?>(scheduler, options)
 {
-    protected override async Task<IReadOnlyDictionary<Guid, TyreEntryRef?>> LoadBatchAsync(IReadOnlyList<Guid> keys, CancellationToken ct)
+    protected override async Task<IReadOnlyDictionary<Guid, IReadOnlyList<TyreEntryRef>?>> LoadBatchAsync(IReadOnlyList<Guid> keys, CancellationToken ct)
     {
         var lines = await tyres.ListEntriesByExpenseAsync(keys, ct);
         var sets = (await tyres.ListSetsAsync([.. lines.Where(l => l.SetId is not null).Select(l => l.SetId!.Value).Distinct()], ct)).ToDictionary(s => s.Id);
-        return keys.ToDictionary(k => k, k => lines.FirstOrDefault(l => l.ExpenseId == k) is { } line
-            ? new TyreEntryRef(line.Id, line.Kind, line.SetId is { } setId ? sets.GetValueOrDefault(setId)?.Name : null,
-                line.IsDeleted || (line.SetId is { } s && sets.GetValueOrDefault(s)?.IsDeleted == true))
-            : null);
+        var singles = (await tyres.ListTyresAsync([.. lines.Where(l => l.TyreId is not null).Select(l => l.TyreId!.Value).Distinct()], ct)).ToDictionary(t => t.Id);
+        TyreEntryRef Ref(TyreEntry line) => new(line.Id, line.Kind, line.SetId is { } setId ? sets.GetValueOrDefault(setId)?.Name : null,
+            line.IsDeleted || (line.SetId is { } s && sets.GetValueOrDefault(s)?.IsDeleted == true) || (line.TyreId is { } t && singles.GetValueOrDefault(t)?.IsDeleted == true),
+            line.TyreId is { } tyre ? singles.GetValueOrDefault(tyre)?.Label : null, line.GroupId);
+        return keys.ToDictionary(k => k, k =>
+        {
+            var own = lines.Where(l => l.ExpenseId == k).Select(Ref).OrderBy(r => r.Trashed).ThenBy(r => r.TyreLabel, StringComparer.Ordinal).ThenBy(r => r.Id).ToList();
+            return own.Count == 0 ? null : (IReadOnlyList<TyreEntryRef>?)own;
+        });
     }
 }
 
@@ -291,6 +402,35 @@ public sealed class TyreMutations
 
     public Task<TyreOverview> RestoreTyreSet(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreSetAsync(id, ct);
 
+    /// <summary>Tracks a set tyre by tyre from now on (#289): four tyres, each starting with the set's history and rough figure. Never undone.</summary>
+    public Task<TyreOverview> BreakUpTyreSet(BreakUpTyreSetInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.BreakUp(input, tyres, ct);
+
+    /// <summary>
+    /// Replaces tyres of a set early (#289): the old ones retired on the day, the new ones on the car at their corners from it, a Bought line
+    /// each sharing the price's one expense; a whole set is broken up first.
+    /// </summary>
+    public Task<TyreOverview> ReplaceTyres(ReplaceTyresInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.Replace(input, tyres, ct);
+
+    /// <summary>A single tyre's new label (#289).</summary>
+    public Task<TyreOverview> UpdateTyre(UpdateTyreInput input, [Service] TyreService tyres, CancellationToken ct) => tyres.UpdateTyreAsync(input.Id, input.Label, ct);
+
+    /// <summary>Moves a single tyre to the trash with its times on the car: its corner is empty for that time.</summary>
+    public Task<TyreOverview> DeleteTyre(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.TrashTyreAsync(id, ct);
+
+    /// <summary>Brings a single tyre back; refused when another tyre took its label or its corner meanwhile.</summary>
+    public Task<TyreOverview> RestoreTyre(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestoreTyreAsync(id, ct);
+
+    /// <summary>A time on the car typed in a single tyre's history, inside one of its set's installations.</summary>
+    public Task<TyreOverview> AddTyrePlace(AddTyrePlaceInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.AddPlace(input, tyres, ct);
+
+    /// <summary>Changes a single tyre's time on the car: that tyre's alone.</summary>
+    public Task<TyreOverview> UpdateTyrePlace(UpdateTyrePlaceInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.UpdatePlace(input, tyres, ct);
+
+    public Task<TyreOverview> DeleteTyrePlace(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.TrashPlaceAsync(id, ct);
+
+    /// <summary>Brings a time on the car back; refused with <c>tyres.tyreRestoreConflict</c> when another tyre is at its corner then.</summary>
+    public Task<TyreOverview> RestoreTyrePlace(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestorePlaceAsync(id, ct);
+
     /// <summary>Permanently removes the trashed tyre sets and tyre log lines the user has Delete access to; returns how many rows of the list went.</summary>
     public Task<int> EmptyTyreTrash([Service] TyreService tyres, CancellationToken ct) => tyres.EmptyTrashAsync(ct);
 }
@@ -298,7 +438,22 @@ public sealed class TyreMutations
 /// <summary>The mutations' inputs turned into the service's, shared with the changes a device sends (<c>SyncGraphQL</c>).</summary>
 internal static class TyreChanges
 {
-    public static TyreSwapInput Swap(SwapTyresInput i) => new(i.VehicleId, i.SetId, i.Day, i.PairOneFront, i.Replace, i.Odometer, i.Note, i.Fee?.ToFee());
+    public static TyreSwapInput Swap(SwapTyresInput i) => new(i.VehicleId, i.SetId, i.Day, i.PairOneFront, i.Replace, i.Odometer, i.Note, i.Fee?.ToFee(),
+        i.Corners?.GroupBy(c => c.TyreId).ToDictionary(g => g.Key, g => g.Last().Corner));
+
+    public static Task<TyreOverview> BreakUp(BreakUpTyreSetInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
+        tyres.BreakUpAsync(new TyreBreakUpInput(i.SetId, i.Day, [.. i.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]), ct, version);
+
+    public static Task<TyreOverview> Replace(ReplaceTyresInput i, TyreService tyres, CancellationToken ct) =>
+        tyres.ReplaceTyresAsync(new TyreReplaceInput(i.SetId, i.Day, i.Odometer, i.Why,
+            [.. i.Tyres.Select(t => new TyreReplacement(t.TyreId, t.Id, t.Label, t.Name, t.MadeWeek, t.MadeYear, t.LineId))], i.Price?.ToFee(),
+            i.BreakUp is { } b ? new TyreBreakUpInput(b.SetId, b.Day, [.. b.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]) : null), ct);
+
+    public static Task<TyreOverview> AddPlace(AddTyrePlaceInput i, TyreService tyres, CancellationToken ct) =>
+        tyres.AddPlaceAsync(i.TyreId, new TyrePlaceInput(i.From, i.Until, i.Corner), ct, i.Id);
+
+    public static Task<TyreOverview> UpdatePlace(UpdateTyrePlaceInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
+        tyres.UpdatePlaceAsync(i.Id, new TyrePlaceInput(i.From, i.Until, i.Corner), ct, version);
 
     public static Task<TyreOverview> Add(AddTyreSetInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddSetAsync(new NewTyreSet(i.VehicleId, new TyreSetInput(i.Name, i.Season, i.Size, i.Since, i.MadeWeek, i.MadeYear, i.RoughDistance), i.Fitted, i.Day, i.Odometer, i.PairOneFront, i.Replace,
@@ -317,8 +472,10 @@ internal static class TyreChanges
         tyres.UpdateInstallationAsync(i.Id, new TyreInstallationInput(i.From, i.Until, i.PairOneFront, i.OdometerFrom, i.OdometerUntil), ct, version);
 
     public static Task<TyreOverview> AddEntry(AddTyreEntryInput i, TyreService tyres, CancellationToken ct) =>
-        tyres.AddEntryAsync(i.VehicleId, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note, i.Fee?.ToFee()), ct, i.Id);
+        tyres.AddEntryAsync(i.VehicleId, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note, i.Fee?.ToFee(),
+            i.Tyres?.Select(t => new TyreLine(t.TyreId, t.Id)).ToList(),
+            i.BreakUp is { } b ? new TyreBreakUpInput(b.SetId, b.Day, [.. b.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]) : null), ct, i.Id);
 
     public static Task<TyreOverview> UpdateEntry(UpdateTyreEntryInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
-        tyres.UpdateEntryAsync(i.Id, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note, i.Fee?.ToFee()), ct, version);
+        tyres.UpdateEntryAsync(i.Id, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note, i.Fee?.ToFee(), Also: i.Also, SharedExpense: i.SharedExpense), ct, version);
 }

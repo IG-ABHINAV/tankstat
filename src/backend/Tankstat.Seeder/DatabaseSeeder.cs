@@ -36,6 +36,8 @@ public sealed class DatabaseSeeder(IDbContextFactory<AppDbContext> dbFactory, Da
             db.TyreSets.AddRange(batch.SelectMany(b => b.TyreSets ?? []));
             db.TyreInstallations.AddRange(batch.SelectMany(b => b.TyreInstallations ?? []));
             db.TyreEntries.AddRange(batch.SelectMany(b => b.TyreEntries ?? []));
+            db.Tyres.AddRange(batch.SelectMany(b => b.Tyres ?? []));
+            db.TyrePlaces.AddRange(batch.SelectMany(b => b.TyrePlaces ?? []));
             db.Expenses.AddRange(batch.SelectMany(b => b.TyreExpenses ?? []));
             await db.SaveChangesAsync(ct);
 

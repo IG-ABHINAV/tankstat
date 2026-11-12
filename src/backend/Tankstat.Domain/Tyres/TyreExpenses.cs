@@ -8,6 +8,15 @@ namespace Tankstat.Domain.Tyres;
 /// </summary>
 public static class TyreExpenses
 {
+    /// <summary>Puts a shared reading in or out of the trash by whether a live holder (a line or an expense) still holds it (#289); true when it changed.</summary>
+    public static bool Settle(Odometers.OdometerReading reading, bool held, DateTimeOffset now)
+    {
+        if (held == (reading.DeletedAt is null)) return false;
+        if (held) reading.Restore();
+        else reading.MarkDeleted(now);
+        return true;
+    }
+
     /// <summary>Puts the shared reading in or out of the trash by who still holds it live; true when it changed.</summary>
     public static bool Settle(TyreEntry line, Expense? expense, DateTimeOffset now)
     {

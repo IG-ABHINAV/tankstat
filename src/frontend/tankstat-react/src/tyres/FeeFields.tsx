@@ -25,6 +25,7 @@ export function FeeFields({
   currency,
   category,
   linked = false,
+  shared,
   onAmount,
 }: {
   vehicleId: string
@@ -35,6 +36,8 @@ export function FeeFields({
   currency?: string | null
   category?: string | null
   linked?: boolean
+  /** The amount's own words in place of *Emptying the amount…*: one expense shared with other tyres (#289), or one for several. */
+  shared?: string
   /** Told what is typed in the amount (the set dialog asks *Bought on* once there is a price). */
   onAmount?: (typed: string) => void
 }) {
@@ -53,7 +56,7 @@ export function FeeFields({
           <Field
             name="feeAmount"
             label={label}
-            hint={[t('tyres.fee.amountHint'), linked ? t('tyres.fee.emptyHint') : ''].filter(Boolean).join(' ')}
+            hint={[t('tyres.fee.amountHint'), shared ?? (linked ? t('tyres.fee.emptyHint') : '')].filter(Boolean).join(' ')}
             invalid={{ message: t('forms.numberInvalid'), test: (v) => v !== '' && parseDecimal(v) === undefined }}
           >
             <FieldInput

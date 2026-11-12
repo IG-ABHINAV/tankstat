@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { check, setup, setupAccessibilityTests } from '../support/accessibility.tsx'
 import { server } from '../support/server.ts'
-import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
+import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 
 // A vehicle's tyres (#287): the tab, its dialogs and the tyre log's (#288).
 setupAccessibilityTests()
@@ -67,5 +67,76 @@ it('the tyre log’s entry dialogs and the remove dialog are labelled and free o
   await ui.click(screen.getByRole('button', { name: 'Move to the trash: Storage fee, Jun 1, 2025' }))
   const confirm = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
   expect(within(confirm).getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked() // #288: the box, labelled
+  await check(document.body)
+})
+
+it('a broken-up set\'s card, a tyre\'s dialog, the break-up and the corners of a change of positions are labelled and free of violations (#289)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=tyres')
+  server.use(...fakeTyres([brokenUpSummer(['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', null]), tyreWinter]).handlers)
+  const card = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
+  await check(document.body)
+
+  await ui.click(within(card).getByRole('button', { name: /^Front left: tyre S1,/ }))
+  const tyre = await screen.findByRole('dialog', { name: 'Tyre S1' })
+  expect(within(tyre).getByRole('img', { name: /^Front .* rear / })).toBeInTheDocument()
+  await check(tyre)
+  await ui.click(within(tyre).getByRole('button', { name: 'Add a time on the car' }))
+  await check(await screen.findByRole('dialog', { name: 'Add a time on the car' }))
+  await ui.click(within(screen.getByRole('dialog', { name: 'Add a time on the car' })).getByRole('button', { name: 'Cancel' }))
+  await ui.click(within(tyre).getByRole('button', { name: 'Close' }))
+
+  await ui.click(within(card).getByRole('button', { name: 'Change positions' }))
+  const positions = await screen.findByRole('dialog', { name: 'Change positions' })
+  expect(within(positions).getByRole('status')).toHaveTextContent('Tap two tyres to exchange them.')
+  await check(positions)
+  await ui.click(within(positions).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(within(screen.getByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Continental WinterContact' })
+  await ui.click(within(history).getByRole('button', { name: 'Track tyres one by one' }))
+  await check(await screen.findByRole('dialog', { name: 'Track tyres one by one' }))
+})
+
+it('an entry for several tyres, the ask on save of a shared amount and a row’s bin are labelled and free of violations (#289)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=tyres')
+  const line = (id: string, tyreId: string) => ({
+    id, kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-09-20', odometer: 148_200, note: null, expenseId: 'x1', amount: 13_000, currency: 'HUF', tyreId, groupId: 'l3',
+  })
+  server.use(...fakeTyres([brokenUpSummer(), { ...tyreWinter }], [line('l3', 't3'), line('l4', 't4')]).handlers)
+
+  await ui.click(await screen.findByRole('button', { name: 'Add entry' }))
+  const add = await screen.findByRole('dialog', { name: 'Add entry' })
+  await ui.click(within(add).getByRole('checkbox', { name: 'The whole set' }))
+  await ui.click(within(add).getByRole('button', { name: 'Tyre S3, rear left' }))
+  await check(add) // the car picture's toggles
+  await ui.click(within(add).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(await screen.findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ }))
+  const edit = await screen.findByRole('dialog', { name: 'Edit entry' })
+  await ui.click(within(edit).getByRole('checkbox', { name: 'Tyre S4' }))
+  await ui.clear(within(edit).getByRole('textbox', { name: 'Paid' }))
+  await ui.click(within(edit).getByRole('button', { name: 'Save' }))
+  await check(await screen.findByRole('dialog', { name: 'The amount is shared' }))
+  await ui.click(within(screen.getByRole('dialog', { name: 'The amount is shared' })).getByRole('button', { name: 'Cancel' }))
+  await ui.click(within(edit).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(screen.getByRole('button', { name: 'Move to the trash: Puncture repaired, Sep 20, 2026' }))
+  await check(await screen.findByRole('alertdialog', { name: 'Move to the trash?' }))
+})
+
+it('the replace dialog and the retired tyres’ rows are labelled and free of violations (#289)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=tyres')
+  const set = brokenUpSummer()
+  server.use(...fakeTyres([{ ...set, tyres: [...set.tyres!, { id: 't0', label: 'S0', distance: 30_000, isRetired: true, retiredWhy: 'WORN', places: [] }] }, tyreWinter]).handlers)
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'History' }))
+  await ui.click(within(await screen.findByRole('dialog', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Replace tyres' }))
+  const replace = await screen.findByRole('dialog', { name: 'Replace tyres' })
+  await ui.click(within(replace).getByRole('button', { name: 'Tyre S2, front right' }))
+  await check(replace) // the new tyre's fields
+  await ui.click(within(replace).getByRole('button', { name: 'Cancel' }))
+  await ui.click(within(screen.getByRole('dialog', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Cancel' }))
+
+  expect(await screen.findByRole('button', { name: /^Tyre S0, Michelin Primacy 4, retired on/ })).toBeInTheDocument()
   await check(document.body)
 })

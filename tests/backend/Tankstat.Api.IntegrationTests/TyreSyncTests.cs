@@ -15,7 +15,7 @@ public class TyreSyncTests : IDisposable
     private const string Resolve = "mutation($i: ResolveSyncChangeInput!) { resolveSyncChange(input: $i) { id status } }";
     private const string SwapOnline = "mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }";
     private const string Tyres = """
-        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } installations { installation { id from until pairOneFront } } } entries { id kind setId installationId day odometer note version } } }
+        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } installations { installation { id from until pairOneFront } } } entries { id kind setId installationId day odometer note version tyreId } } }
         """;
 
     private readonly TestApp _app = TestApp.Standalone();
@@ -275,5 +275,74 @@ public class TyreSyncTests : IDisposable
         var sent = await Send(people.Alice, new { id = Guid.NewGuid(), addPastTyreSwaps = new { vehicleId = car, replace = false, swaps = rows } });
 
         Assert.Equal(("APPLIED", null), Result(sent));
+    }
+
+    [Fact]
+    public async Task ATyresRelabelFromAnOlderVersion_IsParkedWithTheTyreAsItIsNow_AndARestoreOntoATakenCornerWithItsReason()
+    {
+        var (people, car, summer, _, installation) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new
+        {
+            id = Guid.NewGuid(), breakUpTyreSet = new { setId = summer, day = "2026-09-01", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        })));
+
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Bob, new { id = Guid.NewGuid(), expectedVersion = 1, updateTyre = new { id = tyres[0], label = "S1b" } })));
+        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = 1, updateTyre = new { id = tyres[0], label = "S1a" } })));
+        var parked = (await people.Alice.Gql("{ parkedChanges { kind current { state tyre { label } } } }")).Data().GetProperty("parkedChanges")[0];
+        Assert.Equal(("UPDATE_TYRE", "S1b"), (parked.GetProperty("kind").GetString(), parked.GetProperty("current").GetProperty("tyre").GetProperty("label").GetString()));
+
+        // S2's time on the car goes to the trash; S1 takes its corner; S2's restore, sent from a device, is parked with the reason.
+        var s2Place = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[1], Guid.Parse(installation));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyrePlace = s2Place })));
+        var s1Place = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[0], Guid.Parse(installation));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), updateTyrePlace = new { id = s1Place, from = "2026-03-28", corner = "FRONT_RIGHT" } })));
+        Assert.Equal(("PARKED", "tyres.tyreRestoreConflict"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyrePlace = s2Place })));
+    }
+
+    [Fact]
+    public async Task TheLargestTyreChange_AFlatOnTwoTyresBreakingASetUpOnSave_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            addTyreEntry = new
+            {
+                vehicleId = car, kind = "PUNCTURE_REPAIRED", day = "2026-09-20", setId = summer, odometer = 148_200, note = new string('ő', 500),
+                fee = new { amount = 13_000.25m, currency = "HUF", category = new string('é', 60), title = new string('á', 120), expenseId = Guid.NewGuid() },
+                tyres = tyres.Select(t => new { tyreId = t, id = Guid.NewGuid() }).ToArray(), // once: the same ids on every send
+                breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "PUNCTURE_REPAIRED"));
+    }
+
+    [Fact]
+    public async Task TheLargestTyreChange_FourTyresReplacedOnAWholeSet_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            replaceTyres = new
+            {
+                setId = summer, day = "2026-09-20", why = "WORN", odometer = 148_200,
+                tyres = tyres.Select((t, n) => new { tyreId = t, id = Guid.NewGuid(), label = $"ŐŰ{n + 5}ÁÉÍ", name = new string('ő', 80), madeWeek = 20, madeYear = 2026, lineId = Guid.NewGuid() }).ToArray(),
+                price = new { amount = 312_000.25m, currency = "HUF", category = new string('é', 60), title = new string('á', 120), expenseId = Guid.NewGuid() },
+                breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "BOUGHT"
+            && e.TryGetProperty("tyreId", out var tyre) && tyre.ValueKind != JsonValueKind.Null));
     }
 }

@@ -7,7 +7,7 @@ import { deviceData } from './deviceData.ts'
 import { isConnectionFailure } from './errors.ts'
 import { keptPhotos } from './keptPhotos.ts'
 import { outbox } from './outbox.ts'
-import { BARE_ID, isTyreAction } from './tyreChanges.ts'
+import { BARE_ID, isTyreAction, sentInput } from './tyreChanges.ts'
 
 /** Changes per request (the server takes at most 200). */
 export const CHUNK_SIZE = 20
@@ -67,7 +67,7 @@ export function toChangeInput(c: Change, drafts: ReadonlyMap<string, string> = n
   const log = c.entity === 'expenses' ? 'Expense' : 'Refueling'
   // A tyre change is its mutation's input as the dialog sent it (a bare id where the mutation takes one), under its own field.
   if (c.entity === 'tyres' && isTyreAction(c.action))
-    return { ...envelope, [c.action]: BARE_ID.has(c.action) ? c.input?.id : withoutTypename(c.input) } as ChangeInput
+    return { ...envelope, [c.action]: BARE_ID.has(c.action) ? c.input?.id : withoutTypename(sentInput(c.action, c.input)) } as ChangeInput
   switch (`${c.entity}:${c.action}`) {
     case 'refuelings:add': return op('logRefueling', { id: c.targetId, vehicleId: c.vehicleId })
     case 'refuelings:update': return op('updateRefueling', { id: c.targetId })

@@ -374,6 +374,23 @@ public class LoggingTests
             new TyreFee(1618.03m, "EUR", "Canary tyre category", "Canary tyre title", null)), default);
         await w.TyreService.TrashEntryAsync(tyreLine, default);
         await w.TyreService.RestoreEntryAsync(tyreLine, default);
+        // Broken up into single tyres (#289): the labels are typed values too.
+        var (single1, single2) = (Guid.NewGuid(), Guid.NewGuid());
+        await w.TyreService.BreakUpAsync(new TyreBreakUpInput(tyreSet, Day, [
+            new(single1, "CNRYA", TyreCorner.FrontLeft), new(single2, "CNRYB", TyreCorner.FrontRight),
+            new(Guid.NewGuid(), "CNRYC", TyreCorner.RearLeft), new(Guid.NewGuid(), "CNRYD", null)]), default);
+        canaries.AddRange(["CNRYA", "CNRYB", "CNRYC", "CNRYD"]);
+        // A repair of two of them sharing one amount, then one letting go of it.
+        var (shared1, shared2) = (Guid.NewGuid(), Guid.NewGuid());
+        await w.TyreService.AddEntryAsync(car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day, null, "canary shared note",
+            new TyreFee(4242.42m, "EUR", "Canary shared category", "Canary shared title", Guid.NewGuid()), [new(single1, shared1), new(single2, shared2)]), default);
+        await w.TyreService.UpdateEntryAsync(shared1, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day, null, "canary shared note",
+            new TyreFee(null, null, null, null), SharedExpense: SharedExpenseChoice.LetGo), default);
+        canaries.AddRange(["canary shared note", "Canary shared category", "Canary shared title", "4242.42"]);
+        // A tyre replaced early: the new tyre's label and name, and the price.
+        await w.TyreService.ReplaceTyresAsync(new TyreReplaceInput(tyreSet, Day, null, TyreRetiredWhy.Worn, [new(single1, Guid.NewGuid(), "CNRYE", "Canary new tyre name", null, null, Guid.NewGuid())],
+            new TyreFee(5151.15m, "EUR", "Canary replace category", "Canary replace title", Guid.NewGuid())), default);
+        canaries.AddRange(["CNRYE", "Canary new tyre name", "Canary replace category", "Canary replace title", "5151.15"]);
         canaries.AddRange(["Canary Tyre Set", "Canary Size", "31415", "987654400", "canary tyre note", "Canary tyre category", "Canary tyre title", "2718.28", "1618.03"]);
 
         // Sharing, an import with a file full of somebody's life, and the access settings.

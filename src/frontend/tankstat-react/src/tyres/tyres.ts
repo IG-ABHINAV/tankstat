@@ -37,15 +37,22 @@ const actionOf = (document: DocumentNode): TyreAction => {
   return name
 }
 
-const SET_ACTIONS = new Set<TyreAction>(['updateTyreSet', 'setTyreRoughDistance', 'retireTyreSet', 'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet'])
+const SET_ACTIONS = new Set<TyreAction>(['updateTyreSet', 'setTyreRoughDistance', 'retireTyreSet', 'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet', 'breakUpTyreSet'])
+const TYRE_ACTIONS = new Set<TyreAction>(['updateTyre', 'deleteTyre', 'restoreTyre'])
+const PLACE_ACTIONS = new Set<TyreAction>(['updateTyrePlace', 'deleteTyrePlace', 'restoreTyrePlace'])
 const INSTALLATION_ACTIONS = new Set<TyreAction>(['updateTyreInstallation', 'deleteTyreInstallation', 'restoreTyreInstallation'])
 const ENTRY_ACTIONS = new Set<TyreAction>(['updateTyreEntry', 'deleteTyreEntry', 'restoreTyreEntry'])
 
 /** The version of the set, installation or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
 function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: Record<string, unknown>): number | null {
   const sets = shown?.sets ?? []
+  const tyres = sets.flatMap((s) => s.tyres ?? [])
   const version = SET_ACTIONS.has(action)
-    ? sets.find((s) => s.set.id === input.id)?.set.version
+    ? sets.find((s) => s.set.id === (action === 'breakUpTyreSet' ? input.setId : input.id))?.set.version
+    : TYRE_ACTIONS.has(action)
+      ? tyres.find((t) => t.tyre.id === input.id)?.tyre.version
+    : PLACE_ACTIONS.has(action)
+      ? tyres.flatMap((t) => t.places).find((p) => p.place.id === input.id)?.place.version
     : INSTALLATION_ACTIONS.has(action)
       ? sets.flatMap((s) => s.installations).find((x) => x.installation.id === input.id)?.installation.version
       : ENTRY_ACTIONS.has(action)
@@ -65,10 +72,14 @@ function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: R
 export function useTyreMutation(vehicleId: string) {
   const client = useApolloClient()
   return useCallback(
-    async <TData extends Record<string, unknown>, TVars extends Record<string, unknown>>(document: TypedDocumentNode<TData, TVars>, variables: TVars): Promise<TyreSaved> => {
+    async <TData extends Record<string, unknown>, TVars extends Record<string, unknown>>(
+      document: TypedDocumentNode<TData, TVars>, variables: TVars,
+      /** Kept with the change on this device only, never sent (#289: a time on the car's tyre and installation, which it waits for). */
+      kept: Record<string, unknown> = {},
+    ): Promise<TyreSaved> => {
       const action = actionOf(document)
       // The mutation's input; one that takes its values as variables (a retire's id and day, a bare id) keeps them all.
-      const input = ('input' in variables ? variables.input : { ...variables }) as Record<string, unknown>
+      const input = { ...(('input' in variables ? variables.input : { ...variables }) as Record<string, unknown>), ...kept }
       const shown = client.readQuery({ query: VehicleTyresDocument, variables: { vehicleId } })?.vehicleTyres
       const changeId = uuidV4()
       const draft = { id: changeId, entity: 'tyres' as const, action, vehicleId, targetId: tyreTarget(action, input), input, expectedVersion: versionOf(shown, action, input) }
@@ -98,6 +109,11 @@ export function useTyreToasts() {
     saved: (result: TyreSaved, message: string) => toast(result.queued ? t('toast.savedOnDevice') : message),
     undoable: (result: TyreSaved, message: string, restore: () => Promise<unknown>) =>
       undoable(result.queued ? t('toast.savedOnDevice') : message, () => (result.queued ? discardChange(client, result.changeId) : restore())),
+    /** Several changes undone together (#289: a row's bin, a change per line), the last first: each kept one taken back, each sent one restored. */
+    undoableAll: (results: readonly TyreSaved[], message: string, restore: (index: number) => Promise<unknown>) =>
+      undoable(results.some((r) => r.queued) ? t('toast.savedOnDevice') : message, async () => {
+        for (let i = results.length - 1; i >= 0; i--) await (results[i].queued ? discardChange(client, results[i].changeId) : restore(i))
+      }),
   }
 }
 

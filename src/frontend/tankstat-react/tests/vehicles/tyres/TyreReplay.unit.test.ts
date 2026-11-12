@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Change } from '../../../src/offline/changes.ts'
 import { isDeviceLine } from '../../../src/tyres/entries.ts'
 import { applyTyreChange, NO_SET, noTyres, replayTyres } from '../../../src/tyres/replay.ts'
+import { placeOf } from '../../../src/tyres/tyrePlaces.ts'
 import { TyreRuleError } from '../../../src/tyres/tyreHistory.ts'
 import type { Tyres } from '../../../src/tyres/tyres.ts'
 
@@ -11,15 +12,16 @@ const installation = (id: string, setId: string, from: string, until: string | n
 })
 const set = (id: string, name: string, onTheCar: boolean, installations: ReturnType<typeof installation>[]) => ({
   onTheCar,
-  set: { id, vehicleId: 'v1', name, season: 'SUMMER' as const, size: null, since: '2023-03-01', madeWeek: null, madeYear: null, roughDistance: 0, roughUntil: null, retiredOn: null, isRetired: false, version: 2 },
+  set: { id, vehicleId: 'v1', name, season: 'SUMMER' as const, size: null, since: '2023-03-01', madeWeek: null, madeYear: null, roughDistance: 0, roughUntil: null, retiredOn: null, isRetired: false, brokenUpOn: null, version: 2 },
   figures: { distance: 9000, approximate: false, measured: 9000, pairOneFront: 9000, pairOneRear: 0, pairsUnknown: 0, suggestion: null },
   spent: [],
   repairs: 0,
   installations,
+  tyres: [] as Tyres['sets'][number]['tyres'],
 })
 const line = (id: string, setId: string | null, day: string, kind: Tyres['entries'][number]['kind'] = 'SWAP', odometer: number | null = null, note: string | null = null) => ({
   id, kind, setId, installationId: kind === 'SWAP' ? id : null, day, odometer, note, version: 4,
-  expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false,
+  expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false, tyreId: null, groupId: null,
 })
 const base: Tyres = {
   vehicleId: 'v1',
@@ -320,5 +322,229 @@ describe('whose costs waiting changes put out of date (#288 step 4)', () => {
     const { costs, touched } = replayTyres(base, [change('updateTyreSet', { id: 's2', name: 'Winter', season: 'WINTER', size: null, since: '2023-03-01', madeWeek: null, madeYear: null, roughDistance: 0, day: null })])
     expect([...touched]).toEqual(['s2'])
     expect([...costs]).toEqual([])
+  })
+})
+
+describe('single tyres changed on the device, shown as done (#289)', () => {
+  const ids = ['a1111111-1111-4111-8111-111111111111', 'b2222222-2222-4222-8222-222222222222', 'c3333333-3333-4333-8333-333333333333', 'd4444444-4444-4444-8444-444444444444']
+  const breakUp = change('breakUpTyreSet', {
+    setId: 's1', day: '2026-11-01',
+    tyres: ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'].map((corner, n) => ({ id: ids[n], label: `S${n + 1}`, corner })),
+  })
+  const tyresOf = (t: Tyres, setId = 's1') => t.sets.find((x) => x.set.id === setId)!.tyres
+
+  it('a break-up shows four tyres at their corners, their places worked out as the server works them out, marked', () => {
+    const { tyres, touched, touchedTyres, skipped } = replayTyres(base, [breakUp, breakUp]) // sent twice: once
+
+    expect(skipped).toEqual([])
+    const summer = tyresOf(tyres)
+    expect(summer.map((t) => [t.tyre.label, t.corner, t.onTheCar, t.tyre.version])).toEqual([
+      ['S1', 'FRONT_LEFT', true, 0], ['S2', 'FRONT_RIGHT', true, 0], ['S3', 'REAR_LEFT', true, 0], ['S4', 'REAR_RIGHT', true, 0],
+    ])
+    expect(summer[0].places.map((p) => [p.place.id, p.place.installationId, p.place.from, p.distance.measure])).toEqual([[placeOf(ids[0], 'r1'), 'r1', '2026-03-28', 'NOT_MEASURED']])
+    expect(tyres.sets.find((x) => x.set.id === 's1')!.set.brokenUpOn).toBe('2026-11-01')
+    expect(touched.has('s1')).toBe(true)
+    expect([...touchedTyres].sort()).toEqual([...ids].sort())
+  })
+
+  it('a swap onto a broken-up set places each tyre at the corner given, and its own time on the car follows its edit alone', () => {
+    const off = change('swapTyres', { vehicleId: 'v1', setId: 's2', day: '2026-11-10', pairOneFront: null, replace: false, installationId: 'n1' })
+    const back = change('swapTyres', {
+      vehicleId: 'v1', setId: 's1', day: '2026-12-01', pairOneFront: null, replace: false, installationId: 'n2',
+      corners: [{ tyreId: ids[0], corner: 'REAR_LEFT' }, { tyreId: ids[2], corner: 'FRONT_LEFT' }, { tyreId: ids[1], corner: 'FRONT_RIGHT' }],
+    })
+    const s4 = placeOf(ids[3], 'r1')
+    const ownDays = change('updateTyrePlace', { id: s4, from: '2026-03-28', until: '2026-06-01', corner: 'REAR_RIGHT', tyreId: ids[3], installationId: 'r1' })
+    const { tyres, skipped } = replayTyres(base, [breakUp, off, back, ownDays])
+
+    expect(skipped).toEqual([])
+    const summer = tyresOf(tyres)
+    expect(summer.map((t) => [t.tyre.label, t.corner])).toEqual([['S1', 'REAR_LEFT'], ['S2', 'FRONT_RIGHT'], ['S3', 'FRONT_LEFT'], ['S4', null]])
+    expect(summer[3].places.map((p) => [p.place.from, p.place.until])).toEqual([['2026-12-01', null], ['2026-03-28', '2026-06-01']])
+    expect(summer[1].places.map((p) => p.place.until)).toEqual([null, '2026-11-10']) // the winter swap ended its place with the installation
+  })
+
+  it('a label another tyre has is refused before it waits; a tyre trashed leaves its corner empty; a restore is the server\'s', () => {
+    const broken = applyTyreChange(base, breakUp)
+    expect(() => applyTyreChange(broken, change('updateTyre', { id: ids[1], label: 's1' }))).toThrow(expect.objectContaining({ key: 'tyres.labelTaken' }))
+    const relabelled = applyTyreChange(broken, change('updateTyre', { id: ids[1], label: 'S2a' }))
+    expect(tyresOf(relabelled).map((t) => t.tyre.label)).toEqual(['S1', 'S2a', 'S3', 'S4'])
+
+    const { tyres } = replayTyres(broken, [change('deleteTyre', { id: ids[0] }), change('restoreTyre', { id: ids[0] })])
+    expect(tyresOf(tyres).map((t) => t.tyre.label)).toEqual(['S2', 'S3', 'S4'])
+  })
+
+  it('an installation typed in a broken-up set\'s History records no pairs, as the server stores it, and places each tyre', () => {
+    const typed = change('addTyreInstallation', { id: 'p1', setId: 's1', from: '2025-06-01', until: '2025-10-01', pairOneFront: true })
+    const { tyres, skipped } = replayTyres(base, [breakUp, typed])
+
+    expect(skipped).toEqual([])
+    const summer = tyres.sets.find((x) => x.set.id === 's1')!
+    expect(summer.installations.find((x) => x.installation.id === 'p1')!.installation.pairOneFront).toBeNull()
+    expect(tyresOf(tyres).map((t) => t.places.at(-1)!.place.installationId)).toEqual(['p1', 'p1', 'p1', 'p1'])
+  })
+
+  it('a time on the car outside the set\'s installations is refused with the reason, naming the set on the car then', () => {
+    const broken = applyTyreChange(base, breakUp)
+    expect(() => applyTyreChange(broken, change('addTyrePlace', { id: 'x1', tyreId: ids[0], from: '2025-12-01', until: '2026-01-01', corner: null })))
+      .toThrow(expect.objectContaining({ key: 'tyres.placeWhileOtherSet' }))
+  })
+
+  it('a kept answer from before single tyres counts its sets as whole', () => {
+    const older = { ...base, sets: base.sets.map((x) => ({ ...x, tyres: undefined, set: { ...x.set, brokenUpOn: undefined } })) } as unknown as Tyres
+    expect(tyresOf(replayTyres(older, []).tyres)).toEqual([])
+    const { tyres, touched } = replayTyres(older, [])
+    expect(tyres.sets.map((x) => x.set.brokenUpOn)).toEqual([null, null])
+    expect([...touched]).toEqual([]) // nothing changed by it
+  })
+})
+
+describe('lines for several tyres sharing one expense on the device (#289), as the server’s TyreExpenseTests', () => {
+  const corners = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT']
+  const fee = (amount: number | null, expenseId = 'x1') => ({ amount, currency: 'HUF', category: 'Tyres', title: 'Puncture repaired', expenseId })
+  /** A flat on S3 and S4 of the whole summer set: broken up on save, a line each, one expense of 13,000 and one reading. */
+  const repair = (odometer: number | null = 148_200) => change('addTyreEntry', {
+    vehicleId: 'v1', kind: 'PUNCTURE_REPAIRED', day: '2026-09-20', setId: 's1', odometer, note: 'Screws in the tread', fee: fee(13_000),
+    tyres: [{ tyreId: 't3', id: 'l3' }, { tyreId: 't4', id: 'l4' }],
+    breakUp: { setId: 's1', day: '2026-09-20', tyres: ['t1', 't2', 't3', 't4'].map((id, n) => ({ id, label: `S${n + 1}`, corner: corners[n] })) },
+  })
+  const edit = (id: string, input: Record<string, unknown>) =>
+    change('updateTyreEntry', { id, kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-09-20', odometer: 148_200, note: 'Screws in the tread', ...input })
+  const lineOf = (tyres: Tyres, id: string) => tyres.entries.find((e) => e.id === id)!
+
+  it('a flat on two tyres of a whole set breaks it up, makes a line each in one group with one expense, and counts one reading', () => {
+    const { tyres, skipped, costs } = replayTyres(base, [repair()])
+
+    expect(skipped).toEqual([])
+    expect(tyres.sets.find((s) => s.set.id === 's1')!.set.brokenUpOn).toBe('2026-09-20')
+    expect(['l3', 'l4'].map((id) => lineOf(tyres, id))).toMatchObject([
+      { tyreId: 't3', groupId: 'l3', expenseId: 'x1', amount: 13_000, version: 0 },
+      { tyreId: 't4', groupId: 'l3', expenseId: 'x1', amount: 13_000, version: 0 },
+    ])
+    expect(tyres.readings.filter((r) => r.date === '2026-09-20')).toHaveLength(1) // one row for both lines
+    expect([...costs].sort()).toEqual(['s1', 't3', 't4'])
+  })
+
+  it('the same add sent again is found by its first line before the break-up would refuse it', () => {
+    const once = applyTyreChange(base, repair())
+    expect(applyTyreChange(once, repair()).entries.filter((e) => e.kind === 'PUNCTURE_REPAIRED')).toHaveLength(2)
+  })
+
+  it('a new amount on one line changes the one expense for all; nothing of its own keeps the group', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { fee: fee(15_000) })])
+    expect(['l3', 'l4'].map((id) => [lineOf(tyres, id).amount, lineOf(tyres, id).groupId])).toEqual([[15_000, 'l3'], [15_000, 'l3']])
+  })
+
+  it('a day of its own parts a line from the expense, whatever amount the dialog still sent; the other keeps it', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { day: '2026-09-22', odometer: 148_400, fee: fee(13_000, 'new') })])
+    expect(lineOf(tyres, 'l3')).toMatchObject({ day: '2026-09-22', odometer: 148_400, expenseId: null, amount: null, groupId: null })
+    expect(lineOf(tyres, 'l4')).toMatchObject({ day: '2026-09-20', expenseId: 'x1', amount: 13_000 })
+  })
+
+  it('Also change it for moves every ticked line together, still sharing', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { day: '2026-09-21', odometer: 148_300, also: ['l4'] })])
+    expect(['l3', 'l4'].map((id) => lineOf(tyres, id))).toMatchObject([
+      { day: '2026-09-21', odometer: 148_300, expenseId: 'x1', groupId: 'l3' },
+      { day: '2026-09-21', odometer: 148_300, expenseId: 'x1', groupId: 'l3' },
+    ])
+  })
+
+  it('an amount typed for one line of a group without one makes its own expense and leaves the group', () => {
+    const plain = change('addTyreEntry', { ...repair().input, fee: null })
+    const { tyres } = replayTyres(base, [plain, edit('l3', { fee: fee(9_000, 'x3') })])
+    expect(lineOf(tyres, 'l3')).toMatchObject({ expenseId: 'x3', amount: 9_000, groupId: null })
+    expect(lineOf(tyres, 'l4')).toMatchObject({ expenseId: null, amount: null, groupId: 'l3' })
+  })
+
+  it('a note changed alone leaves the group but keeps the expense', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { note: 'Only the rear left' })])
+    expect(lineOf(tyres, 'l3')).toMatchObject({ note: 'Only the rear left', groupId: null, expenseId: 'x1', amount: 13_000 })
+  })
+
+  it('an amount emptied on one line asks what it does: refused without a choice, LET_GO parts it, TRASH empties it for all', () => {
+    const emptied = (sharedExpense?: string) => edit('l3', { fee: fee(null), ...(sharedExpense ? { sharedExpense } : {}) })
+    const once = applyTyreChange(base, repair())
+    expect(() => applyTyreChange(once, emptied())).toThrow(TyreRuleError)
+    try {
+      applyTyreChange(once, emptied())
+    } catch (e) {
+      expect((e as TyreRuleError).key).toBe('tyres.sharedExpenseChoice')
+    }
+
+    const letGo = applyTyreChange(once, emptied('LET_GO'))
+    expect([lineOf(letGo, 'l3').expenseId, lineOf(letGo, 'l4').amount]).toEqual([null, 13_000])
+
+    const trashed = applyTyreChange(once, emptied('TRASH'))
+    expect(['l3', 'l4'].map((id) => [lineOf(trashed, id).amount, lineOf(trashed, id).expenseTrashed])).toEqual([[null, true], [null, true]])
+  })
+
+  it('one line to the trash leaves the other with the expense and the reading; its sharer’s costs are out of date', () => {
+    const { tyres, costs } = replayTyres(base, [repair(), change('deleteTyreEntry', { id: 'l3', withExpense: true })])
+    expect(tyres.entries.some((e) => e.id === 'l3')).toBe(false)
+    expect(lineOf(tyres, 'l4')).toMatchObject({ expenseId: 'x1', amount: 13_000 })
+    expect(tyres.readings.filter((r) => r.date === '2026-09-20')).toHaveLength(1)
+    expect([...costs].sort()).toEqual(['s1', 't4']) // S3's line was only ever on the device: its share is as the server will have it
+  })
+
+  it('the expense’s new day on the Expenses tab moves every line holding it', () => {
+    const made = repair() // first: the changes replay in the order they were made
+    const moved: Change = { id: `c${++seq}`, seq, createdAt: seq, entity: 'expenses', action: 'update', vehicleId: 'v1', targetId: 'x1', input: { date: '2026-09-21', odometer: 148_300, amount: 13_000 } }
+    const { tyres } = replayTyres(base, [made, moved])
+    expect(['l3', 'l4'].map((id) => [lineOf(tyres, id).day, lineOf(tyres, id).odometer])).toEqual([['2026-09-21', 148_300], ['2026-09-21', 148_300]])
+  })
+
+  it('a tyre to the trash takes its lines along; its sharer keeps the expense', () => {
+    const { tyres } = replayTyres(base, [repair(), change('deleteTyre', { id: 't3' })])
+    expect(tyres.entries.some((e) => e.id === 'l3')).toBe(false)
+    expect(lineOf(tyres, 'l4')).toMatchObject({ expenseId: 'x1', amount: 13_000 })
+  })
+
+  it('a line of a tyre keeps its set, and names no tyre twice', () => {
+    const once = applyTyreChange(base, repair())
+    expect(() => applyTyreChange(once, edit('l3', { setId: 's2' }))).toThrow(TyreRuleError)
+    const twice = change('addTyreEntry', { vehicleId: 'v1', kind: 'VALVE_REPLACED', day: '2026-09-21', setId: 's1', tyres: [{ tyreId: 't1', id: 'a' }, { tyreId: 't1', id: 'b' }] })
+    expect(() => applyTyreChange(once, twice)).toThrow(TyreRuleError)
+  })
+})
+
+describe('tyres replaced early on the device (#289 step 3)', () => {
+  const corners = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT']
+  const breakUp = { setId: 's1', day: '2026-07-09', tyres: ['t1', 't2', 't3', 't4'].map((id, n) => ({ id, label: `S${n + 1}`, corner: corners[n] })) }
+  const replacing = (more: Record<string, unknown> = {}) => change('replaceTyres', {
+    setId: 's1', day: '2026-07-09', why: 'DAMAGED', odometer: 145_500, breakUp,
+    tyres: [{ tyreId: 't1', id: 't5', label: 'S5', madeWeek: 20, madeYear: 2026, lineId: 'b5' }, { tyreId: 't2', id: 't6', label: 'S6', name: 'Pilot Sport 5', lineId: 'b6' }],
+    price: { amount: 78_000, currency: 'HUF', category: 'Tyres', title: 'Bought', expenseId: 'x9' }, ...more,
+  })
+  const tyreOf = (tyres: Tyres, id: string) => tyres.sets.flatMap((s) => s.tyres ?? []).find((t) => t.tyre.id === id)!
+
+  it('retires the old tyres, puts the new ones at their corners from the day, and makes a Bought line each sharing one expense', () => {
+    const { tyres, skipped, costs } = replayTyres(base, [replacing()])
+
+    expect(skipped).toEqual([])
+    expect(tyreOf(tyres, 't1').tyre).toMatchObject({ isRetired: true, retiredOn: '2026-07-09', retiredWhy: 'DAMAGED', replacedById: 't5', version: 0 })
+    expect([tyreOf(tyres, 't5').corner, tyreOf(tyres, 't6').corner]).toEqual(['FRONT_LEFT', 'FRONT_RIGHT'])
+    expect(tyreOf(tyres, 't5').tyre).toMatchObject({ label: 'S5', since: '2026-07-09', roughDistance: 0, madeWeek: 20, isRetired: false })
+    expect(tyreOf(tyres, 't6').tyre.name).toBe('Pilot Sport 5')
+    expect(tyreOf(tyres, 't5').places.map((p) => [p.place.id, p.place.from, p.place.until])).toEqual([[placeOf('t5', placeOf('t1', 'r1')), '2026-07-09', null]]) // as the server works it out
+    expect(tyreOf(tyres, 't1').places.map((p) => p.place.until)).toEqual(['2026-07-09'])
+    const bought = tyres.entries.filter((e) => e.kind === 'BOUGHT')
+    expect(bought.map((e) => [e.id, e.tyreId, e.groupId, e.expenseId, e.amount])).toEqual([['b5', 't5', 'b5', 'x9', 78_000], ['b6', 't6', 'b5', 'x9', 78_000]])
+    expect([...costs].sort()).toEqual(['s1', 't5', 't6'])
+  })
+
+  it('a replacement tyre whose own time on the car has no corner shows none, not the corner of the tyre it replaced', () => {
+    const own = placeOf('t5', placeOf('t1', 'r1'))
+    const { tyres } = replayTyres(base, [replacing(), change('updateTyrePlace', { id: own, from: '2026-07-09', until: null, corner: null, tyreId: 't5', installationId: 'r1' })])
+    expect(tyreOf(tyres, 't5').corner).toBeNull()
+  })
+
+  it('the same replacement sent again changes nothing', () => {
+    const once = applyTyreChange(base, replacing())
+    expect(applyTyreChange(once, replacing()).entries.filter((e) => e.kind === 'BOUGHT')).toHaveLength(2)
+  })
+
+  it('refuses a reason the set gives, and nothing tapped', () => {
+    expect(() => applyTyreChange(base, replacing({ why: 'SET_RETIRED' }))).toThrow(TyreRuleError)
+    expect(() => applyTyreChange(base, replacing({ tyres: [] }))).toThrow(TyreRuleError)
   })
 })

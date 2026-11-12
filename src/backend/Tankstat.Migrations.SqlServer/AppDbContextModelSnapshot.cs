@@ -927,6 +927,94 @@ namespace Tankstat.Migrations.SqlServer
                     b.ToTable("Tombstones", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.Tyre", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ChangedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("nvarchar(6)");
+
+                    b.Property<string>("LastChange")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int?>("MadeWeek")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MadeYear")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReplacedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("RetiredOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("RetiredWhy")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("RoughDistance")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly?>("RoughUntil")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("SetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Since")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeletedAt");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("SetId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.HasIndex("VehicleId", "UpdatedAt");
+
+                    b.ToTable("Tyres", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -953,6 +1041,9 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<bool>("ExpenseTrashedWithEntry")
                         .HasColumnType("bit");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("uniqueidentifier");
 
@@ -978,6 +1069,9 @@ namespace Tankstat.Migrations.SqlServer
                     b.Property<Guid?>("SetId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("TyreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -996,13 +1090,15 @@ namespace Tankstat.Migrations.SqlServer
 
                     b.HasIndex("ExpenseId");
 
-                    b.HasIndex("OdometerReadingId")
-                        .IsUnique()
-                        .HasFilter("[OdometerReadingId] IS NOT NULL");
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("OdometerReadingId");
 
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("SetId");
+
+                    b.HasIndex("TyreId");
 
                     b.HasIndex("VehicleId", "Day");
 
@@ -1074,10 +1170,80 @@ namespace Tankstat.Migrations.SqlServer
                     b.ToTable("TyreInstallations", (string)null);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyrePlace", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ChangedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Corner")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateOnly>("From")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("InstallationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LastChange")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TyreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("Until")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeletedAt");
+
+                    b.HasIndex("InstallationId");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("TyreId", "From");
+
+                    b.HasIndex("VehicleId", "UpdatedAt");
+
+                    b.ToTable("TyrePlaces", (string)null);
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreSet", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("BrokenUpOn")
+                        .HasColumnType("date");
 
                     b.Property<DateTime?>("ChangedAt")
                         .HasColumnType("datetime2");
@@ -1686,11 +1852,20 @@ namespace Tankstat.Migrations.SqlServer
                         .OnDelete(DeleteBehavior.Cascade);
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.Tyre", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
+                        .WithMany()
+                        .HasForeignKey("SetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
-                        .WithOne()
-                        .HasForeignKey("Tankstat.Domain.Tyres.TyreEntry", "OdometerReadingId")
+                        .WithMany()
+                        .HasForeignKey("OdometerReadingId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
@@ -1707,6 +1882,15 @@ namespace Tankstat.Migrations.SqlServer
                     b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
                         .WithMany()
                         .HasForeignKey("SetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyrePlace", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Tyres.Tyre", null)
+                        .WithMany()
+                        .HasForeignKey("TyreId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

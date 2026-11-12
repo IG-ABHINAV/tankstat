@@ -47,12 +47,17 @@ function moved(before: readonly InstallationState[], after: readonly Installatio
  */
 export function swap(
   sets: readonly SetState[], installations: readonly InstallationState[], setId: string, day: string, pairOneFront: boolean | null,
-  { id, replace = false, pairsGiven = true, joined }: {
+  { id, replace = false, pairsGiven = true, joined, sameCorners }: {
     id: string; replace?: boolean; pairsGiven?: boolean
     /** Told of each installation a join takes away from its first day (trashed into the one before it, or moved earlier), with that day. */
     joined?: (id: string, day: string) => void
+    /** A set tracked tyre by tyre (#289): whether an installation has every tyre at the corner asked for, which decides a join as the pairs do. */
+    sameCorners?: (installation: InstallationState) => boolean
   },
 ): InstallationState[] {
+  // A broken-up set goes by its tyres' corners alone, and an installation from before the break-up keeps the pairs it recorded.
+  const same = (s: InstallationState) => (sameCorners ? sameCorners(s) : s.pairOneFront === pairOneFront)
+  const pairsOf = (s: InstallationState) => (sameCorners ? s.pairOneFront : pairOneFront)
   const set = sets.find((s) => s.id === setId)
   if (!set) throw new TyreRuleError('tyres.setNotFound')
   if (set.retiredOn) throw new TyreRuleError('tyres.setRetired', { set: set.name })
@@ -60,7 +65,7 @@ export function swap(
   const covering = live.find((s) => covers(s, day))
   if (covering?.setId === setId) {
     if (covering.from !== day) throw new TyreRuleError('tyres.alreadyOnCar', { set: set.name, from: covering.from })
-    if (pairsGiven) covering.pairOneFront = pairOneFront
+    if (pairsGiven) covering.pairOneFront = pairsOf(covering)
     return checked(sets, live, moved(installations, live))
   }
   let until: string | null
@@ -73,17 +78,21 @@ export function swap(
     covering.until = day
   } else until = live.filter((s) => s.from > day).map((s) => s.from).sort()[0] ?? null
 
-  const before = live.find((s) => s.setId === setId && s.until === day && s.pairOneFront === pairOneFront)
+  const before = live.find((s) => s.setId === setId && s.until === day && same(s))
   // Into a gap, never the set's next installation: that one began with a swap of its own (only one this swap cut or replaced is carried on).
-  const after = covering && until !== null ? live.find((s) => s.setId === setId && s.from === until && s.pairOneFront === pairOneFront) : undefined
+  const after = covering && until !== null ? live.find((s) => s.setId === setId && s.from === until && same(s)) : undefined
   if (before && after) {
     joined?.(after.id, after.from)
     before.until = after.until
+    before.pairOneFront = pairsOf(before)
     live = live.filter((s) => s !== after)
-  } else if (before) before.until = until
-  else if (after) {
+  } else if (before) {
+    before.until = until
+    before.pairOneFront = pairsOf(before)
+  } else if (after) {
     joined?.(after.id, after.from)
     after.from = day
+    after.pairOneFront = pairsOf(after)
   }
   else live.push({ id, setId, from: day, until, pairOneFront })
   return checked(sets, live, moved(installations, live))
@@ -92,13 +101,17 @@ export function swap(
 /** The set on the car on a day changes its pairs from that day (`TyreHistory.ChangePositions`). */
 export function changePositions(
   sets: readonly SetState[], installations: readonly InstallationState[], setId: string, day: string, pairOneFront: boolean | null, id: string,
+  /** A set tracked tyre by tyre (#289): whether the installation has every tyre at the corner asked for already. Its corners change in
+   * place on the installation's first day (the places' to do), else the installation splits as a whole set's does. */
+  sameCorners?: (installation: InstallationState) => boolean,
 ): InstallationState[] {
   const set = sets.find((s) => s.id === setId)
   const live = installations.map((s) => ({ ...s }))
   const covering = live.find((s) => s.setId === setId && covers(s, day))
   if (!set || !covering) throw new TyreRuleError('tyres.notOnCar', { set: set?.name ?? '', date: day })
-  if (covering.pairOneFront === pairOneFront) throw new TyreRuleError('tyres.positionsUnchanged')
+  if (sameCorners ? sameCorners(covering) : covering.pairOneFront === pairOneFront) throw new TyreRuleError('tyres.positionsUnchanged')
   if (covering.from === day) {
+    if (sameCorners) return live
     covering.pairOneFront = pairOneFront
     return checked(sets, live, moved(installations, live))
   }
