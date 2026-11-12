@@ -46,6 +46,7 @@ public class DataGeneratorTests
             // expense (when it was on the car at all); W1 replaced by W5, damaged, with a Bought line and its price.
             var winter = sets.Single(s => s.Season == TyreSeason.Winter);
             Assert.NotNull(winter.BrokenUpOn);
+            Assert.All(g.TyreEntries!.Where(e => e.TyreId is not null), e => Assert.True(e.Day >= winter.BrokenUpOn)); // tracked tyre by tyre by then
             var tyres = g.Tyres!;
             new TyrePlaces(g.Vehicle.OwnerId, g.Vehicle.Id, new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, installations), sets, tyres, g.TyrePlaces!).Check();
             var flat = g.TyreEntries!.Where(e => e.Kind == TyreEntryKind.PunctureRepaired && e.TyreId is not null).ToList();

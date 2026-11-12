@@ -263,36 +263,41 @@ public sealed class DataGenerator(TimeProvider clock)
             }
         }
 
-        // Single tyres (#289), drawn after all of the above so the rest stays as it was: the winter set tracked tyre by tyre from today, a
-        // puncture of two of its tyres sharing one amount on a day it was on the car, and one tyre replaced after that, damaged, with its price.
+        // Single tyres (#289), drawn after all of the above so the rest stays as it was: a puncture of two winter tyres sharing one amount on
+        // a day the set was on the car, and one tyre replaced after that, damaged, with its price; the set tracked tyre by tyre from the first
+        // of those days, as the app's own break-up on save would.
         var places = new TyrePlaces(owner, vehicle.Id, history, [summer, winter], [], []);
-        TyreCorner[] corners = [TyreCorner.FrontLeft, TyreCorner.FrontRight, TyreCorner.RearLeft, TyreCorner.RearRight];
-        var broken = places.BreakUp(winter, [.. corners.Select((c, n) => new NewTyre(null, $"W{n + 1}", c))], today, owner);
-        var single = broken.CreatedTyres;
-        var allPlaces = new List<TyrePlace>(broken.Created);
         var winterOn = history.Live.Where(s => s.SetId == winter.Id).OrderBy(s => s.From).ToList();
-        var flatOn = first;
+        DateOnly? flatOn = null;
         if (winterOn.Count > 0)
         {
             var spell = winterOn[random.Next(winterOn.Count)];
             var last = (spell.Until ?? today).AddDays(-1);
             flatOn = spell.From.AddDays(random.Next(0, Math.Max(1, last.DayNumber - spell.From.DayNumber)));
+        }
+        var after = flatOn ?? first;
+        DateOnly? replacedOn = today > after ? after.AddDays(random.Next(1, today.DayNumber - after.DayNumber + 1)) : null;
+        var made = (replacedOn ?? today).AddDays(-random.Next(30, 200));
+        TyreCorner[] corners = [TyreCorner.FrontLeft, TyreCorner.FrontRight, TyreCorner.RearLeft, TyreCorner.RearRight];
+        var broken = places.BreakUp(winter, [.. corners.Select((c, n) => new NewTyre(null, $"W{n + 1}", c))], flatOn ?? replacedOn ?? today, owner);
+        var single = broken.CreatedTyres;
+        var allPlaces = new List<TyrePlace>(broken.Created);
+        if (flatOn is { } flatDay)
+        {
             var flatId = Guid.NewGuid(); // the lines made together: the first one's id is the group's
-            var flat = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.PunctureRepaired, winter.Id, flatOn, null, "Screws in the tread", flatId, single[2].Id, flatId);
+            var flat = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.PunctureRepaired, winter.Id, flatDay, null, "Screws in the tread", flatId, single[2].Id, flatId);
             var other = flat.ForAnotherTyre(single[3].Id, owner);
             Paid(flat, $"Puncture repaired: {winter.Name}", 30, 60);
             other.LinkExpense(flat.ExpenseId!.Value);
             lines.AddRange([flat, other]);
         }
-        if (today > flatOn)
+        if (replacedOn is { } replacedDay)
         {
-            var replacedOn = flatOn.AddDays(random.Next(1, today.DayNumber - flatOn.DayNumber + 1));
-            var made = replacedOn.AddDays(-random.Next(30, 200));
             var replaced = places.Replace(winter, [new ReplacingTyre(single[0].Id, null, "W5", null, Math.Clamp(made.DayOfYear / 7 + 1, 1, 52), made.Year)],
-                TyreRetiredWhy.Damaged, replacedOn, owner);
+                TyreRetiredWhy.Damaged, replacedDay, owner);
             allPlaces.AddRange(replaced.Created);
             var w5 = replaced.CreatedTyres.Single();
-            var bought = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.Bought, winter.Id, replacedOn, null, null, null, w5.Id);
+            var bought = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.Bought, winter.Id, replacedDay, null, null, null, w5.Id);
             Paid(bought, $"Bought: {winter.Name}", 80, 180);
             lines.Add(bought);
             single = [.. single, w5];
