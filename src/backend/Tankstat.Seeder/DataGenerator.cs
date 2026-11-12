@@ -17,7 +17,8 @@ namespace Tankstat.Seeder;
 public sealed record GeneratedVehicle(
     Vehicle Vehicle, IReadOnlyList<Refueling> Refuelings, IReadOnlyList<RecurringExpense> Recurring, IReadOnlyList<Expense> Expenses,
     IReadOnlyList<RecurringCompletion> Completions, IReadOnlyList<TyreSet>? TyreSets = null, IReadOnlyList<TyreInstallation>? TyreInstallations = null,
-    IReadOnlyList<TyreEntry>? TyreEntries = null, IReadOnlyList<Expense>? TyreExpenses = null);
+    IReadOnlyList<TyreEntry>? TyreEntries = null, IReadOnlyList<Expense>? TyreExpenses = null,
+    IReadOnlyList<Tyre>? Tyres = null, IReadOnlyList<TyrePlace>? TyrePlaces = null);
 
 /// <summary>
 /// Creates random but internally consistent test data through the domain's own factories (so every rule of the
@@ -63,8 +64,9 @@ public sealed class DataGenerator(TimeProvider clock)
             var trajectory = OdometerTrajectory.Of(log, DefaultKmPerDay * market.DistancePerKm);
             var schedules = vehicle.IsDeleted ? [] : Recurring(scheduleRandom, vehicle, market, trajectory, options.RecurringPerVehicle, today);
             var (expenses, completions) = Expenses(expenseRandom, vehicle, market, trajectory, schedules, options.ExpensesPerVehicle, today);
-            var (sets, installations, lines, tyreExpenses) = vehicle.IsDeleted || log.Count == 0 ? ([], [], [], []) : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
-            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, sets, installations, lines, tyreExpenses);
+            var tyres = vehicle.IsDeleted || log.Count == 0 ? null : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
+            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, tyres?.Sets ?? [], tyres?.Installations ?? [], tyres?.Lines ?? [], tyres?.Expenses ?? [],
+                tyres?.Tyres ?? [], tyres?.Places ?? []);
         }
     }
 
@@ -193,7 +195,9 @@ public sealed class DataGenerator(TimeProvider clock)
     /// through the history's own rules (<see cref="TyreHistory"/>) around the start of April and of November from the log's first day to today,
     /// each set's pairs exchanged front to rear every other season, each installation with its line in the tyre log. No reading is typed: the distances come from the log's readings.
     /// </summary>
-    private (List<TyreSet> Sets, List<TyreInstallation> Installations, List<TyreEntry> Lines, List<Expense> Expenses) Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
+    private sealed record SeededTyres(List<TyreSet> Sets, List<TyreInstallation> Installations, List<TyreEntry> Lines, List<Expense> Expenses, List<Tyre> Tyres, List<TyrePlace> Places);
+
+    private SeededTyres Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
     {
         var owner = vehicle.OwnerId;
         var size = TyreSizes[random.Next(TyreSizes.Length)];
@@ -258,7 +262,42 @@ public sealed class DataGenerator(TimeProvider clock)
                 lines.Add(TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.WheelBalancing, covering.SetId, day, null, null));
             }
         }
-        return ([summer, winter], [.. history.Live], lines, expenses);
+
+        // Single tyres (#289), drawn after all of the above so the rest stays as it was: the winter set tracked tyre by tyre from today, a
+        // puncture of two of its tyres sharing one amount on a day it was on the car, and one tyre replaced after that, damaged, with its price.
+        var places = new TyrePlaces(owner, vehicle.Id, history, [summer, winter], [], []);
+        TyreCorner[] corners = [TyreCorner.FrontLeft, TyreCorner.FrontRight, TyreCorner.RearLeft, TyreCorner.RearRight];
+        var broken = places.BreakUp(winter, [.. corners.Select((c, n) => new NewTyre(null, $"W{n + 1}", c))], today, owner);
+        var single = broken.CreatedTyres;
+        var allPlaces = new List<TyrePlace>(broken.Created);
+        var winterOn = history.Live.Where(s => s.SetId == winter.Id).OrderBy(s => s.From).ToList();
+        var flatOn = first;
+        if (winterOn.Count > 0)
+        {
+            var spell = winterOn[random.Next(winterOn.Count)];
+            var last = (spell.Until ?? today).AddDays(-1);
+            flatOn = spell.From.AddDays(random.Next(0, Math.Max(1, last.DayNumber - spell.From.DayNumber)));
+            var flatId = Guid.NewGuid(); // the lines made together: the first one's id is the group's
+            var flat = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.PunctureRepaired, winter.Id, flatOn, null, "Screws in the tread", flatId, single[2].Id, flatId);
+            var other = flat.ForAnotherTyre(single[3].Id, owner);
+            Paid(flat, $"Puncture repaired: {winter.Name}", 30, 60);
+            other.LinkExpense(flat.ExpenseId!.Value);
+            lines.AddRange([flat, other]);
+        }
+        if (today > flatOn)
+        {
+            var replacedOn = flatOn.AddDays(random.Next(1, today.DayNumber - flatOn.DayNumber + 1));
+            var made = replacedOn.AddDays(-random.Next(30, 200));
+            var replaced = places.Replace(winter, [new ReplacingTyre(single[0].Id, null, "W5", null, Math.Clamp(made.DayOfYear / 7 + 1, 1, 52), made.Year)],
+                TyreRetiredWhy.Damaged, replacedOn, owner);
+            allPlaces.AddRange(replaced.Created);
+            var w5 = replaced.CreatedTyres.Single();
+            var bought = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.Bought, winter.Id, replacedOn, null, null, null, w5.Id);
+            Paid(bought, $"Bought: {winter.Name}", 80, 180);
+            lines.Add(bought);
+            single = [.. single, w5];
+        }
+        return new SeededTyres([summer, winter], [.. history.Live], lines, expenses, [.. single], allPlaces);
     }
 
     // ---- Recurring expenses -----------------------------------------------------------------------------------------

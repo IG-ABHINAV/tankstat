@@ -38,10 +38,29 @@ public class DataGeneratorTests
             Assert.Equal(installations.Select(s => (s.Id, TyreEntryKind.Swap, s.From, (Guid?)s.SetId)),
                 g.TyreEntries!.Where(e => e.IsSwapLine).OrderBy(e => e.Day).Select(e => (e.Id, e.Kind, e.Day, e.SetId)));
             // A Bought line per set and the amounts (#288): each linked expense on its line's day, in the vehicle's currency, filed under Tyres.
-            Assert.Equal(2, g.TyreEntries!.Count(e => e.Kind == TyreEntryKind.Bought));
+            Assert.Equal(2, g.TyreEntries!.Count(e => e.Kind == TyreEntryKind.Bought && e.TyreId is null)); // a set's; a new single tyre has its own
             var linked = g.TyreEntries!.Where(e => e.ExpenseId is not null).ToList();
-            Assert.Equal(linked.Select(e => (e.ExpenseId!.Value, e.Day)).Order(), g.TyreExpenses!.Select(x => (x.Id, x.Date)).Order());
+            Assert.Equal(linked.Select(e => (e.ExpenseId!.Value, e.Day)).Distinct().Order(), g.TyreExpenses!.Select(x => (x.Id, x.Date)).Order()); // lines made together share one
             Assert.All(g.TyreExpenses!, x => Assert.Equal(("Tyres", (long?)null), (x.Category, x.Odometer)));
+            // Single tyres (#289): the winter set tracked tyre by tyre, by the app's own checks; a puncture of two of its tyres sharing one
+            // expense (when it was on the car at all); W1 replaced by W5, damaged, with a Bought line and its price.
+            var winter = sets.Single(s => s.Season == TyreSeason.Winter);
+            Assert.NotNull(winter.BrokenUpOn);
+            var tyres = g.Tyres!;
+            new TyrePlaces(g.Vehicle.OwnerId, g.Vehicle.Id, new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, installations), sets, tyres, g.TyrePlaces!).Check();
+            var flat = g.TyreEntries!.Where(e => e.Kind == TyreEntryKind.PunctureRepaired && e.TyreId is not null).ToList();
+            if (installations.Any(s => s.SetId == winter.Id))
+            {
+                Assert.Equal(2, flat.Count);
+                Assert.Single(flat.Select(e => (e.GroupId, e.ExpenseId)).Distinct());
+                Assert.Equal(flat[0].Id, flat[0].GroupId);
+            }
+            if (tyres.Any(t => t.Label == "W5"))
+            {
+                var (w1, w5) = (tyres.Single(t => t.Label == "W1"), tyres.Single(t => t.Label == "W5"));
+                Assert.Equal((TyreRetiredWhy.Damaged, (Guid?)w5.Id), (w1.RetiredWhy!.Value, w1.ReplacedById));
+                Assert.Single(g.TyreEntries!, e => e.Kind == TyreEntryKind.Bought && e.TyreId == w5.Id && e.ExpenseId is not null);
+            }
         });
     }
 
