@@ -162,6 +162,12 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
         return own;
     }
 
+    /// <summary>Holds the reading another line of its group just made (#289: the lines made together hold one row), when it holds none.</summary>
+    public void HoldReading(OdometerReading reading)
+    {
+        if (OdometerReadingId is null) (OdometerReading, OdometerReadingId) = (reading, reading.Id);
+    }
+
     /// <summary>Shares another line's reading object (the lines made together hold one row), as the repository loads them.</summary>
     public void ShareReadingObject(OdometerReading reading)
     {

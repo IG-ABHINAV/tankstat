@@ -46,7 +46,10 @@ public sealed record TyrePlaceView(TyrePlace Place, InstallationDistance Distanc
 /// <summary>A single tyre of a broken-up set (#289), with its figures and its live places, newest first.</summary>
 /// <param name="OnTheCar">One of its places is open (its set on the car, the tyre on it).</param>
 /// <param name="Corner">Its corner now when on the car, else the last one it had (null: not recorded).</param>
-public sealed record TyreView(Tyre Tyre, TyreFigures Figures, IReadOnlyList<TyrePlaceView> Places, bool OnTheCar, TyreCorner? Corner);
+/// <param name="Spent">What it cost (#289): its lines' expenses, each by its even share among the lines holding it (the owner's decision 40).</param>
+/// <param name="Repairs">Its punctures repaired and valves replaced.</param>
+public sealed record TyreView(Tyre Tyre, TyreFigures Figures, IReadOnlyList<TyrePlaceView> Places, bool OnTheCar, TyreCorner? Corner,
+    IReadOnlyList<TyreSpent>? Spent = null, int Repairs = 0);
 
 /// <summary>
 /// The amount a tyre log line carries (#288): an ordinary expense on the Expenses tab, with the line's day and reading. Null as a whole leaves
@@ -63,10 +66,30 @@ public sealed record TyrePastSwap(DateOnly Day, Guid SetId, long? Odometer, Guid
 /// <see cref="TyreEntryKind.Note"/> line of the set.</param>
 public sealed record TyreInstallationInput(DateOnly From, DateOnly? Until, bool? PairOneFront, long? OdometerFrom, long? OdometerUntil);
 
+/// <summary>A line for a single tyre (#289) of an entry for several: the tyre, and the line's client id.</summary>
+public sealed record TyreLine(Guid TyreId, Guid? Id = null);
+
+/// <summary>What an emptied amount shared with other lines does (#289, the owner's decision 30): the person is asked on save.</summary>
+public enum SharedExpenseChoice
+{
+    /// <summary>Only the lines changed let go of it; it stays with the others.</summary>
+    LetGo,
+
+    /// <summary>The expense goes to the trash: no line of it keeps an amount.</summary>
+    Trash,
+}
+
 /// <summary>A tyre log line as typed (#288): of any kind but the two of an installation, which come with the swap.</summary>
 /// <param name="SetId">The set it concerns, or none.</param>
 /// <param name="Fee">Its amount (a <see cref="TyreEntryKind.Note"/> takes none: <c>tyres.noteTakesNoAmount</c>).</param>
-public sealed record TyreEntryInput(TyreEntryKind Kind, Guid? SetId, DateOnly Day, long? Odometer, string? Note, TyreFee? Fee = null);
+/// <param name="Tyres">An add for single tyres of the set (#289): a line each, made together and sharing one expense and reading; none: the
+/// whole set's line (or one of no set).</param>
+/// <param name="BreakUp">An add for some tyres of a whole set breaks it up first (the owner's decision 19), its tyres' ids in it.</param>
+/// <param name="Also">An edit: the other lines made together with this one that change too (*Also change it for*).</param>
+/// <param name="SharedExpense">An edit emptying an amount other live lines share: what it does (required then: <c>tyres.sharedExpenseChoice</c>).</param>
+public sealed record TyreEntryInput(
+    TyreEntryKind Kind, Guid? SetId, DateOnly Day, long? Odometer, string? Note, TyreFee? Fee = null,
+    IReadOnlyList<TyreLine>? Tyres = null, TyreBreakUpInput? BreakUp = null, IReadOnlyList<Guid>? Also = null, SharedExpenseChoice? SharedExpense = null);
 
 /// <summary>An installation with its distance, worked out on read.</summary>
 public sealed record TyreInstallationView(TyreInstallation Installation, InstallationDistance Distance);
@@ -325,31 +348,65 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
-    /// <summary>Adds a line to the tyre log (#288).</summary>
-    /// <param name="id">The line's id chosen by the client: an add sent again is answered with what it created.</param>
+    /// <summary>
+    /// Adds a line to the tyre log (#288); for single tyres of a set (#289) a line each, made together (their group's id the first line's)
+    /// and holding one reading and one expense, breaking a whole set up first when asked.
+    /// </summary>
+    /// <param name="id">The line's id chosen by the client (the first tyre's line's when it names none): an add sent again is answered with what it created.</param>
     public async Task<TyreOverview> AddEntryAsync(Guid vehicleId, TyreEntryInput input, CancellationToken ct, Guid? id = null)
     {
         var vehicle = await EditableVehicleAsync(vehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        Task<bool> Repeat() => RepeatedEntryAsync(id, vehicle.Id, by, ct);
+        var firstId = input.Tyres is [{ Id: { } given }, ..] ? given : id;
+        Task<bool> Repeat() => RepeatedEntryAsync(firstId, vehicle.Id, by, ct);
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireNotFuture(input.Day);
         if (input.SetId is { } setId) LiveSet(book, setId);
         if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Day, value, exceptReadingId: null, ct);
-        var entry = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, input.SetId, input.Day, input.Odometer, input.Note, id);
         var save = new TyreSave { Book = book, By = by };
-        save.AddedEntries.Add(entry);
-        if (entry.OdometerReading is { } reading) save.AddedReadings.Add(reading);
-        await ApplyFeeAsync(vehicle, book, save, entry, input.Fee, by, ct);
+        var (_, places) = Rules(vehicle, book);
+        if (input.BreakUp is { } breakUp)
+        {
+            // A repair of some tyres of a whole set breaks it up on save (the owner's decision 19).
+            var set = LiveSet(book, breakUp.SetId);
+            if (set.Id != input.SetId) throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
+            save.Take(places.BreakUp(set, breakUp.Tyres, breakUp.Day, by));
+            save.ChangedSets.Add(set);
+        }
+        var lines = new List<TyreEntry>();
+        if (input.Tyres is { Count: > 0 } picked)
+        {
+            if (input.SetId is not { } of) throw new DomainException("tyres.tyreNeedsSet", "A line of a tyre is a line of its set.");
+            if (picked.Select(p => p.TyreId).Distinct().Count() != picked.Count) throw new DomainException("tyres.tyreTwice", "Each tyre once.");
+            foreach (var p in picked)
+                if (places.TyresOf(of).FirstOrDefault(t => t.Id == p.TyreId) is not { IsRetired: false })
+                    throw new NotFoundException("tyres.tyreNotFound", $"Tyre {p.TyreId} does not exist.", new { Id = p.TyreId });
+            var first = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, of, input.Day, input.Odometer, input.Note, firstId, picked[0].TyreId,
+                groupId: picked.Count > 1 ? firstId ?? Guid.NewGuid() : null);
+            if (picked.Count > 1 && first.GroupId != first.Id) first = Regroup(first); // no id given: the group takes the first line's
+            lines.Add(first);
+            lines.AddRange(picked.Skip(1).Select(p => first.ForAnotherTyre(p.TyreId, by, p.Id)));
+        }
+        else lines.Add(TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, input.SetId, input.Day, input.Odometer, input.Note, id));
+        foreach (var line in lines) save.AddedEntries.Add(line);
+        if (lines[0].OdometerReading is { } reading) save.AddedReadings.Add(reading);
+        await ApplyFeeAsync(vehicle, book, save, lines[0], input.Fee, by, ct);
+        if (lines[0].ExpenseId is { } expenseId) foreach (var other in lines.Skip(1)) other.LinkExpense(expenseId); // one expense, counted once
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
-        logger.LogDebug("User {UserId} added tyre log line {EntryId} to vehicle {VehicleId}", by, entry.Id, vehicle.Id);
+        logger.LogDebug("User {UserId} added {Count} tyre log lines from {EntryId} to vehicle {VehicleId}", by, lines.Count, lines[0].Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+
+        TyreEntry Regroup(TyreEntry line) =>
+            TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, line.SetId, input.Day, input.Odometer, input.Note, line.Id, line.TyreId, groupId: line.Id);
     }
 
     /// <summary>
-    /// Changes a line. A swap's line keeps its kind and set (<c>tyres.swapLineLocked</c>); a new day moves the swap with it, by the history's
-    /// rules (<see cref="TyreHistory.MoveSwap"/>). The reading moves with the line's day; null clears it.
+    /// Changes a line, with the other lines made together with it that <see cref="TyreEntryInput.Also"/> names (#289). A swap's line keeps its
+    /// kind and set (<c>tyres.swapLineLocked</c>); a new day moves the swap with it, by the history's rules (<see cref="TyreHistory.MoveSwap"/>).
+    /// The reading moves with the line's day; null clears it. Lines changed without the others of their group leave it (a row of the log of
+    /// their own); with a day or odometer of their own they also part from the expense they shared with the others (the owner's decision 29).
+    /// An amount emptied while other live lines share it does what <see cref="TyreEntryInput.SharedExpense"/> says (decision 30).
     /// </summary>
     public async Task<TyreOverview> UpdateEntryAsync(Guid id, TyreEntryInput input, CancellationToken ct, int? expectedVersion = null)
     {
@@ -358,6 +415,11 @@ public sealed class TyreService(
         RequireNotFuture(input.Day);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var save = new TyreSave { Book = book, By = by };
+        List<TyreEntry> lines = [entry];
+        foreach (var other in input.Also ?? [])
+            lines.Add(book.Entries.FirstOrDefault(e => e.Id == other && e.GroupId is not null && e.GroupId == entry.GroupId && IsLiveLine(book, e))
+                ?? throw new NotFoundException("tyres.entryNotFound", $"Tyre log line {other} does not exist.", new { Id = other }));
+        lines = [.. lines.Distinct()];
         if (entry.IsSwapLine)
         {
             if (input.Kind != entry.Kind || input.SetId != entry.SetId)
@@ -366,18 +428,95 @@ public sealed class TyreService(
             var (history, places) = Rules(vehicle, book);
             Follow(save, book, history, places.MoveSwap(installation, input.Day, by), by);
         }
-        else if (input.SetId is { } setId && setId != entry.SetId) LiveSet(book, setId);
+        else if (input.SetId is { } setId && setId != entry.SetId)
+        {
+            if (entry.TyreId is not null) throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
+            LiveSet(book, setId);
+        }
+        // Changed without the others of its group: a row of its own; a day or odometer of its own parts it from their expense too.
+        var holders = entry.ExpenseId is { } shared ? Holders(save, book, shared) : [];
+        var allHolders = holders.All(lines.Contains);
+        var group = entry.GroupId is { } g ? book.Entries.Where(e => e.GroupId == g && IsLiveLine(book, e)).ToList() : [];
+        var ownDays = input.Day != entry.Day || input.Odometer != entry.Odometer;
+        var changesAny = ownDays || input.Kind != entry.Kind || Trimmed(input.Note) != entry.Note || input.SetId != entry.SetId;
+        foreach (var line in lines)
+        {
+            if (!allHolders && ownDays && line.ExpenseId is not null)
+            {
+                if (line.LeaveGroup(partFromExpense: true) is { } own) save.AddedReadings.Add(own);
+                save.Change(line);
+            }
+            else if (changesAny && group.Count > 0 && !group.All(lines.Contains) && line.GroupId is not null)
+            {
+                line.LeaveGroup(partFromExpense: false);
+                save.Change(line);
+            }
+        }
         if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Day, value, exceptReadingId: entry.OdometerReadingId, ct);
-        var (added, removed, changed) = entry.Update(input.Kind, input.SetId, input.Day, input.Odometer, input.Note, by);
-        if (added is not null) save.AddedReadings.Add(added);
-        if (removed is not null) save.RemovedReadings.Add(removed);
-        if (changed) save.Change(entry);
-        await ApplyFeeAsync(vehicle, book, save, entry, input.Fee, by, ct);
+        OdometerReading? made = null;
+        foreach (var line in lines)
+        {
+            // The lines still holding one reading share it: the first changes it, the others take what it made.
+            if (made is not null) line.HoldReading(made);
+            var (added, removed, changed) = line.Update(input.Kind, line.TyreId is not null ? line.SetId : input.SetId, input.Day, input.Odometer, input.Note, by);
+            if (added is not null)
+            {
+                save.AddedReadings.Add(added);
+                made ??= added;
+            }
+            if (removed is not null) save.RemovedReadings.Add(removed);
+            if (changed) save.Change(line);
+        }
+        await ApplySharedFeeAsync(vehicle, book, save, entry, lines, input, by, ct);
         // An amount typed here makes an expense with the client's id: the same change sent twice at once is answered as the repeat it is.
         if (save.AddedExpenses.Count == 0) await SaveAsync(save, ct);
         else await SaveOnceAsync(save, async () => input.Fee?.ExpenseId is { } given && (await tyres.FindEntryAsync(id, ct))?.ExpenseId == given, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
+
+    /// <summary>
+    /// The amount of an edit (#289): typed, it changes the one expense for every line holding it (one made now is linked to every line
+    /// changed); emptied while other live lines share it, they keep it and the lines changed let go, or it goes to the trash, as the person chose.
+    /// </summary>
+    private async Task ApplySharedFeeAsync(Vehicle vehicle, TyreBook book, TyreSave save, TyreEntry entry, IReadOnlyList<TyreEntry> lines, TyreEntryInput input, Guid by, CancellationToken ct)
+    {
+        if (input.Fee is not { } fee) return;
+        var expense = ExpenseOf(save, book, entry);
+        var others = entry.ExpenseId is { } shared ? Holders(save, book, shared).Where(h => !lines.Contains(h)).ToList() : [];
+        if (fee.Amount is null && expense is { IsDeleted: false } && others.Count > 0)
+        {
+            switch (input.SharedExpense)
+            {
+                case SharedExpenseChoice.LetGo:
+                    foreach (var line in lines)
+                    {
+                        if (line.LeaveGroup(partFromExpense: true) is { } own) save.AddedReadings.Add(own);
+                        save.Change(line);
+                    }
+                    return;
+                case SharedExpenseChoice.Trash:
+                    expense.MarkDeleted(clock.GetUtcNow(), by);
+                    save.Change(expense);
+                    return;
+                default:
+                    throw new DomainException("tyres.sharedExpenseChoice", "This amount is shared with other tyres: say whether only these let go of it or it goes to the trash.");
+            }
+        }
+        await ApplyFeeAsync(vehicle, book, save, entry, fee, by, ct);
+        if (entry.ExpenseId is { } made) foreach (var line in lines.Skip(1).Where(l => l.ExpenseId is null)) line.LinkExpense(made);
+    }
+
+    /// <summary>A line that counts: not in the trash, nor hidden through its tyre or set in the trash (#289).</summary>
+    private static bool IsLiveLine(TyreBook book, TyreEntry line) =>
+        !line.IsDeleted
+        && (line.SetId is not { } set || book.Sets.FirstOrDefault(s => s.Id == set) is not { IsDeleted: true })
+        && (line.TyreId is not { } tyre || book.SingleTyres.FirstOrDefault(t => t.Id == tyre) is not { IsDeleted: true });
+
+    /// <summary>The live lines holding an expense (#289: the lines made together for several tyres share one).</summary>
+    private static List<TyreEntry> Holders(TyreSave save, TyreBook book, Guid expenseId) =>
+        [.. book.Entries.Concat(save.AddedEntries).Distinct().Where(e => e.ExpenseId == expenseId && IsLiveLine(book, e))];
+
+    private static string? Trimmed(string? note) => string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
     /// <summary>
     /// Moves a line to the trash; a swap's line takes its installation along, so the swap's time on the car no longer counts. Its expense goes
@@ -667,18 +806,19 @@ public sealed class TyreService(
             }),
         ];
         var liveSets = book.Sets.Where(s => !s.IsDeleted).Select(s => s.Id).ToHashSet();
-        var entries = book.Entries.Where(e => !e.IsDeleted && (e.SetId is null || liveSets.Contains(e.SetId.Value)))
+        var entries = book.Entries.Where(e => IsLiveLine(book, e) && (e.SetId is null || liveSets.Contains(e.SetId.Value))) // a trashed tyre's lines hide through it (#289)
             .OrderByDescending(e => e.Day).ThenBy(e => e.IsSwapLine ? 0 : 1).ThenBy(e => e.Id).ToList();
         // What they cost (#288 step 4): the shown lines, each with its expense's amount while that is not in the trash.
         var costs = TyreCostCalculator.Costs(entries.Select(e =>
-            book.ExpenseOf(e) is { IsDeleted: false } x ? new TyreLineCost(e.SetId, e.Kind, x.Amount, x.Currency) : new TyreLineCost(e.SetId, e.Kind, null, null)));
+            book.ExpenseOf(e) is { IsDeleted: false } x ? new TyreLineCost(e.SetId, e.Kind, x.Amount, x.Currency, x.Id, e.TyreId) : new TyreLineCost(e.SetId, e.Kind, null, null, null, e.TyreId)));
         var sets = book.Sets.Where(s => !s.IsDeleted).OrderBy(s => s.IsRetired).ThenBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(s => s.Id)
             .Select(set =>
             {
                 var own = live.Where(s => s.SetId == set.Id).OrderByDescending(s => s.From).ToList();
                 return new TyreSetView(set, TyreCalculator.SetFigures(book.Readings, set, own),
                     [.. own.Select(s => new TyreInstallationView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen),
-                    costs.SpentOn(set.Id), costs.RepairsOf(set.Id), set.IsBrokenUp ? TyresOf(set) : []);
+                    costs.SpentOn(set.Id), costs.RepairsOf(set.Id),
+                    set.IsBrokenUp ? [.. TyresOf(set).Select(v => v with { Spent = costs.SpentOnTyre(v.Tyre.Id), Repairs = costs.RepairsOfTyre(v.Tyre.Id) })] : []);
             })
             .ToList();
         var category = book.Entries.Where(e => !e.IsDeleted && e.ExpenseId is not null).OrderByDescending(e => e.Day).ThenByDescending(e => e.UpdatedAt)
@@ -827,14 +967,29 @@ public sealed class TyreService(
     /// <summary>Before a save: every linked expense of a line the change touched follows its line's day and reading, which is live while a live holder has it.</summary>
     private void Linked(TyreSave save)
     {
-        if (save.Book is not { } book) return;
-        foreach (var line in save.AddedEntries.Concat(save.ChangedEntries).Where(l => l.ExpenseId is not null).ToList())
-        {
-            if (ExpenseOf(save, book, line) is not { } expense) continue;
-            // A line in the trash pulls nothing: its expense goes on as it is (alone, or in the trash with it); a live line's is on its day, with its reading.
-            if (!line.IsDeleted && expense.FollowLine(line.Day, line.OdometerReading, by: save.By)) save.Change(expense);
-            TyreExpenses.Settle(line, expense, clock.GetUtcNow());
-        }
+        if (save.Book is { } book)
+            foreach (var line in save.AddedEntries.Concat(save.ChangedEntries).Where(l => l.ExpenseId is not null).ToList())
+            {
+                if (ExpenseOf(save, book, line) is not { } expense) continue;
+                // A line in the trash pulls nothing: its expense goes on as it is (alone, or in the trash with it); a live line's is on its day, with its reading.
+                if (!line.IsDeleted && expense.FollowLine(line.Day, line.OdometerReading, by: save.By)) save.Change(expense);
+            }
+        SettleReadings(save);
+    }
+
+    /// <summary>
+    /// Every reading the change touched is live while a live line or expense holds it (#288; #289: the lines made together and their expense
+    /// hold one row), else in the trash with the last of them.
+    /// </summary>
+    private void SettleReadings(TyreSave save)
+    {
+        var lines = (save.Book?.Entries ?? []).Concat(save.AddedEntries).Concat(save.ChangedEntries).Distinct().ToList();
+        var expenses = (save.Book?.LinkedExpenses ?? []).Concat(save.AddedExpenses).Concat(save.ChangedExpenses).Distinct().ToList();
+        var readings = lines.Where(l => save.AddedEntries.Contains(l) || save.ChangedEntries.Contains(l)).Select(l => l.OdometerReading)
+            .Concat(save.AddedExpenses.Concat(save.ChangedExpenses).Select(x => x.OdometerReading)).OfType<OdometerReading>().Distinct().ToList();
+        foreach (var reading in readings)
+            TyreExpenses.Settle(reading,
+                lines.Any(l => l.OdometerReadingId == reading.Id && !l.IsDeleted) || expenses.Any(x => x.OdometerReadingId == reading.Id && !x.IsDeleted), clock.GetUtcNow());
     }
 
     private static TyreEntry? LineOf(TyreBook book, Guid installationId) => book.Entries.FirstOrDefault(e => e.Id == installationId);
@@ -907,7 +1062,8 @@ public sealed class TyreService(
         {
             line.MarkDeleted(now, by);
             save.Change(line);
-            if (withExpense && book.ExpenseOf(line) is { IsDeleted: false } expense)
+            // Its expense goes along only with the last live line holding it (#289, the owner's decision 33): the others keep it.
+            if (withExpense && book.ExpenseOf(line) is { IsDeleted: false } expense && Holders(save, book, expense.Id).Count == 0)
             {
                 expense.MarkDeleted(now, by);
                 line.MarkExpenseTrashedWithEntry(true);
@@ -967,27 +1123,28 @@ public sealed class TyreService(
         var vehicle = await EditableVehicleAsync(found.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var book = await tyres.LoadAsync(vehicle.Id, ct);
-        var line = book.Entries.First(e => e.Id == found.Id);
+        // Every live line holding it follows (#289, the owner's decision 34); with none live, it is edited alone (#288).
+        var save = new TyreSave { Book = book, By = by };
+        var live = Holders(save, book, expenseId);
+        var line = live.FirstOrDefault() ?? book.Entries.First(e => e.Id == found.Id);
         var expense = book.ExpenseOf(line) ?? throw new NotFoundException("expense.notFound", $"Expense {expenseId} does not exist.", new { Id = expenseId });
         VersionCheck.Require(expectedVersion, expense.Version);
         RequireNotFuture(input.Date);
-        var save = new TyreSave { Book = book, By = by };
         var (currency, discount) = (input.Currency ?? expense.Currency, input.Discount ?? expense.Discount);
         var sameDayAndReading = input.Date == line.Day && input.Odometer == line.Odometer && expense.OdometerReadingId == line.OdometerReadingId;
-        if (line.IsDeleted && sameDayAndReading)
+        if (live.Count == 0 && sameDayAndReading)
         {
             // Its amount, title, category or note: the day and the reading are still the line's, held for it.
             save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount, readingPhotos));
             save.Change(expense);
         }
-        else if (line.IsDeleted)
+        else if (live.Count == 0)
         {
             if (line.OdometerReadingId is { } shared && expense.OdometerReadingId == shared) expense.LeaveSharedReading();
             if (input.Odometer is { } own) await odometer.ValidateAsync(vehicle.Id, input.Date, own, exceptReadingId: expense.OdometerReadingId, ct);
             save.ExpenseChanges.Add(expense.Update(input.Date, input.Title, input.Category, input.Amount, currency, input.Odometer, input.Note, readingPhotos, by, discount));
             save.Change(expense);
-            save.Change(line); // its reading leaves the car's readings once nothing live holds it
-            TyreExpenses.Settle(line, expense, clock.GetUtcNow());
+            save.Change(line); // its reading leaves the car's readings once nothing live holds it (settled on save)
         }
         else
         {
@@ -997,10 +1154,19 @@ public sealed class TyreService(
                 Follow(save, book, history, places.MoveSwap(book.Installations.First(s => s.Id == line.InstallationId), input.Date, by), by);
             }
             if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Date, value, exceptReadingId: line.OdometerReadingId, ct);
-            var (added, removed, _) = line.Update(line.Kind, line.SetId, input.Date, input.Odometer, line.Note, by);
-            if (added is not null) save.AddedReadings.Add(added);
-            if (removed is not null) save.RemovedReadings.Add(removed);
-            save.Change(line);
+            OdometerReading? made = null;
+            foreach (var holder in live)
+            {
+                if (made is not null) holder.HoldReading(made); // the lines made together keep holding one row
+                var (added, removed, _) = holder.Update(holder.Kind, holder.SetId, input.Date, input.Odometer, holder.Note, by);
+                if (added is not null)
+                {
+                    save.AddedReadings.Add(added);
+                    made ??= added;
+                }
+                if (removed is not null) save.RemovedReadings.Add(removed);
+                save.Change(holder);
+            }
             save.ExpenseChanges.Add(expense.UpdateWithLineReading(input.Date, input.Title, input.Category, input.Amount, currency, line.OdometerReading, input.Note, by, discount, readingPhotos));
             save.Change(expense);
         }
@@ -1026,11 +1192,14 @@ public sealed class TyreService(
         var expense = book.ExpenseOf(line) ?? throw new NotFoundException("expense.notFound", $"Expense {expenseId} does not exist.", new { Id = expenseId });
         VersionCheck.Require(expectedVersion, expense.Version);
         change(expense, by);
-        line.MarkExpenseTrashedWithEntry(false);
-        TyreExpenses.Settle(line, expense, clock.GetUtcNow());
         var save = new TyreSave { Book = book, By = by };
         save.Change(expense);
-        save.Change(line); // its reading, and the bookkeeping of the trash
+        // Every line of it (#289): their reading, and the bookkeeping of the trash (settled on save).
+        foreach (var holder in book.Entries.Where(e => e.ExpenseId == expense.Id))
+        {
+            holder.MarkExpenseTrashedWithEntry(false);
+            save.Change(holder);
+        }
         await SaveAsync(save, ct);
         return await expenses.FindIncludingDeletedAsync(expense.Id, ct) ?? expense;
     }
