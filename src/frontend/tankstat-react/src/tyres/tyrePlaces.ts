@@ -350,6 +350,9 @@ export function replace(book: PlaceBook, setId: string, given: readonly Replacin
     const old = tyres.find((t) => t.id === g.oldId && t.setId === setId)
     if (!old) throw new TyreRuleError('tyres.tyreNotFound', { id: g.oldId })
     if (old.retiredOn !== null) throw new TyreRuleError('tyres.tyreAlreadyRetired', { label: old.label })
+    // A tyre that came as a replacement is replaced no earlier than the day it came.
+    const arrived = arrivedOn({ ...book, tyres }, old.id)
+    if (arrived !== null && day < arrived) throw new TyreRuleError('tyres.tyreNotYet', { label: old.label, date: arrived })
     tyres = [...tyres.map((t) => (t === old ? { ...t, retiredOn: day, replacedById: g.id } : t)), { id: g.id, setId, label: labels[i], retiredOn: null, replacedById: null }]
     const live = new Set(livePlaces({ ...book, tyres, places }).map((p) => p.id))
     places = places.flatMap((p) => {

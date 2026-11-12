@@ -275,6 +275,9 @@ public sealed class TyrePlaces
             var old = TyresOf(set.Id).FirstOrDefault(t => t.Id == given[i].OldId)
                 ?? throw new DomainException("tyres.tyreNotFound", "This tyre no longer exists.", new { Id = given[i].OldId });
             if (old.IsRetired) throw new DomainException("tyres.tyreAlreadyRetired", "This tyre is retired already.", new { Label = old.Label });
+            // A tyre that came as a replacement is replaced no earlier than the day it came.
+            if (ArrivedOn(old) is { } arrived && day < arrived)
+                throw new DomainException("tyres.tyreNotYet", "A tyre that replaced another cannot be on the car before it came.", new { Label = old.Label, Date = Iso(arrived) });
             var fresh = Tyre.Create(_ownerId, by, _vehicleId, set.Id, labels[i], given[i].Name, day, given[i].MadeWeek, given[i].MadeYear, 0, null, given[i].Id);
             _tyres.Add(fresh);
             changes.CreatedTyres.Add(fresh);
