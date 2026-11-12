@@ -17,10 +17,18 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var sets = await db.TyreSets.AsNoTracking().Where(s => s.VehicleId == vehicleId).ToListAsync(ct);
         var installations = await db.TyreInstallations.AsNoTracking().Where(s => s.VehicleId == vehicleId).ToListAsync(ct);
         var entries = await Entries(db).Where(e => e.VehicleId == vehicleId).ToListAsync(ct);
+        ShareReadings(entries);
         var readings = await db.OdometerReadings.AsNoTracking().Where(r => r.VehicleId == vehicleId).Select(r => new ReadingPoint(r.Date, r.Value)).ToListAsync(ct);
         var tyres = await db.Tyres.AsNoTracking().Where(t => t.VehicleId == vehicleId).ToListAsync(ct);
         var places = await db.TyrePlaces.AsNoTracking().Where(p => p.VehicleId == vehicleId).ToListAsync(ct);
         return new TyreBook(sets, installations, entries, TyreCalculator.Sorted(readings), await LinkedExpensesAsync(db, entries, ct), tyres, places);
+    }
+
+    /// <summary>The lines made together for several tyres (#289) hold one reading row: one object, as their expense holds it too.</summary>
+    private static void ShareReadings(IReadOnlyCollection<TyreEntry> entries)
+    {
+        foreach (var shared in entries.Where(e => e.OdometerReading is not null).GroupBy(e => e.OdometerReadingId).Where(g => g.Count() > 1))
+            foreach (var line in shared.Skip(1)) line.ShareReadingObject(shared.First().OdometerReading!);
     }
 
     /// <summary>The expenses the lines' amounts made, the trash included, each holding its line's reading object (one row, one object).</summary>
@@ -167,6 +175,12 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         await db.SaveChangesAsync(ct);
         var removedCosts = save.ExpenseChanges.Select(c => c.RemovedCost).OfType<Cost>().ToList();
         var removedReadings = save.RemovedReadings.Concat(save.ExpenseChanges.Select(c => c.RemovedReading).OfType<OdometerReading>()).Distinct().ToList();
+        // A row another line or expense still holds stays (#289: the lines made together share one): only the last holder lets it go.
+        var removedIds = removedReadings.Select(r => r.Id).ToList();
+        var stillHeld = (await db.TyreEntries.IgnoreQueryFilters().Where(e => e.OdometerReadingId != null && removedIds.Contains(e.OdometerReadingId.Value)).Select(e => e.OdometerReadingId!.Value).ToListAsync(ct))
+            .Concat(await db.Expenses.IgnoreQueryFilters().Where(x => x.OdometerReadingId != null && removedIds.Contains(x.OdometerReadingId.Value)).Select(x => x.OdometerReadingId!.Value).ToListAsync(ct))
+            .ToHashSet();
+        removedReadings = [.. removedReadings.Where(r => !stillHeld.Contains(r.Id))];
         if (removedReadings.Count + removedCosts.Count > 0)
         {
             foreach (var c in removedCosts) db.Entry(c).State = EntityState.Deleted;
@@ -220,11 +234,16 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         // Through the change tracker (not the cascade alone), so devices get a tombstone for every row. A reading an expense still holds (the
         // line's amount made it, #288; in the trash or not) stays with it, and so does the expense.
         var readingIds = entries.Where(e => e.OdometerReadingId is not null).Select(e => e.OdometerReadingId!.Value).ToList();
+        var purgedIds = entries.Select(e => e.Id).ToList();
+        // Kept: a row an expense holds, or a line that stays (#289: the lines made together share one).
         var held = (await db.Expenses.IgnoreQueryFilters().Where(x => x.OdometerReadingId != null && readingIds.Contains(x.OdometerReadingId.Value))
-            .Select(x => x.OdometerReadingId!.Value).ToListAsync(ct)).ToHashSet();
+            .Select(x => x.OdometerReadingId!.Value).ToListAsync(ct))
+            .Concat(await db.TyreEntries.IgnoreQueryFilters().Where(e => e.OdometerReadingId != null && readingIds.Contains(e.OdometerReadingId.Value) && !purgedIds.Contains(e.Id))
+                .Select(e => e.OdometerReadingId!.Value).ToListAsync(ct))
+            .ToHashSet();
         await db.TouchExpensesOfTyreLinesAsync([.. entries.Where(e => e.ExpenseId is not null).Select(e => e.Id)], [], clock.GetUtcNow(), ct); // they no longer show a line
         db.TyreEntries.RemoveRange(entries);
-        db.OdometerReadings.RemoveRange(entries.Where(e => e.OdometerReading is not null && !held.Contains(e.OdometerReading.Id)).Select(e => e.OdometerReading!));
+        db.OdometerReadings.RemoveRange(entries.Where(e => e.OdometerReading is not null && !held.Contains(e.OdometerReading.Id)).Select(e => e.OdometerReading!).DistinctBy(r => r.Id));
         db.TyrePlaces.RemoveRange(places);
         db.Tyres.RemoveRange(tyres);
         db.TyreInstallations.RemoveRange(installations);

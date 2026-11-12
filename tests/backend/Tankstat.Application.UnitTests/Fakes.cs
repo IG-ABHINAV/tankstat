@@ -448,6 +448,9 @@ internal sealed class InMemoryTyres : ITyreRepository
     {
         var readings = Readings?.Live(vehicleId).Select(r => new ReadingPoint(r.Date, r.Value)) ?? [];
         var entries = Entries.Where(e => e.VehicleId == vehicleId).Select(CopyEntry).ToList();
+        // The lines made together share one reading row (#289): one object, as the database loads them.
+        foreach (var shared in entries.Where(e => e.OdometerReading is not null).GroupBy(e => e.OdometerReadingId).Where(g => g.Count() > 1))
+            foreach (var line in shared.Skip(1)) line.ShareReadingObject(shared.First().OdometerReading!);
         return Task.FromResult(new TyreBook(
             [.. Sets.Where(s => s.VehicleId == vehicleId).Select(Copy)], [.. Installations.Where(s => s.VehicleId == vehicleId).Select(Copy)],
             [.. entries], TyreCalculator.Sorted(readings), LinkedExpenses(entries),

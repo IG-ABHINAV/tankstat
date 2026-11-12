@@ -1036,6 +1036,9 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<bool>("ExpenseTrashedWithEntry")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("TEXT");
 
@@ -1061,6 +1064,9 @@ namespace Tankstat.Migrations.Sqlite
                     b.Property<Guid?>("SetId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("TyreId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
@@ -1079,12 +1085,15 @@ namespace Tankstat.Migrations.Sqlite
 
                     b.HasIndex("ExpenseId");
 
-                    b.HasIndex("OdometerReadingId")
-                        .IsUnique();
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("OdometerReadingId");
 
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("SetId");
+
+                    b.HasIndex("TyreId");
 
                     b.HasIndex("VehicleId", "Day");
 
@@ -1846,8 +1855,8 @@ namespace Tankstat.Migrations.Sqlite
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
-                        .WithOne()
-                        .HasForeignKey("Tankstat.Domain.Tyres.TyreEntry", "OdometerReadingId")
+                        .WithMany()
+                        .HasForeignKey("OdometerReadingId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)

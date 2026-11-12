@@ -73,9 +73,12 @@ internal sealed class TyreEntryConfiguration : IEntityTypeConfiguration<TyreEntr
         b.HasIndex(e => e.SetId);
         b.HasIndex(e => e.OwnerId);
         b.HasIndex(e => e.ExpenseId); // an expense's line (its chip), and the link cleared when the expense is purged; no key, as for RecurringCompletion
+        b.HasIndex(e => e.TyreId); // a single tyre's lines (#289), no key: hidden through its tyre, cleaned up in code
+        b.HasIndex(e => e.GroupId);
         b.Ignore(e => e.TakesAmount);
-        // The reading is owned by the line; clearing it, or purging the line, removes it in code (as an expense's).
-        b.HasOne(e => e.OdometerReading).WithOne().HasForeignKey<TyreEntry>(e => e.OdometerReadingId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+        // The reading is owned by the line; clearing it, or purging the line, removes it in code (as an expense's). The lines made together
+        // for several tyres (#289) hold one row, so it is not unique; a row goes only when no line or expense holds it.
+        b.HasOne(e => e.OdometerReading).WithMany().HasForeignKey(e => e.OdometerReadingId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
         TrashColumn.Map(b, e => e.DeletedAt);
         b.HasIndex(e => e.DeletedAt);
         b.Ignore(e => e.IsSwapLine);

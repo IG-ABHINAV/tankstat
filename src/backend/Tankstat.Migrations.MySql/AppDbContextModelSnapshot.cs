@@ -1038,6 +1038,9 @@ namespace Tankstat.Migrations.MySql
                     b.Property<bool>("ExpenseTrashedWithEntry")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("char(36)");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("char(36)");
 
@@ -1063,6 +1066,9 @@ namespace Tankstat.Migrations.MySql
                     b.Property<Guid?>("SetId")
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid?>("TyreId")
+                        .HasColumnType("char(36)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
@@ -1081,12 +1087,15 @@ namespace Tankstat.Migrations.MySql
 
                     b.HasIndex("ExpenseId");
 
-                    b.HasIndex("OdometerReadingId")
-                        .IsUnique();
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("OdometerReadingId");
 
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("SetId");
+
+                    b.HasIndex("TyreId");
 
                     b.HasIndex("VehicleId", "Day");
 
@@ -1848,8 +1857,8 @@ namespace Tankstat.Migrations.MySql
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
-                        .WithOne()
-                        .HasForeignKey("Tankstat.Domain.Tyres.TyreEntry", "OdometerReadingId")
+                        .WithMany()
+                        .HasForeignKey("OdometerReadingId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)

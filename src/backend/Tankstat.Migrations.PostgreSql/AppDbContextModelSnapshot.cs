@@ -1041,6 +1041,9 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<bool>("ExpenseTrashedWithEntry")
                         .HasColumnType("boolean");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("InstallationId")
                         .HasColumnType("uuid");
 
@@ -1066,6 +1069,9 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<Guid?>("SetId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("TyreId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -1084,12 +1090,15 @@ namespace Tankstat.Migrations.PostgreSql
 
                     b.HasIndex("ExpenseId");
 
-                    b.HasIndex("OdometerReadingId")
-                        .IsUnique();
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("OdometerReadingId");
 
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("SetId");
+
+                    b.HasIndex("TyreId");
 
                     b.HasIndex("VehicleId", "Day");
 
@@ -1851,8 +1860,8 @@ namespace Tankstat.Migrations.PostgreSql
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
-                        .WithOne()
-                        .HasForeignKey("Tankstat.Domain.Tyres.TyreEntry", "OdometerReadingId")
+                        .WithMany()
+                        .HasForeignKey("OdometerReadingId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)

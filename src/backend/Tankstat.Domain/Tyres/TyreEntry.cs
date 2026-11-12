@@ -50,6 +50,15 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
     /// <summary>The installation whose line it is (its own id); null for every other kind.</summary>
     public Guid? InstallationId { get; private set; }
 
+    /// <summary>The single tyre it is for (#289), of a set tracked tyre by tyre; null for a line of the whole set, or of no set.</summary>
+    public Guid? TyreId { get; private set; }
+
+    /// <summary>
+    /// The lines made together (#289: one entry for several tyres, a line each, sharing one expense and one reading): shown as one row of
+    /// the tyre log. Null for a line on its own; cleared when a line is changed alone.
+    /// </summary>
+    public Guid? GroupId { get; private set; }
+
     public DateOnly Day { get; private set; }
     public string? Note { get; private set; }
 
@@ -113,11 +122,50 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
 
     /// <summary>A line of any kind but the two of an installation (those come with the installation, <see cref="ForInstallation"/>).</summary>
     /// <param name="id">The id the client chose beforehand, if any (see <see cref="EntityId"/>).</param>
+    /// <param name="tyreId">The single tyre it is for (#289), of <paramref name="setId"/>.</param>
+    /// <param name="groupId">The lines made together with it, if any.</param>
     public static TyreEntry Create(
-        Guid ownerId, Guid createdById, Guid vehicleId, TyreEntryKind kind, Guid? setId, DateOnly day, long? odometer, string? note, Guid? id = null)
+        Guid ownerId, Guid createdById, Guid vehicleId, TyreEntryKind kind, Guid? setId, DateOnly day, long? odometer, string? note, Guid? id = null,
+        Guid? tyreId = null, Guid? groupId = null)
     {
         RequireOwnKind(kind);
-        return New(ownerId, createdById, vehicleId, kind, setId, null, day, odometer, note, id);
+        if (tyreId is not null && setId is null) throw new DomainException("tyres.tyreNeedsSet", "A line of a tyre is a line of its set.");
+        var entry = New(ownerId, createdById, vehicleId, kind, setId, null, day, odometer, note, id);
+        (entry.TyreId, entry.GroupId) = (tyreId, groupId);
+        return entry;
+    }
+
+    /// <summary>
+    /// A line of the same group for another tyre (#289): the same kind, set, day and note, holding the same reading object (one row for the
+    /// lines made together and their expense).
+    /// </summary>
+    public TyreEntry ForAnotherTyre(Guid tyreId, Guid by, Guid? id = null)
+    {
+        var other = New(OwnerId, by, VehicleId, Kind, SetId, null, Day, null, Note, id);
+        (other.TyreId, other.GroupId, other.OdometerReading, other.OdometerReadingId) = (tyreId, GroupId, OdometerReading, OdometerReadingId);
+        return other;
+    }
+
+    /// <summary>
+    /// Leaves the lines made together (#289): changed alone, it is a row of the log of its own. With <paramref name="partFromExpense"/> it also
+    /// lets go of their shared expense and reading (a day or odometer of its own, or the amount let go of): its reading, when it keeps one,
+    /// is a row of its own. Returns that new reading for the repository. Bookkeeping of the change that does it: no version of its own.
+    /// </summary>
+    public OdometerReading? LeaveGroup(bool partFromExpense)
+    {
+        GroupId = null;
+        if (!partFromExpense) return null;
+        (ExpenseId, ExpenseTrashedWithEntry) = (null, false);
+        if (OdometerReading is not { } shared) return null;
+        var own = OdometerReading.Create(OwnerId, VehicleId, Day, shared.Value);
+        (OdometerReading, OdometerReadingId) = (own, own.Id);
+        return own;
+    }
+
+    /// <summary>Shares another line's reading object (the lines made together hold one row), as the repository loads them.</summary>
+    public void ShareReadingObject(OdometerReading reading)
+    {
+        if (OdometerReadingId == reading.Id) OdometerReading = reading;
     }
 
     /// <summary>The line of an installation: its id, set and first day, a <see cref="TyreEntryKind.Swap"/> or <see cref="TyreEntryKind.PositionsChanged"/>.</summary>
