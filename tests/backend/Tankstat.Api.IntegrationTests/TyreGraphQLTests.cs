@@ -372,4 +372,29 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Equal((JsonValueKind.Null, JsonValueKind.Null, 13_000m), (byId[s3.ToString()].GetProperty("amount").ValueKind, byId[s3.ToString()].GetProperty("groupId").ValueKind,
             byId[s4.ToString()].GetProperty("amount").GetDecimal()));
     }
+
+    [Fact]
+    public async Task ALineThatPartsAndEmptiesItsOdometerInOneChange_WhileTheDialogStillSendsTheAmount_SavesWithoutASecondExpense()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var (s3, s4) = (Guid.NewGuid(), Guid.NewGuid());
+        object Fee() => new { amount = 13_000, currency = "HUF", category = "Tyres", title = "Puncture repaired: Michelin", expenseId = Guid.NewGuid() };
+        await Mutate("addTyreEntry", "AddTyreEntryInput", new
+        {
+            vehicleId = vehicle, kind = "PUNCTURE_REPAIRED", day = "2026-09-20", setId = summer, odometer = 148_200, fee = Fee(),
+            tyres = new object[] { new { tyreId = tyres[2], id = s3 }, new { tyreId = tyres[3], id = s4 } },
+            breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        }, "vehicleId");
+
+        var parted = await Mutate("updateTyreEntry", "UpdateTyreEntryInput", new { id = s3, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", fee = Fee() },
+            "entries { id odometer amount } spentAll { amount }");
+
+        var byId = parted.GetProperty("entries").EnumerateArray().ToDictionary(e => e.GetProperty("id").GetString()!);
+        Assert.Equal((JsonValueKind.Null, JsonValueKind.Null), (byId[s3.ToString()].GetProperty("odometer").ValueKind, byId[s3.ToString()].GetProperty("amount").ValueKind));
+        Assert.Equal((148_200L, 13_000m), (byId[s4.ToString()].GetProperty("odometer").GetInt64(), byId[s4.ToString()].GetProperty("amount").GetDecimal()));
+        Assert.Equal(13_000m, parted.GetProperty("spentAll")[0].GetProperty("amount").GetDecimal()); // no second expense
+    }
 }

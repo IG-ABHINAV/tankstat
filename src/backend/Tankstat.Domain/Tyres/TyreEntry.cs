@@ -162,6 +162,19 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
         return own;
     }
 
+    /// <summary>
+    /// A line in the trash that shares its reading with live lines about to change it (#289) takes a copy of its own as it is, in the trash
+    /// with it, so it keeps its day and value; null when it holds none.
+    /// </summary>
+    public OdometerReading? KeepOwnReading(DateTimeOffset now)
+    {
+        if (OdometerReading is not { } shared) return null;
+        var own = OdometerReading.Create(OwnerId, VehicleId, shared.Date, shared.Value);
+        if (IsDeleted) own.MarkDeleted(now);
+        (OdometerReading, OdometerReadingId) = (own, own.Id);
+        return own;
+    }
+
     /// <summary>Holds the reading another line of its group just made (#289: the lines made together hold one row), when it holds none.</summary>
     public void HoldReading(OdometerReading reading)
     {

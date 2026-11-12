@@ -20,6 +20,12 @@ public sealed record TyreBook(
 
     /// <summary>The expense a line's amount made, when it still exists (a purged one is gone, the line's link with it).</summary>
     public Expense? ExpenseOf(TyreEntry line) => line.ExpenseId is { } id ? LinkedExpenses.FirstOrDefault(e => e.Id == id) : null;
+
+    /// <summary>A line that counts (#289): not in the trash, nor hidden through its set or its tyre in the trash.</summary>
+    public bool IsLive(TyreEntry line) =>
+        !line.IsDeleted
+        && (line.SetId is not { } set || Sets.FirstOrDefault(s => s.Id == set) is not { IsDeleted: true })
+        && (line.TyreId is not { } tyre || SingleTyres.FirstOrDefault(t => t.Id == tyre) is not { IsDeleted: true });
 }
 
 /// <summary>What one change saves, in one transaction (the entities are detached; new ones are added, the others updated).</summary>

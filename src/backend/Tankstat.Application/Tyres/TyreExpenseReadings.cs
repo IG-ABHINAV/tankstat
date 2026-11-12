@@ -16,7 +16,7 @@ public sealed class TyreExpenseReadings(ITyreRepository tyres)
         var book = await tyres.LoadAsync(found.VehicleId, ct);
         // Every live line holding the expense takes it (#289: the lines made together hold one reading).
         var save = new TyreSave();
-        foreach (var line in book.Entries.Where(e => e.ExpenseId == expenseId && !e.IsDeleted))
+        foreach (var line in book.Entries.Where(e => e.ExpenseId == expenseId && book.IsLive(e)))
             if (line.TakeReading(reading)) save.Change(line);
         if (save.ChangedEntries.Count == 0) return;
         await tyres.SaveAsync(save, ct); // lines changed, nothing added: no id to clash on
