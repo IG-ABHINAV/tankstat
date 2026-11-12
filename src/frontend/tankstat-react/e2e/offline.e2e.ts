@@ -185,3 +185,53 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading, an 
   expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
   await expect(winter.getByText('Changed · not synced')).toBeHidden()
 })
+
+test('breaks a set up offline and relabels a tyre: shown done at once, sent in order when the server is back (#289)', async ({ page, context }) => {
+  test.setTimeout(120_000)
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
+  await logRefueling(page, vehicle.id, { date: day(60), volume: 35, odometer: 1000 })
+  await graphql(page, 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }', {
+    i: { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false, name: 'Michelin Primacy 4', season: 'SUMMER', since: day(400), fitted: true, day: day(60) },
+  })
+  await page.goto('/account')
+  await pageLoaded(page)
+  await page.getByRole('button', { name: 'Download now' }).click()
+  await expect(page.getByText('Downloaded.')).toBeVisible({ timeout: 30_000 })
+  await openVehicle(page, vehicle.id, 'tyres')
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer).toBeVisible()
+
+  await context.setOffline(true)
+  await summer.getByRole('button', { name: 'History' }).click()
+  const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
+  await history.getByRole('button', { name: 'Track tyres one by one' }).click()
+  const breakUp = page.getByRole('dialog', { name: 'Track tyres one by one' })
+  await expect(breakUp.getByText(/^You are offline\./)).toBeVisible()
+  await breakUp.getByRole('button', { name: 'Track one by one' }).click()
+  await expect(breakUp).toBeHidden()
+  await history.getByRole('button', { name: 'Cancel' }).click()
+  await expect(summer.getByText('Changed · not synced')).toBeVisible()
+  await summer.getByRole('button', { name: /^Front left: tyre S1,/ }).click()
+  const tyre = page.getByRole('dialog', { name: 'Tyre S1' })
+  await tyre.getByLabel(/^Label/).fill('S1a')
+  await tyre.getByRole('button', { name: 'Save label' }).click()
+  await tyre.getByRole('button', { name: 'Close' }).click()
+  await expect(summer.getByRole('button', { name: /^Front left: tyre S1a,/ })).toBeVisible()
+  await expectSoundLayout(page)
+
+  await context.setOffline(false)
+  type Tyres = { vehicleTyres: { sets: { set: { brokenUpOn: string | null }; tyres: { corner: string | null; tyre: { label: string } }[] }[] } }
+  await expect
+    .poll(
+      async () => {
+        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { brokenUpOn } tyres { corner tyre { label } } } } }', { v: vehicle.id })
+        return vehicleTyres.sets[0].tyres.map((t) => [t.tyre.label, t.corner])
+      },
+      { timeout: 60_000 },
+    )
+    .toEqual([['S1a', 'FRONT_LEFT'], ['S2', 'FRONT_RIGHT'], ['S3', 'REAR_LEFT'], ['S4', 'REAR_RIGHT']])
+  expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
+  await expect(summer.getByText('Changed · not synced')).toBeHidden()
+})
