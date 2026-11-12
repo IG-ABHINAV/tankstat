@@ -86,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<ImageService>();
         services.AddScoped<LogAccessGuard>();
         services.AddScoped<LogPhotoAccess>();
+        services.AddScoped<PhotoDraftAccess>();
         services.AddScoped<LogPhotoService>();
         services.AddScoped<PhotoDraftService>();
         services.AddScoped<RefuelingService>();
