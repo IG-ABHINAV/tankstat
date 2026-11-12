@@ -175,6 +175,68 @@ public sealed class TyrePlaces
         return result;
     }
 
+    /// <summary>
+    /// A swap (<see cref="TyreHistory.Swap"/>) with its places: onto a broken-up set each tyre goes to the corner given (null: as before), the
+    /// corners deciding a join and a retry; the set onto itself on its installation's first day changes the corners in place.
+    /// </summary>
+    public (TyreChanges History, TyrePlaceChanges Places) Swap(
+        TyreSet set, DateOnly day, bool? pairOneFront, bool replace, IReadOnlyDictionary<Guid, TyreCorner?>? corners, Guid by, DateTimeOffset now,
+        Guid? id = null, bool pairsGiven = true, bool repeatable = false)
+    {
+        var before = Ends(_history);
+        var given = set.IsBrokenUp ? CornersFor(set.Id, day, corners) : null;
+        var changes = _history.Swap(set, day, given is null ? pairOneFront : null, replace, by, now, id, pairsGiven, repeatable,
+            given is null ? null : s => SameCorners(s, day, given));
+        var placed = Follow(changes, before, by, given);
+        if (given is not null && changes.Created.Count == 0 && _history.Live.FirstOrDefault(s => s.SetId == set.Id && s.From == day) is { } starting)
+            foreach (var place in SetCorners(starting, given, by).Changed) placed.Change(place);
+        return (changes, placed);
+    }
+
+    /// <summary>
+    /// A change of positions (<see cref="TyreHistory.ChangePositions"/>) with its places: a broken-up set's installation splits on that day,
+    /// each tyre at its new corner, or on the installation's first day its corners change in place.
+    /// </summary>
+    public (TyreChanges History, TyrePlaceChanges Places) ChangePositions(
+        TyreSet set, DateOnly day, bool? pairOneFront, IReadOnlyDictionary<Guid, TyreCorner?>? corners, Guid by, Guid? id = null, bool repeatable = false)
+    {
+        if (!set.IsBrokenUp) return (_history.ChangePositions(set, day, pairOneFront, by, id, repeatable), new TyrePlaceChanges());
+        var before = Ends(_history);
+        var given = CornersFor(set.Id, day, corners);
+        var changes = _history.ChangePositions(set, day, null, by, id, repeatable, s => SameCorners(s, day, given));
+        if (changes.Any) return (changes, Follow(changes, before, by, given));
+        var starting = _history.Live.FirstOrDefault(s => s.SetId == set.Id && s.From == day);
+        return (changes, starting is null ? new TyrePlaceChanges() : SetCorners(starting, given, by));
+    }
+
+    /// <summary>A swap moved by its line's day (<see cref="TyreHistory.MoveSwap"/>), the places at the installations' ends with it.</summary>
+    public (TyreChanges History, TyrePlaceChanges Places) MoveSwap(TyreInstallation installation, DateOnly day, Guid by)
+    {
+        var before = Ends(_history);
+        var changes = _history.MoveSwap(installation, day, by);
+        return (changes, Follow(changes, before, by));
+    }
+
+    /// <summary>An installation edited in History (<see cref="TyreHistory.Edit"/>), the places at its ends with it (the owner's decision 35).</summary>
+    public (bool Changed, TyrePlaceChanges Places) EditInstallation(TyreInstallation installation, DateOnly from, DateOnly? until, bool? pairOneFront, Guid by)
+    {
+        var before = Ends(_history);
+        if (!_history.Edit(installation, from, until, pairOneFront, by)) return (false, new TyrePlaceChanges());
+        var changes = new TyreChanges();
+        changes.Changed.Add(installation);
+        return (true, Follow(changes, before, by));
+    }
+
+    /// <summary>An installation typed in History (<see cref="TyreHistory.Add"/>): a broken-up set's tyres each get a place, at the corner they had before (decision 48).</summary>
+    public (TyreInstallation Installation, TyrePlaceChanges Places) AddInstallation(TyreSet set, DateOnly from, DateOnly? until, bool? pairOneFront, Guid by, Guid? id = null)
+    {
+        var before = Ends(_history);
+        var created = _history.Add(set, from, until, set.IsBrokenUp ? null : pairOneFront, by, id);
+        var changes = new TyreChanges();
+        changes.Created.Add(created);
+        return (created, Follow(changes, before, by));
+    }
+
     /// <summary>A place typed in a tyre's history: it lies in the set's live installation that holds its days, else it is refused.</summary>
     public TyrePlace Add(Tyre tyre, DateOnly from, DateOnly? until, TyreCorner? corner, Guid by, Guid? id = null)
     {
@@ -215,7 +277,8 @@ public sealed class TyrePlaces
     /// <param name="moving">The places the change adds, edits or restores: an overlap names the other one, already there.</param>
     public void Check(IReadOnlyCollection<TyrePlace>? moving = null, bool restoring = false)
     {
-        var live = LivePlaces.OrderBy(p => p.From).ThenBy(p => p.Id).ToList();
+        // By first day, then label: a refusal names the same tyre on the server and on the device, whose ids differ in the contract.
+        var live = LivePlaces.OrderBy(p => p.From).ThenBy(p => TyreOf(p).Label, StringComparer.Ordinal).ThenBy(p => p.Id).ToList();
         foreach (var place in live)
         {
             var installation = _history.Live.First(s => s.Id == place.InstallationId);
@@ -243,7 +306,7 @@ public sealed class TyrePlaces
         foreach (var start in live)
         {
             var on = live.Where(p => p.From <= start.From && (p.Until is null || p.Until > start.From)).ToList();
-            var other = on.FirstOrDefault(p => p != start && moving?.Contains(p) != true) ?? start;
+            var other = on.FirstOrDefault(p => moving?.Contains(p) != true) ?? start; // the first tyre there already, by label
             var args = new { Label = TyreOf(other).Label, From = Iso(start.From) };
             if (on.Count(p => p.Corner is { } c && c.IsFront()) > 2) throw Conflict("tyres.tooManyFront", "More than two tyres would be at the front then.", other, args);
             if (on.Count(p => p.Corner is { } c && c.IsRear()) > 2) throw Conflict("tyres.tooManyRear", "More than two tyres would be at the rear then.", other, args);

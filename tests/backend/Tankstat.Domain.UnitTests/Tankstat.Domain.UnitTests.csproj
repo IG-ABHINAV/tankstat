@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <None Include="..\contracts\tyre-swaps\*.json" LinkBase="contracts\tyre-swaps" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\contracts\tyre-places\*.json" LinkBase="contracts\tyre-places" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
