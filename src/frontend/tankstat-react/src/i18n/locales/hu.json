@@ -1129,7 +1129,12 @@
       "tyreNotRetired": "Ez a gumi nincs kivonva.",
       "placeAlreadyTrashed": "Ez az autón töltött idő már a kukában van.",
       "placeNotTrashed": "Ez az autón töltött idő nincs a kukában.",
-      "placeTrashedCannotEdit": "A kukában lévő autón töltött idő nem módosítható; előbb állítsd vissza."
+      "placeTrashedCannotEdit": "A kukában lévő autón töltött idő nem módosítható; előbb állítsd vissza.",
+      "tyreNeedsSet": "A gumi sorához a szettje kell.",
+      "tyreTwice": "Minden gumi csak egyszer választható.",
+      "tyreNotOfSet": "A gumi sora a szettjéhez tartozik.",
+      "sharedExpenseChoice": "Ez az összeg más gumikkal közös: döntsd el, hogy csak ezek válnak le róla, vagy a kiadás a kukába kerül.",
+      "tapTyres": "Koppints azokra a gumikra, amelyekre vonatkozik."
     }
   },
   "a11y": {
@@ -2735,7 +2740,45 @@
       "trashSwap": "Ezzel a csere is törlődik: {{set}} az autón {{from}} óta. A megtett távolsága nem számít tovább.",
       "trashSwapUntil": "Ezzel a csere is törlődik: {{set}} az autón {{from}} – {{until}}. A megtett távolsága nem számít tovább.",
       "trashReading": "A(z) {{value}} kilométeróra-állás nem számít az autó állásai közé, amíg a sort vissza nem állítod.",
-      "restorable": "A kukából visszaállítható."
+      "restorable": "A kukából visszaállítható.",
+      "for": "Mire vonatkozik",
+      "wholeSet": "Az egész szettre",
+      "whereNow": "Ahol most az egyes gumik vannak.",
+      "whereLast": "Ahol az egyes gumik legutóbb az autón voltak.",
+      "tapTyres": "Koppints azokra a gumikra, amelyekre vonatkozik.",
+      "labelAt": "Jelölés, {{corner}}",
+      "breakUpOnSave": "A mentés után a szettet gumiként követi az app. Minden gumi a szett eddigi történetével indul, és onnantól külön kezeli. Írd fel a jelöléseket a gumikra.",
+      "setLine": "A szett sora, mint a szétbontása előtt.",
+      "pickSeveral": "Több gumi választásakor mindegyik saját sort kap, egy közös kiadással.",
+      "oneExpense": "Több gumira egy kiadás, egyszer számolva.",
+      "savedFor": "Mentve ezekhez: {{tyres}}, egy kiadással.",
+      "savedForNoFee": "Mentve ezekhez: {{tyres}}.",
+      "alsoFor": "Módosítás ezeknél is",
+      "alsoFromLog": "A gumi naplóból nyitva: a sor minden gumija be van jelölve.",
+      "alsoHint": "Bejelöletlenül csak ennek a guminak a sora változik.",
+      "partsHint": "Ha csak ennek a guminak adsz új napot vagy kilométerállást, leválik a közös kiadásról.",
+      "sharedAmountHint": "Egy kiadás, közös ezekkel: {{tyres}}. Az új összeg mindegyiknél megváltoztatja.",
+      "changedFor": "Módosítva ezeknél: {{tyres}}.",
+      "sharedWith": "közös ezekkel: {{tyres}}",
+      "tyreSetHint": "A gumi sora a szettjénél marad.",
+      "tyreAt": "{{label}} gumi, {{corner}}",
+      "tyreAtCorner": "A {{corner}} gumi",
+      "tyresOf": "{{set}} · {{tyres}}",
+      "ask": {
+        "title": "Az összeg közös",
+        "text": "Ez az összeg ({{amount}}) egy kiadás, közös ezekkel: {{tyres}}.",
+        "letGo": "Csak a(z) {{tyre}} válik le róla",
+        "letGoHint": "A kiadás megmarad ezeknél: {{tyres}}.",
+        "trash": "A kiadás a kukába",
+        "trashHint": "Ennek a javításnak egyik gumijánál sem marad összeg. A kukából visszaállítható."
+      },
+      "bin": {
+        "which": "Melyik gumik sorai mennek",
+        "whichHint": "Bejelöletlenül a gumi megtartja a sorát.",
+        "tickOne": "Jelölj be legalább egy gumit.",
+        "stays": "A kiadása ({{amount}}) megmarad ezeknél: {{tyres}}.",
+        "reading": "A kukába kerülő sorok kilométerállása nem számít, amíg vissza nem állítod őket."
+      }
     },
     "fee": {
       "paid": "Fizetve",
@@ -2764,7 +2807,8 @@
       "title": "Gumikra költve",
       "all": "Összesen",
       "noSet": "Szetthez nem kötve",
-      "note": "Az összegek a gumi napló soraihoz kapcsolt kiadások."
+      "note": "Az összegek a gumi napló soraihoz kapcsolt kiadások.",
+      "sharedNote": "A több gumira közös összeg egyszer számít."
     },
     "single": {
       "trackOneByOne": "Gumik követése egyenként",
@@ -2812,7 +2856,8 @@
         "stored": "Tárolva, legutóbb {{corner}}",
         "retired": "Kivonva: {{date}}, {{why}}",
         "frontRear": "Elöl {{front}} · hátul {{rear}}",
-        "bar": "Elöl {{front}}, hátul {{rear}}"
+        "bar": "Elöl {{front}}, hátul {{rear}}",
+        "spentNote": "A több gumira közös összeg itt egyenlő részével számít."
       },
       "why": {
         "DAMAGED": "sérült",

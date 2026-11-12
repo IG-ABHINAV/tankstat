@@ -689,7 +689,7 @@ it('shows what each set cost and its repairs, and what the tyres cost altogether
   expect(within(block).getByText('All').nextSibling).toHaveTextContent(/HUF.*120,000.*·.*€48\.00/)
   expect(within(block).getByText('Continental WinterContact').nextSibling).toHaveTextContent('–') // every set has its row
   expect(within(block).getByText('Not tied to a set').nextSibling).toHaveTextContent('€8.00')
-  expect(within(block).getByText("The amounts are the expenses linked to the tyre log's lines.")).toBeInTheDocument()
+  expect(within(block).getByText("The amounts are the expenses linked to the tyre log's lines. An amount shared by several tyres is counted once.")).toBeInTheDocument()
 })
 
 it('marks the costs a repair kept on the device puts out of date, and only those (#288)', async () => {

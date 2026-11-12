@@ -1129,7 +1129,12 @@
       "tyreNotRetired": "This tyre is not retired.",
       "placeAlreadyTrashed": "This time on the car is already in the trash.",
       "placeNotTrashed": "This time on the car is not in the trash.",
-      "placeTrashedCannotEdit": "A time on the car in the trash cannot be changed; restore it first."
+      "placeTrashedCannotEdit": "A time on the car in the trash cannot be changed; restore it first.",
+      "tyreNeedsSet": "A line for a tyre needs its set.",
+      "tyreTwice": "Each tyre can be picked once.",
+      "tyreNotOfSet": "A tyre's line is a line of its set.",
+      "sharedExpenseChoice": "This amount is shared with other tyres: say whether only these let go of it or it goes to the trash.",
+      "tapTyres": "Tap the tyres it is for."
     }
   },
   "a11y": {
@@ -2735,7 +2740,45 @@
       "trashSwap": "This removes the swap: {{set}} on the car from {{from}}. Its distance no longer counts.",
       "trashSwapUntil": "This removes the swap: {{set}} on the car from {{from}} to {{until}}. Its distance no longer counts.",
       "trashReading": "The reading of {{value}} no longer counts among the car's readings until the line is restored.",
-      "restorable": "It can be restored from the trash."
+      "restorable": "It can be restored from the trash.",
+      "for": "For",
+      "wholeSet": "The whole set",
+      "whereNow": "Where each tyre is now.",
+      "whereLast": "Where each tyre was the last time on the car.",
+      "tapTyres": "Tap the tyres it is for.",
+      "labelAt": "Label, {{corner}}",
+      "breakUpOnSave": "Saving tracks this set tyre by tyre. Each tyre starts with the set's history so far and is handled on its own from then on. Write the labels on the tyres.",
+      "setLine": "A line of the set, as before it was broken up.",
+      "pickSeveral": "Picking several tyres makes a line for each, sharing one expense.",
+      "oneExpense": "For several tyres it is one expense, counted once.",
+      "savedFor": "Saved for {{tyres}}, with one expense.",
+      "savedForNoFee": "Saved for {{tyres}}.",
+      "alsoFor": "Also change it for",
+      "alsoFromLog": "Opened from the tyre log: every tyre of the line is ticked.",
+      "alsoHint": "Unticked, only this tyre's line changes.",
+      "partsHint": "A new day or odometer for this tyre alone parts it from the shared expense.",
+      "sharedAmountHint": "One expense, shared with {{tyres}}: a new amount changes it for all.",
+      "changedFor": "Changed for {{tyres}}.",
+      "sharedWith": "shared with {{tyres}}",
+      "tyreSetHint": "A tyre's line stays with its set.",
+      "tyreAt": "Tyre {{label}}, {{corner}}",
+      "tyreAtCorner": "The {{corner}} tyre",
+      "tyresOf": "{{set}} · {{tyres}}",
+      "ask": {
+        "title": "The amount is shared",
+        "text": "This amount ({{amount}}) is one expense, shared with {{tyres}}.",
+        "letGo": "Only {{tyre}} lets go of it",
+        "letGoHint": "The expense stays with {{tyres}}.",
+        "trash": "Move the expense to the trash",
+        "trashHint": "No tyre of this repair keeps an amount. It can be restored from the trash."
+      },
+      "bin": {
+        "which": "Which tyres' lines go",
+        "whichHint": "Unticked, a tyre keeps its line.",
+        "tickOne": "Tick at least one tyre.",
+        "stays": "Its expense ({{amount}}) stays with {{tyres}}.",
+        "reading": "A reading of the lines that go stops counting until they are restored."
+      }
     },
     "fee": {
       "paid": "Paid",
@@ -2764,7 +2807,8 @@
       "title": "Spent on tyres",
       "all": "All",
       "noSet": "Not tied to a set",
-      "note": "The amounts are the expenses linked to the tyre log's lines."
+      "note": "The amounts are the expenses linked to the tyre log's lines.",
+      "sharedNote": "An amount shared by several tyres is counted once."
     },
     "single": {
       "trackOneByOne": "Track tyres one by one",
@@ -2812,7 +2856,8 @@
         "stored": "In storage, last {{corner}}",
         "retired": "Retired on {{date}}: {{why}}",
         "frontRear": "Front {{front}} · rear {{rear}}",
-        "bar": "Front {{front}}, rear {{rear}}"
+        "bar": "Front {{front}}, rear {{rear}}",
+        "spentNote": "An amount shared by several tyres counts here by its even share."
       },
       "why": {
         "DAMAGED": "Damaged",

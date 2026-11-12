@@ -24,7 +24,7 @@ import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
 import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
 import { NO_SET, noTyres } from '../../tyres/replay.ts'
 import { EntryDialog, TrashEntryDialog } from '../../tyres/EntryDialog.tsx'
-import { isDeviceLine, isSwapLine, useEntryWords } from '../../tyres/entries.ts'
+import { isDeviceLine, isSwapLine, labelsOf, logRows, sharersOf, useEntryWords } from '../../tyres/entries.ts'
 import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords } from '../../tyres/tyres.ts'
 import { CarPicture, TyreButton } from '../../tyres/CarPicture.tsx'
 import { isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from '../../tyres/singleTyres.ts'
@@ -93,6 +93,7 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
       pending={pending.cards.get(info.set.id) ?? null}
       costsWaiting={pending.costs.has(info.set.id)}
       pendingTyres={pending.tyres}
+      costs={pending.costs}
     />
   )
   return (
@@ -149,7 +150,7 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
  * a tyre on the car without a corner, and every tyre of a set in storage, a row under it. Each opens the tyre's dialog.
  */
 function SingleTyres({
-  info, tyres, vehicleId, unit, canLog, pending,
+  info, tyres, vehicleId, unit, canLog, pending, costs,
 }: {
   info: TyreSetInfo
   tyres: Tyres
@@ -157,8 +158,13 @@ function SingleTyres({
   unit: DistanceUnit
   canLog: boolean
   pending: ReadonlySet<string>
+  costs: ReadonlySet<string>
 }) {
   const { t } = useTranslation()
+  const format = useFormat()
+  // What it cost (#289), its even share of every shared amount: shown on the card when it has any.
+  const spent = (x: (typeof live)[number]) =>
+    costs.has(x.tyre.id) ? `${t('tyres.spent')} ${t('tyres.updatedOnSync')}` : (x.spent ?? []).length > 0 ? `${t('tyres.spent')} ${spentText(x.spent, format, t)}` : null
   const words = useTyreWords(unit)
   const corners = useCornerWords()
   const [opened, setOpened] = useState<string | null>(null)
@@ -174,8 +180,8 @@ function SingleTyres({
           key={x.tyre.id}
           corner={corner}
           label={x.tyre.label}
-          lines={[distance(x), words.age(x.tyre)]}
-          name={t('tyres.single.tyreName', { corner: corners.title(corner), label: x.tyre.label, distance: distance(x), age: words.age(x.tyre) })}
+          lines={[distance(x), words.age(x.tyre), ...(spent(x) ? [spent(x)] : [])]}
+          name={[t('tyres.single.tyreName', { corner: corners.title(corner), label: x.tyre.label, distance: distance(x), age: words.age(x.tyre) }), spent(x)].filter(Boolean).join(', ')}
           onClick={() => setOpened(x.tyre.id)}
         />
       )]
@@ -216,6 +222,7 @@ function SingleTyres({
           tyreId={opened}
           canLog={canLog}
           pending={pending.has(opened)}
+          costsPending={costs.has(opened)}
         />
       )}
     </>
@@ -255,7 +262,7 @@ function SpentOnTyres({ tyres, costs }: { tyres: Tyres; costs: ReadonlySet<strin
         ))}
       </Box>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        {t('tyres.costs.note')}
+        {t('tyres.costs.note')} {t('tyres.costs.sharedNote')}
       </Typography>
     </Section>
   )
@@ -283,6 +290,7 @@ function SetCard({
   pending,
   costsWaiting,
   pendingTyres,
+  costs,
 }: {
   info: TyreSetInfo
   tyres: Tyres
@@ -295,6 +303,8 @@ function SetCard({
   costsWaiting: boolean
   /** The single tyres a waiting change touched (#289): their figures are updated once synced. */
   pendingTyres: ReadonlySet<string>
+  /** Whose costs a waiting change put out of date (`Replayed.costs`): a single tyre's *Spent* among them (#289). */
+  costs: ReadonlySet<string>
 }) {
   const { t } = useTranslation()
   const format = useFormat()
@@ -382,7 +392,7 @@ function SetCard({
           </Typography>
         </Box>
       </Box>
-      {set.brokenUpOn && <SingleTyres info={info} tyres={tyres} vehicleId={vehicleId} unit={unit} canLog={canLog} pending={pendingTyres} />}
+      {set.brokenUpOn && <SingleTyres info={info} tyres={tyres} vehicleId={vehicleId} unit={unit} canLog={canLog} pending={pendingTyres} costs={costs} />}
       {nothingMeasured && set.roughDistance > 0 && (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('tyres.noReading')}
@@ -469,8 +479,12 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
         </Typography>
       ) : (
         <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {tyres.entries.map((entry) => {
-            const set = entryWords.setName(tyres, entry.setId)
+          {logRows(tyres.entries).map(({ lead: entry, lines }) => {
+            // Lines made together for several tyres (#289) are one row, the amount once; it says whom else it is shared with.
+            const ofSet = entryWords.setName(tyres, entry.setId)
+            const labels = labelsOf(tyres, lines)
+            const set = ofSet && labels ? t('tyres.entries.tyresOf', { set: ofSet, tyres: labels }) : ofSet
+            const beyond = sharersOf(tyres, entry).filter((s) => !lines.includes(s))
             // A swap's line without a typed reading says the day's odometer worked out from the fuel log, or that the day is before it.
             const worked = entry.odometer == null && isSwapLine(entry)
             const on = worked ? odometerOn(sorted, entry.day) : null
@@ -492,6 +506,11 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                   {entryWords.amount(entry) && (
                     <Typography component="span" variant="body2" sx={{ ml: { sm: 'auto' }, fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                       {entryWords.amount(entry)}
+                      {beyond.length > 0 && (
+                        <Typography component="span" variant="body2" sx={{ fontWeight: 400, color: 'text.secondary', whiteSpace: 'normal' }}>
+                          {` · ${t('tyres.entries.sharedWith', { tyres: labelsOf(tyres, beyond) })}`}
+                        </Typography>
+                      )}
                     </Typography>
                   )}
                 </Stack>
@@ -510,10 +529,11 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                     unit={unit}
                     tyres={tyres}
                     entry={entry}
-                    {...(asked === entry.id ? { open: true, onOpenChange: closeAsked } : {})}
+                    {...(lines.length > 1 ? { group: lines } : {})}
+                    {...(asked && lines.some((l) => l.id === asked) ? { open: true, onOpenChange: closeAsked } : {})}
                     trigger={
                       <ButtonBase
-                        aria-label={entryWords.name(tyres, entry)}
+                        aria-label={`${entryWords.name(tyres, entry, lines)}${beyond.length > 0 ? `, ${t('tyres.entries.sharedWith', { tyres: labelsOf(tyres, beyond) })}` : ''}`}
                         sx={{ flex: 1, minWidth: 0, minHeight: 44, justifyContent: 'flex-start', borderRadius: 2, px: 1, py: 0.75, '&:hover': { bgcolor: 'action.hover' } }}
                       >
                         {body}
@@ -523,7 +543,7 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
                 ) : (
                   <Box sx={{ flex: 1, minWidth: 0, px: 1, py: 0.75 }}>{body}</Box>
                 )}
-                {changeable && <TrashEntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} entry={entry} onError={setError} />}
+                {changeable && <TrashEntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} entry={entry} lines={lines} onError={setError} />}
               </Box>
             )
           })}
