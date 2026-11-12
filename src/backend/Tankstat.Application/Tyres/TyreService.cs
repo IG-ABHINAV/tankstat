@@ -545,7 +545,7 @@ public sealed class TyreService(
         var (_, places) = Rules(vehicle, book);
         var save = new TyreSave { Book = book, By = by };
         save.AddedPlaces.Add(places.Add(tyre, input.From, input.Until, input.Corner, by, id));
-        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+        await SaveOnceAsync(save, Repeat, ct); // saved now or by a request at once: either way the overview is the stored one
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -600,12 +600,12 @@ public sealed class TyreService(
             ? tyre
             : null;
 
-    /// <summary>The time on the car when it is in the trash (on its own, or with its tyre or set) and the user may restore it, else null.</summary>
+    /// <summary>The time on the car when it is in the trash (on its own, or with its tyre, installation or set) and the user may restore it, else null.</summary>
     public async Task<TyrePlace?> PlaceInTrashAsync(Guid id, CancellationToken ct)
     {
         if ((await tyres.ListPlacesAsync([id], ct)).FirstOrDefault() is not { } place) return null;
         if (await guard.ForVehicleAsync(place.VehicleId, ct) is not { Level: >= AccessLevel.Edit }) return null;
-        if (place.IsDeleted) return place;
+        if (place.IsDeleted || await tyres.FindInstallationAsync(place.InstallationId, ct) is { IsDeleted: true }) return place;
         return (await tyres.ListTyresAsync([place.TyreId], ct)).FirstOrDefault() is { } tyre
             && (tyre.IsDeleted || await tyres.FindSetAsync(tyre.SetId, ct) is { IsDeleted: true }) ? place : null;
     }

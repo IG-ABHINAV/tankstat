@@ -378,7 +378,7 @@ public sealed class TyreMutations
 
     public Task<TyreOverview> DeleteTyrePlace(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.TrashPlaceAsync(id, ct);
 
-    /// <summary>Brings a time on the car back; refused with <c>tyres.restoreConflict</c> when another tyre is at its corner then.</summary>
+    /// <summary>Brings a time on the car back; refused with <c>tyres.tyreRestoreConflict</c> when another tyre is at its corner then.</summary>
     public Task<TyreOverview> RestoreTyrePlace(Guid id, [Service] TyreService tyres, CancellationToken ct) => tyres.RestorePlaceAsync(id, ct);
 
     /// <summary>Permanently removes the trashed tyre sets and tyre log lines the user has Delete access to; returns how many rows of the list went.</summary>

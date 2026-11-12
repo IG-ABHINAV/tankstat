@@ -278,7 +278,7 @@ public sealed class TyrePlaces
     /// its tyre was retired (<c>tyres.tyreRetired</c>), a tyre on the car once at a time (<c>tyres.tyreOnTwice</c>), one tyre per exact corner
     /// (<c>tyres.cornerTaken</c>), at most two tyres at the front and two at the rear, a side not recorded counting toward its end
     /// (<c>tyres.tooManyFront</c> / <c>tooManyRear</c>), at most four on the car (<c>tyres.fifthTyre</c>). While restoring, an overlap is
-    /// <c>tyres.restoreConflict</c>, naming the other tyre and its days.
+    /// <c>tyres.tyreRestoreConflict</c>, naming the other tyre and its days.
     /// </summary>
     /// <param name="moving">The places the change adds, edits or restores: an overlap names the other one, already there.</param>
     public void Check(IReadOnlyCollection<TyrePlace>? moving = null, bool restoring = false)
