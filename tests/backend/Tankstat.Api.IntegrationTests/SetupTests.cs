@@ -1,4 +1,3 @@
-using Tankstat.Infrastructure.Backups;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -6,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Backups;
 using Tankstat.Application.Setup;
+using Tankstat.Infrastructure.Backups;
 
 namespace Tankstat.Api.IntegrationTests;
 

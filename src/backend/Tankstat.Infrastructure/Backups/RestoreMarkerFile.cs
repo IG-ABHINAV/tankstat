@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Tankstat.Application.Backups;
+using Tankstat.Infrastructure.Settings;
 
 namespace Tankstat.Infrastructure.Backups;
 
@@ -9,8 +10,6 @@ namespace Tankstat.Infrastructure.Backups;
 /// </summary>
 internal static class RestoreMarkerFile
 {
-    private const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-
     /// <summary>Writes the marker into a backups folder, readable by the app's user only; a marker already there is replaced.</summary>
     public static void Write(this RestoreMarker marker, string backupsRoot)
     {
@@ -22,10 +21,10 @@ internal static class RestoreMarkerFile
     public static void WriteTo(this RestoreMarker marker, string path)
     {
         var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None };
-        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = OwnerOnly;
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = SettingsFileStore.OwnerOnly;
         using var stream = new FileStream(path, options);
         // One left by an older run keeps its mode otherwise, and the identity would be written into a file others may read.
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(stream.SafeFileHandle, OwnerOnly);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(stream.SafeFileHandle, SettingsFileStore.OwnerOnly);
         JsonSerializer.Serialize(stream, marker, BackupManifest.Json);
     }
 

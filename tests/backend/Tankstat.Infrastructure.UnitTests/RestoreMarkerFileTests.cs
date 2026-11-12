@@ -1,13 +1,14 @@
 using System.Text.Json;
 using Tankstat.Application.Backups;
 using Tankstat.Infrastructure.Backups;
+using Tankstat.Infrastructure.Settings;
 
 namespace Tankstat.Infrastructure.UnitTests;
 
 /// <summary>The restore marker's file (#312): owner-only, replacing one another run left, and a file that is not a marker refused.</summary>
 public sealed class RestoreMarkerFileTests : IDisposable
 {
-    private const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private const UnixFileMode OwnerOnly = SettingsFileStore.OwnerOnly;
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "tankstat-marker-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
