@@ -165,6 +165,7 @@ export type ChangeInput = {
   removeExpensePhoto?: RemoveLogPhotoInput | null | undefined;
   removeRefuelingPhoto?: RemoveLogPhotoInput | null | undefined;
   removeVehiclePicture?: string | null | undefined;
+  replaceTyres?: ReplaceTyresInput | null | undefined;
   restoreExpense?: string | null | undefined;
   restoreRefueling?: string | null | undefined;
   restoreTyre?: string | null | undefined;
@@ -567,6 +568,26 @@ export type RemoveLogPhotoInput = {
   logId: string;
 };
 
+export type ReplaceTyreInput = {
+  id?: string | null | undefined;
+  label: string;
+  lineId?: string | null | undefined;
+  madeWeek?: number | null | undefined;
+  madeYear?: number | null | undefined;
+  name?: string | null | undefined;
+  tyreId: string;
+};
+
+export type ReplaceTyresInput = {
+  breakUp?: BreakUpTyreSetInput | null | undefined;
+  day: string;
+  odometer?: number | null | undefined;
+  price?: TyreFeeInput | null | undefined;
+  setId: string;
+  tyres: Array<ReplaceTyreInput>;
+  why: TyreRetiredWhy;
+};
+
 export type ResetPasswordInput = {
   newPassword: string;
   newPasswordConfirmation?: string | null | undefined;
@@ -734,6 +755,7 @@ export type SyncChangeKind =
   | 'REMOVE_EXPENSE_PHOTO'
   | 'REMOVE_REFUELING_PHOTO'
   | 'REMOVE_VEHICLE_PICTURE'
+  | 'REPLACE_TYRES'
   | 'RESTORE_EXPENSE'
   | 'RESTORE_REFUELING'
   | 'RESTORE_TYRE'

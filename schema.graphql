@@ -197,6 +197,7 @@ type Mutation {
   deleteTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
   restoreTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
   breakUpTyreSet(input: BreakUpTyreSetInput!): VehicleTyres! @cost(weight: "10")
+  replaceTyres(input: ReplaceTyresInput!): VehicleTyres! @cost(weight: "10")
   updateTyre(input: UpdateTyreInput!): VehicleTyres! @cost(weight: "10")
   deleteTyre(id: UUID!): VehicleTyres! @cost(weight: "10")
   restoreTyre(id: UUID!): VehicleTyres! @cost(weight: "10")
@@ -1481,6 +1482,7 @@ input ChangeInput {
   updateTyrePlace: UpdateTyrePlaceInput
   deleteTyrePlace: UUID
   restoreTyrePlace: UUID
+  replaceTyres: ReplaceTyresInput
   base: String
 }
 
@@ -1631,6 +1633,26 @@ input PastTyreSwapInput {
 input RemoveLogPhotoInput {
   logId: UUID!
   imageId: UUID!
+}
+
+input ReplaceTyreInput {
+  tyreId: UUID!
+  label: String!
+  id: UUID
+  name: String
+  madeWeek: Int
+  madeYear: Int
+  lineId: UUID
+}
+
+input ReplaceTyresInput {
+  setId: UUID!
+  day: LocalDate!
+  why: TyreRetiredWhy!
+  tyres: [ReplaceTyreInput!]!
+  odometer: Long
+  price: TyreFeeInput
+  breakUp: BreakUpTyreSetInput
 }
 
 input ResetPasswordInput {
@@ -2285,6 +2307,7 @@ enum SyncChangeKind {
   UPDATE_TYRE_PLACE
   DELETE_TYRE_PLACE
   RESTORE_TYRE_PLACE
+  REPLACE_TYRES
 }
 
 enum SyncChangeStatus {

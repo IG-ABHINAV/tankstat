@@ -38,7 +38,7 @@ public sealed class SyncTargetService(
             or SyncChangeKind.DeleteTyreSet or SyncChangeKind.RestoreTyreSet => OfflineEntityType.TyreSet,
         SyncChangeKind.UpdateTyreInstallation or SyncChangeKind.DeleteTyreInstallation or SyncChangeKind.RestoreTyreInstallation => OfflineEntityType.TyreInstallation,
         SyncChangeKind.UpdateTyreEntry or SyncChangeKind.DeleteTyreEntry or SyncChangeKind.RestoreTyreEntry => OfflineEntityType.TyreEntry,
-        SyncChangeKind.BreakUpTyreSet => OfflineEntityType.TyreSet,
+        SyncChangeKind.BreakUpTyreSet or SyncChangeKind.ReplaceTyres => OfflineEntityType.TyreSet,
         SyncChangeKind.UpdateTyre or SyncChangeKind.DeleteTyre or SyncChangeKind.RestoreTyre => OfflineEntityType.Tyre,
         SyncChangeKind.UpdateTyrePlace or SyncChangeKind.DeleteTyrePlace or SyncChangeKind.RestoreTyrePlace => OfflineEntityType.TyrePlace,
         _ => null,

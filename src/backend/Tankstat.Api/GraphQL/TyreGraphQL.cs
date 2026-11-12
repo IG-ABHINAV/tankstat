@@ -68,6 +68,20 @@ public sealed record BreakUpTyreSetInput(Guid SetId, DateOnly Day, IReadOnlyList
 
 public sealed record UpdateTyreInput(Guid Id, string Label);
 
+/// <param name="TyreId">The tyre it replaces.</param>
+/// <param name="Id">The new tyre's id chosen by the client: the same replacement sent again answers with what it made.</param>
+/// <param name="Label">The new tyre's label: unique among the vehicle's tyres not in the trash (without case).</param>
+/// <param name="Name">Its name, null for the set's.</param>
+/// <param name="LineId">Its Bought line's id chosen by the client.</param>
+public sealed record ReplaceTyreInput(Guid TyreId, string Label, Guid? Id = null, string? Name = null, int? MadeWeek = null, int? MadeYear = null, Guid? LineId = null);
+
+/// <param name="Why">Damaged, worn or too old (never <c>SET_RETIRED</c>: <c>tyres.whyInvalid</c>).</param>
+/// <param name="Odometer">The day's reading, on the new tyres' Bought lines.</param>
+/// <param name="Price">One expense the new tyres' Bought lines share.</param>
+/// <param name="BreakUp">On a whole set: it is broken up first, and <c>tyres</c> name its new tyres' ids.</param>
+public sealed record ReplaceTyresInput(
+    Guid SetId, DateOnly Day, TyreRetiredWhy Why, IReadOnlyList<ReplaceTyreInput> Tyres, long? Odometer = null, TyreFeeInput? Price = null, BreakUpTyreSetInput? BreakUp = null);
+
 /// <param name="Until">The day it came off; left out while it is on the car.</param>
 /// <param name="Corner">Left out: not recorded.</param>
 /// <param name="Id">The client's id: the same add sent again answers with what it made.</param>
@@ -391,6 +405,12 @@ public sealed class TyreMutations
     /// <summary>Tracks a set tyre by tyre from now on (#289): four tyres, each starting with the set's history and rough figure. Never undone.</summary>
     public Task<TyreOverview> BreakUpTyreSet(BreakUpTyreSetInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.BreakUp(input, tyres, ct);
 
+    /// <summary>
+    /// Replaces tyres of a set early (#289): the old ones retired on the day, the new ones on the car at their corners from it, a Bought line
+    /// each sharing the price's one expense; a whole set is broken up first.
+    /// </summary>
+    public Task<TyreOverview> ReplaceTyres(ReplaceTyresInput input, [Service] TyreService tyres, CancellationToken ct) => TyreChanges.Replace(input, tyres, ct);
+
     /// <summary>A single tyre's new label (#289).</summary>
     public Task<TyreOverview> UpdateTyre(UpdateTyreInput input, [Service] TyreService tyres, CancellationToken ct) => tyres.UpdateTyreAsync(input.Id, input.Label, ct);
 
@@ -423,6 +443,11 @@ internal static class TyreChanges
 
     public static Task<TyreOverview> BreakUp(BreakUpTyreSetInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
         tyres.BreakUpAsync(new TyreBreakUpInput(i.SetId, i.Day, [.. i.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]), ct, version);
+
+    public static Task<TyreOverview> Replace(ReplaceTyresInput i, TyreService tyres, CancellationToken ct) =>
+        tyres.ReplaceTyresAsync(new TyreReplaceInput(i.SetId, i.Day, i.Odometer, i.Why,
+            [.. i.Tyres.Select(t => new TyreReplacement(t.TyreId, t.Id, t.Label, t.Name, t.MadeWeek, t.MadeYear, t.LineId))], i.Price?.ToFee(),
+            i.BreakUp is { } b ? new TyreBreakUpInput(b.SetId, b.Day, [.. b.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]) : null), ct);
 
     public static Task<TyreOverview> AddPlace(AddTyrePlaceInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddPlaceAsync(i.TyreId, new TyrePlaceInput(i.From, i.Until, i.Corner), ct, i.Id);

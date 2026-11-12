@@ -49,6 +49,7 @@ public sealed record ChangeInput(
     AddTyreEntryInput? AddTyreEntry = null, UpdateTyreEntryInput? UpdateTyreEntry = null, DeleteTyreEntryInput? DeleteTyreEntry = null, Guid? RestoreTyreEntry = null,
     BreakUpTyreSetInput? BreakUpTyreSet = null, UpdateTyreInput? UpdateTyre = null, Guid? DeleteTyre = null, Guid? RestoreTyre = null,
     AddTyrePlaceInput? AddTyrePlace = null, UpdateTyrePlaceInput? UpdateTyrePlace = null, Guid? DeleteTyrePlace = null, Guid? RestoreTyrePlace = null,
+    ReplaceTyresInput? ReplaceTyres = null,
     string? Base = null);
 
 /// <summary>A photo added to a saved log while offline: uploaded as a draft of the log's vehicle (<c>PUT /media/vehicles/{id}/photo-drafts</c>) just before.</summary>
@@ -475,6 +476,16 @@ public sealed class SyncMutations
             var input = bu with { Tyres = [.. bu.Tyres.Select(t => t with { Id = Required(t.Id, c.Id) })] };
             return OnSet(SyncChangeKind.BreakUpTyreSet, bu.SetId, ct => TyreChanges.BreakUp(input, tyres, ct, version));
         }
+        if (c.ReplaceTyres is { } replacing)
+        {
+            // The new tyres' ids and their lines', and a whole set's tyres: the same replacement sent again changes nothing.
+            var input = replacing with
+            {
+                Tyres = [.. replacing.Tyres.Select(t => t with { Id = Required(t.Id, c.Id), LineId = Required(t.LineId, c.Id) })], Price = Fee(replacing.Price),
+                BreakUp = replacing.BreakUp is { } b ? b with { Tyres = [.. b.Tyres.Select(t => t with { Id = Required(t.Id, c.Id) })] } : null,
+            };
+            return OnSet(SyncChangeKind.ReplaceTyres, replacing.SetId, ct => TyreChanges.Replace(input, tyres, ct));
+        }
         if (c.UpdateTyre is { } ut) return OnTyre(SyncChangeKind.UpdateTyre, ut.Id, ct => tyres.UpdateTyreAsync(ut.Id, ut.Label, ct, version));
         if (c.DeleteTyre is { } dt)
             return make(SyncChangeKind.DeleteTyre, dt, null, async ct =>
@@ -530,6 +541,7 @@ public sealed class SyncMutations
             c.SwapTyres, c.ChangeTyrePositions, c.AddPastTyreSwaps, c.AddTyreInstallation, c.UpdateTyreInstallation, c.DeleteTyreInstallation, c.RestoreTyreInstallation,
             c.AddTyreEntry, c.UpdateTyreEntry, c.DeleteTyreEntry, c.RestoreTyreEntry,
             c.BreakUpTyreSet, c.UpdateTyre, c.DeleteTyre, c.RestoreTyre, c.AddTyrePlace, c.UpdateTyrePlace, c.DeleteTyrePlace, c.RestoreTyrePlace,
+            c.ReplaceTyres,
         }.Count(o => o is not null);
         if (set != 1) throw new DomainException("sync.oneOperationRequired", "A change carries exactly one operation.", new { c.Id });
         var payload = JsonSerializer.Serialize(c with { Base = null }, Json);

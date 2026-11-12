@@ -15,7 +15,7 @@ public class TyreSyncTests : IDisposable
     private const string Resolve = "mutation($i: ResolveSyncChangeInput!) { resolveSyncChange(input: $i) { id status } }";
     private const string SwapOnline = "mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }";
     private const string Tyres = """
-        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } installations { installation { id from until pairOneFront } } } entries { id kind setId installationId day odometer note version } } }
+        query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { id } installations { installation { id from until pairOneFront } } } entries { id kind setId installationId day odometer note version tyreId } } }
         """;
 
     private readonly TestApp _app = TestApp.Standalone();
@@ -321,5 +321,28 @@ public class TyreSyncTests : IDisposable
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
         Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "PUNCTURE_REPAIRED"));
+    }
+
+    [Fact]
+    public async Task TheLargestTyreChange_FourTyresReplacedOnAWholeSet_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            replaceTyres = new
+            {
+                setId = summer, day = "2026-09-20", why = "WORN", odometer = 148_200,
+                tyres = tyres.Select((t, n) => new { tyreId = t, id = Guid.NewGuid(), label = $"ŐŰ{n + 5}ÁÉÍ", name = new string('ő', 80), madeWeek = 20, madeYear = 2026, lineId = Guid.NewGuid() }).ToArray(),
+                price = new { amount = 312_000.25m, currency = "HUF", category = new string('é', 60), title = new string('á', 120), expenseId = Guid.NewGuid() },
+                breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "BOUGHT"
+            && e.TryGetProperty("tyreId", out var tyre) && tyre.ValueKind != JsonValueKind.Null));
     }
 }

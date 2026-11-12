@@ -429,4 +429,35 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.All([byId[s3.ToString()], byId[s4.ToString()]], l => Assert.True(l.GetProperty("expenseTrashed").GetBoolean()));
         Assert.Empty(trashed.GetProperty("spentAll").EnumerateArray());
     }
+
+    [Fact]
+    public async Task ReplacingTwoTyres_RetiresThem_PutsTheNewOnesOnAtTheirCorners_EachWithHalfThePrice()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var (s5, s6, expense) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        var replaced = await Mutate("replaceTyres", "ReplaceTyresInput", new
+        {
+            setId = summer, day = "2026-07-09", why = "DAMAGED", odometer = 145_500,
+            tyres = new object[]
+            {
+                new { tyreId = tyres[0], id = s5, label = "S5", madeWeek = 20, madeYear = 2026, lineId = Guid.NewGuid() },
+                new { tyreId = tyres[1], id = s6, label = "S6", name = "Pilot Sport 5", lineId = Guid.NewGuid() },
+            },
+            price = new { amount = 78_000, currency = "HUF", category = "Tyres", title = "Bought: Michelin", expenseId = expense },
+            breakUp = new { setId = summer, day = "2026-07-09", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        }, "sets { set { name } spent { amount } tyres { tyre { label isRetired retiredOn retiredWhy replacedById } corner onTheCar spent { amount } figures { distance } } } entries { kind tyreId groupId amount }");
+
+        var set = SetNamed(replaced, "Michelin");
+        Assert.Equal(78_000m, set.GetProperty("spent")[0].GetProperty("amount").GetDecimal());
+        var s1 = TyreLabelled(replaced, "S1");
+        Assert.Equal((true, "2026-07-09", "DAMAGED", s5.ToString()), (s1.GetProperty("tyre").GetProperty("isRetired").GetBoolean(), s1.GetProperty("tyre").GetProperty("retiredOn").GetString(),
+            s1.GetProperty("tyre").GetProperty("retiredWhy").GetString(), s1.GetProperty("tyre").GetProperty("replacedById").GetString()));
+        var new5 = TyreLabelled(replaced, "S5");
+        Assert.Equal(("FRONT_LEFT", true, 39_000m), (new5.GetProperty("corner").GetString(), new5.GetProperty("onTheCar").GetBoolean(), new5.GetProperty("spent")[0].GetProperty("amount").GetDecimal()));
+        Assert.Equal(2, replaced.GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "BOUGHT" && e.GetProperty("tyreId").ValueKind != JsonValueKind.Null));
+    }
 }
