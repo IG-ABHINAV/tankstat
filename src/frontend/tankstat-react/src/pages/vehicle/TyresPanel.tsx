@@ -189,7 +189,7 @@ function SingleTyres({
           key={x.tyre.id}
           corner={corner}
           label={x.tyre.label}
-          lines={[distance(x), words.age(x.tyre), ...(spent(x) ? [spent(x)] : [])]}
+          lines={[...(x.tyre.name ? [x.tyre.name] : []), distance(x), words.age(x.tyre), ...(spent(x) ? [spent(x)] : [])]}
           name={[t('tyres.single.tyreName', { corner: corners.title(corner), label: x.tyre.label, distance: distance(x), age: words.age(x.tyre) }), spent(x)].filter(Boolean).join(', ')}
           onClick={() => setOpened(x.tyre.id)}
         />

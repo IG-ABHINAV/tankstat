@@ -121,4 +121,25 @@ public class TyreReplaceTests
         Assert.Equal(4, s.W.Tyres.Tyres.Count);
         Assert.DoesNotContain(s.W.Tyres.Tyres, t => t.IsRetired);
     }
+
+    [Fact]
+    public async Task TheSplitPlace_TakesTheIdTheDeviceWorksOut_AndATyreReplacedInStorage_ShowsTheCornerOfTheOneItReplaced()
+    {
+        var s = await Setup();
+        var w5 = Guid.NewGuid();
+        var old = s.W.Tyres.Places.Single(p => p.TyreId == s.Tyres[0]).Id;
+        await s.Service.ReplaceTyresAsync(TwoFront(s, w5, Guid.NewGuid(), Guid.NewGuid()), default);
+        Assert.Equal(TyreIds.PlaceOf(w5, old), s.W.Tyres.Places.Single(p => p.TyreId == w5).Id);
+
+        // In storage: the winter set on since 1 Sep, then S3 replaced; never on the car yet, its corner is S3's.
+        var winter = Guid.NewGuid();
+        await s.Service.AddSetAsync(new NewTyreSet(s.Car.Id, new TyreSetInput("Continental WinterContact", TyreSeason.Winter, null, D(2022, 11, 1), null, null), false, D(2026, 9, 1), null, null),
+            default, winter);
+        await s.Service.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 1), null, false, null, null), default, Guid.NewGuid());
+        var w7 = Guid.NewGuid();
+        var overview = await s.Service.ReplaceTyresAsync(new TyreReplaceInput(s.Summer, D(2026, 9, 15), null, TyreRetiredWhy.TooOld, [new(s.Tyres[2], w7, "S7")]), default);
+        var s7 = overview.Sets.Single(x => x.Set.Id == s.Summer).Tyres!.Single(t => t.Tyre.Id == w7);
+        Assert.Equal((false, TyreCorner.RearLeft), (s7.OnTheCar, s7.Corner!.Value));
+        Assert.Empty(s7.Places);
+    }
 }

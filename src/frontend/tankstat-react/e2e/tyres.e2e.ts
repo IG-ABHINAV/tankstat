@@ -446,6 +446,7 @@ test('replaces two tyres of a whole set from its History: the set tracked tyre b
   await replace.getByRole('button', { name: 'The front left tyre' }).click()
   await replace.getByRole('button', { name: 'The front right tyre' }).click()
   await expect(replace.getByRole('group', { name: 'New tyre S5, for S1' })).toBeVisible()
+  await replace.getByRole('group', { name: 'New tyre S6, for S2' }).getByLabel(/^Name/).fill('Pilot Sport 5')
   await replace.getByLabel(/^Price/).fill('78000')
   await expectSoundLayout(page)
   await replace.getByRole('button', { name: 'Replace' }).click()
@@ -453,9 +454,14 @@ test('replaces two tyres of a whole set from its History: the set tracked tyre b
   await expect(page.getByText('Replaced. S1, S2 are under Retired.')).toBeVisible()
   await history.getByRole('button', { name: 'Cancel' }).click()
 
+  await expect(summer).toContainText('Tracked tyre by tyre · 4 of 4 on the car since') // the retired ones are not counted
   await expect(summer.getByRole('button', { name: /^Front left: tyre S5, 0 km,/ })).toBeVisible()
   await expect(summer.getByRole('button', { name: /^Front right: tyre S6, 0 km,/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /^Tyre S1, Michelin Primacy 4, retired on .*: Damaged$/ })).toBeVisible()
+  await summer.getByRole('button', { name: /^Front right: tyre S6,/ }).click()
+  const s6 = page.getByRole('dialog', { name: 'Tyre S6' })
+  await expect(s6.getByText('Pilot Sport 5')).toBeVisible() // its own name
+  await s6.getByRole('button', { name: 'Close' }).click()
   await expectSoundLayout(page)
   await page.getByRole('button', { name: /^Tyre S2, Michelin Primacy 4, retired on/ }).click()
   const retired = page.getByRole('dialog', { name: 'Tyre S2' })

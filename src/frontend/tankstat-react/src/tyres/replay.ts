@@ -553,7 +553,7 @@ function lastCornerOf(live: readonly PlaceState[], tyreId: string | undefined): 
 
 const NO_FIGURES: TyreInfo['figures'] = named('TyreFigures', { distance: 0, approximate: true, measured: 0, front: 0, rear: 0, unknown: 0 })
 const samePlace = (a: PlaceState | undefined, b: PlaceState) =>
-  !!a && a.installationId === b.installationId && a.from === b.from && a.until === b.until && a.corner === b.corner
+  !!a && a.tyreId === b.tyreId && a.installationId === b.installationId && a.from === b.from && a.until === b.until && a.corner === b.corner // a replacement hands places over
 
 /** A broken-up set's tyres in the answer (the server's order: by label), each a waiting change touched at version 0, its figures the server's to work out. */
 function tyresOf(base: Tyres, m: Model, setId: string, touched: Set<string>): TyreInfo[] {

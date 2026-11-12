@@ -460,4 +460,27 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Equal(("FRONT_LEFT", true, 39_000m), (new5.GetProperty("corner").GetString(), new5.GetProperty("onTheCar").GetBoolean(), new5.GetProperty("spent")[0].GetProperty("amount").GetDecimal()));
         Assert.Equal(2, replaced.GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "BOUGHT" && e.GetProperty("tyreId").ValueKind != JsonValueKind.Null));
     }
+
+    [Fact]
+    public async Task AReplacementDatedBeforeALaterInstallation_HandsThatTimeOnTheCarOverToTheNewTyre_OnARealDatabase()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var winter = SetNamed(await AddSet(vehicle, "Continental", fitted: false), "Continental").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        await Mutate("breakUpTyreSet", "BreakUpTyreSetInput", new { setId = summer, day = "2026-04-01", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) }, "vehicleId");
+        await Mutate("swapTyres", "SwapTyresInput", new { vehicleId = vehicle, setId = winter, day = "2026-06-01", installationId = Guid.NewGuid() }, "vehicleId");
+        await Mutate("swapTyres", "SwapTyresInput", new { vehicleId = vehicle, setId = summer, day = "2026-08-01", installationId = Guid.NewGuid() }, "vehicleId");
+        var s5 = Guid.NewGuid();
+
+        await Mutate("replaceTyres", "ReplaceTyresInput", new { setId = summer, day = "2026-05-01", why = "DAMAGED", tyres = new[] { new { tyreId = tyres[0], id = s5, label = "S5", lineId = Guid.NewGuid() } } },
+            "vehicleId");
+
+        var after = await Mutate("updateTyre", "UpdateTyreInput", new { id = s5, label = "S5" }, "sets { set { name } tyres { tyre { label } corner places { place { from until corner } } } }");
+        string[] Days(string label) => [.. TyreLabelled(after, label).GetProperty("places").EnumerateArray().Select(p => $"{p.GetProperty("place").GetProperty("from").GetString()}..{p.GetProperty("place").GetProperty("until").GetString()}")];
+        Assert.Equal(["2026-03-28..2026-05-01"], Days("S1"));
+        Assert.Equal(["2026-08-01..", "2026-05-01..2026-06-01"], Days("S5")); // newest first: the later one handed over whole
+        Assert.Equal("FRONT_LEFT", TyreLabelled(after, "S5").GetProperty("corner").GetString());
+    }
 }

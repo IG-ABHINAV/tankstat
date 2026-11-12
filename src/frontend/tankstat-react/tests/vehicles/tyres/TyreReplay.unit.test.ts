@@ -508,7 +508,7 @@ describe('tyres replaced early on the device (#289 step 3)', () => {
     expect([tyreOf(tyres, 't5').corner, tyreOf(tyres, 't6').corner]).toEqual(['FRONT_LEFT', 'FRONT_RIGHT'])
     expect(tyreOf(tyres, 't5').tyre).toMatchObject({ label: 'S5', since: '2026-07-09', roughDistance: 0, madeWeek: 20, isRetired: false })
     expect(tyreOf(tyres, 't6').tyre.name).toBe('Pilot Sport 5')
-    expect(tyreOf(tyres, 't5').places.map((p) => [p.place.from, p.place.until])).toEqual([['2026-07-09', null]])
+    expect(tyreOf(tyres, 't5').places.map((p) => [p.place.id, p.place.from, p.place.until])).toEqual([[placeOf('t5', placeOf('t1', 'r1')), '2026-07-09', null]]) // as the server works it out
     expect(tyreOf(tyres, 't1').places.map((p) => p.place.until)).toEqual(['2026-07-09'])
     const bought = tyres.entries.filter((e) => e.kind === 'BOUGHT')
     expect(bought.map((e) => [e.id, e.tyreId, e.groupId, e.expenseId, e.amount])).toEqual([['b5', 't5', 'b5', 'x9', 78_000], ['b6', 't6', 'b5', 'x9', 78_000]])

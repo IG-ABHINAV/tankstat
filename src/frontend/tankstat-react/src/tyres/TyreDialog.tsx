@@ -97,7 +97,7 @@ export function TyreDialog({
       busy={busy}
       maxWidth={560}
       title={t('tyres.single.tyreTitle', { label: tyre.tyre.label })}
-      description={set.name}
+      description={tyre.tyre.name ?? set.name}
     >
       {open && (
         <Stack sx={{ gap: 2 }}>
