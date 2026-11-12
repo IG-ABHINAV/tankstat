@@ -74,6 +74,7 @@ public static class DependencyInjection
         });
 
         services.AddSingleton<IDatabaseProbe, EfDatabaseProbe>();
+        services.AddSingleton<IFileProbe, FileProbe>(); // the telemetry certificate check of the settings page (#312)
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IRefuelingRepository, RefuelingRepository>();
         services.AddScoped<IExpenseRepository, ExpenseRepository>();

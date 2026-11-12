@@ -1001,6 +1001,7 @@ internal sealed class World
     public FakeSystemConfiguration SystemConfiguration => _systemConfiguration ??= new FakeSystemConfiguration { Store = SettingsFile };
     private FakeSystemConfiguration? _systemConfiguration;
     public FakeOidcDiscovery Discovery { get; } = new();
+    public FakeFileProbe FileProbe { get; } = new();
     public FakeServerRestart Restart { get; } = new();
     public InMemoryInstanceState Instance { get; } = new();
     /// <summary>The setup: completed unless a test says it waits (<c>SetupStatus.Set(true)</c> and <c>SetupStore.Phase</c>); the code is <c>Code</c>.</summary>
@@ -1109,7 +1110,7 @@ internal sealed class World
         Availability = new RecognitionAvailability(Recognizer, Clock, Log.For<RecognitionAvailability>());
         SetupStore = new InMemorySetupStore(Users, Vehicles) { Phase = SetupPhase.Completed };
         SetupGate = new SetupGate(SetupStatus, SetupStore, Code);
-        SystemSettings = new SystemSettingsService(Access, SetupGate, SystemConfiguration, SettingsFile, Users, Discovery, Restart, Log.For<SystemSettingsService>());
+        SystemSettings = new SystemSettingsService(Access, SetupGate, SystemConfiguration, SettingsFile, Users, Discovery, Restart, FileProbe, Log.For<SystemSettingsService>());
         InstanceStart = new InstanceStartService(Instance, Sessions, options, Clock, Log.For<InstanceStartService>());
     }
 
@@ -1196,4 +1197,11 @@ internal sealed class FakePromptFiles : Tankstat.Application.Recognition.IPrompt
 
     public Tankstat.Application.Recognition.PromptFileRead Read(string path, int maxBytes) =>
         Files.TryGetValue(path, out var read) ? read : Tankstat.Application.Recognition.PromptFileRead.Failed(Tankstat.Application.Recognition.PromptFileProblem.Missing);
+}
+
+/// <summary>The files the app can read, as a test gives them (#312: Application asks <see cref="Tankstat.Application.IFileProbe"/>, never the disk).</summary>
+internal sealed class FakeFileProbe : Tankstat.Application.IFileProbe
+{
+    public HashSet<string> Files { get; } = [];
+    public bool Exists(string path) => Files.Contains(path);
 }
