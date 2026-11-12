@@ -10,6 +10,8 @@ public enum OfflineEntityType
     TyreSet,
     TyreInstallation,
     TyreEntry,
+    Tyre,
+    TyrePlace,
 }
 
 /// <summary>What the last change that counted (one that moved <see cref="ISynced.Version"/>) did to an entity.</summary>

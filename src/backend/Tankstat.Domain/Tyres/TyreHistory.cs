@@ -45,6 +45,9 @@ public sealed class TyreHistory
 
     public IReadOnlyList<TyreInstallation> Live => _live;
 
+    /// <summary>The live sets the history was made over.</summary>
+    public IReadOnlyCollection<TyreSet> Sets => _sets.Values;
+
     /// <summary>The live installation on the car on <paramref name="day"/>, if any.</summary>
     public TyreInstallation? Covering(DateOnly day) => _live.FirstOrDefault(s => s.From <= day && (s.Until is null || s.Until > day));
 
@@ -61,9 +64,15 @@ public sealed class TyreHistory
     /// <param name="repeatable">Sent from a device's queue, so it may be a retry of a swap that joined the set's installation (the join kept no id to
     /// find): the set already on the car that day with the pairs asked for is the answer, not an error. With other pairs it is a swap of its
     /// own that came too late, refused as online.</param>
+    /// <param name="sameCorners">For a set broken up into single tyres (#289): whether an installation of the set has every tyre at the corner
+    /// this swap gives it, which decides a join and a retry as the pairs do for a whole set (the owner's decision 47).</param>
     public TyreChanges Swap(
-        TyreSet set, DateOnly day, bool? pairOneFront, bool replace, Guid by, DateTimeOffset now, Guid? id = null, bool pairsGiven = true, bool repeatable = false)
+        TyreSet set, DateOnly day, bool? pairOneFront, bool replace, Guid by, DateTimeOffset now, Guid? id = null, bool pairsGiven = true, bool repeatable = false,
+        Func<TyreInstallation, bool>? sameCorners = null)
     {
+        // A broken-up set goes by its tyres' corners alone: an installation from before the break-up keeps the pairs it recorded.
+        bool Same(TyreInstallation s) => sameCorners?.Invoke(s) ?? s.PairOneFront == pairOneFront;
+        bool? PairsOf(TyreInstallation s) => sameCorners is null ? pairOneFront : s.PairOneFront;
         var changes = new TyreChanges();
         if (set.IsRetired) throw new DomainException("tyres.setRetired", "A retired tyre set cannot go on the car.", new { Set = set.Name });
         var covering = Covering(day);
@@ -71,7 +80,7 @@ public sealed class TyreHistory
         {
             if (covering.From != day)
             {
-                if (repeatable && covering.PairOneFront == pairOneFront) return changes; // a retry of a swap that joined this installation to an earlier one
+                if (repeatable && Same(covering)) return changes; // a retry of a swap that joined this installation to an earlier one
                 throw new DomainException("tyres.alreadyOnCar", "This tyre set is already on the car that day.", new { Set = set.Name, From = Iso(covering.From) });
             }
             if (pairsGiven && covering.Update(covering.From, covering.Until, pairOneFront, by)) changes.Change(covering);
@@ -95,11 +104,11 @@ public sealed class TyreHistory
         }
         else until = _live.Where(s => s.From > day).Select(s => (DateOnly?)s.From).Min();
 
-        var before = _live.FirstOrDefault(s => s.SetId == set.Id && s.Until == day && s.PairOneFront == pairOneFront);
-        var after = covering is not null && until is { } u ? _live.FirstOrDefault(s => s.SetId == set.Id && s.From == u && s.PairOneFront == pairOneFront) : null;
+        var before = _live.FirstOrDefault(s => s.SetId == set.Id && s.Until == day && Same(s));
+        var after = covering is not null && until is { } u ? _live.FirstOrDefault(s => s.SetId == set.Id && s.From == u && Same(s)) : null;
         if (before is not null && after is not null)
         {
-            before.Update(before.From, after.Until, pairOneFront, by);
+            before.Update(before.From, after.Until, PairsOf(before), by);
             changes.Change(before);
             changes.JoinedAway.Add((after, after.From));
             after.MarkDeleted(now, by);
@@ -108,13 +117,13 @@ public sealed class TyreHistory
         }
         else if (before is not null)
         {
-            before.Update(before.From, until, pairOneFront, by);
+            before.Update(before.From, until, PairsOf(before), by);
             changes.Change(before);
         }
         else if (after is not null)
         {
             changes.JoinedAway.Add((after, after.From));
-            after.Update(day, after.Until, pairOneFront, by);
+            after.Update(day, after.Until, PairsOf(after), by);
             changes.Change(after);
         }
         else
@@ -132,18 +141,23 @@ public sealed class TyreHistory
     /// </summary>
     /// <param name="repeatable">Sent from a device's queue, so it may be a retry: one applied in place on the day its installation began leaves
     /// nothing with its id to find, and the pairs already as asked are its answer, not an error. Online they are <c>tyres.positionsUnchanged</c>.</param>
-    public TyreChanges ChangePositions(TyreSet set, DateOnly day, bool? pairOneFront, Guid by, Guid? id = null, bool repeatable = false)
+    /// <param name="sameCorners">For a broken-up set (#289): whether the installation has every tyre at the corner asked for, which then
+    /// changes nothing, as the same pairs do. A broken-up set's change of positions splits the installation as a whole set's does, and on the
+    /// installation's first day leaves it to the places (<see cref="TyrePlaces.SetCorners"/>).</param>
+    public TyreChanges ChangePositions(
+        TyreSet set, DateOnly day, bool? pairOneFront, Guid by, Guid? id = null, bool repeatable = false, Func<TyreInstallation, bool>? sameCorners = null)
     {
         var changes = new TyreChanges();
         var covering = _live.FirstOrDefault(s => s.SetId == set.Id && s.From <= day && (s.Until is null || s.Until > day))
             ?? throw new DomainException("tyres.notOnCar", "This tyre set is not on the car that day.", new { Set = set.Name, Date = Iso(day) });
-        if (covering.PairOneFront == pairOneFront)
+        if (sameCorners?.Invoke(covering) ?? covering.PairOneFront == pairOneFront)
         {
             if (repeatable && covering.From == day) return changes;
             throw new DomainException("tyres.positionsUnchanged", "The positions are the same as they were.");
         }
         if (covering.From == day)
         {
+            if (sameCorners is not null) return changes; // a broken-up set's corners change in place on the installation's first day: the places' to do
             covering.Update(day, covering.Until, pairOneFront, by);
             changes.Change(covering);
             return Checked(changes);
