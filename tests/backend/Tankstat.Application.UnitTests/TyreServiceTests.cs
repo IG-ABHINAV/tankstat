@@ -56,25 +56,26 @@ public class TyreServiceTests
         var fitted = Set(overview, summer);
         Assert.True(fitted.OnTheCar);
         Assert.False(Set(overview, winter).OnTheCar);
-        var stretch = Assert.Single(fitted.Stretches);
-        Assert.Equal((D(2026, 3, 28), (DateOnly?)null, (bool?)true), (stretch.Stretch.From, stretch.Stretch.Until, stretch.Stretch.PairOneFront));
+        var installation = Assert.Single(fitted.Installations);
+        Assert.Equal((D(2026, 3, 28), (DateOnly?)null, (bool?)true), (installation.Installation.From, installation.Installation.Until, installation.Installation.PairOneFront));
         // 28 Mar lies between 140,000 (1 Mar) and 147,000 (1 Sep), 27 of 184 days in: about 141,027; it runs to 147,000.
         Assert.Equal(32_900 + 147_000 - 141_027, fitted.Figures.Distance);
         Assert.Equal(D(2026, 3, 28), fitted.Set.RoughUntil);
     }
 
     [Fact]
-    public async Task ASwap_WithAReading_KeepsItOnTheTyreLogsDay_AsOneOfTheCarsReadings()
+    public async Task ASwap_WithAReading_KeepsItOnItsLine_AsOneOfTheCarsReadings()
     {
         var s = await Setup();
         var (_, summer, winter) = await TwoSets(s);
 
         var overview = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), true, false, 148_200, "At the garage"), default, Guid.NewGuid());
 
-        var day = Assert.Single(overview.Days);
-        Assert.Equal((D(2026, 9, 20), (long?)148_200, "At the garage"), (day.Day, day.Odometer, day.Note));
+        Assert.Equal([(D(2026, 9, 20), TyreEntryKind.Swap, (Guid?)winter, (long?)148_200, "At the garage"), (D(2026, 3, 28), TyreEntryKind.Swap, summer, null, null)],
+            overview.Entries.Select(e => (e.Day, e.Kind, e.SetId, e.Odometer, e.Note)));
+        Assert.Equal(Set(overview, winter).Installations.Single().Installation.Id, overview.Entries[0].Id); // the swap's line has its installation's id
         Assert.False(Set(overview, summer).OnTheCar);
-        Assert.Equal(D(2026, 9, 20), Set(overview, summer).Stretches.Single().Stretch.Until);
+        Assert.Equal(D(2026, 9, 20), Set(overview, summer).Installations.Single().Installation.Until);
         Assert.Equal(148_200, (await s.W.Odometer.LatestAsync(s.Car.Id, default))!.Value);
 
         // The reading is checked against the others like any reading.
@@ -97,13 +98,13 @@ public class TyreServiceTests
 
         var overview = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, third, D(2026, 9, 20), null, true, null, null), default);
         Assert.True(Set(overview, third).OnTheCar);
-        Assert.Empty(Set(overview, winter).Stretches); // its stretch is in the trash
+        Assert.Empty(Set(overview, winter).Installations); // its installation is in the trash
         Assert.Single(await s.Tyres.ListTrashAsync(0, 50, default));
-        Assert.Equal(D(2026, 9, 20), Set(overview, summer).Stretches.Single().Stretch.Until);
+        Assert.Equal(D(2026, 9, 20), Set(overview, summer).Installations.Single().Installation.Until);
     }
 
     [Fact]
-    public async Task ASwapSentAgain_WithTheSameStretchId_ChangesNothing()
+    public async Task ASwapSentAgain_WithTheSameInstallationId_ChangesNothing()
     {
         var s = await Setup();
         var (_, _, winter) = await TwoSets(s);
@@ -126,10 +127,10 @@ public class TyreServiceTests
         var overview = await s.Tyres.AddPastSwapsAsync(s.Car.Id, [new(D(2025, 11, 15), winter, null), new(D(2026, 3, 1), summer, 140_000)], replace: false, default);
 
         var w = Set(overview, winter);
-        Assert.Equal((D(2025, 11, 15), (DateOnly?)D(2026, 3, 1)), (w.Stretches.Single().Stretch.From, w.Stretches.Single().Stretch.Until));
+        Assert.Equal((D(2025, 11, 15), (DateOnly?)D(2026, 3, 1)), (w.Installations.Single().Installation.From, w.Installations.Single().Installation.Until));
         var sm = Set(overview, summer);
-        // The 1 Mar swap runs until the stretch from 28 Mar; they stay apart, since only the later one has its pairs recorded.
-        Assert.Equal([(D(2026, 3, 28), (DateOnly?)null), (D(2026, 3, 1), D(2026, 3, 28))], sm.Stretches.Select(x => (x.Stretch.From, x.Stretch.Until)));
+        // The 1 Mar swap runs until the installation from 28 Mar; they stay apart, since only the later one has its pairs recorded.
+        Assert.Equal([(D(2026, 3, 28), (DateOnly?)null), (D(2026, 3, 1), D(2026, 3, 28))], sm.Installations.Select(x => (x.Installation.From, x.Installation.Until)));
         Assert.NotNull(sm.Figures.Suggestion); // its history reaches back before the day the rough figure stood for
         Assert.Equal(32_900, sm.Set.RoughDistance);
 
@@ -139,19 +140,40 @@ public class TyreServiceTests
     }
 
     [Fact]
-    public async Task RemovingAStretch_KeepsTheReadingOfItsDay_AndClearingTheDayDeletesIt()
+    public async Task TrashingAnInstallation_TakesItsLineAndItsReadingAlong_AndARestoreBringsThemBack()
     {
         var s = await Setup();
         var (_, _, winter) = await TwoSets(s);
         var swapped = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, 148_200, null), default);
-        var stretch = Set(swapped, winter).Stretches.Single().Stretch;
+        var installation = Set(swapped, winter).Installations.Single().Installation;
 
-        var trashed = await s.Tyres.TrashStretchAsync(stretch.Id, default, stretch.Version);
-        Assert.Equal(148_200, Assert.Single(trashed.Days).Odometer);
+        var trashed = await s.Tyres.TrashInstallationAsync(installation.Id, default, installation.Version);
+        Assert.DoesNotContain(trashed.Entries, e => e.Id == installation.Id);
+        Assert.Equal(147_000, (await s.W.Odometer.LatestAsync(s.Car.Id, default))!.Value); // its reading is in the trash with it
+        var row = Assert.Single(await s.Tyres.ListTrashAsync(0, 50, default));
+        Assert.Equal((TyreTrashKind.Entry, installation.Id, (TyreEntryKind?)TyreEntryKind.Swap), (row.Kind, row.Id, row.EntryKind));
 
-        var cleared = await s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 20), null, null, default);
-        Assert.Empty(cleared.Days);
-        Assert.Equal(147_000, (await s.W.Odometer.LatestAsync(s.Car.Id, default))!.Value);
+        var restored = await s.Tyres.RestoreEntryAsync(installation.Id, default, row.Version);
+        Assert.Equal(148_200, restored.Entries.Single(e => e.Id == installation.Id).Odometer);
+        Assert.Single(Set(restored, winter).Installations);
+        Assert.Equal(148_200, (await s.W.Odometer.LatestAsync(s.Car.Id, default))!.Value);
+    }
+
+    [Fact]
+    public async Task TrashingASwapsLine_TakesItsInstallationAlong_AndARestoreThatNoLongerFitsIsRefused()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        var swapped = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, null), default);
+        var line = swapped.Entries.Single(e => e.Day == D(2026, 9, 20));
+
+        var trashed = await s.Tyres.TrashEntryAsync(line.Id, default, line.Version);
+        Assert.Empty(Set(trashed, winter).Installations);
+        Assert.Equal("tyres.entryNotFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.Tyres.TrashEntryAsync(line.Id, default))).Key);
+
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 9, 25), null, false, null, null), default); // fills the time it left
+        Assert.Equal("tyres.restoreConflict", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreEntryAsync(line.Id, default))).Key);
+        Assert.NotNull(await s.Tyres.EntryInTrashAsync(line.Id, default)); // nothing came back
     }
 
     [Fact]
@@ -160,33 +182,34 @@ public class TyreServiceTests
         var s = await Setup();
         var (_, summer, winter) = await TwoSets(s);
         var overview = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, null), default);
-        var winterStretch = Set(overview, winter).Stretches.Single().Stretch;
-        await s.Tyres.TrashStretchAsync(winterStretch.Id, default);
-        // The summer set's stretch now ends on 20 Sep with nothing after it; it is put on again from 25 Sep.
+        var winterInstallation = Set(overview, winter).Installations.Single().Installation;
+        await s.Tyres.TrashInstallationAsync(winterInstallation.Id, default);
+        // The summer set's installation now ends on 20 Sep with nothing after it; it is put on again from 25 Sep.
         await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 9, 25), null, false, null, null), default);
 
-        var refused = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreStretchAsync(winterStretch.Id, default));
+        var refused = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreInstallationAsync(winterInstallation.Id, default));
         Assert.Equal("tyres.restoreConflict", refused.Key);
     }
 
     [Fact]
-    public async Task TrashingASet_HidesItsStretches_AndARestoreLeavesOneTrashedOnItsOwnInTheTrash()
+    public async Task TrashingASet_HidesItsInstallations_AndARestoreLeavesOneTrashedOnItsOwnInTheTrash()
     {
         var s = await Setup();
         var (_, summer, winter) = await TwoSets(s);
         await s.Tyres.AddPastSwapsAsync(s.Car.Id, [new(D(2025, 11, 15), winter, null), new(D(2026, 3, 1), summer, null)], false, default);
         var stored = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, null), default);
-        var alone = Set(stored, winter).Stretches.Single(x => x.Stretch.From == D(2025, 11, 15)).Stretch;
-        await s.Tyres.TrashStretchAsync(alone.Id, default);
+        var alone = Set(stored, winter).Installations.Single(x => x.Installation.From == D(2025, 11, 15)).Installation;
+        await s.Tyres.TrashInstallationAsync(alone.Id, default);
 
         var trashed = await s.Tyres.TrashSetAsync(winter, default);
         Assert.DoesNotContain(trashed.Sets, x => x.Set.Id == winter);
         var rows = await s.Tyres.ListTrashAsync(0, 50, default);
-        Assert.Equal(TyreTrashKind.Set, Assert.Single(rows).Kind); // its stretches come back with it; they are not listed alone
+        Assert.Equal(TyreTrashKind.Set, Assert.Single(rows).Kind); // its installations and lines come back with it; they are not listed alone
+        Assert.DoesNotContain(trashed.Entries, e => e.SetId == winter);
 
         var restored = await s.Tyres.RestoreSetAsync(winter, default);
-        Assert.Equal([D(2026, 9, 20)], Set(restored, winter).Stretches.Select(x => x.Stretch.From));
-        Assert.Equal(TyreTrashKind.Stretch, Assert.Single(await s.Tyres.ListTrashAsync(0, 50, default)).Kind);
+        Assert.Equal([D(2026, 9, 20)], Set(restored, winter).Installations.Select(x => x.Installation.From));
+        Assert.Equal(TyreTrashKind.Entry, Assert.Single(await s.Tyres.ListTrashAsync(0, 50, default)).Kind);
     }
 
     [Fact]
@@ -232,36 +255,40 @@ public class TyreServiceTests
     }
 
     [Fact]
-    public async Task ChangingPositions_SplitsTheStretch_AndTheSameDayAgainChangesItInPlace()
+    public async Task ChangingPositions_SplitsTheInstallation_AndTheSameDayAgainChangesItInPlace()
     {
         var s = await Setup();
         var (_, summer, _) = await TwoSets(s);
 
         var split = await s.Tyres.ChangePositionsAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), false, false, null, null), default, Guid.NewGuid());
-        Assert.Equal([(D(2026, 6, 1), (bool?)false), (D(2026, 3, 28), true)], Set(split, summer).Stretches.Select(x => (x.Stretch.From, x.Stretch.PairOneFront)));
+        Assert.Equal([(D(2026, 6, 1), (bool?)false), (D(2026, 3, 28), true)], Set(split, summer).Installations.Select(x => (x.Installation.From, x.Installation.PairOneFront)));
 
         var again = await s.Tyres.ChangePositionsAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, false, null, null), default);
-        Assert.Equal(2, Set(again, summer).Stretches.Count);
-        Assert.Equal(true, Set(again, summer).Stretches[0].Stretch.PairOneFront);
+        Assert.Equal(2, Set(again, summer).Installations.Count);
+        Assert.Equal(true, Set(again, summer).Installations[0].Installation.PairOneFront);
     }
 
     [Fact]
-    public async Task AStretch_TypedWithItsReadings_KeepsThemOnItsDays_AndReadingsOfOneChangeMustNotFall()
+    public async Task AInstallation_TypedWithItsReadings_KeepsThemOnItsDays_AndReadingsOfOneChangeMustNotFall()
     {
         var s = await Setup();
         var (_, _, winter) = await TwoSets(s);
 
-        var added = await s.Tyres.AddStretchAsync(winter, new TyreStretchInput(D(2025, 11, 15), D(2026, 2, 20), null, 132_000, 139_500), default, Guid.NewGuid());
-        Assert.Equal([(D(2026, 2, 20), (long?)139_500), (D(2025, 11, 15), 132_000)], added.Days.Select(d => (d.Day, d.Odometer)));
-        var stretch = Set(added, winter).Stretches.Single().Stretch;
-        Assert.Equal(7_500, Set(added, winter).Stretches.Single().Distance.Distance);
+        var added = await s.Tyres.AddInstallationAsync(winter, new TyreInstallationInput(D(2025, 11, 15), D(2026, 2, 20), null, 132_000, 139_500), default, Guid.NewGuid());
+        // The first day's reading is on the installation's line; nothing starts on its last day, so that reading is a note line of the set.
+        Assert.Equal([(D(2026, 3, 28), TyreEntryKind.Swap, (long?)null), (D(2026, 2, 20), TyreEntryKind.Note, 139_500), (D(2025, 11, 15), TyreEntryKind.Swap, 132_000)],
+            added.Entries.Select(e => (e.Day, e.Kind, e.Odometer)));
+        Assert.Equal(winter, added.Entries[1].SetId);
+        var installation = Set(added, winter).Installations.Single().Installation;
+        Assert.Equal(7_500, Set(added, winter).Installations.Single().Distance.Distance);
 
-        var edited = await s.Tyres.UpdateStretchAsync(stretch.Id, new TyreStretchInput(D(2025, 11, 20), D(2026, 2, 20), true, null, null), default, stretch.Version);
-        Assert.Equal((D(2025, 11, 20), (bool?)true), (Set(edited, winter).Stretches.Single().Stretch.From, Set(edited, winter).Stretches.Single().Stretch.PairOneFront));
+        var edited = await s.Tyres.UpdateInstallationAsync(installation.Id, new TyreInstallationInput(D(2025, 11, 20), D(2026, 2, 20), true, null, null), default, installation.Version);
+        Assert.Equal((D(2025, 11, 20), (bool?)true), (Set(edited, winter).Installations.Single().Installation.From, Set(edited, winter).Installations.Single().Installation.PairOneFront));
+        Assert.Equal((D(2025, 11, 20), (long?)132_000), (edited.Entries.Single(e => e.Id == installation.Id).Day, edited.Entries.Single(e => e.Id == installation.Id).Odometer)); // its line and reading moved with it
 
         // Each reading fits the stored ones (none between them), but not each other: refused.
         var falling = await Assert.ThrowsAsync<DomainException>(() =>
-            s.Tyres.AddStretchAsync(winter, new TyreStretchInput(D(2024, 11, 10), D(2025, 3, 30), null, 131_000, 120_000), default));
+            s.Tyres.AddInstallationAsync(winter, new TyreInstallationInput(D(2024, 11, 10), D(2025, 3, 30), null, 131_000, 120_000), default));
         Assert.Equal("odometer.belowPrevious", falling.Key);
     }
 
@@ -318,23 +345,23 @@ public class TyreServiceTests
 
         Assert.True(Set(overview, summer).OnTheCar);
         Assert.False(Set(overview, winter).OnTheCar);
-        Assert.Equal([(D(2026, 3, 28), (DateOnly?)null), (D(2025, 4, 5), D(2025, 11, 15))], Set(overview, summer).Stretches.Select(x => (x.Stretch.From, x.Stretch.Until)));
-        Assert.Equal((D(2025, 11, 15), (DateOnly?)D(2026, 3, 28)), (Set(overview, winter).Stretches.Single().Stretch.From, Set(overview, winter).Stretches.Single().Stretch.Until));
+        Assert.Equal([(D(2026, 3, 28), (DateOnly?)null), (D(2025, 4, 5), D(2025, 11, 15))], Set(overview, summer).Installations.Select(x => (x.Installation.From, x.Installation.Until)));
+        Assert.Equal((D(2025, 11, 15), (DateOnly?)D(2026, 3, 28)), (Set(overview, winter).Installations.Single().Installation.From, Set(overview, winter).Installations.Single().Installation.Until));
     }
 
     [Fact]
-    public async Task AStretchId_UsedOnAnotherVehicle_IsRefusedAsTaken()
+    public async Task AInstallationId_UsedOnAnotherVehicle_IsRefusedAsTaken()
     {
         var s = await Setup();
         var (_, _, winter) = await TwoSets(s);
         var other = await s.W.VehicleService.AddAsync("Van", null, FuelType.Diesel, MeasurementUnits.Metric, default);
         var taken = Guid.NewGuid();
-        await s.Tyres.AddSetAsync(new NewTyreSet(other.Id, Summer(0), Fitted: true, D(2026, 5, 1), null, null), default, stretchId: taken);
+        await s.Tyres.AddSetAsync(new NewTyreSet(other.Id, Summer(0), Fitted: true, D(2026, 5, 1), null, null), default, installationId: taken);
 
         var refused = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, null), default, taken));
         Assert.Equal("sync.idTaken", refused.Key);
         Assert.Equal("sync.idTaken", (await Assert.ThrowsAsync<DomainException>(() =>
-            s.Tyres.AddSetAsync(new NewTyreSet(s.Car.Id, Winter(0) with { Name = "Nokian" }, true, D(2026, 9, 25), null, null, Replace: true), default, stretchId: taken))).Key);
+            s.Tyres.AddSetAsync(new NewTyreSet(s.Car.Id, Winter(0) with { Name = "Nokian" }, true, D(2026, 9, 25), null, null, Replace: true), default, installationId: taken))).Key);
     }
 
     [Fact]
@@ -344,11 +371,11 @@ public class TyreServiceTests
         var (_, _, winter) = await TwoSets(s);
         var id = Guid.NewGuid();
         // The other request passed the same id lookup a moment earlier and saved first.
-        s.W.Tyres.MeanwhileBeforeSave = save => s.W.Tyres.Stretches.AddRange(save.AddedStretches);
+        s.W.Tyres.MeanwhileBeforeSave = save => s.W.Tyres.Installations.AddRange(save.AddedInstallations);
 
         var overview = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, null), default, id);
 
-        Assert.Contains(Set(overview, winter).Stretches, x => x.Stretch.Id == id);
+        Assert.Contains(Set(overview, winter).Installations, x => x.Installation.Id == id);
     }
 
     [Fact]
@@ -362,32 +389,206 @@ public class TyreServiceTests
         await s.Tyres.ChangePositionsAsync(input, default, id, repeat: true);
         var again = await s.Tyres.ChangePositionsAsync(input, default, id, repeat: true);
 
-        Assert.Equal(false, Set(again, summer).Stretches.Single().Stretch.PairOneFront);
+        Assert.Equal(false, Set(again, summer).Installations.Single().Installation.PairOneFront);
         Assert.Equal("tyres.positionsUnchanged", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.ChangePositionsAsync(input, default, Guid.NewGuid()))).Key);
     }
 
     [Fact]
-    public async Task TheTyreLogsDay_IsChangedOnlyFromItsVersion_NeverEmpty_AndNotWrittenAgainUnchanged()
+    public async Task ALine_IsAdded_ChangedOnlyFromItsVersion_NotWrittenAgainUnchanged_TrashedAndRestored()
     {
         var s = await Setup();
-        await TwoSets(s);
-        var day = Assert.Single((await s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 20), 148_200, "Garage", default, Guid.NewGuid())).Days);
-        await s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 20), 148_200, "At the garage", default, expectedVersion: day.Version); // another device's edit
+        var (_, summer, _) = await TwoSets(s);
+        var id = Guid.NewGuid();
+        var added = await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, summer, D(2026, 9, 20), 148_200, "Rear left"), default, id);
+        var line = added.Entries.Single(e => e.Id == id);
+        Assert.Equal((TyreEntryKind.PunctureRepaired, (Guid?)summer, (long?)148_200, "Rear left"), (line.Kind, line.SetId, line.Odometer, line.Note));
+        Assert.Equal(148_200, (await s.W.Odometer.LatestAsync(s.Car.Id, default))!.Value);
+        Assert.Single((await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, summer, D(2026, 9, 20), 148_200, "Rear left"), default, id)).Entries,
+            e => e.Id == id); // sent again: the same line
 
-        var stale = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 20), null, null, default, expectedVersion: day.Version));
-        Assert.Equal("sync.versionMismatch", stale.Key);
+        var edit = new TyreEntryInput(TyreEntryKind.ValveReplaced, null, D(2026, 9, 21), 148_300, "Valve");
+        await s.Tyres.UpdateEntryAsync(id, edit, default, line.Version); // another device's edit
+        Assert.Equal("sync.versionMismatch", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.UpdateEntryAsync(id, edit with { Note = null }, default, line.Version))).Key);
+        var same = await s.Tyres.UpdateEntryAsync(id, edit, default);
+        Assert.Equal(line.Version + 1, same.Entries.Single(e => e.Id == id).Version); // unchanged: not saved again
+        Assert.Equal(D(2026, 9, 21), s.W.Tyres.Entries.Single(e => e.Id == id).OdometerReading!.Date); // the reading moved with the day
 
-        var same = await s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 20), 148_200, "At the garage", default);
-        Assert.Equal(day.Version + 1, Assert.Single(same.Days).Version); // unchanged: not saved again
-
-        var blank = await s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 25), null, "   ", default);
-        Assert.DoesNotContain(blank.Days, d => d.Day == D(2026, 9, 25));
-        var otherDay = await Assert.ThrowsAsync<DomainException>(() => s.Tyres.SetLogDayAsync(s.Car.Id, D(2026, 9, 26), null, "Wash", default, day.Id));
-        Assert.Equal("sync.idTaken", otherDay.Key); // the id of the 20 Sep line
+        var trashed = await s.Tyres.TrashEntryAsync(id, default);
+        Assert.DoesNotContain(trashed.Entries, e => e.Id == id);
+        Assert.Equal(147_000, (await s.W.Odometer.LatestAsync(s.Car.Id, default))!.Value);
+        var restored = await s.Tyres.RestoreEntryAsync(id, default);
+        Assert.Equal(148_300, restored.Entries.Single(e => e.Id == id).Odometer);
     }
 
     [Fact]
-    public async Task ARoughFigure_GivenLater_CoversTheTimeBeforeTheFirstStretch_AndNeverAFutureDay()
+    public async Task ALine_IsNeverASwap_NorOfAnotherVehiclesSet_AndItsIdIsItsOwn()
+    {
+        var s = await Setup();
+        var (overview, summer, _) = await TwoSets(s);
+        var other = await s.W.VehicleService.AddAsync("Other", null, FuelType.Petrol, MeasurementUnits.Metric, default);
+
+        Assert.Equal("tyres.entryKindNotAllowed", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Swap, summer, D(2026, 9, 20), null, null), default))).Key);
+        Assert.Equal("tyres.setNotFound", (await Assert.ThrowsAsync<NotFoundException>(() =>
+            s.Tyres.AddEntryAsync(other.Id, new TyreEntryInput(TyreEntryKind.Other, summer, D(2026, 9, 20), null, null), default))).Key);
+        var swapLine = overview.Entries.Single();
+        Assert.Equal("sync.idTaken", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Other, null, D(2026, 9, 20), null, null), default, swapLine.Id))).Key);
+        Assert.Equal("refueling.dateInFuture", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Other, null, D(2026, 10, 5), null, null), default))).Key);
+    }
+
+    [Fact]
+    public async Task EveryChangeThatStartsAnInstallation_SavesOneLine_AndTheOnesThatStartNoneSaveNone()
+    {
+        var s = await Setup();
+        var (overview, summer, winter) = await TwoSets(s); // a fitted new set: its swap's line
+        Assert.Equal([(D(2026, 3, 28), TyreEntryKind.Swap)], overview.Entries.Select(e => (e.Day, e.Kind)));
+        int Lines(TyreOverview o) => o.Entries.Count;
+
+        var swapped = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), true, false, null, null), default, Guid.NewGuid());
+        Assert.Equal(2, Lines(swapped));
+        var pairs = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), false, false, null, "Pairs"), default, Guid.NewGuid()); // its own first day: pairs only
+        Assert.Equal((2, "Pairs"), (Lines(pairs), pairs.Entries[0].Note)); // what was typed went onto the day's line
+        var inPlace = await s.Tyres.ChangePositionsAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), true, false, null, null), default, Guid.NewGuid());
+        Assert.Equal(2, Lines(inPlace));
+        var split = await s.Tyres.ChangePositionsAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 25), false, false, null, null), default, Guid.NewGuid());
+        Assert.Equal((3, TyreEntryKind.PositionsChanged), (Lines(split), split.Entries[0].Kind));
+        var past = await s.Tyres.AddPastSwapsAsync(s.Car.Id, [new(D(2025, 4, 1), summer, null, Guid.NewGuid()), new(D(2025, 11, 15), winter, null, Guid.NewGuid())], false, default);
+        Assert.Equal(5, Lines(past));
+        var typed = await s.Tyres.AddInstallationAsync(winter, new TyreInstallationInput(D(2024, 11, 10), D(2025, 3, 30), null, null, null), default, Guid.NewGuid());
+        Assert.Equal(6, Lines(typed));
+        Assert.Equal(typed.Sets.SelectMany(x => x.Installations).Select(i => i.Installation.Id).Order(), typed.Entries.Select(e => e.Id).Order()); // one per installation, by its id
+    }
+
+    [Fact]
+    public async Task ReplacingTheSetBetweenTwoOfAnother_JoinsThem_AndTheJoinedSwapsReadingStaysOnItsDay()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 1), true, false, null, null), default, Guid.NewGuid());
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 8, 1), true, false, 146_000, "Summer again"), default, Guid.NewGuid());
+
+        // Summer on 28 Mar, winter on 1 Jun, summer on 1 Aug: replacing the winter swap joins the summer installations.
+        var joined = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, true, null, null), default, Guid.NewGuid());
+
+        Assert.Equal([(D(2026, 3, 28), (DateOnly?)null)], Set(joined, summer).Installations.Select(i => (i.Installation.From, i.Installation.Until)));
+        Assert.Equal([(D(2026, 8, 1), TyreEntryKind.Note, (Guid?)summer, (long?)146_000, "Summer again"), (D(2026, 3, 28), TyreEntryKind.Swap, summer, null, null)],
+            joined.Entries.Select(e => (e.Day, e.Kind, e.SetId, e.Odometer, e.Note)));
+        Assert.Equal(2, (await s.Tyres.ListTrashAsync(0, 50, default)).Count); // the winter swap and the joined summer one, each with its line
+        Assert.Contains(new ReadingPoint(D(2026, 8, 1), 146_000), joined.Readings); // still one of the car's readings
+    }
+
+    [Fact]
+    public async Task ASwapsLine_OnAnotherDay_MovesTheSwap_AndTheSetBeforeItComesOffThen()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        var swapped = await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), true, false, 148_200, null), default, Guid.NewGuid());
+        var line = swapped.Entries[0];
+
+        var moved = await s.Tyres.UpdateEntryAsync(line.Id, new TyreEntryInput(TyreEntryKind.Swap, winter, D(2026, 9, 22), 148_200, "Moved"), default, line.Version);
+
+        Assert.Equal(D(2026, 9, 22), Set(moved, summer).Installations.Single().Installation.Until);
+        Assert.Equal(D(2026, 9, 22), Set(moved, winter).Installations.Single().Installation.From);
+        Assert.Equal((D(2026, 9, 22), (long?)148_200, "Moved"), (moved.Entries[0].Day, moved.Entries[0].Odometer, moved.Entries[0].Note));
+        Assert.Equal("tyres.swapBeforePrevious", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.UpdateEntryAsync(line.Id, new TyreEntryInput(TyreEntryKind.Swap, winter, D(2026, 3, 28), null, null), default))).Key);
+        Assert.Equal("tyres.swapLineLocked", (await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.UpdateEntryAsync(line.Id, new TyreEntryInput(TyreEntryKind.Swap, summer, D(2026, 9, 22), null, null), default))).Key);
+    }
+
+    [Fact]
+    public async Task AReadingMovedWithItsInstallationsFirstDay_OrBroughtBackFromTheTrash_MustStillFitTheCarsReadings()
+    {
+        var s = await Setup();
+        var (_, _, winter) = await TwoSets(s);
+        var added = await s.Tyres.AddInstallationAsync(winter, new TyreInstallationInput(D(2025, 11, 15), D(2026, 3, 28), null, 132_000, null), default, Guid.NewGuid());
+        var installation = Set(added, winter).Installations.Single().Installation;
+
+        // 132,000 on 10 Mar would be below the 140,000 of 1 Mar.
+        var moved = await Assert.ThrowsAsync<DomainException>(() =>
+            s.Tyres.UpdateInstallationAsync(installation.Id, new TyreInstallationInput(D(2026, 3, 10), D(2026, 3, 28), null, null, null), default));
+        Assert.Equal("odometer.belowPrevious", moved.Key);
+
+        var id = Guid.NewGuid();
+        await s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Note, null, D(2026, 6, 1), 143_000, null), default, id);
+        await s.Tyres.TrashEntryAsync(id, default);
+        await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(D(2026, 5, 1), "Wash", null, 10, "EUR", 145_000, null), default); // fits while the line is away
+        Assert.Equal("odometer.belowPrevious", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreEntryAsync(id, default))).Key);
+    }
+
+    [Fact]
+    public async Task AJoiningSwapsReading_GoesOnANoteLineWithTheSwapsId_SoTheSwapSentAgainWritesItOnce()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 1), true, false, null, null), default, Guid.NewGuid());
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 8, 1), true, false, null, null), default, Guid.NewGuid());
+        var change = Guid.NewGuid();
+        var joining = new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, true, 143_000, "Joined");
+
+        var first = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+        var again = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+
+        var note = Assert.Single(again.Entries, e => e.Day == D(2026, 6, 1));
+        Assert.Equal((change, TyreEntryKind.Note, (Guid?)summer, (long?)143_000, "Joined"), (note.Id, note.Kind, note.SetId, note.Odometer, note.Note));
+        Assert.Equal(first.Entries.Count, again.Entries.Count);
+    }
+
+    [Fact]
+    public async Task AJoiningSwapsNoteLine_GivenAnotherKindSince_StillAnswersTheSwapSentAgain()
+    {
+        var s = await Setup();
+        var (_, summer, winter) = await TwoSets(s);
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 1), true, false, null, null), default, Guid.NewGuid());
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, summer, D(2026, 8, 1), true, false, null, null), default, Guid.NewGuid());
+        var change = Guid.NewGuid();
+        var joining = new TyreSwapInput(s.Car.Id, summer, D(2026, 6, 1), true, true, 143_000, "Joined");
+        var first = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+        // The next change of the same queue: the line is a puncture repair's. The answer is lost, so the whole request comes again.
+        await s.Tyres.UpdateEntryAsync(change, new TyreEntryInput(TyreEntryKind.PunctureRepaired, summer, D(2026, 6, 1), 143_000, "Joined"), default);
+
+        var again = await s.Tyres.SwapAsync(joining, default, change, repeat: true);
+
+        var line = Assert.Single(again.Entries, e => e.Day == D(2026, 6, 1));
+        Assert.Equal((change, TyreEntryKind.PunctureRepaired, (long?)143_000), (line.Id, line.Kind, line.Odometer));
+        Assert.Equal(first.Entries.Count, again.Entries.Count);
+    }
+
+    [Fact]
+    public async Task ANoteOfOnlySpaces_TypedWithAReading_LeavesTheSwapLinesNote()
+    {
+        var s = await Setup();
+        var (_, _, winter) = await TwoSets(s);
+        var swap = new TyreSwapInput(s.Car.Id, winter, D(2026, 9, 20), null, false, null, "Winter on");
+        await s.Tyres.SwapAsync(swap, default, Guid.NewGuid());
+
+        var again = await s.Tyres.SwapAsync(swap with { Odometer = 150_000, Note = "  " }, default, Guid.NewGuid());
+
+        var line = Assert.Single(again.Entries, e => e.Day == D(2026, 9, 20));
+        Assert.Equal(((long?)150_000, "Winter on"), (line.Odometer, line.Note));
+    }
+
+    [Fact]
+    public async Task ViewAccess_CannotAddALine_AndEditAccessCannotEmptyTheTrash()
+    {
+        var s = await Setup();
+        var (overview, _, _) = await TwoSets(s);
+        var line = overview.Entries.Single();
+        await s.Tyres.TrashEntryAsync(line.Id, default);
+        s.W.Grants.Items.Add(AccessGrant.Create(s.Alice.Id, s.Bob.Id, AccessLevel.View));
+        s.W.Current.SignInAs(s.Bob);
+        await Assert.ThrowsAsync<ForbiddenException>(() => s.Tyres.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.Note, null, D(2026, 9, 20), null, "x"), default));
+
+        s.W.Grants.Items.Clear();
+        s.W.Grants.Items.Add(AccessGrant.Create(s.Alice.Id, s.Bob.Id, AccessLevel.Edit));
+        Assert.Equal(0, await s.Tyres.EmptyTrashAsync(default));
+        Assert.NotNull(await s.Tyres.EntryInTrashAsync(line.Id, default));
+    }
+
+    [Fact]
+    public async Task ARoughFigure_GivenLater_CoversTheTimeBeforeTheFirstInstallation_AndNeverAFutureDay()
     {
         var s = await Setup();
         var summer = Guid.NewGuid();
@@ -409,7 +610,7 @@ public class TyreServiceTests
         var again = new TyreSwapInput(s.Car.Id, summer, D(2026, 9, 20), true, true, null, null);
         var id = Guid.NewGuid();
 
-        var first = await s.Tyres.SwapAsync(again, default, id, repeat: true); // the summer stretch is joined again: no stretch gets the id
+        var first = await s.Tyres.SwapAsync(again, default, id, repeat: true); // the summer installation is joined again: no installation gets the id
         var saves = s.W.Tyres.Saves;
         var second = await s.Tyres.SwapAsync(again, default, id, repeat: true); // the sync sends it again
 
@@ -417,7 +618,7 @@ public class TyreServiceTests
         Assert.Equal("tyres.alreadyOnCar", (await Assert.ThrowsAsync<DomainException>(() => s.Tyres.SwapAsync(again with { Replace = false }, default, Guid.NewGuid()))).Key);
 
         Assert.True(Set(first, summer).OnTheCar);
-        Assert.Single(Set(second, summer).Stretches);
+        Assert.Single(Set(second, summer).Installations);
         Assert.Equal(saves + 1, s.W.Tyres.Saves); // answered without a change (the day's empty log line saves nothing new)
     }
 }

@@ -1,5 +1,6 @@
 import { useApolloClient, useMutation } from '@apollo/client/react'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { Pencil, Trash2 } from 'lucide-react'
@@ -68,7 +69,23 @@ export function ExpensesPanel({ vehicle, canLog }: { vehicle: { id: string; unit
           </Stack>
         ),
       },
-      { id: 'title', label: 'columns.title', hideable: false, mobile: true, sortField: 'TITLE', cell: (r) => r.title },
+      {
+        id: 'title',
+        label: 'columns.title',
+        hideable: false,
+        mobile: true,
+        sortField: 'TITLE',
+        // One a tyre log line made (#288) says so with a chip, in words (not colour alone), also while its line is in the trash.
+        cell: (r) =>
+          r.tyreEntry ? (
+            <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+              {r.title}
+              <Chip size="small" variant="soft" label={t(r.tyreEntry.trashed ? 'expenses.tyreLog.chipTrashed' : 'expenses.tyreLog.chip')} />
+            </Stack>
+          ) : (
+            r.title
+          ),
+      },
       { id: 'amount', label: 'columns.amount', include: 'withAmount', mobile: true, sortField: 'AMOUNT', cell: (r) => (r.amount == null || !r.currency ? none : format.money(r.amount, r.currency)) },
       // What was taken off the amount (the amount is what was paid): hidden until wanted, not sortable.
       { id: 'discount', label: 'columns.discount', include: 'withDiscount', defaultHidden: true, cell: (r) => (r.discount == null || !r.currency ? none : format.money(r.discount, r.currency)) },
@@ -145,7 +162,7 @@ export function ExpensesPanel({ vehicle, canLog }: { vehicle: { id: string; unit
                   </IconAction>
                 }
                 title={t('expenses.trashTitle')}
-                description={t('expenses.trashDescription', { title: r.title })}
+                description={[t('expenses.trashDescription', { title: r.title }), r.tyreEntry ? t('expenses.tyreLog.trashLine') : ''].filter(Boolean).join(' ')}
                 confirmLabel={t('expenses.trashConfirm')}
                 onConfirm={() => void moveToTrash(r)}
               />

@@ -927,7 +927,7 @@ namespace Tankstat.Migrations.PostgreSql
                     b.ToTable("Tombstones", (string)null);
                 });
 
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreLogDay", b =>
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
@@ -944,6 +944,23 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Property<DateOnly>("Day")
                         .HasColumnType("date");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ExpenseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("ExpenseTrashedWithEntry")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("InstallationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("LastChange")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -956,6 +973,9 @@ namespace Tankstat.Migrations.PostgreSql
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SetId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -972,17 +992,85 @@ namespace Tankstat.Migrations.PostgreSql
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeletedAt");
+
+                    b.HasIndex("ExpenseId");
+
                     b.HasIndex("OdometerReadingId")
                         .IsUnique();
 
                     b.HasIndex("OwnerId");
 
-                    b.HasIndex("VehicleId", "Day")
-                        .IsUnique();
+                    b.HasIndex("SetId");
+
+                    b.HasIndex("VehicleId", "Day");
 
                     b.HasIndex("VehicleId", "UpdatedAt");
 
-                    b.ToTable("TyreLogDays", (string)null);
+                    b.ToTable("TyreEntries", (string)null);
+                });
+
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ChangedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("From")
+                        .HasColumnType("date");
+
+                    b.Property<string>("LastChange")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool?>("PairOneFront")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("SetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("Until")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeletedAt");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.HasIndex("SetId", "From");
+
+                    b.HasIndex("VehicleId", "UpdatedAt");
+
+                    b.ToTable("TyreInstallations", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreSet", b =>
@@ -1062,69 +1150,6 @@ namespace Tankstat.Migrations.PostgreSql
                     b.HasIndex("VehicleId", "UpdatedAt");
 
                     b.ToTable("TyreSets", (string)null);
-                });
-
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreStretch", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ChangedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ChangedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CreatedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("From")
-                        .HasColumnType("date");
-
-                    b.Property<string>("LastChange")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool?>("PairOneFront")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("SetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateOnly?>("Until")
-                        .HasColumnType("date");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValue(new DateTime(2000, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc));
-
-                    b.Property<Guid>("VehicleId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeletedAt");
-
-                    b.HasIndex("OwnerId");
-
-                    b.HasIndex("VehicleId");
-
-                    b.HasIndex("SetId", "From");
-
-                    b.HasIndex("VehicleId", "UpdatedAt");
-
-                    b.ToTable("TyreStretches", (string)null);
                 });
 
             modelBuilder.Entity("Tankstat.Domain.Users.PasswordResetToken", b =>
@@ -1656,11 +1681,11 @@ namespace Tankstat.Migrations.PostgreSql
                         .OnDelete(DeleteBehavior.Cascade);
                 });
 
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreLogDay", b =>
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreEntry", b =>
                 {
                     b.HasOne("Tankstat.Domain.Odometers.OdometerReading", "OdometerReading")
                         .WithOne()
-                        .HasForeignKey("Tankstat.Domain.Tyres.TyreLogDay", "OdometerReadingId")
+                        .HasForeignKey("Tankstat.Domain.Tyres.TyreEntry", "OdometerReadingId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
@@ -1672,20 +1697,20 @@ namespace Tankstat.Migrations.PostgreSql
                     b.Navigation("OdometerReading");
                 });
 
+            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreInstallation", b =>
+                {
+                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
+                        .WithMany()
+                        .HasForeignKey("SetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tankstat.Domain.Tyres.TyreSet", b =>
                 {
                     b.HasOne("Tankstat.Domain.Vehicles.Vehicle", null)
                         .WithMany()
                         .HasForeignKey("VehicleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Tankstat.Domain.Tyres.TyreStretch", b =>
-                {
-                    b.HasOne("Tankstat.Domain.Tyres.TyreSet", null)
-                        .WithMany()
-                        .HasForeignKey("SetId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

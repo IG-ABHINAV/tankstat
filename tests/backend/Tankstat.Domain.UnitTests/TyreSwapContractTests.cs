@@ -7,8 +7,8 @@ namespace Tankstat.Domain.UnitTests;
 
 /// <summary>
 /// The rules of a vehicle's tyre history, from <c>contracts/tyre-swaps/tyre-swaps.json</c>: the same file the frontend's
-/// <c>TyreHistory.unit</c> reads over the device's port (<c>src/tyres/tyreHistory.ts</c>), so a tyre change made offline shows as the
-/// server will make it (#287).
+/// <c>TyreHistory.unit</c> reads over the device's ports (<c>src/tyres/tyreHistory.ts</c>, <c>src/tyres/tyreLog.ts</c>), so a tyre change
+/// made offline shows as the server will make it (#287), the tyre log's lines included (#288).
 /// </summary>
 public class TyreSwapContractTests
 {
@@ -46,14 +46,23 @@ public class TyreSwapContractTests
             if (DayOrNull(s.GetProperty("retiredOn")) is { } retired) set.Retire(retired);
             return set;
         }).ToList();
-        var stretches = c.GetProperty("stretches").EnumerateArray().Select(s =>
+        var installations = c.GetProperty("installations").EnumerateArray().Select(s =>
         {
             names[IdOf(s.GetProperty("id").GetString()!)] = s.GetProperty("id").GetString()!;
-            return TyreStretch.Create(Owner, Owner, Car, IdOf(s.GetProperty("set").GetString()!), Day(s.GetProperty("from")), DayOrNull(s.GetProperty("until")),
+            return TyreInstallation.Create(Owner, Owner, Car, IdOf(s.GetProperty("set").GetString()!), Day(s.GetProperty("from")), DayOrNull(s.GetProperty("until")),
                 Pairs(s.GetProperty("pairOneFront")), IdOf(s.GetProperty("id").GetString()!));
         }).ToList();
         names[IdOf("new")] = "new";
-        var history = new TyreHistory(Owner, Car, sets, stretches);
+        var history = new TyreHistory(Owner, Car, sets, installations);
+        // Every installation has its line before the change (#288), with the notes the case gives them.
+        var lines = installations.Select(i => TyreLog.LineFor(i, history, Owner)).ToList();
+        if (c.TryGetProperty("lineNotes", out var lineNotes))
+            foreach (var note in lineNotes.EnumerateObject())
+            {
+                var line = lines.Single(l => l.Id == IdOf(note.Name));
+                line.Update(line.Kind, line.SetId, line.Day, null, note.Value.GetString());
+            }
+        TyreChanges changes = new();
         TyreSet SetOf(JsonElement op) => sets.Single(s => s.Id == IdOf(op.GetProperty("set").GetString()!));
 
         void Run()
@@ -62,15 +71,19 @@ public class TyreSwapContractTests
             {
                 case "swap":
                     var swap = c.GetProperty("swap");
-                    history.Swap(SetOf(swap), Day(swap.GetProperty("day")), Pairs(swap.GetProperty("pairOneFront")), swap.GetProperty("replace").GetBoolean(), Owner, Now,
+                    changes = history.Swap(SetOf(swap), Day(swap.GetProperty("day")), Pairs(swap.GetProperty("pairOneFront")), swap.GetProperty("replace").GetBoolean(), Owner, Now,
                         IdOf("new"), swap.GetProperty("pairsGiven").GetBoolean());
                     break;
                 case "positions":
                     var positions = c.GetProperty("positions");
-                    history.ChangePositions(SetOf(positions), Day(positions.GetProperty("day")), Pairs(positions.GetProperty("pairOneFront")), Owner, IdOf("new"));
+                    changes = history.ChangePositions(SetOf(positions), Day(positions.GetProperty("day")), Pairs(positions.GetProperty("pairOneFront")), Owner, IdOf("new"));
+                    break;
+                case "move":
+                    var move = c.GetProperty("move");
+                    changes = history.MoveSwap(installations.Single(s => s.Id == IdOf(move.GetProperty("installation").GetString()!)), Day(move.GetProperty("day")), Owner);
                     break;
                 default:
-                    var moving = c.TryGetProperty("moving", out var ids) ? ids.EnumerateArray().Select(m => stretches.Single(s => s.Id == IdOf(m.GetString()!))).ToList() : null;
+                    var moving = c.TryGetProperty("moving", out var ids) ? ids.EnumerateArray().Select(m => installations.Single(s => s.Id == IdOf(m.GetString()!))).ToList() : null;
                     history.Check(moving);
                     break;
             }
@@ -90,5 +103,15 @@ public class TyreSwapContractTests
         var want = c.GetProperty("expect").EnumerateArray()
             .Select(s => $"{s.GetProperty("id").GetString()} {sets.Single(x => x.Id == IdOf(s.GetProperty("set").GetString()!)).Name} {Day(s.GetProperty("from")):yyyy-MM-dd}..{DayOrNull(s.GetProperty("until")):yyyy-MM-dd} {Pairs(s.GetProperty("pairOneFront"))}");
         Assert.Equal(want, after);
+        if (!c.TryGetProperty("lines", out var expectedLines)) return;
+
+        lines.AddRange(TyreLog.Follow(changes, history, lines, Owner, Now).Created);
+        string Name(TyreEntry line) => names.GetValueOrDefault(line.Id, "kept");
+        string SetName(Guid? id) => sets.Single(x => x.Id == id).Name;
+        Assert.Equal(
+            expectedLines.EnumerateArray().Select(l =>
+                $"{l.GetProperty("id").GetString()} {l.GetProperty("kind").GetString()} {SetName(IdOf(l.GetProperty("set").GetString()!))} {l.GetProperty("day").GetString()} {l.GetProperty("note").GetString()}"),
+            lines.Where(l => !l.IsDeleted).OrderBy(l => l.Day).ThenBy(Name).Select(l => $"{Name(l)} {l.Kind} {SetName(l.SetId)} {l.Day:yyyy-MM-dd} {l.Note}"));
+        Assert.Equal(c.GetProperty("trashedLines").EnumerateArray().Select(t => t.GetString()), lines.Where(l => l.IsDeleted).Select(Name).Order());
     }
 }

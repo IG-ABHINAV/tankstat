@@ -54,7 +54,8 @@ const MARKS: Record<ChangeAction, PendingMark> = {
   setPicture: 'changed', removePicture: 'changed',
   addTyreSet: 'new', updateTyreSet: 'changed', setTyreRoughDistance: 'changed', retireTyreSet: 'changed', unretireTyreSet: 'changed',
   deleteTyreSet: 'deleted', restoreTyreSet: 'restored', swapTyres: 'changed', changeTyrePositions: 'changed', addPastTyreSwaps: 'changed',
-  addTyreStretch: 'new', updateTyreStretch: 'changed', deleteTyreStretch: 'deleted', restoreTyreStretch: 'restored', setTyreLogDay: 'changed',
+  addTyreInstallation: 'new', updateTyreInstallation: 'changed', deleteTyreInstallation: 'deleted', restoreTyreInstallation: 'restored',
+  addTyreEntry: 'new', updateTyreEntry: 'changed', deleteTyreEntry: 'deleted', restoreTyreEntry: 'restored',
 }
 export const markOf = (change: Change): PendingMark => MARKS[change.action]
 
@@ -86,10 +87,10 @@ export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
   tyres: [], // never folded
 }
 
-/** The ids a change creates: an add's own, a tyre change's sets and stretches (what is made on them must reach the server after it). */
+/** The ids a change creates: an add's own, a tyre change's sets and installations (what is made on them must reach the server after it). */
 export const createdBy = (c: Change): string[] => (isTyreAction(c.action) ? tyreCreates(c.action, c.input) : c.action === 'add' ? [c.targetId] : [])
 
-/** The ids of what a tyre change is made on (its set, its stretch), any of which may have been created here. */
+/** The ids of what a tyre change is made on (its set, its installation), any of which may have been created here. */
 export const tyreNeedsOf = (c: Change): string[] => (isTyreAction(c.action) ? tyreNeeds(c.action, c.input) : [])
 
 /**
@@ -222,6 +223,8 @@ function withoutTyreDependents(list: readonly Change[], created: readonly string
   for (let more = gone.size > 0; more; ) {
     more = false
     left = left.filter((c) => {
+      // An edit, trash or photo of the expense a line's amount made (#288) goes with the change that made it.
+      if (c.entity === 'expenses' && gone.has(c.targetId)) return false
       if (c.entity !== 'tyres' || !tyreNeedsOf(c).some((id) => gone.has(id))) return true
       createdBy(c).forEach((id) => gone.add(id))
       more = true

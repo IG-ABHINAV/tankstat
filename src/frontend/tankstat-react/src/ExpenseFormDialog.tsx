@@ -41,6 +41,7 @@ import { OfflineNote, ReadLaterNote } from './components/OfflineNote.tsx'
 import type { ChangeEdit, MergeInfo } from './dialogs/changeEdit.ts'
 import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
+import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
 
 /** The amount is null only when it was left for a photo that is still being read. */
 export interface ExpenseValues {
@@ -143,6 +144,7 @@ export function ExpenseFormDialog({
       >
         {error && <ErrorMessage error={error} />}
         {!change && <OfflineNote />}
+        {existing?.tyreEntry && <TyreLogBanner vehicleId={vehicle.id} line={existing.tyreEntry} />}
         {readLater && <ReadLaterNote />}
         {!error && !ready && (
           <Loading />

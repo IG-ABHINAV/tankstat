@@ -1,3 +1,5 @@
+using Tankstat.Domain.Tyres;
+using Tankstat.Application.Tyres;
 using Tankstat.Domain.Photos;
 using Tankstat.Application.Expenses;
 using Tankstat.Application.Recognition;
@@ -410,6 +412,47 @@ public class LogPhotoFillerTests
         var image = await s.W.Photos.AddAsync(type, logId, Jpeg(marker), default);
         await s.W.Recognition.QueueForLogPhotoAsync(type, logId, image, "hu", default);
         return image;
+    }
+
+    [Fact]
+    public async Task ATyreLogLinesExpense_WaitsForItsPhotoLikeAnyOther_AndTheOdometerItGivesIsTheLinesToo()
+    {
+        var s = await Setup();
+        var set = Guid.NewGuid();
+        await s.W.TyreService.AddSetAsync(new NewTyreSet(s.Car.Id, new TyreSetInput("Michelin", TyreSeason.Summer, null, Day, null, null), true, Day, null, null), default, set, Guid.NewGuid());
+        var (line, expenseId) = (Guid.NewGuid(), Guid.NewGuid());
+        await s.W.TyreService.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, set, Day, null, null, new TyreFee(25, "EUR", "Tyres", "Puncture", expenseId)), default, line);
+        await AddedAndQueued(s, LogType.Expense, expenseId);
+
+        var waiting = await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(Day, "Puncture", "Tyres", 25, "EUR", null, null), default);
+        Assert.Equal(ReviewState.AwaitingPhotos, waiting.ReviewState);
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"));
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Expenses.Items.Single(e => e.Id == expenseId);
+        Assert.Equal((45678L, ReviewState.NeedsReview), (filled.Odometer!.Value, filled.ReviewState));
+        Assert.Equal(filled.OdometerReadingId, s.W.Tyres.Entries.Single(e => e.Id == line).OdometerReadingId); // one reading for the two
+    }
+
+    [Fact]
+    public async Task ATyreLogLinesExpenseInTheTrash_IsFilledInWhenItIsRestored_LikeAnyOther()
+    {
+        var s = await Setup();
+        var set = Guid.NewGuid();
+        await s.W.TyreService.AddSetAsync(new NewTyreSet(s.Car.Id, new TyreSetInput("Michelin", TyreSeason.Summer, null, Day, null, null), true, Day, null, null), default, set, Guid.NewGuid());
+        var (line, expenseId) = (Guid.NewGuid(), Guid.NewGuid());
+        await s.W.TyreService.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, set, Day, null, null, new TyreFee(25, "EUR", "Tyres", "Puncture", expenseId)), default, line);
+        await AddedAndQueued(s, LogType.Expense, expenseId);
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(Day, "Puncture", "Tyres", 25, "EUR", null, null), default);
+        await s.W.ExpenseService.DeleteAsync(expenseId, default);
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"));
+        await s.W.Processor.ProcessDueAsync(default);
+        Assert.Null(s.W.Expenses.Items.Single(e => e.Id == expenseId).Odometer); // read while it was in the trash: nothing filled
+
+        var restored = await s.W.ExpenseService.RestoreAsync(expenseId, default);
+
+        Assert.Equal((45678L, ReviewState.NeedsReview), (restored.Odometer, restored.ReviewState));
+        Assert.Equal(restored.OdometerReadingId, s.W.Tyres.Entries.Single(e => e.Id == line).OdometerReadingId); // one reading for the two
     }
 
     [Fact]

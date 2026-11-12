@@ -39,11 +39,16 @@ public enum SyncChangeKind
     SwapTyres,
     ChangeTyrePositions,
     AddPastTyreSwaps,
-    AddTyreStretch,
-    UpdateTyreStretch,
-    DeleteTyreStretch,
-    RestoreTyreStretch,
-    SetTyreLogDay,
+    AddTyreInstallation,
+    UpdateTyreInstallation,
+    DeleteTyreInstallation,
+    RestoreTyreInstallation,
+
+    // Tyre log entries (#288).
+    AddTyreEntry,
+    UpdateTyreEntry,
+    DeleteTyreEntry,
+    RestoreTyreEntry,
 }
 
 /// <summary>Applied: the server has it. Parked: the server could not apply it and keeps it (with why) for a person to decide.</summary>

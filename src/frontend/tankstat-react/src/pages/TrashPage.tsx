@@ -1,6 +1,7 @@
 import { useApolloClient, useMutation } from '@apollo/client/react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
@@ -22,7 +23,7 @@ import {
   TrashDocument,
   EmptyTyreTrashDocument,
   RestoreTyreSetDocument,
-  RestoreTyreStretchDocument,
+  RestoreTyreEntryDocument,
   TyreTrashDocument,
   type TyreTrashQuery,
   type TyreTrashQueryVariables,
@@ -266,7 +267,12 @@ function ExpenseTrash({ run, setNotice }: Shared) {
         />
       )}
       actions={(r) => (
-        <Button variant="soft" aria-label={t('trash.restoreAria', { name: r.title })} onClick={() => void run(() => restoreLog('expenses', r, () => restore({ variables: { id: r.id } })))}>
+        <Button variant="soft" aria-label={t('trash.restoreAria', { name: r.title })} onClick={() =>
+            void run(async () => {
+              await restoreLog('expenses', r, () => restore({ variables: { id: r.id } }))
+              if (r.tyreEntry?.trashed) setNotice(t('trash.restoredLineInTrash')) // only the expense comes back (#288)
+            })
+          }>
           {t('trash.restore')}
         </Button>
       )}
@@ -275,17 +281,26 @@ function ExpenseTrash({ run, setNotice }: Shared) {
 }
 
 /**
- * Tyre sets and stretches in the trash (#287): a set comes back with its stretches, a stretch alone; a restore that no longer fits the
- * history is refused with the server's reason (`tyres.restoreConflict`), shown in the page's alert. Online only until #287's part 4.
+ * Tyre sets and tyre log lines in the trash (#287, #288): a set comes back with its installations and lines, a line alone (a swap's with its
+ * installation); a restore that no longer fits the history is refused with the server's reason (`tyres.restoreConflict`), shown in the
+ * page's alert. Online only.
  */
 function TyreTrash({ run, setNotice }: Shared) {
   const { t } = useTranslation()
   const format = useFormat()
   const tyreRefetch = { refetchQueries: ['TyreTrash', 'VehicleTyres'], awaitRefetchQueries: true }
   const [restoreSet] = useMutation(RestoreTyreSetDocument, tyreRefetch)
-  const [restoreStretch] = useMutation(RestoreTyreStretchDocument, tyreRefetch)
+  const [restoreEntry] = useMutation(RestoreTyreEntryDocument, tyreRefetch)
   const [emptyTrash] = useMutation(EmptyTyreTrashDocument, tyreRefetch)
-  const what = useCallback((r: TyreRow) => (r.kind === 'SET' ? t('trash.tyres.set', { name: r.setName }) : t('trash.tyres.stretch', { set: r.setName })), [t])
+  const what = useCallback(
+    (r: TyreRow) =>
+      r.kind === 'SET'
+        ? t('trash.tyres.set', { name: r.setName })
+        : r.setName
+          ? t('trash.tyres.entry', { kind: t(`tyres.entries.kinds.${r.entryKind ?? 'OTHER'}`), set: r.setName })
+          : t('trash.tyres.entryNoSet', { kind: t(`tyres.entries.kinds.${r.entryKind ?? 'OTHER'}`) }),
+    [t],
+  )
 
   const columns = useMemo<GridColumn<TyreRow, TyreTrashQueryVariables, TyreTrashSortField>[]>(() => {
     const none = t('common.none')
@@ -296,12 +311,20 @@ function TyreTrash({ run, setNotice }: Shared) {
         label: 'trash.tyres.when',
         cell: (r) =>
           r.kind === 'SET'
-            ? t('trash.tyres.withStretches', { count: r.stretchCount })
-            : r.from && r.until
-              ? t('trash.tyres.range', { from: format.date(r.from), until: format.date(r.until) })
-              : r.from
-                ? t('trash.tyres.rangeOpen', { from: format.date(r.from) })
-                : none,
+            ? t('trash.tyres.withInstallations', { count: r.installationCount })
+            : !r.day
+              ? none
+              : r.entryKind !== 'SWAP' && r.entryKind !== 'POSITIONS_CHANGED'
+                ? t('trash.tyres.day', { day: format.date(r.day) })
+                : (
+                    // A swap's row (#288): the chip says it is one (text, not colour alone), then its time on the car.
+                    <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Chip size="small" variant="soft" label={t('trash.tyres.swapChip')} />
+                      {r.until
+                        ? t('trash.tyres.swapUntil', { day: format.date(r.day), until: format.date(r.until) })
+                        : t('trash.tyres.swapNow', { day: format.date(r.day) })}
+                    </Stack>
+                  ),
       },
       { id: 'vehicle', label: 'columns.vehicle', cell: (r) => r.vehicle?.name ?? none },
       { id: 'deletedAt', label: 'columns.deletedAt', mobile: true, sortField: 'DELETED_AT', cell: (r) => format.dateTime(r.deletedAt) },
@@ -331,7 +354,15 @@ function TyreTrash({ run, setNotice }: Shared) {
         <Button
           variant="soft"
           aria-label={t('trash.restoreAria', { name: what(r) })}
-          onClick={() => void run(() => (r.kind === 'SET' ? restoreSet({ variables: { id: r.id } }) : restoreStretch({ variables: { id: r.id } })))}
+          onClick={() =>
+            void run(async () => {
+              if (r.kind === 'SET') await restoreSet({ variables: { id: r.id } })
+              else {
+                await restoreEntry({ variables: { id: r.id } })
+                setNotice(t(r.withExpense ? 'trash.tyres.restoredWithExpense' : 'trash.tyres.restored'))
+              }
+            })
+          }
         >
           {t('trash.restore')}
         </Button>

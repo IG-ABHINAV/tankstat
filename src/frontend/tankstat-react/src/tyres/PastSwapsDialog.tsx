@@ -25,7 +25,7 @@ import { keyedOf, type Tyres, useTyreMutation, useTyreToasts, useTyreWords, whol
 export const MAX_PAST_SWAPS = 25
 
 interface Row {
-  /** The id of the stretch this row creates: the same for every Save of one opening. */
+  /** The id of the installation this row creates: the same for every Save of one opening. */
   key: string
   day: string
   setId: string
@@ -71,7 +71,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
         input: {
           vehicleId,
           replace: replace !== null,
-          swaps: rows.map((r) => ({ day: r.day, setId: r.setId, odometer: wholeOrNull(String(form.get(`odometer-${r.key}`) ?? '')), stretchId: r.key })),
+          swaps: rows.map((r) => ({ day: r.day, setId: r.setId, odometer: wholeOrNull(String(form.get(`odometer-${r.key}`) ?? '')), installationId: r.key })),
         },
       })
       setOpen(false)
@@ -80,7 +80,7 @@ export function PastSwapsDialog({ trigger, vehicleId, unit, tyres }: { trigger: 
       const keyed = keyedOf(err)
       if (keyed?.key === 'tyres.swapExists' && replace === null) {
         // Every row on a day another set went on is replaced, not only the one the server named.
-        const starts = new Set(tyres.sets.flatMap((s) => s.stretches.map((x) => x.stretch.from)))
+        const starts = new Set(tyres.sets.flatMap((s) => s.installations.map((x) => x.installation.from)))
         const clashing = [...new Set(rows.map((r) => r.day).filter((d) => starts.has(d)))].sort()
         setReplace((clashing.length > 0 ? clashing : [String(keyed.args.date)]).map(format.date).join(', '))
       }

@@ -73,16 +73,16 @@ internal sealed class UserDataRepository(IDbContextFactory<AppDbContext> dbFacto
         await db.Refuelings.IgnoreQueryFilters().Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
         await db.Expenses.IgnoreQueryFilters().Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
         await db.RecurringExpenses.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
-        // Tyres (#287): sets, their stretches and the tyre log's days, like the logs (trashed ones too: there is no query filter on them).
+        // Tyres (#287): sets, their installations and the tyre log's lines, like the logs (trashed ones too: there is no query filter on them).
         await db.TyreSets.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
         await db.TyreSets.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
         await db.TyreSets.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
-        await db.TyreStretches.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
-        await db.TyreStretches.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
-        await db.TyreStretches.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
-        await db.TyreLogDays.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
-        await db.TyreLogDays.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
-        await db.TyreLogDays.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
+        await db.TyreInstallations.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.TyreInstallations.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.TyreInstallations.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
+        await db.TyreEntries.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.TyreEntries.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.TyreEntries.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
         await db.VehicleCharts.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to), ct);
         await db.LogPhotos.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to), ct);
         await db.LogPhotos.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to), ct);

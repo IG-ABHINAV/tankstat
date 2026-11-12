@@ -11,10 +11,13 @@ namespace Tankstat.Seeder;
 
 /// <param name="Expenses">The visits of its schedules and the one-off expenses, in date order.</param>
 /// <param name="Completions">The links from each schedule to the expenses of its visits, as marking it done leaves them.</param>
-/// <param name="TyreSets">A summer and a winter set (#287), with <paramref name="TyreStretches"/>: their time on the car.</param>
+/// <param name="TyreSets">A summer and a winter set (#287), with <paramref name="TyreInstallations"/>: their time on the car, and
+/// <paramref name="TyreEntries"/>: the tyre log, a line per installation and a few more (#288), with <paramref name="TyreExpenses"/>: the
+/// expenses their amounts made.</param>
 public sealed record GeneratedVehicle(
     Vehicle Vehicle, IReadOnlyList<Refueling> Refuelings, IReadOnlyList<RecurringExpense> Recurring, IReadOnlyList<Expense> Expenses,
-    IReadOnlyList<RecurringCompletion> Completions, IReadOnlyList<TyreSet>? TyreSets = null, IReadOnlyList<TyreStretch>? TyreStretches = null);
+    IReadOnlyList<RecurringCompletion> Completions, IReadOnlyList<TyreSet>? TyreSets = null, IReadOnlyList<TyreInstallation>? TyreInstallations = null,
+    IReadOnlyList<TyreEntry>? TyreEntries = null, IReadOnlyList<Expense>? TyreExpenses = null);
 
 /// <summary>
 /// Creates random but internally consistent test data through the domain's own factories (so every rule of the
@@ -60,8 +63,8 @@ public sealed class DataGenerator(TimeProvider clock)
             var trajectory = OdometerTrajectory.Of(log, DefaultKmPerDay * market.DistancePerKm);
             var schedules = vehicle.IsDeleted ? [] : Recurring(scheduleRandom, vehicle, market, trajectory, options.RecurringPerVehicle, today);
             var (expenses, completions) = Expenses(expenseRandom, vehicle, market, trajectory, schedules, options.ExpensesPerVehicle, today);
-            var (sets, stretches) = vehicle.IsDeleted || log.Count == 0 ? ([], []) : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
-            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, sets, stretches);
+            var (sets, installations, lines, tyreExpenses) = vehicle.IsDeleted || log.Count == 0 ? ([], [], [], []) : Tyres(tyreRandom, vehicle, market, log.Min(r => r.Date), today);
+            yield return new GeneratedVehicle(vehicle, log, schedules, expenses, completions, sets, installations, lines, tyreExpenses);
         }
     }
 
@@ -188,9 +191,9 @@ public sealed class DataGenerator(TimeProvider clock)
     /// <summary>
     /// A summer and a winter set (#287): each used before the log starts (a rough figure for that time, standing until the first swap), swapped
     /// through the history's own rules (<see cref="TyreHistory"/>) around the start of April and of November from the log's first day to today,
-    /// each set's pairs exchanged front to rear every other season. No reading is typed: the distances come from the log's readings.
+    /// each set's pairs exchanged front to rear every other season, each installation with its line in the tyre log. No reading is typed: the distances come from the log's readings.
     /// </summary>
-    private (List<TyreSet> Sets, List<TyreStretch> Stretches) Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
+    private (List<TyreSet> Sets, List<TyreInstallation> Installations, List<TyreEntry> Lines, List<Expense> Expenses) Tyres(Random random, Vehicle vehicle, Market market, DateOnly first, DateOnly today)
     {
         var owner = vehicle.OwnerId;
         var size = TyreSizes[random.Next(TyreSizes.Length)];
@@ -224,7 +227,38 @@ public sealed class DataGenerator(TimeProvider clock)
                 var day = new DateOnly(year, month, 1).AddDays(random.Next(-10, 15));
                 if (day > first && day <= today) Fit(set, day);
             }
-        return ([summer, winter], [.. history.Live]);
+        var lines = history.Live.Select(s => TyreLog.LineFor(s, history, owner)).ToList();
+
+        // What they cost (#288): each set's price on a Bought line on the day it came into use, a fee on some swaps, a puncture repaired with an
+        // amount, and a wheel balancing without one; each amount an expense in the vehicle's home currency, filed under Tyres. No reading is typed.
+        var expenses = new List<Expense>();
+        void Paid(TyreEntry line, string title, double minEuro, double maxEuro)
+        {
+            var amount = Math.Round((decimal)((minEuro + random.NextDouble() * (maxEuro - minEuro)) * market.HomeRate), 2);
+            var expense = Expense.Create(owner, owner, vehicle.Id, line.Day, title, "Tyres", Cost.Create(owner, vehicle.Id, line.Day, amount, market.HomeCurrency), null);
+            line.LinkExpense(expense.Id);
+            expenses.Add(expense);
+        }
+        foreach (var set in new[] { summer, winter })
+        {
+            var bought = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.Bought, set.Id, set.Since, null, null);
+            Paid(bought, $"Bought: {set.Name}", 300, 700);
+            lines.Add(bought);
+        }
+        foreach (var swap in lines.Where(l => l.Kind == TyreEntryKind.Swap).Skip(1).Where(_ => random.Next(2) == 0).ToList())
+            Paid(swap, $"Tyre swap: {(swap.SetId == summer.Id ? summer : winter).Name}", 20, 40);
+        if (today > first)
+        {
+            var day = first.AddDays(random.Next(0, today.DayNumber - first.DayNumber));
+            if (history.Covering(day) is { } covering)
+            {
+                var puncture = TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.PunctureRepaired, covering.SetId, day, null, "Rear left");
+                Paid(puncture, $"Puncture repaired: {(covering.SetId == summer.Id ? summer : winter).Name}", 15, 35);
+                lines.Add(puncture);
+                lines.Add(TyreEntry.Create(owner, owner, vehicle.Id, TyreEntryKind.WheelBalancing, covering.SetId, day, null, null));
+            }
+        }
+        return ([summer, winter], [.. history.Live], lines, expenses);
     }
 
     // ---- Recurring expenses -----------------------------------------------------------------------------------------

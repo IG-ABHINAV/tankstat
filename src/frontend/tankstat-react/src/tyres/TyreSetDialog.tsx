@@ -1,3 +1,4 @@
+import { useApolloClient } from '@apollo/client/react'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -15,11 +16,14 @@ import { Field } from '../forms/Field.tsx'
 import { FieldDate } from '../forms/FieldDate.tsx'
 import { FieldInput } from '../forms/FieldInput.tsx'
 import { Form } from '../forms/Form.tsx'
-import { AddTyreSetDocument, UpdateTyreSetDocument, type DistanceUnit, type TyreSeason } from '../gql/generated.ts'
+import { AddTyreSetDocument, UpdateTyreSetDocument, VehicleTyresDocument, type DistanceUnit, type TyreSeason } from '../gql/generated.ts'
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
 import { useFormat } from '../i18n/format.ts'
 import { madeText, parseMade } from './odometer.ts'
 import { OfflineNote } from '../components/OfflineNote.tsx'
+import { feeOf } from './entries.ts'
+import { FeeFields } from './FeeFields.tsx'
+import { noTyres } from './replay.ts'
 import { keyedOf, type TyreSet, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 const SEASONS: TyreSeason[] = ['SUMMER', 'WINTER', 'ALL_SEASON']
@@ -47,7 +51,14 @@ export function TyreSetDialog({
   const format = useFormat()
   const [open, setOpen] = useDialogState()
   const id = useClientId(open)
-  const stretchId = useClientId(open)
+  const installationId = useClientId(open)
+  const expenseId = useClientId(open)
+  const boughtEntryId = useClientId(open)
+  const tyres = useApolloClient().readQuery({ query: VehicleTyresDocument, variables: { vehicleId } })?.vehicleTyres ?? noTyres(vehicleId)
+  // A price (#288): a Bought line on the day it was bought; a used set asks for that day, starting from "in use since".
+  const [priced, setPriced] = useState(false)
+  const [since, setSince] = useState('')
+  const [boughtOn, setBoughtOn] = useState<string | null>(null)
   const run = useTyreMutation(vehicleId)
   const words = useTyreWords(unit)
   const [season, setSeason] = useState<TyreSeason>(edit?.season ?? 'SUMMER')
@@ -61,6 +72,9 @@ export function TyreSetDialog({
     setSeason(edit?.season ?? 'SUMMER')
     setWhere(fittedFirst ? 'car' : 'storage')
     setIsNew(false)
+    setPriced(false)
+    setSince('')
+    setBoughtOn(null)
     setError(undefined)
     setReplace(null)
   }
@@ -84,7 +98,7 @@ export function TyreSetDialog({
       const saved = await run(AddTyreSetDocument, {
         input: {
           id,
-          stretchId: where === 'car' ? stretchId : null,
+          installationId: where === 'car' ? installationId : null,
           vehicleId,
           name: text('name'),
           season,
@@ -96,6 +110,13 @@ export function TyreSetDialog({
           day: todayIso(),
           roughDistance: isNew ? 0 : (wholeOrNull(text('rough')) ?? 0),
           replace: replace !== null,
+          ...(text('feeAmount') !== ''
+            ? {
+                price: feeOf(form, `${t('tyres.entries.kinds.BOUGHT')}: ${text('name')}`, expenseId),
+                boughtOn: isNew ? text('bought') : text('boughtOn') || text('since'),
+                boughtEntryId,
+              }
+            : {}),
         },
       })
       setOpen(false)
@@ -172,7 +193,7 @@ export function TyreSetDialog({
                   ) : (
                     <>
                       <Field name="since" label={t('tyres.fields.since')} hint={t('tyres.fields.sinceHint')} required>
-                        <FieldDate disableFuture />
+                        <FieldDate disableFuture value={since} onChange={setSince} />
                       </Field>
                       <Field name="rough" label={t('tyres.fields.rough', { unit: words.unitShort })} hint={t('tyres.fields.roughHint')} invalid={wholeInvalid(t('forms.numberInvalid'))}>
                         <FieldInput inputMode="numeric" autoComplete="off" />
@@ -190,9 +211,20 @@ export function TyreSetDialog({
                 <FieldInput inputMode="numeric" maxLength={4} autoComplete="off" placeholder="0523" defaultValue={madeText(edit?.madeWeek, edit?.madeYear)} />
               </Field>
               {!edit && (
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  {t('tyres.fields.setNote')}
-                </Typography>
+                <>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    {t('tyres.fee.priceText')}
+                  </Typography>
+                  <FeeFields vehicleId={vehicleId} tyres={tyres} label={t('tyres.fee.price')} onAmount={(v) => setPriced(v.trim() !== '')} />
+                  {priced && !isNew && (
+                    <Field name="boughtOn" label={t('tyres.fee.boughtOn')} hint={t('tyres.fee.boughtOnHint')} required>
+                      <FieldDate disableFuture value={boughtOn ?? since} onChange={setBoughtOn} />
+                    </Field>
+                  )}
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    {t('tyres.fields.setNote')}
+                  </Typography>
+                </>
               )}
               {replace && <WarningMessage>{t('tyres.dialogs.replaceNote', { date: replace.date, set: replace.set })}</WarningMessage>}
               {error !== undefined && <ErrorMessage error={error} />}

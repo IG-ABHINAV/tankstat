@@ -1,10 +1,10 @@
 import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addVehicle, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
-// A vehicle's tyres (#287): sets added, swapped with their pairs, a past swap from papers, a stretch moved to the trash and back from the
-// Trash page. Every test signs in as a user of its own.
+// A vehicle's tyres (#287): sets added, swapped with their pairs, a past swap from papers, a swap moved to the trash and back from the Trash
+// page; the tyre log's lines (#288): one added, a swap moved by its line's day, one moved to the trash. Every test signs in as a user of its own.
 
 test.beforeEach(async ({ page }) => {
   await signInAsNewUser(page)
@@ -28,7 +28,7 @@ async function typeDate(page: Page, field: Locator, iso: string) {
 
 const dateField = (dialog: Locator, name: RegExp) => dialog.getByRole('group', { name })
 
-test('adds two sets, swaps with the pairs, enters a past swap, and brings a trashed stretch back from the trash', async ({ page }) => {
+test('adds two sets, swaps with the pairs, enters a past swap, and brings a trashed installation back from the trash', async ({ page }) => {
   const vehicle = await addVehicle(page)
   await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
   await logRefueling(page, vehicle.id, { date: '2026-06-01', odometer: 6000 })
@@ -82,29 +82,31 @@ test('adds two sets, swaps with the pairs, enters a past swap, and brings a tras
   await past.getByRole('button', { name: 'Save swaps' }).click()
   await expect(past).toBeHidden()
 
-  // Its history: the stretch from 20 January moved to the trash.
+  // Its history: the installation from 20 January moved to the trash.
   await summer.getByRole('button', { name: 'History' }).click()
   const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
-  const stretch = history.getByRole('listitem').filter({ hasText: /Jan 20, 2026/ })
-  await expect(stretch).toBeVisible()
+  const installation = history.getByRole('listitem').filter({ hasText: /Jan 20, 2026/ })
+  await expect(installation).toBeVisible()
   await expectSoundLayout(page)
-  await stretch.getByRole('button', { name: 'Move to the trash' }).click()
-  await page.getByRole('alertdialog', { name: 'Move to the trash?' }).getByRole('button', { name: 'Move to the trash' }).click()
-  await expect(stretch).toBeHidden()
+  await installation.getByRole('button', { name: /^Move to the trash: Tyre swap/ }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Move to the trash?' })
+  await expect(confirm).toContainText('This removes the swap: Michelin Primacy 4 on the car from Jan 20, 2026')
+  await confirm.getByRole('button', { name: 'Move to the trash' }).click()
+  await expect(installation).toBeHidden()
   await history.getByRole('button', { name: 'Cancel' }).click()
   await expectSoundLayout(page) // the tab itself, with seven tabs on a phone
 
   // The Trash page's Tyres tab brings it back.
   await page.goto('/trash?tab=tyres')
   await pageLoaded(page)
-  // Two rows of the set: the stretch the swap replaced, and the one from 20 January, trashed last: the first, newest first (a phone hides
-  // the column with its days).
-  const row = page.getByRole('row').filter({ hasText: 'Michelin Primacy 4: on the car' }).first()
+  // Two swap lines of the set, each with its installation: the one the swap replaced, and the one from 20 January, trashed last: the first,
+  // newest first (a phone hides the column with its days).
+  const row = page.getByRole('row').filter({ hasText: 'Tyre swap: Michelin Primacy 4' }).first()
   await expect(row).toBeVisible()
   await expectSoundLayout(page)
-  await expect(page.getByRole('row').filter({ hasText: 'Michelin Primacy 4: on the car' })).toHaveCount(2)
-  await row.getByRole('button', { name: 'Restore Michelin Primacy 4: on the car' }).click()
-  await expect(page.getByRole('row').filter({ hasText: 'Michelin Primacy 4: on the car' })).toHaveCount(1)
+  await expect(page.getByRole('row').filter({ hasText: 'Tyre swap: Michelin Primacy 4' })).toHaveCount(2)
+  await row.getByRole('button', { name: 'Restore Tyre swap: Michelin Primacy 4' }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Tyre swap: Michelin Primacy 4' })).toHaveCount(1)
   await openVehicle(page, vehicle.id, 'tyres')
   await page.getByRole('article', { name: 'Michelin Primacy 4' }).getByRole('button', { name: 'History' }).click()
   const back = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
@@ -119,4 +121,152 @@ test('adds two sets, swaps with the pairs, enters a past swap, and brings a tras
   await expect(details).toBeHidden()
   await back.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('article', { name: 'Michelin Primacy 4' })).toContainText('205/55 R16 91V')
+})
+
+test('adds a line to the tyre log, moves a swap by its line’s day, and moves a line to the trash and back (#288)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: '2026-06-01', odometer: 6000 })
+  const addSet = 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { sets { set { id name } } } }'
+  const set = { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false }
+  await graphql(page, addSet, { i: { ...set, name: 'Michelin Primacy 4', season: 'SUMMER', since: '2023-03-25', fitted: true, day: '2026-01-15' } })
+  const added = await graphql<{ addTyreSet: { sets: { set: { id: string; name: string } }[] } }>(page, addSet, {
+    i: { ...set, name: 'Continental WinterContact', season: 'WINTER', since: '2022-11-19', fitted: false, day: '2026-01-15' },
+  })
+  const winterId = added.addTyreSet.sets.find((s) => s.set.name === 'Continental WinterContact')!.set.id
+  await graphql(page, 'mutation($i: SwapTyresInput!) { swapTyres(input: $i) { vehicleId } }', { i: { vehicleId: vehicle.id, setId: winterId, day: '2026-05-01' } })
+  await openVehicle(page, vehicle.id, 'tyres')
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await expect(log.getByRole('button', { name: 'Tyre swap, Continental WinterContact, May 1, 2026' })).toBeVisible()
+  await expectSoundLayout(page) // the tab with the log's lines
+
+  // A wheel balancing for the set on the car, with a note.
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await add.getByRole('combobox', { name: 'What was done' }).click()
+  await page.getByRole('option', { name: 'Wheel balancing' }).click()
+  await expect(add.getByRole('combobox', { name: 'Set' })).toContainText('Continental WinterContact')
+  await typeDate(page, dateField(add, /^Day/), '2026-05-10')
+  await add.getByLabel(/^Note/).fill('Front pair')
+  await expectSoundLayout(page)
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  const balancing = log.getByRole('button', { name: 'Wheel balancing, Continental WinterContact, May 10, 2026' })
+  await expect(balancing).toContainText('Front pair')
+
+  // The swap's line on another day: the swap moves with it, its kind and set locked.
+  await log.getByRole('button', { name: 'Tyre swap, Continental WinterContact, May 1, 2026' }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit entry' })
+  await expect(edit.getByRole('combobox', { name: 'Set' })).toHaveAttribute('aria-disabled', 'true')
+  await expect(edit.getByText('Changing the day moves the swap: the set is on the car from that day.')).toBeVisible()
+  await typeDate(page, dateField(edit, /^Day/), '2026-05-03')
+  await expectSoundLayout(page)
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(edit).toBeHidden()
+  await expect(log.getByRole('button', { name: 'Tyre swap, Continental WinterContact, May 3, 2026' })).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Continental WinterContact' })).toContainText(/On since May 3, 2026/)
+
+  // The balancing to the trash, after asking, and back from the Trash page.
+  await log.getByRole('button', { name: 'Move to the trash: Wheel balancing, May 10, 2026' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Move to the trash?' })
+  await expect(confirm).toContainText('It can be restored from the trash.')
+  await expectSoundLayout(page)
+  await confirm.getByRole('button', { name: 'Move to the trash' }).click()
+  await expect(balancing).toBeHidden()
+  await page.goto('/trash?tab=tyres')
+  await pageLoaded(page)
+  const row = page.getByRole('row').filter({ hasText: 'Wheel balancing: Continental WinterContact' })
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'Restore Wheel balancing: Continental WinterContact' }).click()
+  await expect(row).toBeHidden()
+  await openVehicle(page, vehicle.id, 'tyres')
+  await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: 'Wheel balancing, Continental WinterContact, May 10, 2026' })).toBeVisible()
+})
+
+test('a repair with an amount is an expense on the Expenses tab: its day changed there moves the line, and the two go to the trash and come back together (#288)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
+  await logRefueling(page, vehicle.id, { date: '2026-06-01', odometer: 6000 })
+  const addSet = 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }'
+  const set = { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false }
+  await graphql(page, addSet, { i: { ...set, name: 'Michelin Primacy 4', season: 'SUMMER', since: '2023-03-25', fitted: true, day: '2026-01-15' } })
+  await openVehicle(page, vehicle.id, 'tyres')
+
+  // A puncture repaired for the set on the car, with what it cost.
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await typeDate(page, dateField(add, /^Day/), '2026-05-10')
+  await add.getByLabel(/^Paid/).fill('25000')
+  await expect(add.getByLabel(/^Category/)).toHaveValue('Tyres')
+  await expectSoundLayout(page)
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await expect(log.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, May 10, 2026, / })).toContainText('25,000')
+  await expectSoundLayout(page)
+  // What the set cost and its repairs, and the Spent on tyres block (#288).
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer.getByText('Spent').locator('xpath=following-sibling::*[1]')).toContainText('25,000')
+  await expect(summer.getByText('Repairs').locator('xpath=following-sibling::*[1]')).toHaveText('1')
+  await expect(page.getByRole('heading', { name: 'Spent on tyres' })).toBeVisible()
+
+  // On the Expenses tab: an ordinary expense with the chip; its date changed there moves the line.
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  const row = page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })
+  await expect(row).toContainText('Tyre log')
+  await row.getByRole('button', { name: /^Edit the expense/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await expect(edit.getByText(/The date and the odometer are the same there/)).toBeVisible()
+  await expectSoundLayout(page)
+  await typeDate(page, dateField(edit, /^Date/), '2026-05-12')
+  await edit.getByRole('button', { name: /^Save/ }).click()
+  await expect(edit).toBeHidden()
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  const moved = page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4, May 12, 2026/ })
+  await expect(moved).toBeVisible()
+
+  // To the trash with its expense (the box ticked), and back from the Trash page together.
+  await page.getByRole('button', { name: 'Move to the trash: Puncture repaired, May 12, 2026' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Move to the trash?' })
+  await expect(confirm.getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked()
+  await expectSoundLayout(page)
+  await confirm.getByRole('button', { name: 'Move to the trash' }).click()
+  await expect(moved).toBeHidden()
+  await page.goto('/trash?tab=tyres')
+  await pageLoaded(page)
+  const trashed = page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })
+  await trashed.getByRole('button', { name: /^Restore/ }).click()
+  await expect(page.getByText('Restored, with its expense.')).toBeVisible()
+  await openVehicle(page, vehicle.id, 'expenses')
+  await expect(page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })).toBeVisible()
+})
+
+test('a swap with a fee keeps it on its line, and the line’s new day moves the swap and the expense with it (#288)', async ({ page }) => {
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: '2026-01-15', odometer: 1000 })
+  const addSet = 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }'
+  const set = { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false }
+  await graphql(page, addSet, { i: { ...set, name: 'Michelin Primacy 4', season: 'SUMMER', since: '2023-03-25', fitted: true, day: '2026-01-15' } })
+  await graphql(page, addSet, { i: { ...set, name: 'Continental WinterContact', season: 'WINTER', since: '2022-11-19', fitted: false, day: '2026-01-15' } })
+  await openVehicle(page, vehicle.id, 'tyres')
+
+  await page.getByRole('article', { name: 'Michelin Primacy 4' }).getByRole('button', { name: 'Swap tyres' }).click()
+  const swap = page.getByRole('dialog', { name: 'Swap tyres' })
+  await typeDate(page, dateField(swap, /^Day/), '2026-05-01')
+  await swap.getByLabel(/^Paid for the swap/).fill('8000')
+  await expectSoundLayout(page)
+  await swap.getByRole('button', { name: 'Swap tyres' }).click()
+  await expect(swap).toBeHidden()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await log.getByRole('button', { name: /^Tyre swap, Continental WinterContact, May 1, 2026, / }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit entry' })
+  await expect(edit.getByText(/Its expense and its reading move with it\./)).toBeVisible()
+  await typeDate(page, dateField(edit, /^Day/), '2026-05-04')
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(edit).toBeHidden()
+  await expect(log.getByRole('button', { name: /^Tyre swap, Continental WinterContact, May 4, 2026, / })).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Continental WinterContact' })).toContainText(/On since May 4, 2026/)
+
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Tyre swap: Continental WinterContact' })).toContainText(/5\/4\/2026|May 4, 2026|2026-05-04/)
 })

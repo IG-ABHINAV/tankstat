@@ -180,12 +180,18 @@ type Mutation {
   changeTyrePositions(input: SwapTyresInput!): VehicleTyres! @cost(weight: "10")
   addPastTyreSwaps(input: AddPastTyreSwapsInput!): VehicleTyres!
     @cost(weight: "10")
-  addTyreStretch(input: AddTyreStretchInput!): VehicleTyres! @cost(weight: "10")
-  updateTyreStretch(input: UpdateTyreStretchInput!): VehicleTyres!
+  addTyreInstallation(input: AddTyreInstallationInput!): VehicleTyres!
     @cost(weight: "10")
-  deleteTyreStretch(id: UUID!): VehicleTyres! @cost(weight: "10")
-  restoreTyreStretch(id: UUID!): VehicleTyres! @cost(weight: "10")
-  setTyreLogDay(input: SetTyreLogDayInput!): VehicleTyres! @cost(weight: "10")
+  updateTyreInstallation(input: UpdateTyreInstallationInput!): VehicleTyres!
+    @cost(weight: "10")
+  deleteTyreInstallation(id: UUID!): VehicleTyres! @cost(weight: "10")
+  restoreTyreInstallation(id: UUID!): VehicleTyres! @cost(weight: "10")
+  addTyreEntry(input: AddTyreEntryInput!): VehicleTyres! @cost(weight: "10")
+  updateTyreEntry(input: UpdateTyreEntryInput!): VehicleTyres!
+    @cost(weight: "10")
+  deleteTyreEntry(input: DeleteTyreEntryInput!): VehicleTyres!
+    @cost(weight: "10")
+  restoreTyreEntry(id: UUID!): VehicleTyres! @cost(weight: "10")
   retireTyreSet(id: UUID!, day: LocalDate!): VehicleTyres! @cost(weight: "10")
   unretireTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
   deleteTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
@@ -448,6 +454,7 @@ type Expense {
   vehicle: Vehicle @cost(weight: "10")
   photos: [LogPhotoInfo!]! @cost(weight: "10")
   schedules: [RecurringRef!]! @cost(weight: "10")
+  tyreEntry: TyreEntryRef @cost(weight: "10")
 }
 
 type FigureData {
@@ -520,6 +527,12 @@ type ImportResultInfo {
   expensesSkippedDuplicates: Int!
   recurringSkippedDuplicates: Int!
   errors: [ImportIssueInfo!]!
+}
+
+type InstallationDistance {
+  distance: Long!
+  approximate: Boolean!
+  measure: InstallationMeasure!
 }
 
 type InstanceInfo {
@@ -827,12 +840,6 @@ type StorageSizesInfo {
   photos: Long
 }
 
-type StretchDistance {
-  distance: Long!
-  approximate: Boolean!
-  measure: StretchMeasure!
-}
-
 type SyncChangeInfo {
   id: UUID!
   kind: SyncChangeKind!
@@ -873,7 +880,8 @@ type SyncCurrent {
   expense: Expense
   schedule: RecurringExpenseInfo
   tyreSet: TyreSet
-  tyreStretch: TyreStretch
+  tyreInstallation: TyreInstallation
+  tyreEntry: TyreEntry
   changedBy: UserRef @cost(weight: "10")
 }
 
@@ -958,19 +966,60 @@ type TrendWindow {
   fillUps: Int!
 }
 
-type TyreLogDay {
+type TyreEntry {
+  "The expense its amount made (#288), an ordinary one on the Expenses tab; in the trash or not."
+  expenseId: UUID
+  "The installation whose line it is (the same id): set on a swap's and a change of positions' line."
+  installationId: UUID
   id: UUID!
   ownerId: UUID!
   vehicleId: UUID!
   createdById: UUID!
+  kind: TyreEntryKind!
+  setId: UUID
   day: LocalDate!
   note: String
   odometer: Long
+  isSwapLine: Boolean!
   version: Int!
   updatedAt: DateTime!
   changedAt: DateTime
   changedById: UUID
   lastChange: EntityChange
+  amount: Decimal @cost(weight: "10")
+  currency: String @cost(weight: "10")
+  category: String @cost(weight: "10")
+  expenseTrashed: Boolean! @cost(weight: "10")
+}
+
+type TyreEntryRef {
+  id: UUID!
+  kind: TyreEntryKind!
+  setName: String
+  trashed: Boolean!
+}
+
+type TyreInstallation {
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  setId: UUID!
+  createdById: UUID!
+  from: LocalDate!
+  until: LocalDate
+  pairOneFront: Boolean
+  deletedAt: DateTime
+  isOpen: Boolean!
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+}
+
+type TyreInstallationInfo {
+  installation: TyreInstallation!
+  distance: InstallationDistance!
 }
 
 type TyreSet {
@@ -1009,45 +1058,33 @@ type TyreSetFigures {
 }
 
 type TyreSetInfo {
+  "What the set cost (#288): the expenses of its tyre log lines, one figure per currency, the largest first."
+  spent: [TyreSpent!]! @cost(weight: "10")
+  "Its punctures repaired and valves replaced."
+  repairs: Int!
   set: TyreSet!
   figures: TyreSetFigures!
-  stretches: [TyreStretchInfo!]!
+  installations: [TyreInstallationInfo!]!
   onTheCar: Boolean!
 }
 
-type TyreStretch {
-  id: UUID!
-  ownerId: UUID!
-  vehicleId: UUID!
-  setId: UUID!
-  createdById: UUID!
-  from: LocalDate!
-  until: LocalDate
-  pairOneFront: Boolean
-  deletedAt: DateTime
-  isOpen: Boolean!
-  version: Int!
-  updatedAt: DateTime!
-  changedAt: DateTime
-  changedById: UUID
-  lastChange: EntityChange
-}
-
-type TyreStretchInfo {
-  stretch: TyreStretch!
-  distance: StretchDistance!
+type TyreSpent {
+  currency: String!
+  amount: Decimal!
 }
 
 type TyreTrashRow {
   kind: TyreTrashKind!
   id: UUID!
   vehicleId: UUID!
-  setName: String!
-  from: LocalDate
+  setName: String
+  entryKind: TyreEntryKind
+  day: LocalDate
   until: LocalDate
-  stretchCount: Int!
+  installationCount: Int!
   deletedAt: DateTime!
   version: Int!
+  withExpense: Boolean!
   vehicle: Vehicle @cost(weight: "10")
   canDelete: Boolean! @cost(weight: "10")
 }
@@ -1179,9 +1216,14 @@ type VehicleSummary {
 type VehicleTyres {
   "The vehicle's odometer readings by date (the highest of a day decides), to work out the odometer of a day as the server does."
   readings: [OdometerPoint!]!
+  "What the tyres cost altogether (#288), per currency: every set's and every line of no set's."
+  spentAll: [TyreSpent!]! @cost(weight: "10")
+  "What the lines of no set cost, per currency."
+  spentNoSet: [TyreSpent!]! @cost(weight: "10")
   vehicleId: UUID!
   sets: [TyreSetInfo!]!
-  days: [TyreLogDay!]!
+  entries: [TyreEntry!]!
+  expenseCategory: String
   hasReadings: Boolean!
 }
 
@@ -1225,6 +1267,27 @@ input AddRecurringExpenseInput {
   id: UUID
 }
 
+input AddTyreEntryInput {
+  vehicleId: UUID!
+  kind: TyreEntryKind!
+  day: LocalDate!
+  setId: UUID
+  odometer: Long
+  note: String
+  id: UUID
+  fee: TyreFeeInput
+}
+
+input AddTyreInstallationInput {
+  setId: UUID!
+  from: LocalDate!
+  until: LocalDate
+  pairOneFront: Boolean
+  odometerFrom: Long
+  odometerUntil: Long
+  id: UUID
+}
+
 input AddTyreSetInput {
   vehicleId: UUID!
   name: String!
@@ -1240,17 +1303,10 @@ input AddTyreSetInput {
   pairOneFront: Boolean
   replace: Boolean! = false
   id: UUID
-  stretchId: UUID
-}
-
-input AddTyreStretchInput {
-  setId: UUID!
-  from: LocalDate!
-  until: LocalDate
-  pairOneFront: Boolean
-  odometerFrom: Long
-  odometerUntil: Long
-  id: UUID
+  installationId: UUID
+  price: TyreFeeInput
+  boughtOn: LocalDate
+  boughtEntryId: UUID
 }
 
 input AddVehicleInput {
@@ -1296,11 +1352,14 @@ input ChangeInput {
   swapTyres: SwapTyresInput
   changeTyrePositions: SwapTyresInput
   addPastTyreSwaps: AddPastTyreSwapsInput
-  addTyreStretch: AddTyreStretchInput
-  updateTyreStretch: UpdateTyreStretchInput
-  deleteTyreStretch: UUID
-  restoreTyreStretch: UUID
-  setTyreLogDay: SetTyreLogDayInput
+  addTyreInstallation: AddTyreInstallationInput
+  updateTyreInstallation: UpdateTyreInstallationInput
+  deleteTyreInstallation: UUID
+  restoreTyreInstallation: UUID
+  addTyreEntry: AddTyreEntryInput
+  updateTyreEntry: UpdateTyreEntryInput
+  deleteTyreEntry: DeleteTyreEntryInput
+  restoreTyreEntry: UUID
   base: String
 }
 
@@ -1348,6 +1407,11 @@ input DashboardTileInput {
   pinned: Boolean
   period: TrendPeriodInput
   recipe: TileRecipeInput
+}
+
+input DeleteTyreEntryInput {
+  id: UUID!
+  withExpense: Boolean! = true
 }
 
 input DeleteUserInput {
@@ -1434,7 +1498,7 @@ input PastTyreSwapInput {
   day: LocalDate!
   setId: UUID!
   odometer: Long
-  stretchId: UUID
+  installationId: UUID
 }
 
 input RemoveLogPhotoInput {
@@ -1504,14 +1568,6 @@ input SetLogAccessInput {
   level: AccessLevel!
 }
 
-input SetTyreLogDayInput {
-  vehicleId: UUID!
-  day: LocalDate!
-  odometer: Long
-  note: String
-  id: UUID
-}
-
 input SetTyreRoughDistanceInput {
   id: UUID!
   distance: Long!
@@ -1539,7 +1595,8 @@ input SwapTyresInput {
   replace: Boolean! = false
   odometer: Long
   note: String
-  stretchId: UUID
+  installationId: UUID
+  fee: TyreFeeInput
 }
 
 input SyncChangesInput {
@@ -1567,6 +1624,14 @@ input TrendPeriodInput {
   since: LocalDate
   whole: Boolean
   against: TrendComparison
+}
+
+input TyreFeeInput {
+  amount: Decimal
+  currency: String
+  category: String
+  title: String
+  expenseId: UUID
 }
 
 input UpdateExpenseInput {
@@ -1613,6 +1678,25 @@ input UpdateRefuelingInput {
   discount: Decimal
 }
 
+input UpdateTyreEntryInput {
+  id: UUID!
+  kind: TyreEntryKind!
+  day: LocalDate!
+  setId: UUID
+  odometer: Long
+  note: String
+  fee: TyreFeeInput
+}
+
+input UpdateTyreInstallationInput {
+  id: UUID!
+  from: LocalDate!
+  until: LocalDate
+  pairOneFront: Boolean
+  odometerFrom: Long
+  odometerUntil: Long
+}
+
 input UpdateTyreSetInput {
   id: UUID!
   name: String!
@@ -1621,15 +1705,6 @@ input UpdateTyreSetInput {
   since: LocalDate!
   madeWeek: Int
   madeYear: Int
-}
-
-input UpdateTyreStretchInput {
-  id: UUID!
-  from: LocalDate!
-  until: LocalDate
-  pairOneFront: Boolean
-  odometerFrom: Long
-  odometerUntil: Long
 }
 
 input UpdateUiSettingsInput {
@@ -1829,6 +1904,12 @@ enum FuelType {
   LPG
 }
 
+enum InstallationMeasure {
+  MEASURED
+  FROM_FIRST_READING
+  NOT_MEASURED
+}
+
 enum LogValue {
   ODOMETER
   VOLUME
@@ -1872,8 +1953,8 @@ enum OfflineEntityType {
   EXPENSE
   RECURRING_EXPENSE
   TYRE_SET
-  TYRE_STRETCH
-  TYRE_LOG_DAY
+  TYRE_INSTALLATION
+  TYRE_ENTRY
 }
 
 enum ReadingFieldName {
@@ -1990,12 +2071,6 @@ enum SortDirection {
   DESC
 }
 
-enum StretchMeasure {
-  MEASURED
-  FROM_FIRST_READING
-  NOT_MEASURED
-}
-
 enum SurfaceStyle {
   GLOSSY
   TRANSPARENT
@@ -2035,11 +2110,14 @@ enum SyncChangeKind {
   SWAP_TYRES
   CHANGE_TYRE_POSITIONS
   ADD_PAST_TYRE_SWAPS
-  ADD_TYRE_STRETCH
-  UPDATE_TYRE_STRETCH
-  DELETE_TYRE_STRETCH
-  RESTORE_TYRE_STRETCH
-  SET_TYRE_LOG_DAY
+  ADD_TYRE_INSTALLATION
+  UPDATE_TYRE_INSTALLATION
+  DELETE_TYRE_INSTALLATION
+  RESTORE_TYRE_INSTALLATION
+  ADD_TYRE_ENTRY
+  UPDATE_TYRE_ENTRY
+  DELETE_TYRE_ENTRY
+  RESTORE_TYRE_ENTRY
 }
 
 enum SyncChangeStatus {
@@ -2091,6 +2169,18 @@ enum TrendWindowKind {
   THIS_MONTH
 }
 
+enum TyreEntryKind {
+  SWAP
+  POSITIONS_CHANGED
+  PUNCTURE_REPAIRED
+  VALVE_REPLACED
+  WHEEL_BALANCING
+  STORAGE_FEE
+  BOUGHT
+  OTHER
+  NOTE
+}
+
 enum TyreSeason {
   SUMMER
   WINTER
@@ -2099,7 +2189,7 @@ enum TyreSeason {
 
 enum TyreTrashKind {
   SET
-  STRETCH
+  ENTRY
 }
 
 enum TyreTrashSortField {

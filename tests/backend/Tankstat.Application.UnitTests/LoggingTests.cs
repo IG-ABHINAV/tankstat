@@ -1,3 +1,5 @@
+using Tankstat.Domain.Tyres;
+using Tankstat.Application.Tyres;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Auth;
@@ -359,6 +361,20 @@ public class LoggingTests
         await w.ImageService.SetVehiclePictureAsync(car.Id, Jpeg(4), default);
         canaries.AddRange(["Canary Car", "CANARY-001", "CANARY-002", "canary refueling note", "98765.43", "41.37", "123456789", "Canary expense title",
             "Canary expense category", "5555.55", "987654321", "canary expense note", "Canary schedule", "canary schedule note", "4444.44", "Canary chart title"]);
+
+        // A tyre set, a swap with its fee and a line of the tyre log with an amount (#288): the set's name, the notes, titles, categories,
+        // amounts and readings never reach a line.
+        var tyreSet = Guid.NewGuid();
+        await w.TyreService.AddSetAsync(new NewTyreSet(car.Id, new TyreSetInput("Canary Tyre Set", TyreSeason.Summer, "Canary Size", Day, null, null, 31415), true, Day, null, null),
+            default, tyreSet, Guid.NewGuid());
+        var tyreLine = Guid.NewGuid();
+        await w.TyreService.AddEntryAsync(car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day.AddDays(2), 987654400, "canary tyre note",
+            new TyreFee(2718.28m, "EUR", "Canary tyre category", "Canary tyre title", Guid.NewGuid())), default, tyreLine);
+        await w.TyreService.UpdateEntryAsync(tyreLine, new TyreEntryInput(TyreEntryKind.ValveReplaced, tyreSet, Day.AddDays(2), 987654400, "canary tyre note 2",
+            new TyreFee(1618.03m, "EUR", "Canary tyre category", "Canary tyre title", null)), default);
+        await w.TyreService.TrashEntryAsync(tyreLine, default);
+        await w.TyreService.RestoreEntryAsync(tyreLine, default);
+        canaries.AddRange(["Canary Tyre Set", "Canary Size", "31415", "987654400", "canary tyre note", "Canary tyre category", "Canary tyre title", "2718.28", "1618.03"]);
 
         // Sharing, an import with a file full of somebody's life, and the access settings.
         await w.Sharing.SetLogAccessAsync(car.Id, bob.Id, AccessLevel.Edit, default);

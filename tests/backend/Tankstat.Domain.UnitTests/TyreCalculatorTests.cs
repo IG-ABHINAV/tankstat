@@ -33,9 +33,9 @@ public class TyreCalculatorTests
     }
 
     [Fact]
-    public void Distance_OfAStretchStillOnTheCar_RunsToTheLatestReading_Exactly()
+    public void Distance_OfAInstallationStillOnTheCar_RunsToTheLatestReading_Exactly()
     {
-        Assert.Equal(new StretchDistance(20_050, false, StretchMeasure.Measured), TyreCalculator.Distance(Log, D(2025, 3, 29), null));
+        Assert.Equal(new InstallationDistance(20_050, false, InstallationMeasure.Measured), TyreCalculator.Distance(Log, D(2025, 3, 29), null));
     }
 
     [Fact]
@@ -50,16 +50,16 @@ public class TyreCalculatorTests
     [Fact]
     public void Distance_BeforeTheFuelLog_CountsFromItsFirstReading_OrIsNotMeasured()
     {
-        Assert.Equal(new StretchDistance(10_150, false, StretchMeasure.FromFirstReading), TyreCalculator.Distance(Log, D(2024, 4, 2), D(2025, 3, 29)));
-        Assert.Equal(new StretchDistance(0, false, StretchMeasure.NotMeasured), TyreCalculator.Distance(Log, D(2023, 3, 25), D(2023, 11, 12)));
-        Assert.Equal(StretchMeasure.NotMeasured, TyreCalculator.Distance(Log, D(2024, 4, 2), D(2024, 6, 1)).Measure); // the log starts on its last day
+        Assert.Equal(new InstallationDistance(10_150, false, InstallationMeasure.FromFirstReading), TyreCalculator.Distance(Log, D(2024, 4, 2), D(2025, 3, 29)));
+        Assert.Equal(new InstallationDistance(0, false, InstallationMeasure.NotMeasured), TyreCalculator.Distance(Log, D(2023, 3, 25), D(2023, 11, 12)));
+        Assert.Equal(InstallationMeasure.NotMeasured, TyreCalculator.Distance(Log, D(2024, 4, 2), D(2024, 6, 1)).Measure); // the log starts on its last day
     }
 
     [Fact]
     public void Distance_WithoutAReadingAfterItWentOn_IsNotMeasured()
     {
-        Assert.Equal(StretchMeasure.NotMeasured, TyreCalculator.Distance(Log, D(2026, 11, 20), null).Measure);
-        Assert.Equal(StretchMeasure.NotMeasured, TyreCalculator.Distance([], D(2026, 1, 1), null).Measure);
+        Assert.Equal(InstallationMeasure.NotMeasured, TyreCalculator.Distance(Log, D(2026, 11, 20), null).Measure);
+        Assert.Equal(InstallationMeasure.NotMeasured, TyreCalculator.Distance([], D(2026, 1, 1), null).Measure);
     }
 
     [Fact]
@@ -75,12 +75,12 @@ public class TyreCalculatorTests
         var owner = Guid.NewGuid();
         var car = Guid.NewGuid();
         var set = TyreSet.Create(owner, owner, car, "Michelin Primacy 4", TyreSeason.Summer, null, D(2023, 3, 25), 5, 2023, 11_900, D(2026, 3, 28));
-        TyreStretch[] stretches = [
-            TyreStretch.Create(owner, owner, car, set.Id, D(2025, 3, 29), D(2025, 4, 8), null),
-            TyreStretch.Create(owner, owner, car, set.Id, D(2025, 4, 8), D(2026, 11, 10), true),
+        TyreInstallation[] installations = [
+            TyreInstallation.Create(owner, owner, car, set.Id, D(2025, 3, 29), D(2025, 4, 8), null),
+            TyreInstallation.Create(owner, owner, car, set.Id, D(2025, 4, 8), D(2026, 11, 10), true),
         ];
 
-        var figures = TyreCalculator.SetFigures(Log, set, stretches);
+        var figures = TyreCalculator.SetFigures(Log, set, installations);
 
         Assert.Equal(11_900 + 1000 + 19_050, figures.Distance);
         Assert.Equal((19_050L, 0L, 1000L), (figures.PairOneFront, figures.PairOneRear, figures.PairsUnknown));
@@ -88,15 +88,15 @@ public class TyreCalculatorTests
     }
 
     [Fact]
-    public void SetFigures_SuggestANewRoughFigure_WhenStretchesMeasureTheTimeItStoodFor()
+    public void SetFigures_SuggestANewRoughFigure_WhenInstallationsMeasureTheTimeItStoodFor()
     {
         var owner = Guid.NewGuid();
         var car = Guid.NewGuid();
         // Added on 10 Nov 2026 with 32,900 km, standing for everything before; then a past swap of 29 Mar 2025 is entered.
         var set = TyreSet.Create(owner, owner, car, "Michelin Primacy 4", TyreSeason.Summer, null, D(2023, 3, 25), null, null, 32_900, D(2026, 11, 10));
-        var stretch = TyreStretch.Create(owner, owner, car, set.Id, D(2025, 3, 29), D(2026, 11, 10), null);
+        var installation = TyreInstallation.Create(owner, owner, car, set.Id, D(2025, 3, 29), D(2026, 11, 10), null);
 
-        var suggestion = TyreCalculator.SetFigures(Log, set, [stretch]).Suggestion;
+        var suggestion = TyreCalculator.SetFigures(Log, set, [installation]).Suggestion;
 
         Assert.NotNull(suggestion);
         Assert.Equal((20_050L, 12_900L, D(2025, 3, 29)), (suggestion.MeasuredBefore, suggestion.Distance, suggestion.Until));

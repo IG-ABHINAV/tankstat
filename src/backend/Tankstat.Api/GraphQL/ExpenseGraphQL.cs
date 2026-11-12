@@ -42,6 +42,8 @@ public sealed class ExpenseType : ObjectType<Expense>
         descriptor.Ignore(e => e.Update(default, default!, default, default, default, default, default, default));
         descriptor.Ignore(e => e.FillFromPhoto(default!));
         descriptor.Ignore(e => e.FinishReading(default));
+        descriptor.Ignore(e => e.FollowLine(default, default, default, default, default, default, default));
+        descriptor.Ignore(e => e.UpdateWithLineReading(default, default!, default, default, default, default, default, default, default));
         descriptor.Field(e => e.FilledFromPhoto)
             .Description("The values its photos filled in that nobody has checked yet.")
             .Type<NonNullType<ListType<NonNullType<EnumType<LogValue>>>>>()

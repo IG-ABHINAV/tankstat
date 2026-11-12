@@ -6,7 +6,9 @@ using Tankstat.Application.Odometers;
 using Tankstat.Application.Tyres;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
+using Tankstat.Application.Expenses;
 using Tankstat.Domain;
+using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Sync;
 using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Users;
@@ -36,22 +38,23 @@ public class TyreRepositoryTests
     private static TyreSet Set(Vehicle car, string name = "Michelin", Guid? by = null) =>
         TyreSet.Create(car.OwnerId, by ?? car.OwnerId, car.Id, name, TyreSeason.Summer, null, D(2023, 3, 1), null, null, 0, null);
 
-    private static async Task<(TyreSet Set, TyreStretch Stretch, TyreLogDay Day)> SetOnTheCar(TestDatabase db, Vehicle car, long? odometer = 148_200)
+    private static async Task<(TyreSet Set, TyreInstallation Installation, TyreEntry Line)> SetOnTheCar(TestDatabase db, Vehicle car, long? odometer = 148_200)
     {
         var set = Set(car);
-        var stretch = TyreStretch.Create(car.OwnerId, car.OwnerId, car.Id, set.Id, D(2026, 3, 28), null, true);
-        var day = TyreLogDay.Create(car.OwnerId, car.OwnerId, car.Id, D(2026, 3, 28), odometer, "At the garage");
+        var installation = TyreInstallation.Create(car.OwnerId, car.OwnerId, car.Id, set.Id, D(2026, 3, 28), null, true);
+        var line = TyreEntry.ForInstallation(installation, car.OwnerId);
+        var (reading, _, _) = line.Update(line.Kind, line.SetId, line.Day, odometer, "At the garage");
         var save = new TyreSave();
         save.AddedSets.Add(set);
-        save.AddedStretches.Add(stretch);
-        save.AddedDays.Add(day);
-        if (day.OdometerReading is { } reading) save.AddedReadings.Add(reading);
+        save.AddedInstallations.Add(installation);
+        save.AddedEntries.Add(line);
+        if (reading is not null) save.AddedReadings.Add(reading);
         await db.Get<ITyreRepository>().SaveAsync(save, default);
-        return (set, stretch, day);
+        return (set, installation, line);
     }
 
     [Fact]
-    public async Task ASave_RoundTrips_AndTheDaysReading_IsOneOfTheCarsReadings()
+    public async Task ASave_RoundTrips_AndTheLinesReading_IsOneOfTheCarsReadings()
     {
         await using var db = Database();
         var car = await Car(db);
@@ -60,31 +63,81 @@ public class TyreRepositoryTests
         var book = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
 
         Assert.Equal("Michelin", Assert.Single(book.Sets).Name);
-        Assert.Equal((D(2026, 3, 28), true), (Assert.Single(book.Stretches).From, book.Stretches[0].PairOneFront));
-        Assert.Equal((148_200L, "At the garage"), (Assert.Single(book.Days).Odometer!.Value, book.Days[0].Note));
+        Assert.Equal((D(2026, 3, 28), true), (Assert.Single(book.Installations).From, book.Installations[0].PairOneFront));
+        var line = Assert.Single(book.Entries);
+        Assert.Equal((TyreEntryKind.Swap, book.Installations[0].Id, 148_200L, "At the garage"), (line.Kind, line.InstallationId!.Value, line.Odometer!.Value, line.Note));
         Assert.Equal([new ReadingPoint(D(2026, 3, 28), 148_200)], book.Readings);
         Assert.Equal(148_200, (await db.Get<OdometerService>().LatestAsync(car.Id, default))!.Value);
         Assert.Equal(_clock.GetUtcNow(), book.Sets[0].UpdatedAt);
     }
 
     [Fact]
-    public async Task ClearingADay_DeletesItsReading_ForGood()
+    public async Task ClearingALinesReading_DeletesIt_ForGood()
     {
         await using var db = Database();
         var car = await Car(db);
         var repo = db.Get<ITyreRepository>();
         await SetOnTheCar(db, car);
-        var day = (await repo.LoadAsync(car.Id, default)).Days[0];
+        var line = (await repo.LoadAsync(car.Id, default)).Entries[0];
 
-        var (_, removed) = day.Update(null, null);
+        var (_, removed, _) = line.Update(line.Kind, line.SetId, line.Day, null, line.Note);
         var save = new TyreSave();
-        save.RemovedDays.Add(day);
+        save.ChangedEntries.Add(line);
         save.RemovedReadings.Add(removed!);
         await repo.SaveAsync(save, default);
 
         var book = await repo.LoadAsync(car.Id, default);
-        Assert.Empty(book.Days);
+        Assert.Null(Assert.Single(book.Entries).OdometerReading);
         Assert.Empty(book.Readings);
+        await using var ctx = await db.Get<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
+        Assert.Empty(ctx.OdometerReadings.IgnoreQueryFilters());
+    }
+
+    [Fact]
+    public async Task ATrashedLine_TakesItsReadingOutOfTheCarsReadings_AndBringsItBack()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        await SetOnTheCar(db, car);
+        var line = (await repo.LoadAsync(car.Id, default)).Entries[0];
+
+        line.MarkDeleted(_clock.GetUtcNow());
+        var trash = new TyreSave();
+        trash.ChangedEntries.Add(line);
+        await repo.SaveAsync(trash, default);
+        var trashed = await repo.LoadAsync(car.Id, default);
+        Assert.Empty(trashed.Readings);
+        Assert.Equal(148_200, Assert.Single(trashed.Entries).Odometer); // the reading is in the trash with it
+
+        var back = trashed.Entries[0];
+        back.Restore();
+        var restore = new TyreSave();
+        restore.ChangedEntries.Add(back);
+        await repo.SaveAsync(restore, default);
+        Assert.Equal([new ReadingPoint(D(2026, 3, 28), 148_200)], (await repo.LoadAsync(car.Id, default)).Readings);
+    }
+
+    [Fact]
+    public async Task AReadingHandedToANoteLine_StaysOneRow()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        await SetOnTheCar(db, car);
+        var line = (await repo.LoadAsync(car.Id, default)).Entries[0];
+
+        var kept = TyreEntry.Keeping(line, car.OwnerId);
+        var save = new TyreSave();
+        save.AddedEntries.Add(kept);
+        save.ChangedEntries.Add(line);
+        await repo.SaveAsync(save, default);
+
+        var book = await repo.LoadAsync(car.Id, default);
+        var note = book.Entries.Single(e => e.Kind == TyreEntryKind.Note);
+        Assert.Equal((148_200L, "At the garage"), (note.Odometer!.Value, note.Note));
+        Assert.Null(book.Entries.Single(e => e.Kind == TyreEntryKind.Swap).OdometerReading);
+        Assert.Single(book.Readings);
     }
 
     [Fact]
@@ -93,81 +146,96 @@ public class TyreRepositoryTests
         await using var db = Database();
         var car = await Car(db);
         var repo = db.Get<ITyreRepository>();
-        var (set, stretch, _) = await SetOnTheCar(db, car, odometer: null);
-        // The second request built the same stretch (same id) and a day line of its own.
-        var again = TyreStretch.Create(car.OwnerId, car.OwnerId, car.Id, set.Id, stretch.From, null, true, stretch.Id);
-        var day = TyreLogDay.Create(car.OwnerId, car.OwnerId, car.Id, D(2026, 9, 1), 150_000, null);
+        var (set, installation, _) = await SetOnTheCar(db, car, odometer: null);
+        // The second request built the same installation (same id) and a line of its own.
+        var again = TyreInstallation.Create(car.OwnerId, car.OwnerId, car.Id, set.Id, installation.From, null, true, installation.Id);
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.Note, null, D(2026, 9, 1), 150_000, null);
         var save = new TyreSave();
-        save.AddedStretches.Add(again);
-        save.AddedDays.Add(day);
-        save.AddedReadings.Add(day.OdometerReading!);
+        save.AddedInstallations.Add(again);
+        save.AddedEntries.Add(line);
+        save.AddedReadings.Add(line.OdometerReading!);
 
         Assert.False(await repo.SaveAsync(save, default));
 
         var book = await repo.LoadAsync(car.Id, default);
-        Assert.Single(book.Stretches);
-        Assert.DoesNotContain(book.Days, d => d.Day == D(2026, 9, 1)); // rolled back as a whole
+        Assert.Single(book.Installations);
+        Assert.DoesNotContain(book.Entries, e => e.Day == D(2026, 9, 1)); // rolled back as a whole
         Assert.Empty(book.Readings);
     }
 
     [Fact]
-    public async Task AStaleStretch_IsNotSaved()
+    public async Task AStaleInstallation_IsNotSaved()
     {
         await using var db = Database();
         var car = await Car(db);
         var repo = db.Get<ITyreRepository>();
         await SetOnTheCar(db, car);
-        var mine = (await repo.LoadAsync(car.Id, default)).Stretches[0];
-        var theirs = (await repo.LoadAsync(car.Id, default)).Stretches[0];
+        var mine = (await repo.LoadAsync(car.Id, default)).Installations[0];
+        var theirs = (await repo.LoadAsync(car.Id, default)).Installations[0];
 
         theirs.Update(theirs.From, D(2026, 9, 1), theirs.PairOneFront);
         var first = new TyreSave();
-        first.ChangedStretches.Add(theirs);
+        first.ChangedInstallations.Add(theirs);
         await repo.SaveAsync(first, default);
         mine.Update(mine.From, D(2026, 9, 5), mine.PairOneFront);
         var second = new TyreSave();
-        second.ChangedStretches.Add(mine);
+        second.ChangedInstallations.Add(mine);
 
         Assert.Equal("sync.versionMismatch", (await Assert.ThrowsAsync<DomainException>(() => repo.SaveAsync(second, default))).Key);
     }
 
     [Fact]
-    public async Task TheTrash_ListsTrashedSets_AndTrashedStretchesOfLiveSets_NewestFirst_AndPurgingLeavesTombstones()
+    public async Task TheTrash_ListsTrashedSets_AndTrashedLinesOfLiveSets_NewestFirst_AndPurgingLeavesTombstones()
     {
         await using var db = Database();
         var car = await Car(db);
         var repo = db.Get<ITyreRepository>();
-        var (kept, keptStretch, _) = await SetOnTheCar(db, car, odometer: null);
+        var (kept, keptInstallation, keptLine) = await SetOnTheCar(db, car);
         var gone = Set(car, "Pirelli");
-        var goneStretch = TyreStretch.Create(Owner, Owner, car.Id, gone.Id, D(2025, 11, 15), D(2026, 3, 28), null);
+        var goneInstallation = TyreInstallation.Create(Owner, Owner, car.Id, gone.Id, D(2025, 11, 15), D(2026, 3, 28), null);
+        var goneLine = TyreEntry.ForInstallation(goneInstallation, Owner);
+        var loose = TyreEntry.Create(Owner, Owner, car.Id, TyreEntryKind.Other, null, D(2026, 5, 2), null, "Wheel bolts");
         var add = new TyreSave();
         add.AddedSets.Add(gone);
-        add.AddedStretches.Add(goneStretch);
+        add.AddedInstallations.Add(goneInstallation);
+        add.AddedEntries.Add(goneLine);
+        add.AddedEntries.Add(loose);
         await repo.SaveAsync(add, default);
 
-        keptStretch = (await repo.FindStretchAsync(keptStretch.Id, default))!;
-        keptStretch.MarkDeleted(_clock.GetUtcNow());
+        keptInstallation = (await repo.FindInstallationAsync(keptInstallation.Id, default))!;
+        keptInstallation.MarkDeleted(_clock.GetUtcNow());
+        keptLine = (await repo.FindEntryAsync(keptLine.Id, default))!;
+        keptLine.MarkDeleted(_clock.GetUtcNow());
         _clock.Advance(TimeSpan.FromMinutes(1));
         gone = (await repo.FindSetAsync(gone.Id, default))!;
         gone.MarkDeleted(_clock.GetUtcNow());
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        loose = (await repo.FindEntryAsync(loose.Id, default))!;
+        loose.MarkDeleted(_clock.GetUtcNow());
         var trash = new TyreSave();
-        trash.ChangedStretches.Add(keptStretch);
+        trash.ChangedInstallations.Add(keptInstallation);
+        trash.ChangedEntries.Add(keptLine);
+        trash.ChangedEntries.Add(loose);
         trash.ChangedSets.Add(gone);
         await repo.SaveAsync(trash, default);
 
         var rows = await repo.ListTrashAsync(OwnerScope.All, 0, 10, default);
-        Assert.Equal([(TyreTrashKind.Set, "Pirelli", 1), (TyreTrashKind.Stretch, "Michelin", 0)], rows.Select(r => (r.Kind, r.SetName, r.StretchCount)));
-        Assert.Equal((D(2026, 3, 28), (DateOnly?)null), (rows[1].From, rows[1].Until));
-        Assert.Equal([TyreTrashKind.Stretch, TyreTrashKind.Set], (await repo.ListTrashAsync(OwnerScope.All, 0, 10, default, descending: false)).Select(r => r.Kind));
-        Assert.Equal(2, await repo.CountTrashAsync(OwnerScope.All, default));
-        Assert.Single(await repo.ListTrashAsync(OwnerScope.All, 1, 10, default));
+        Assert.Equal([(TyreTrashKind.Entry, null, TyreEntryKind.Other, 0), (TyreTrashKind.Set, "Pirelli", null, 1), (TyreTrashKind.Entry, "Michelin", TyreEntryKind.Swap, 0)],
+            rows.Select(r => (r.Kind, r.SetName, r.EntryKind, r.InstallationCount)));
+        Assert.Equal((D(2026, 3, 28), (DateOnly?)null), (rows[2].Day, rows[2].Until));
+        Assert.Equal([TyreTrashKind.Entry, TyreTrashKind.Set, TyreTrashKind.Entry], (await repo.ListTrashAsync(OwnerScope.All, 0, 10, default, descending: false)).Select(r => r.Kind));
+        Assert.Equal(3, await repo.CountTrashAsync(OwnerScope.All, default));
+        Assert.Equal(2, (await repo.ListTrashAsync(OwnerScope.All, 1, 10, default)).Count);
         Assert.Equal(0, await repo.CountTrashAsync(OwnerScope.Of([Guid.NewGuid()]), default));
 
-        Assert.Equal(2, await repo.PurgeAsync(OwnerScope.All, default));
+        Assert.Equal(3, await repo.PurgeAsync(OwnerScope.All, default));
         await using var ctx = await db.Get<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
         Assert.Equal([kept.Id], ctx.TyreSets.Select(s => s.Id));
-        Assert.Empty(ctx.TyreStretches);
-        (OfflineEntityType, Guid)[] expected = [(OfflineEntityType.TyreSet, gone.Id), (OfflineEntityType.TyreStretch, goneStretch.Id), (OfflineEntityType.TyreStretch, keptStretch.Id)];
+        Assert.Empty(ctx.TyreInstallations);
+        Assert.Empty(ctx.TyreEntries);
+        Assert.Empty(ctx.OdometerReadings.IgnoreQueryFilters()); // the trashed line's reading went with it
+        (OfflineEntityType, Guid)[] expected = [(OfflineEntityType.TyreSet, gone.Id), (OfflineEntityType.TyreInstallation, goneInstallation.Id), (OfflineEntityType.TyreInstallation, keptInstallation.Id),
+            (OfflineEntityType.TyreEntry, goneLine.Id), (OfflineEntityType.TyreEntry, keptLine.Id), (OfflineEntityType.TyreEntry, loose.Id)];
         Assert.Equal(expected.Order(), ctx.Tombstones.Select(t => new { t.EntityType, t.EntityId }).AsEnumerable().Select(t => (t.EntityType, t.EntityId)).Order());
     }
 
@@ -186,7 +254,7 @@ public class TyreRepositoryTests
         await db.Get<IUserDataRepository>().DeleteUserAsync(alice.Id, carol.Id, default);
         var moved = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
         Assert.Equal((carol.Id, carol.Id, carol.Id, carol.Id),
-            (moved.Sets[0].OwnerId, moved.Sets[0].CreatedById, moved.Stretches[0].OwnerId, moved.Days[0].OwnerId));
+            (moved.Sets[0].OwnerId, moved.Sets[0].CreatedById, moved.Installations[0].OwnerId, moved.Entries[0].OwnerId));
 
         var vehicles = db.Get<IVehicleRepository>();
         var loaded = (await vehicles.FindAsync(car.Id, default))!;
@@ -196,7 +264,168 @@ public class TyreRepositoryTests
 
         var after = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
         Assert.Empty(after.Sets);
-        Assert.Empty(after.Days);
+        Assert.Empty(after.Entries);
         Assert.Empty(after.Readings);
+    }
+
+    /// <summary>A line with an expense of its amount (#288): one reading row, held by both.</summary>
+    private static async Task<(TyreEntry Line, Expense Expense)> LineWithExpense(TestDatabase db, Vehicle car)
+    {
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.PunctureRepaired, null, D(2026, 9, 20), 148_200, "Rear left");
+        var expense = Expense.Create(car.OwnerId, car.OwnerId, car.Id, line.Day, "Puncture repaired", "Tyres", Cost.Create(car.OwnerId, car.Id, line.Day, 25, "EUR"), line.OdometerReading);
+        line.LinkExpense(expense.Id);
+        var save = new TyreSave();
+        save.AddedEntries.Add(line);
+        save.AddedReadings.Add(line.OdometerReading!);
+        save.AddedExpenses.Add(expense);
+        Assert.True(await db.Get<ITyreRepository>().SaveAsync(save, default));
+        return (line, expense);
+    }
+
+    [Fact]
+    public async Task ALineAndItsExpense_AreSavedTogether_HoldingOneReadingRow_LoadedAsOneObject()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var (line, expense) = await LineWithExpense(db, car);
+
+        var book = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
+        var loaded = book.Entries.Single(e => e.Id == line.Id);
+        var linked = Assert.Single(book.LinkedExpenses);
+        Assert.Equal(expense.Id, linked.Id);
+        Assert.Same(loaded.OdometerReading, linked.OdometerReading); // one object: the two are saved as one row
+        Assert.Equal([new ReadingPoint(D(2026, 9, 20), 148_200)], book.Readings);
+        Assert.Equal(25m, (await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Amount);
+        Assert.Equal(line.Id, Assert.Single(await db.Get<ITyreRepository>().ListEntriesByExpenseAsync([expense.Id], default)).Id);
+
+        // A change of the two saved together: the line's day and reading, the expense following.
+        loaded.Update(loaded.Kind, null, D(2026, 9, 21), 148_300, null);
+        linked.FollowLine(loaded.Day, loaded.OdometerReading);
+        var save = new TyreSave();
+        save.ChangedEntries.Add(loaded);
+        save.ChangedExpenses.Add(linked);
+        await db.Get<ITyreRepository>().SaveAsync(save, default);
+        var after = await db.Get<IExpenseRepository>().FindAsync(expense.Id, default);
+        Assert.Equal((D(2026, 9, 21), (long?)148_300, D(2026, 9, 21)), (after!.Date, after.Odometer, after.Cost!.Date));
+    }
+
+    [Fact]
+    public async Task AnExpenseLeftWithoutItsAmount_TakesTheOneItsLineGivesIt_AsANewCostRow()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var (line, expense) = await LineWithExpense(db, car);
+        var repo = db.Get<ITyreRepository>();
+
+        // The Expenses tab left the amount to a photo being read: the cost row goes.
+        var book = await repo.LoadAsync(car.Id, default);
+        var (loaded, linked) = (book.Entries.Single(e => e.Id == line.Id), Assert.Single(book.LinkedExpenses));
+        var emptied = new TyreSave();
+        emptied.ExpenseChanges.Add(linked.UpdateWithLineReading(linked.Date, linked.Title, linked.Category, null, null, loaded.OdometerReading, null, car.OwnerId, null, readingPhotos: true));
+        emptied.Change(linked);
+        Assert.True(await repo.SaveAsync(emptied, default));
+        Assert.Null((await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Amount);
+
+        // The amount typed on the line: a cost the expense did not have, saved as a new row.
+        book = await repo.LoadAsync(car.Id, default);
+        (loaded, linked) = (book.Entries.Single(e => e.Id == line.Id), Assert.Single(book.LinkedExpenses));
+        Assert.True(linked.FollowLine(loaded.Day, loaded.OdometerReading, 40, "EUR", "Tyres", setCategory: true));
+        var typed = new TyreSave();
+        typed.ExpenseChanges.Add(new LinkedChanges(null, null, linked.Cost, null));
+        typed.Change(linked);
+        Assert.True(await repo.SaveAsync(typed, default));
+
+        var after = await db.Get<IExpenseRepository>().FindAsync(expense.Id, default);
+        Assert.Equal((40m, "EUR", loaded.Day, (long?)148_200), (after!.Amount!.Value, after.Currency, after.Cost!.Date, after.Odometer));
+    }
+
+    [Fact]
+    public async Task PurgingTheLine_LeavesTheExpenseWithTheReading_AndPurgingTheExpense_LeavesTheLineWithItButUnlinked()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        var (line, expense) = await LineWithExpense(db, car);
+        var (other, otherExpense) = await LineWithExpense(db, car);
+
+        // The first line purged: its expense, live, keeps the reading.
+        var first = (await repo.LoadAsync(car.Id, default)).Entries.Single(e => e.Id == line.Id);
+        first.MarkDeleted(_clock.GetUtcNow());
+        first.OdometerReading!.Restore(); // still held by the live expense
+        var trash = new TyreSave();
+        trash.ChangedEntries.Add(first);
+        await repo.SaveAsync(trash, default);
+        await repo.PurgeAsync(OwnerScope.All, default);
+        Assert.Equal(148_200, (await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Odometer);
+
+        // The second line's expense purged: the line keeps its reading, without the link.
+        var expenses = db.Get<IExpenseRepository>();
+        var gone = (await expenses.FindAsync(otherExpense.Id, default))!;
+        gone.MarkDeleted(_clock.GetUtcNow());
+        gone.OdometerReading!.Restore(); // the live line holds it
+        await expenses.UpdateAsync(gone, LinkedChanges.None, default);
+        await expenses.PurgeAsync(OwnerScope.All, default);
+        var kept = (await repo.LoadAsync(car.Id, default)).Entries.Single(e => e.Id == other.Id);
+        Assert.Equal((148_200L, (Guid?)null), (kept.Odometer!.Value, kept.ExpenseId));
+    }
+
+    [Fact]
+    public async Task WhatAnExpenseShowsOfItsLine_Changing_MarksTheExpenseForDownload_ThoughItIsNotSavedItself()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        var (set, _, _) = await SetOnTheCar(db, car, odometer: null);
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.PunctureRepaired, set.Id, D(2026, 9, 20), null, "Rear left");
+        var expense = Expense.Create(car.OwnerId, car.OwnerId, car.Id, line.Day, "Puncture repaired", "Tyres", Cost.Create(car.OwnerId, car.Id, line.Day, 25, "EUR"), null);
+        line.LinkExpense(expense.Id);
+        var added = new TyreSave();
+        added.AddedEntries.Add(line);
+        added.AddedExpenses.Add(expense);
+        Assert.True(await repo.SaveAsync(added, default));
+        var (otherLine, other) = await LineWithExpense(db, car); // a line of no set, which nothing below touches until it is purged
+        var created = _clock.GetUtcNow();
+        async Task<DateTimeOffset> Saved(Expense e) => (await db.Get<IExpenseRepository>().FindAsync(e.Id, default))!.UpdatedAt;
+        async Task<TyreEntry> Line(TyreEntry e) => (await repo.LoadAsync(car.Id, default)).Entries.Single(l => l.Id == e.Id);
+
+        // The line goes to the trash alone: the expense stays, and now says its line is in the trash.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var trashed = await Line(line);
+        trashed.MarkDeleted(_clock.GetUtcNow());
+        var trash = new TyreSave();
+        trash.ChangedEntries.Add(trashed);
+        Assert.True(await repo.SaveAsync(trash, default));
+        Assert.Equal((_clock.GetUtcNow(), created), (await Saved(expense), await Saved(other)));
+
+        // The set renamed: the expense names its line's set.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var renamed = (await repo.LoadAsync(car.Id, default)).Sets.Single(s => s.Id == set.Id);
+        renamed.Update("Michelin Primacy 4", renamed.Season, renamed.Size, renamed.Since, renamed.MadeWeek, renamed.MadeYear);
+        var rename = new TyreSave();
+        rename.ChangedSets.Add(renamed);
+        Assert.True(await repo.SaveAsync(rename, default));
+        Assert.Equal((_clock.GetUtcNow(), created), (await Saved(expense), await Saved(other)));
+
+        // The line comes back without it: the expense no longer shows a line.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var back = await Line(line);
+        back.Restore();
+        back.UnlinkExpense();
+        var restore = new TyreSave();
+        restore.ChangedEntries.Add(back);
+        Assert.True(await repo.SaveAsync(restore, default));
+        Assert.Equal((_clock.GetUtcNow(), created), (await Saved(expense), await Saved(other)));
+
+        // A line purged: its expense stays, without a line.
+        var gone = await Line(otherLine);
+        gone.MarkDeleted(_clock.GetUtcNow());
+        gone.OdometerReading!.Restore(); // still held by the live expense
+        var purged = new TyreSave();
+        purged.ChangedEntries.Add(gone);
+        Assert.True(await repo.SaveAsync(purged, default));
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        await repo.PurgeAsync(OwnerScope.All, default);
+        Assert.Equal(_clock.GetUtcNow(), await Saved(other));
+        Assert.Empty(await repo.ListEntriesByExpenseAsync([other.Id], default));
     }
 }

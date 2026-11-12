@@ -4,9 +4,10 @@ import { connectivity } from './connectivity.ts'
 import type { LogKind, LogRow, PullCursor, RowStore, VehicleRow } from './deviceStorage.ts'
 import { todayIso } from '../forms/dates.ts'
 import { keptPhotos } from './keptPhotos.ts'
-import { noTyres, replayTyres } from '../tyres/replay.ts'
+import { isCurrentShape, noTyres, replayTyres, touchesTyres } from '../tyres/replay.ts'
 import type { Tyres } from '../tyres/tyres.ts'
 import { outbox } from './outbox.ts'
+import { tyreFeeExpense } from './tyreChanges.ts'
 
 /**
  * Answers the log queries from the downloaded window while the server is out of reach (`offlineLink.ts`): any page and any order of a
@@ -105,7 +106,7 @@ export function sortLogs(kind: LogKind, rows: readonly LogRow[], field: string, 
  */
 function asAnswer(row: LogRow, vehicle: VehicleRow | undefined): Record<string, unknown> {
   const { pulledAt: _pulledAt, ...fields } = row
-  const known = row.__typename === 'Refueling' ? withDiscount(fields) : row.__typename === 'Expense' ? { ...fields, discount: fields.discount ?? null } : fields
+  const known = row.__typename === 'Refueling' ? withDiscount(fields) : row.__typename === 'Expense' ? { ...fields, discount: fields.discount ?? null, tyreEntry: fields.tyreEntry ?? null } : fields
   return { ...known, canEdit: atLeast(vehicle?.logAccess, 'EDIT'), canDelete: atLeast(vehicle?.logAccess, 'DELETE') }
 }
 
@@ -163,13 +164,30 @@ function added(kind: LogKind, change: Change): LogRow {
 export function withChanges(kind: LogKind, rows: readonly LogRow[], vehicleId?: string): LogRow[] {
   const waiting = outbox.changes.filter((c) => c.entity === kind && (vehicleId === undefined || c.vehicleId === vehicleId))
   const visits = kind === 'expenses' && outbox.changes.some((c) => c.action === 'markDone')
-  if (waiting.length === 0 && !visits) return [...rows]
+  const fees = kind === 'expenses'
+    ? outbox.changes.filter((c) => c.entity === 'tyres' && (vehicleId === undefined || c.vehicleId === vehicleId)).flatMap((c) => {
+        const fee = tyreFeeExpense(c.action, c.input)
+        return fee ? [{ change: c, fee }] : []
+      })
+    : []
+  if (waiting.length === 0 && !visits && fees.length === 0) return [...rows]
   const byId = new Map(rows.map((r) => [r.id, r]))
   if (kind === 'expenses') {
     // A visit with an amount logs an expense: it is a row of its own until the server has it (its id is the visit's expense id).
     for (const visit of outbox.changes.filter((c) => c.action === 'markDone' && c.input?.amount != null && (vehicleId === undefined || c.vehicleId === vehicleId)))
       // Version 1, as the server will create it: an edit or trash of it made here goes after the visit, from that version.
       byId.set(visit.targetId, { ...added('expenses', { ...visit, input: { ...visit.input, category: visit.input?.category || null, note: null } }), version: 1 })
+    // A tyre log line's amount (#288) makes an expense with the line's day and reading, titled and filed as the dialog said; it carries its
+    // line, so the list shows its chip. An edit of a line it was on changes the row the device holds: only what follows the line (the
+    // server's `Expense.FollowLine`), so its title, its note and what was read from its photos stay as they are.
+    for (const { change, fee } of fees) {
+      const followed = { date: fee.day, category: fee.category, amount: fee.amount, currency: fee.currency, odometer: fee.odometer }
+      const row = byId.get(fee.expenseId)
+      const tyreEntry = { __typename: 'TyreEntryRef', id: fee.lineId, kind: fee.kind, setName: null, trashed: false }
+      byId.set(fee.expenseId, row
+        ? { ...row, ...followed, currency: fee.currency ?? row.currency }
+        : { ...added('expenses', { ...change, targetId: fee.expenseId, input: { ...followed, title: fee.title, note: null } }), version: 1, tyreEntry })
+    }
   }
   for (const change of waiting) {
     const row = byId.get(change.targetId)
@@ -276,9 +294,10 @@ async function knownWithoutLogs(rows: RowStore, vehicleId: unknown, kept: Kept):
  * tyre change waiting, the server's answer (or the kept one) is the device's.
  */
 async function tyresOf(vehicleId: string, kept: Kept): Promise<Tyres | undefined> {
-  const waiting = outbox.changes.filter((c) => c.entity === 'tyres' && c.vehicleId === vehicleId)
-  if (waiting.length === 0 && !addedVehicle(vehicleId)) return undefined
+  const waiting = outbox.changes.filter((c) => touchesTyres(c) && c.vehicleId === vehicleId)
   const base = (await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined
+  // Nothing waits: the kept answer as it is, unless an older build kept it in another shape (#288: days, not lines), which counts as none.
+  if (waiting.length === 0 && !addedVehicle(vehicleId)) return base && !isCurrentShape(base) ? noTyres(vehicleId) : undefined
   return replayTyres(base ?? noTyres(vehicleId), waiting).tyres
 }
 
@@ -287,10 +306,10 @@ const vehicleTyres: Resolver = async (_rows, variables, kept) => {
   return tyres ? { vehicleTyres: tyres } : undefined
 }
 
-/** The readings typed with tyre changes (the tyre log's days), kept and waiting: they are readings of the car like a log's. */
+/** The readings typed with tyre changes (the tyre log's lines), kept and waiting: they are readings of the car like a log's. */
 async function tyreReadings(vehicleId: string, kept: Kept): Promise<{ date: string; odometer: number }[]> {
   const tyres = (await tyresOf(vehicleId, kept)) ?? ((await kept('VehicleTyres', { vehicleId }))?.vehicleTyres as Tyres | null | undefined)
-  return (tyres?.days ?? []).flatMap((d) => (d.odometer != null ? [{ date: d.day, odometer: d.odometer }] : []))
+  return (tyres?.entries ?? []).flatMap((e) => (e.odometer != null ? [{ date: e.day, odometer: e.odometer }] : []))
 }
 
 const logDefaults: Resolver = async (rows, variables, kept) => {

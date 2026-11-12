@@ -37,11 +37,14 @@ export const SYNC_KINDS: Record<SyncChangeKind, [ChangeEntity, ChangeAction]> = 
   SWAP_TYRES: ['tyres', 'swapTyres'],
   CHANGE_TYRE_POSITIONS: ['tyres', 'changeTyrePositions'],
   ADD_PAST_TYRE_SWAPS: ['tyres', 'addPastTyreSwaps'],
-  ADD_TYRE_STRETCH: ['tyres', 'addTyreStretch'],
-  UPDATE_TYRE_STRETCH: ['tyres', 'updateTyreStretch'],
-  DELETE_TYRE_STRETCH: ['tyres', 'deleteTyreStretch'],
-  RESTORE_TYRE_STRETCH: ['tyres', 'restoreTyreStretch'],
-  SET_TYRE_LOG_DAY: ['tyres', 'setTyreLogDay'],
+  ADD_TYRE_INSTALLATION: ['tyres', 'addTyreInstallation'],
+  UPDATE_TYRE_INSTALLATION: ['tyres', 'updateTyreInstallation'],
+  DELETE_TYRE_INSTALLATION: ['tyres', 'deleteTyreInstallation'],
+  RESTORE_TYRE_INSTALLATION: ['tyres', 'restoreTyreInstallation'],
+  ADD_TYRE_ENTRY: ['tyres', 'addTyreEntry'],
+  UPDATE_TYRE_ENTRY: ['tyres', 'updateTyreEntry'],
+  DELETE_TYRE_ENTRY: ['tyres', 'deleteTyreEntry'],
+  RESTORE_TYRE_ENTRY: ['tyres', 'restoreTyreEntry'],
 }
 
 /** The ChangeInput field of each kind (LOG_REFUELING: logRefueling). */

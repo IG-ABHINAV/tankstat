@@ -77,4 +77,25 @@ describe('the changes waiting, as the Sync page names them', () => {
     expect(trash).toMatchObject({ date: '2026-09-02', title: 'Wash', amount: 3000 })
     expect(schedule).toMatchObject({ title: 'Oil' }) // nothing kept of the Recurring tab: the change names it
   })
+
+  it('names a tyre change by its set from the Tyres tab kept on the device, from an answer an older build kept too (#288)', async () => {
+    deviceData.reset(memoryStorage())
+    await deviceData.signedIn('alice')
+    await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v1' }), {
+      vehicleTyres: { sets: [{ set: { id: 's1', name: 'Michelin' }, installations: [{ installation: { id: 'i1' } }] }] },
+    })
+    // Before the rename a set's times on the car were its stretches: such an answer has no installations.
+    await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v2' }), {
+      vehicleTyres: { sets: [{ set: { id: 's2', name: 'Nokian' }, stretches: [{ stretch: { id: 'x1' } }] }] },
+    })
+    const changes = [
+      change({ entity: 'tyres', action: 'deleteTyreInstallation', targetId: 'i1', input: { id: 'i1' } }),
+      change({ entity: 'tyres', action: 'swapTyres', vehicleId: 'v2', targetId: 's2', input: { vehicleId: 'v2', setId: 's2', day: '2026-11-10', installationId: 'n' } }),
+    ]
+
+    const groups = await described(changes)
+
+    expect(groups.map((g) => g.items.map((i) => i.name))).toEqual([['Michelin'], ['Nokian']])
+    expect(groups[1].items[0].date).toBe('2026-11-10')
+  })
 })

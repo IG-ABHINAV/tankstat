@@ -1,4 +1,4 @@
-# A vehicle's tyres (#287): sets with their figures, their stretches with distances (worked out by the server), the tyre log's days and the
+# A vehicle's tyres (#287): sets with their figures, their installations with distances (worked out by the server), the tyre log's lines (#288) and the
 # vehicle's readings, from which a day's odometer is worked out on the device (tyres/odometer.ts) for a form's hint and a log line.
 
 fragment TyreSetFields on TyreSet {
@@ -17,7 +17,7 @@ fragment TyreSetFields on TyreSet {
   version
 }
 
-fragment TyreStretchFields on TyreStretch {
+fragment TyreInstallationFields on TyreInstallation {
   id
   setId
   from
@@ -26,22 +26,48 @@ fragment TyreStretchFields on TyreStretch {
   version
 }
 
+fragment TyreEntryFields on TyreEntry {
+  id
+  kind
+  setId
+  installationId
+  day
+  odometer
+  note
+  version
+  expenseId
+  amount
+  currency
+  category
+  expenseTrashed
+}
+
 fragment VehicleTyresFields on VehicleTyres {
   vehicleId
   hasReadings
+  expenseCategory
+  spentAll {
+    currency
+    amount
+  }
+  spentNoSet {
+    currency
+    amount
+  }
   readings {
     date
     value
   }
-  days {
-    id
-    day
-    odometer
-    note
-    version
+  entries {
+    ...TyreEntryFields
   }
   sets {
     onTheCar
+    spent {
+      currency
+      amount
+    }
+    repairs
     set {
       ...TyreSetFields
     }
@@ -58,9 +84,9 @@ fragment VehicleTyresFields on VehicleTyres {
         measuredBefore
       }
     }
-    stretches {
-      stretch {
-        ...TyreStretchFields
+    installations {
+      installation {
+        ...TyreInstallationFields
       }
       distance {
         distance
@@ -113,32 +139,50 @@ mutation AddPastTyreSwaps($input: AddPastTyreSwapsInput!) {
   }
 }
 
-mutation AddTyreStretch($input: AddTyreStretchInput!) {
-  addTyreStretch(input: $input) {
+mutation AddTyreInstallation($input: AddTyreInstallationInput!) {
+  addTyreInstallation(input: $input) {
     ...VehicleTyresFields
   }
 }
 
-mutation UpdateTyreStretch($input: UpdateTyreStretchInput!) {
-  updateTyreStretch(input: $input) {
+mutation UpdateTyreInstallation($input: UpdateTyreInstallationInput!) {
+  updateTyreInstallation(input: $input) {
     ...VehicleTyresFields
   }
 }
 
-mutation DeleteTyreStretch($id: UUID!) {
-  deleteTyreStretch(id: $id) {
+mutation DeleteTyreInstallation($id: UUID!) {
+  deleteTyreInstallation(id: $id) {
     ...VehicleTyresFields
   }
 }
 
-mutation RestoreTyreStretch($id: UUID!) {
-  restoreTyreStretch(id: $id) {
+mutation RestoreTyreInstallation($id: UUID!) {
+  restoreTyreInstallation(id: $id) {
     ...VehicleTyresFields
   }
 }
 
-mutation SetTyreLogDay($input: SetTyreLogDayInput!) {
-  setTyreLogDay(input: $input) {
+mutation AddTyreEntry($input: AddTyreEntryInput!) {
+  addTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreEntry($input: UpdateTyreEntryInput!) {
+  updateTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreEntry($input: DeleteTyreEntryInput!) {
+  deleteTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreEntry($id: UUID!) {
+  restoreTyreEntry(id: $id) {
     ...VehicleTyresFields
   }
 }
@@ -172,11 +216,13 @@ query TyreTrash($orderBy: TyreTrashSortField!, $direction: SortDirection!, $skip
     kind
     id
     setName
-    from
+    entryKind
+    day
     until
-    stretchCount
+    installationCount
     deletedAt
     version
+    withExpense
     canDelete
     vehicle {
       id

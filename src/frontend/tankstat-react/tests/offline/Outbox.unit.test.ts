@@ -114,3 +114,17 @@ describe('marks of a visit', () => {
     expect(outbox.markOf('expenses', 'e2')).toBeNull()
   })
 })
+
+describe('changes an older build kept', () => {
+  it('a tyre change under an action this build no longer has is left out, and the others are sent as always (#288)', async () => {
+    const rows = (await deviceData.rows())!
+    await rows.putChanges([
+      { id: 'old', seq: 1, createdAt: 1, entity: 'tyres', action: 'addTyreStretch' as never, vehicleId: 'v1', targetId: 's1', input: { id: 's1', setId: 'set' } },
+      { ...log('r1'), seq: 2, createdAt: 2 },
+    ])
+
+    await outbox.reload()
+
+    expect(outbox.changes.map((c) => c.id)).toEqual(['r1'])
+  })
+})

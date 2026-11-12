@@ -1,5 +1,5 @@
 {
-  "_comment": "The rules of a vehicle's tyre history (#287): a swap, a change of positions and the checks every change passes, read by the server (Domain TyreSwapContractTests, over TyreHistory) and by the device (frontend TyreHistory.unit, over src/tyres/tyreHistory.ts), so a tyre change made offline shows as the server will make it. 'new' is the id of the stretch an operation creates; 'expect' lists the live stretches after it, by first day; 'error' is the refusal, its key and its args; 'moving' lists the stretches a check is about (added, edited or restored), so an overlap names the other one.",
+  "_comment": "The rules of a vehicle's tyre history (#287): a swap, a change of positions and the checks every change passes, read by the server (Domain TyreSwapContractTests, over TyreHistory) and by the device (frontend TyreHistory.unit, over src/tyres/tyreHistory.ts), so a tyre change made offline shows as the server will make it. 'new' is the id of the installation an operation creates; 'expect' lists the live installations after it, by first day; 'error' is the refusal, its key and its args; 'move' moves the swap that began an installation to another day (its line's day changed, #288); 'lines' lists the tyre log's live lines after it, by day (every installation has its line, with its id: a change of positions when the same set came off that day, else a swap; 'kept' is a Note line that keeps what a line held for a day a join took its installation away from), 'trashedLines' the lines that went to the trash, 'lineNotes' the notes on the lines before; 'moving' lists the installations a check is about (added, edited or restored), so an overlap names the other one.",
   "cases": [
     {
       "name": "a swap ends what is on the car and puts the set on",
@@ -20,7 +20,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -52,7 +52,24 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        },
+        {
+          "id": "new",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2026-11-10",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "a past swap with nothing on the car runs until the next start",
@@ -73,7 +90,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -105,10 +122,27 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "new",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2025-11-15",
+          "note": null
+        },
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
-      "name": "a past swap that cuts a stretch runs until that stretch would have ended",
+      "name": "a past swap that cuts an installation runs until that installation would have ended",
       "sets": [
         {
           "id": "summer",
@@ -126,7 +160,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -172,7 +206,31 @@
           "pairOneFront": null
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "new",
+          "kind": "Swap",
+          "set": "allseason",
+          "day": "2025-07-01",
+          "note": null
+        },
+        {
+          "id": "b1",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2025-11-15",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "a second swap on a day is refused",
@@ -193,7 +251,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -237,7 +295,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "b1",
           "set": "winter",
@@ -276,10 +334,29 @@
           "pairOneFront": null
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "b1",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2025-11-15",
+          "note": null
+        },
+        {
+          "id": "new",
+          "kind": "Swap",
+          "set": "allseason",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": [
+        "a1"
+      ]
     },
     {
-      "name": "the set joins its stretch that ended that day",
+      "name": "the set joins its installation that ended that day",
       "sets": [
         {
           "id": "summer",
@@ -297,7 +374,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -322,10 +399,20 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
-      "name": "a swap into a gap never joins the set’s next stretch: that one began with a swap of its own",
+      "name": "a swap into a gap never joins the set’s next installation: that one began with a swap of its own",
       "sets": [
         {
           "id": "summer",
@@ -343,7 +430,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -375,10 +462,27 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "new",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
-      "name": "a swap that cuts a stretch joins the set’s stretch that follows it",
+      "name": "a swap that cuts an installation joins the set’s installation that follows it",
       "sets": [
         {
           "id": "summer",
@@ -396,7 +500,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -449,7 +553,41 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lineNotes": {
+        "a2": "Spring swap"
+      },
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "b1",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2025-11-01",
+          "note": null
+        },
+        {
+          "id": "a2",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-01-15",
+          "note": null
+        },
+        {
+          "id": "kept",
+          "kind": "Note",
+          "set": "summer",
+          "day": "2026-04-01",
+          "note": "Spring swap"
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "pairs that differ do not join",
@@ -470,7 +608,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -502,7 +640,24 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "new",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "replacing a swap joins the set on both sides",
@@ -523,7 +678,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -562,7 +717,31 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lineNotes": {
+        "b1": "Winter on",
+        "a2": "Summer on"
+      },
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "kept",
+          "kind": "Note",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": "Summer on"
+        }
+      ],
+      "trashedLines": [
+        "a2",
+        "b1"
+      ]
     },
     {
       "name": "the same set on its first day only sets its pairs",
@@ -583,7 +762,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -608,7 +787,17 @@
           "pairOneFront": false
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "a swap from papers on the set’s first day keeps its pairs",
@@ -629,7 +818,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -654,7 +843,17 @@
           "pairOneFront": true
         }
       ],
-      "op": "swap"
+      "op": "swap",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "the set already on the car that day is refused",
@@ -675,7 +874,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -719,7 +918,7 @@
           "retiredOn": "2026-01-01"
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -744,7 +943,7 @@
       "op": "swap"
     },
     {
-      "name": "positions changed on the stretch’s first day change in place",
+      "name": "positions changed on the installation’s first day change in place",
       "sets": [
         {
           "id": "summer",
@@ -762,7 +961,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -785,10 +984,20 @@
           "pairOneFront": false
         }
       ],
-      "op": "positions"
+      "op": "positions",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
-      "name": "positions changed later split the stretch",
+      "name": "positions changed later split the installation",
       "sets": [
         {
           "id": "summer",
@@ -806,7 +1015,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -836,7 +1045,24 @@
           "pairOneFront": false
         }
       ],
-      "op": "positions"
+      "op": "positions",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-28",
+          "note": null
+        },
+        {
+          "id": "new",
+          "kind": "PositionsChanged",
+          "set": "summer",
+          "day": "2026-06-01",
+          "note": null
+        }
+      ],
+      "trashedLines": []
     },
     {
       "name": "positions as they were are refused",
@@ -857,7 +1083,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -896,7 +1122,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -938,7 +1164,7 @@
           "retiredOn": "2026-01-01"
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "c1",
           "set": "allseason",
@@ -992,7 +1218,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -1038,7 +1264,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -1066,7 +1292,7 @@
       "op": "check"
     },
     {
-      "name": "an overlap names the stretch already on the car, not the one being added or moved",
+      "name": "an overlap names the installation already on the car, not the one being added or moved",
       "sets": [
         {
           "id": "summer",
@@ -1084,7 +1310,7 @@
           "retiredOn": null
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "a1",
           "set": "summer",
@@ -1115,7 +1341,7 @@
       "op": "check"
     },
     {
-      "name": "a retired set’s stretch past its retirement is refused",
+      "name": "a retired set’s installation past its retirement is refused",
       "sets": [
         {
           "id": "summer",
@@ -1133,7 +1359,7 @@
           "retiredOn": "2026-01-01"
         }
       ],
-      "stretches": [
+      "installations": [
         {
           "id": "c1",
           "set": "allseason",
@@ -1150,6 +1376,313 @@
         }
       },
       "op": "check"
+    },
+    {
+      "name": "moving a swap later moves the day the set before it came off",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "installations": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-11-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "move": {
+        "installation": "b1",
+        "day": "2025-11-10"
+      },
+      "lineNotes": {
+        "b1": "At the garage"
+      },
+      "expect": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-11-10",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-10",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "op": "move",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "b1",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2025-11-10",
+          "note": "At the garage"
+        }
+      ],
+      "trashedLines": []
+    },
+    {
+      "name": "moving a swap earlier moves the day the set before it came off",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "installations": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-11-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "move": {
+        "installation": "b1",
+        "day": "2025-10-20"
+      },
+      "expect": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-10-20",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-10-20",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "op": "move",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2025-04-01",
+          "note": null
+        },
+        {
+          "id": "b1",
+          "kind": "Swap",
+          "set": "winter",
+          "day": "2025-10-20",
+          "note": null
+        }
+      ],
+      "trashedLines": []
+    },
+    {
+      "name": "the first swap moves alone",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "installations": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2026-03-28",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "move": {
+        "installation": "a1",
+        "day": "2026-03-01"
+      },
+      "expect": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2026-03-01",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "op": "move",
+      "lines": [
+        {
+          "id": "a1",
+          "kind": "Swap",
+          "set": "summer",
+          "day": "2026-03-01",
+          "note": null
+        }
+      ],
+      "trashedLines": []
+    },
+    {
+      "name": "a swap cannot move to or before the day the set before it went on",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "installations": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-11-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "move": {
+        "installation": "b1",
+        "day": "2025-04-01"
+      },
+      "error": {
+        "key": "tyres.swapBeforePrevious",
+        "args": {
+          "set": "Michelin Primacy 4",
+          "from": "2025-04-01"
+        }
+      },
+      "op": "move"
+    },
+    {
+      "name": "a swap cannot move to or past the day its set came off",
+      "sets": [
+        {
+          "id": "summer",
+          "name": "Michelin Primacy 4",
+          "retiredOn": null
+        },
+        {
+          "id": "winter",
+          "name": "Continental WinterContact",
+          "retiredOn": null
+        },
+        {
+          "id": "allseason",
+          "name": "Nokian Seasonproof",
+          "retiredOn": null
+        }
+      ],
+      "installations": [
+        {
+          "id": "a1",
+          "set": "summer",
+          "from": "2025-04-01",
+          "until": "2025-11-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "b1",
+          "set": "winter",
+          "from": "2025-11-01",
+          "until": "2026-04-01",
+          "pairOneFront": true
+        },
+        {
+          "id": "a2",
+          "set": "summer",
+          "from": "2026-04-01",
+          "until": null,
+          "pairOneFront": true
+        }
+      ],
+      "move": {
+        "installation": "b1",
+        "day": "2026-04-01"
+      },
+      "error": {
+        "key": "tyres.untilBeforeFrom",
+        "args": {
+          "from": "2026-04-01",
+          "until": "2026-04-01"
+        }
+      },
+      "op": "move"
     }
   ]
 }

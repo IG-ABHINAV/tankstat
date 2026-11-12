@@ -6,7 +6,7 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { VehicleTyresDocument, type DistanceUnit, type VehicleTyresFieldsFragment } from '../gql/generated.ts'
 import { useFormat } from '../i18n/format.ts'
-import { madeDay, monthsBetween, odometerHint, sortedReadings, type Reading } from './odometer.ts'
+import { madeDay, monthsBetween, neighbours, odometerHint, sortedReadings, type Reading } from './odometer.ts'
 import { todayIso } from '../forms/dates.ts'
 import { discardChange, submitChange, willKeep } from '../offline/submitChange.ts'
 import { isTyreAction, tyreTarget, type TyreAction } from '../offline/tyreChanges.ts'
@@ -18,8 +18,8 @@ import { TyreRuleError } from './tyreHistory.ts'
 export type Tyres = VehicleTyresFieldsFragment
 export type TyreSetInfo = Tyres['sets'][number]
 export type TyreSet = TyreSetInfo['set']
-export type TyreStretchInfo = TyreSetInfo['stretches'][number]
-export type TyreLogDay = Tyres['days'][number]
+export type TyreInstallationInfo = TyreSetInfo['installations'][number]
+export type TyreEntry = Tyres['entries'][number]
 
 /** A tyre change saved: sent (the server applied it), or kept on this device to be sent once the server can be reached. */
 export interface TyreSaved {
@@ -38,18 +38,18 @@ const actionOf = (document: DocumentNode): TyreAction => {
 }
 
 const SET_ACTIONS = new Set<TyreAction>(['updateTyreSet', 'setTyreRoughDistance', 'retireTyreSet', 'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet'])
-const STRETCH_ACTIONS = new Set<TyreAction>(['updateTyreStretch', 'deleteTyreStretch', 'restoreTyreStretch'])
-const DAY_ACTIONS = new Set<TyreAction>(['setTyreLogDay'])
+const INSTALLATION_ACTIONS = new Set<TyreAction>(['updateTyreInstallation', 'deleteTyreInstallation', 'restoreTyreInstallation'])
+const ENTRY_ACTIONS = new Set<TyreAction>(['updateTyreEntry', 'deleteTyreEntry', 'restoreTyreEntry'])
 
-/** The version of the set, stretch or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
+/** The version of the set, installation or tyre log line a change is made on, as the tab shows it; none for one added or changed here (0) or not shown. */
 function versionOf(shown: Tyres | null | undefined, action: TyreAction, input: Record<string, unknown>): number | null {
   const sets = shown?.sets ?? []
   const version = SET_ACTIONS.has(action)
     ? sets.find((s) => s.set.id === input.id)?.set.version
-    : STRETCH_ACTIONS.has(action)
-      ? sets.flatMap((s) => s.stretches).find((x) => x.stretch.id === input.id)?.stretch.version
-      : DAY_ACTIONS.has(action)
-        ? shown?.days.find((d) => d.id === input.id)?.version
+    : INSTALLATION_ACTIONS.has(action)
+      ? sets.flatMap((s) => s.installations).find((x) => x.installation.id === input.id)?.installation.version
+      : ENTRY_ACTIONS.has(action)
+        ? shown?.entries.find((e) => e.id === input.id)?.version
         : undefined
   return version ? version : null
 }
@@ -140,7 +140,19 @@ export function useTyreWords(unit: DistanceUnit) {
         return t('tyres.odoHint.worked', { value: distance(hint.value) })
     }
   }
-  return { unitShort: short, distance, pairs, age, odometerText }
+  /** The readings around a day, which a reading typed for it must fit between (the server checks it so). */
+  const neighbourText = (readings: readonly Reading[], day: string) => {
+    const { previous, next } = neighbours(sortedReadings(readings), day)
+    const on = (r: Reading) => t('tyres.readingOn', { value: distance(r.value), date: format.date(r.date) })
+    return previous && next
+      ? t('tyres.odoHint.neighbours', { previous: on(previous), next: on(next) })
+      : previous
+        ? t('tyres.odoHint.after', { previous: on(previous) })
+        : next
+          ? t('tyres.odoHint.beforeOnly', { next: on(next) })
+          : ''
+  }
+  return { unitShort: short, distance, pairs, age, odometerText, neighbourText }
 }
 
 /** A whole number typed in a field, or null when the field is empty. */

@@ -97,7 +97,7 @@ test('signs out while offline: warns of the change not sent, deletes it, and the
 })
 
 
-test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), shows them done, and sends them in order when the server is back (#287)', async ({ page, context }) => {
+test('keeps tyre changes made offline (a swap, a trash, a retire, a reading, an amount), shows them done, and sends them in order when the server is back (#287)', async ({ page, context }) => {
   // The download and the poll below may take 30 s each on a busy runner: more than the default for the whole test.
   test.setTimeout(120_000)
   await signInAsNewUser(page)
@@ -132,10 +132,10 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), sh
   await expect(winter.getByRole('button', { name: 'Swap tyres' })).toBeVisible() // on the car now
   await expectSoundLayout(page) // the tab with its marks
 
-  // The stretch the swap cut, moved to the trash: made on what a waiting change changed.
+  // The swap the waiting one cut, moved to the trash with its line: made on what a waiting change changed.
   await summer.getByRole('button', { name: 'History' }).click()
   const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
-  await history.getByRole('button', { name: 'Move to the trash' }).click()
+  await history.getByRole('button', { name: /^Move to the trash: Tyre swap/ }).click()
   await page.getByRole('alertdialog', { name: 'Move to the trash?' }).getByRole('button', { name: 'Move to the trash' }).click()
   await expect(history.getByRole('listitem')).toHaveCount(0)
   await history.getByRole('button', { name: 'Cancel' }).click()
@@ -145,25 +145,43 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading), sh
   await page.getByRole('alertdialog', { name: 'Retire this set?' }).getByRole('button', { name: 'Retire set' }).click()
   await expect(page.getByRole('heading', { name: 'Retired' })).toBeVisible()
 
-  // The day's reading corrected in the tyre log.
-  await page.getByRole('button', { name: /^Edit the reading and note of/ }).click()
-  const reading = page.getByRole('dialog', { name: /^Reading of/ })
+  // The waiting swap's reading corrected on its line of the tyre log.
+  await page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Tyre swap, Continental WinterContact/ }).click()
+  const reading = page.getByRole('dialog', { name: 'Edit entry' })
   await reading.getByLabel(/^Odometer/).fill('1550')
   await reading.getByRole('button', { name: 'Save' }).click()
   await expect(reading).toBeHidden()
 
+  // A line with an amount (#288): shown with it in the tyre log at once; its expense is made once the change reaches the server.
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const paid = page.getByRole('dialog', { name: 'Add entry' })
+  await paid.getByLabel(/^Paid/).fill('9000')
+  await paid.getByRole('button', { name: 'Save' }).click()
+  await expect(paid).toBeHidden()
+  await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Puncture repaired, .*9,000/ })).toBeVisible()
+  // On the Expenses tab, the expense it will make: new, not synced, with its chip.
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  const waitingExpense = page.getByRole('row').filter({ hasText: /^.*Puncture repaired/ })
+  await expect(waitingExpense).toContainText('Tyre log')
+  await expect(waitingExpense.getByRole('button', { name: /New · not synced/ })).toBeVisible()
+  await expectSoundLayout(page)
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+
   await context.setOffline(false)
   // Once the server answers again the device sends the four changes in order: every one applied, none parked.
-  type Tyres = { vehicleTyres: { sets: { onTheCar: boolean; set: { name: string; isRetired: boolean }; stretches: { stretch: { from: string } }[] }[]; days: { day: string; odometer: number | null }[] } }
+  type Tyres = { vehicleTyres: { sets: { onTheCar: boolean; set: { name: string; isRetired: boolean }; installations: { installation: { from: string } }[] }[]; entries: { kind: string; day: string; odometer: number | null; amount: number | null }[] } }
   await expect
     .poll(
       async () => {
-        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { name isRetired } stretches { stretch { from } } } days { day odometer } } }', { v: vehicle.id })
-        return { sets: vehicleTyres.sets.map((s) => [s.set.name, s.onTheCar, s.set.isRetired, s.stretches.length]), days: vehicleTyres.days }
+        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { name isRetired } installations { installation { from } } } entries { kind day odometer amount } } }', { v: vehicle.id })
+        return { sets: vehicleTyres.sets.map((s) => [s.set.name, s.onTheCar, s.set.isRetired, s.installations.length]), entries: vehicleTyres.entries }
       },
       { timeout: 60_000 },
     )
-    .toEqual({ sets: [['Continental WinterContact', true, false, 1], ['Michelin Primacy 4', false, true, 0]], days: [{ day: day(0), odometer: 1550 }] })
+    .toEqual({
+      sets: [['Continental WinterContact', true, false, 1], ['Michelin Primacy 4', false, true, 0]],
+      entries: [{ kind: 'SWAP', day: day(0), odometer: 1550, amount: null }, { kind: 'PUNCTURE_REPAIRED', day: day(0), odometer: null, amount: 9000 }],
+    })
   expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
   await expect(winter.getByText('Changed · not synced')).toBeHidden()
 })

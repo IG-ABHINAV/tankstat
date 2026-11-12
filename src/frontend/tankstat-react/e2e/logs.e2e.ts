@@ -121,6 +121,9 @@ test('restores a trashed refuelling from the trash', async ({ page }) => {
   await page.getByRole('button', { name: 'Delete the refuelling of Jan 15, 2026' }).click()
   await page.getByRole('alertdialog', { name: 'Move this refuelling to the trash?' }).getByRole('button', { name: 'Move to trash' }).click()
   await expect(row(page, '42 L')).toHaveCount(0)
+  // The server's answer, not the row leaving: the toast comes with it, while the row may leave first, and a navigation right then cut the
+  // trash short on a cold first run (the trash came up empty).
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible()
 
   await page.goto('/trash')
   await pageLoaded(page)

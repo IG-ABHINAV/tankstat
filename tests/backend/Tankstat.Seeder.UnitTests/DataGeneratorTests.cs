@@ -26,14 +26,22 @@ public class DataGeneratorTests
             var sets = g.TyreSets!;
             Assert.Equal([TyreSeason.Summer, TyreSeason.Winter], sets.Select(s => s.Season));
             Assert.All(sets, s => Assert.Equal(g.Vehicle.Id, s.VehicleId));
-            var stretches = g.TyreStretches!.OrderBy(s => s.From).ToList();
-            Assert.Equal(g.Refuelings.Min(r => r.Date), stretches[0].From); // from the log's first day: the rough figure stands for before
-            Assert.Single(stretches, s => s.Until is null); // one set on the car today
-            Assert.All(stretches.Zip(stretches.Skip(1)), p => Assert.Equal(p.First.Until, p.Second.From)); // one after the other, never two at once
-            Assert.All(stretches.Zip(stretches.Skip(1)), p => Assert.NotEqual(p.First.SetId, p.Second.SetId)); // summer and winter take turns
-            Assert.All(stretches, s => Assert.NotNull(s.PairOneFront));
-            Assert.All(stretches.Skip(1), s => Assert.True(s.From.Month is 3 or 4 or 10 or 11, $"a swap around April or November, not {s.From}"));
-            new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, stretches).Check(); // the app's own checks pass
+            var installations = g.TyreInstallations!.OrderBy(s => s.From).ToList();
+            Assert.Equal(g.Refuelings.Min(r => r.Date), installations[0].From); // from the log's first day: the rough figure stands for before
+            Assert.Single(installations, s => s.Until is null); // one set on the car today
+            Assert.All(installations.Zip(installations.Skip(1)), p => Assert.Equal(p.First.Until, p.Second.From)); // one after the other, never two at once
+            Assert.All(installations.Zip(installations.Skip(1)), p => Assert.NotEqual(p.First.SetId, p.Second.SetId)); // summer and winter take turns
+            Assert.All(installations, s => Assert.NotNull(s.PairOneFront));
+            Assert.All(installations.Skip(1), s => Assert.True(s.From.Month is 3 or 4 or 10 or 11, $"a swap around April or November, not {s.From}"));
+            new TyreHistory(g.Vehicle.OwnerId, g.Vehicle.Id, sets, installations).Check(); // the app's own checks pass
+            // Every installation has its line in the tyre log, a swap with its id and first day (#288).
+            Assert.Equal(installations.Select(s => (s.Id, TyreEntryKind.Swap, s.From, (Guid?)s.SetId)),
+                g.TyreEntries!.Where(e => e.IsSwapLine).OrderBy(e => e.Day).Select(e => (e.Id, e.Kind, e.Day, e.SetId)));
+            // A Bought line per set and the amounts (#288): each linked expense on its line's day, in the vehicle's currency, filed under Tyres.
+            Assert.Equal(2, g.TyreEntries!.Count(e => e.Kind == TyreEntryKind.Bought));
+            var linked = g.TyreEntries!.Where(e => e.ExpenseId is not null).ToList();
+            Assert.Equal(linked.Select(e => (e.ExpenseId!.Value, e.Day)).Order(), g.TyreExpenses!.Select(x => (x.Id, x.Date)).Order());
+            Assert.All(g.TyreExpenses!, x => Assert.Equal(("Tyres", (long?)null), (x.Category, x.Odometer)));
         });
     }
 

@@ -1,10 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { HttpResponse } from 'msw'
 import { expect, it, vi } from 'vitest'
 import App from '../../src/App.tsx'
 import { check, setup, setupAccessibilityTests } from '../support/accessibility.tsx'
 import { server } from '../support/server.ts'
-import { fakeLogBackend, fakePhotoStore, fakeRecognition, fakeRefueling, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../support/mocks.tsx'
+import { graphql } from '../support/graphql.ts'
+import { fakeExpense, fakeLogBackend, fakePhotoStore, fakeRecognition, fakeRefueling, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../support/mocks.tsx'
 
 // jsdom cannot decode pictures (the resize is covered in Media.unit.test.ts) and has no object URLs (previews of queued photos).
 vi.mock('../../src/pictures/resizeImage.ts', async (original) => ({
@@ -167,5 +169,20 @@ it('a photo that could not be uploaded, and the screen after a photo could not b
 
   expect(await within(dialog).findByRole('alert')).toHaveTextContent(/could not be attached/)
   expect(within(dialog).getByRole('button', { name: 'Done' })).toBeInTheDocument()
+  await check(document.body)
+})
+
+it('an expense a tyre log line made says so in its edit dialog, with a link to the line, free of violations (#288)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=expenses')
+  server.use(
+    graphql.query('ExpenseDetails', () =>
+      HttpResponse.json({ data: { expense: { ...fakeExpense({ id: 'e1' }), photos: [], tyreEntry: { __typename: 'TyreEntryRef', id: 'l1', kind: 'VALVE_REPLACED', setName: 'Michelin Primacy 4', trashed: false } } } }),
+    ),
+  )
+  await screen.findByText('Oil change')
+
+  await ui.click(screen.getByRole('button', { name: 'Edit the expense Oil change' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit expense' })
+  expect(await within(dialog).findByRole('link', { name: 'Open in the tyre log' })).toBeInTheDocument()
   await check(document.body)
 })

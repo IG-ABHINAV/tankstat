@@ -19,14 +19,16 @@ import { ChangeTyrePositionsDocument, SwapTyresDocument, type DistanceUnit } fro
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
 import { useFormat } from '../i18n/format.ts'
 import { OfflineNote } from '../components/OfflineNote.tsx'
+import { feeOf } from './entries.ts'
+import { FeeFields } from './FeeFields.tsx'
 import { keyedOf, type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 
 type Mode = 'same' | 'cross' | 'unsure'
 
-/** The pairs a set is at now (`rotate`) or was at the last time on the car: its newest stretch's. */
+/** The pairs a set is at now (`rotate`) or was at the last time on the car: its newest installation's. */
 const pairsOf = (info: TyreSetInfo | undefined, rotate: boolean) => {
-  const newest = info?.stretches[0]?.stretch // newest first
-  return rotate ? (info?.stretches.find((s) => s.stretch.until == null)?.stretch.pairOneFront ?? null) : (newest?.pairOneFront ?? null)
+  const newest = info?.installations[0]?.installation // newest first
+  return rotate ? (info?.installations.find((s) => s.installation.until == null)?.installation.pairOneFront ?? null) : (newest?.pairOneFront ?? null)
 }
 
 /**
@@ -57,7 +59,8 @@ export function SwapDialog({
   const words = useTyreWords(unit)
   const run = useTyreMutation(vehicleId)
   const [open, setOpen] = useDialogState()
-  const stretchId = useClientId(open)
+  const installationId = useClientId(open)
+  const expenseId = useClientId(open)
   const choices = tyres.sets.filter((s) => !s.set.isRetired && (rotate ? s.onTheCar : !s.onTheCar))
   const [picked, setChosen] = useState(setId ?? choices[0]?.set.id ?? '')
   const chosen = choices.some((s) => s.set.id === picked) ? picked : (choices[0]?.set.id ?? '')
@@ -103,7 +106,11 @@ export function SwapDialog({
         replace: replace !== null,
         odometer: wholeOrNull(text('odometer')),
         note: text('note') || null,
-        stretchId,
+        installationId,
+        // What it cost (#288): on its line, an expense titled by what was done and the set.
+        ...(text('feeAmount') !== ''
+          ? { fee: feeOf(form, `${t(`tyres.entries.kinds.${rotate ? 'POSITIONS_CHANGED' : 'SWAP'}`)}: ${info?.set.name ?? ''}`, expenseId) }
+          : {}),
       }
       const saved = rotate ? await run(ChangeTyrePositionsDocument, { input }) : await run(SwapTyresDocument, { input })
       setOpen(false)
@@ -178,9 +185,15 @@ export function SwapDialog({
                 <Segmented label={t('tyres.fields.positions')} value={mode} options={options} onChange={setMode} />
                 <PairPicture front={front} dim={mode === 'unsure'} />
               </Stack>
+              <FeeFields vehicleId={vehicleId} tyres={tyres} label={rotate ? t('tyres.fee.paid') : t('tyres.fee.paidForSwap')} />
               <Field name="note" label={t('tyres.fields.note')}>
                 <FieldInput maxLength={500} autoComplete="off" />
               </Field>
+              {!rotate && (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  {t('tyres.fee.swapText')}
+                </Typography>
+              )}
               {replace && <WarningMessage>{t('tyres.dialogs.replaceNote', replace)}</WarningMessage>}
               {error !== undefined && <ErrorMessage error={error} />}
               <DialogButtons>
