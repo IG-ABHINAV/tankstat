@@ -53,6 +53,43 @@ public class StatsRepositoryTests
     }
 
     [Fact]
+    public async Task ManyVehiclesLoadedTogether_GetEachTheirOwnRecords_AndOneWithoutLogsGetsNone()
+    {
+        await using var db = new TestDatabase();
+        var car = await AddVehicle(db);
+        var van = await AddVehicle(db);
+        var empty = await AddVehicle(db);
+        var refuelings = db.Get<IRefuelingRepository>();
+        await refuelings.AddAsync(TestData.Refueling(Owner, Owner, car.Id, Day, 40, 100, 1000, true, "EUR"), default);
+        await refuelings.AddAsync(TestData.Refueling(Owner, Owner, van.Id, Day, 50, 120, 2000, true, "EUR"), default);
+        await refuelings.AddAsync(TestData.Refueling(Owner, Owner, van.Id, Day.AddDays(3), 20, 50, 2300, false, "EUR"), default);
+        await db.Get<IExpenseRepository>().AddAsync(
+            Expense.Create(Owner, Owner, van.Id, Day, "Oil", "Service", Cost.Create(Owner, van.Id, Day, 35, "HUF"), OdometerReading.Create(Owner, van.Id, Day, 2100)), default);
+        var stats = db.Get<IStatsRepository>();
+
+        var together = await stats.LoadManyAsync([car.Id, van.Id, empty.Id, car.Id], default);
+
+        Assert.Equal(3, together.Count);
+        foreach (var id in new[] { car.Id, van.Id, empty.Id })
+        {
+            var alone = await stats.LoadAsync(id, default);
+            Assert.Equal(alone.Fuel.OrderBy(f => f.Date), together[id].Fuel.OrderBy(f => f.Date));
+            Assert.Equal(alone.Expenses, together[id].Expenses);
+            Assert.Equal(alone.Readings.OrderBy(r => r.Value), together[id].Readings.OrderBy(r => r.Value));
+        }
+        // LoadAsync is LoadManyAsync for one id, so the equality above holds by construction: what each vehicle gets is spelt out here.
+        Assert.Equal([(40m, 1000L)], together[car.Id].Fuel.Select(f => (f.Volume, f.Odometer)));
+        Assert.Empty(together[car.Id].Expenses);
+        Assert.Equal([1000L], together[car.Id].Readings.Select(r => r.Value));
+        Assert.Equal([(50m, 2000L), (20m, 2300L)], together[van.Id].Fuel.OrderBy(f => f.Odometer).Select(f => (f.Volume, f.Odometer)));
+        Assert.Equal([(35m, "HUF")], together[van.Id].Expenses.Select(e => (e.Amount, e.Currency)));
+        Assert.Equal([2000L, 2100L, 2300L], together[van.Id].Readings.Select(r => r.Value).Order());
+        Assert.Empty(together[empty.Id].Fuel);
+        Assert.Empty(together[empty.Id].Expenses);
+        Assert.Empty(together[empty.Id].Readings);
+    }
+
+    [Fact]
     public async Task AFillUpsDiscount_IsLoadedWithIt_AndNoneIsZero()
     {
         await using var db = new TestDatabase();

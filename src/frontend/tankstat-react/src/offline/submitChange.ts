@@ -7,6 +7,9 @@ import { outbox, type ChangeDraft } from './outbox.ts'
 
 export type Submitted<T> = { queued: true } | { queued: false; result: T }
 
+/** Whether a change of this vehicle is kept on the device rather than sent: the server is out of reach, or its changes wait (in order). */
+export const willKeep = (vehicleId: string) => !connectivity.reachable || outbox.vehicleIds().has(vehicleId)
+
 /**
  * Every change of a refuelling or an expense goes through here. Kept on the device (`outbox.ts`) while the server is out of reach, when the
  * vehicle already has changes waiting (they keep their order), or when the request fails for want of the server (with the same id: should
@@ -16,7 +19,7 @@ export type Submitted<T> = { queued: true } | { queued: false; result: T }
  */
 export async function submitChange<T>(client: ApolloClient, change: ChangeDraft, send: () => Promise<T>): Promise<Submitted<T>> {
   // A change with photos kept on this device waits too: they reach the server as drafts right before it (`push.ts`).
-  if (!connectivity.reachable || outbox.vehicleIds().has(change.vehicleId) || keptPhotosOf({ ...change, seq: 0, createdAt: 0 }).length > 0) return keepChange(client, change)
+  if (willKeep(change.vehicleId) || keptPhotosOf({ ...change, seq: 0, createdAt: 0 }).length > 0) return keepChange(client, change)
   try {
     return { queued: false, result: await send() }
   } catch (error) {

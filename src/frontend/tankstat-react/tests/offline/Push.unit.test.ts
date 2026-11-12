@@ -90,7 +90,8 @@ describe('batches', () => {
 })
 
 describe('fromParked', () => {
-  const kindOf = (c: Change) => (Object.keys(SYNC_KINDS) as SyncChangeKind[]).find((k) => SYNC_KINDS[k][0] === c.entity && SYNC_KINDS[k][1] === c.action)!
+  const kindOf = (c: Change) =>
+    (Object.keys(SYNC_KINDS) as (keyof typeof SYNC_KINDS)[]).find((k) => SYNC_KINDS[k][0] === c.entity && SYNC_KINDS[k][1] === c.action)! as SyncChangeKind
   // What the server keeps: the ChangeInput as sent, with nulls for what was left out (an edited change is written back by the server).
   const asKept = (c: Change, nulls: boolean) => JSON.stringify(toChangeInput(c), (_, v: unknown) => (v === undefined ? (nulls ? null : undefined) : v))
 
@@ -120,8 +121,12 @@ describe('fromParked', () => {
     for (const c of all) {
       const back = fromParked({ id: c.id, kind: kindOf(c), vehicleId: c.vehicleId, targetId: c.targetId, change: asKept(c, nulls), receivedAt: '2026-10-03T08:00:00Z' })
       expect(back).toMatchObject({ id: c.id, entity: c.entity, action: c.action, vehicleId: c.vehicleId, targetId: c.targetId, expectedVersion: c.expectedVersion ?? null })
-      expect(toChangeInput(back)).toEqual(toChangeInput(c)) // sent again, it would be the same change
+      expect(toChangeInput(back!)).toEqual(toChangeInput(c)) // sent again, it would be the same change
     }
+  })
+
+  it('leaves out a parked change of a kind this build does not know, never throwing (the lists of parked changes keep working)', () => {
+    expect(fromParked({ id: 'p', kind: 'SOMETHING_NEWER' as never, vehicleId: 'v1', targetId: null, change: '{}', receivedAt: '2026-10-03T08:00:00Z' })).toBeNull()
   })
 
   it('reads back the values a change was made from, sent beside it, and none from what is not an object', () => {
@@ -129,15 +134,15 @@ describe('fromParked', () => {
     const sent = toChangeInput(edit)
     expect(sent.base).toBe('{"volume":40,"note":null}')
     const parked = { id: 'u', kind: 'UPDATE_REFUELING' as const, vehicleId: 'v1', targetId: 'r1', change: JSON.stringify({ ...sent, base: undefined }), receivedAt: '2026-10-03T08:00:00Z' }
-    expect(fromParked({ ...parked, base: sent.base }).base).toEqual({ volume: 40, note: null })
-    expect(fromParked({ ...parked, base: '[1]' }).base).toBeUndefined()
-    expect(fromParked({ ...parked, base: 'not json' }).base).toBeUndefined()
+    expect(fromParked({ ...parked, base: sent.base })!.base).toEqual({ volume: 40, note: null })
+    expect(fromParked({ ...parked, base: '[1]' })!.base).toBeUndefined()
+    expect(fromParked({ ...parked, base: 'not json' })!.base).toBeUndefined()
     expect(toChangeInput(change({ id: 't', action: 'trash', targetId: 'r1' }))).not.toHaveProperty('base')
   })
 
   it('a vehicle the server never took has no vehicle id of its own: its changes are named by the add', () => {
     const add = change({ id: 'g', entity: 'vehicles', action: 'add', vehicleId: 'g', targetId: 'g', input: { id: 'g', name: 'Golf', fuelType: 'PETROL' } })
-    expect(fromParked({ id: 'g', kind: 'ADD_VEHICLE', vehicleId: null, targetId: 'g', change: asKept(add, true), receivedAt: '2026-10-03T08:00:00Z' }).vehicleId).toBe('g')
+    expect(fromParked({ id: 'g', kind: 'ADD_VEHICLE', vehicleId: null, targetId: 'g', change: asKept(add, true), receivedAt: '2026-10-03T08:00:00Z' })!.vehicleId).toBe('g')
   })
 
   it('offers Apply anyway unless what the change is about is gone or the person may not', () => {

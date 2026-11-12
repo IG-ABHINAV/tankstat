@@ -73,7 +73,8 @@ public static class OtelSettings
     /// (<see cref="TelemetryGate"/>) and the Server settings page, worded for both, naming the setting and never the value (an endpoint or a
     /// header can hold a token). A key the SDK takes any value for, or quietly ignores a wrong one of, has no problem.
     /// </summary>
-    public static string? ProblemOf(string key, string value)
+    /// <param name="fileExists">Whether a file the app can read is at a path (#312: Application reads no file; the caller asks the file system).</param>
+    public static string? ProblemOf(string key, string value, Func<string, bool> fileExists)
     {
         if (!IsOtelKey(key)) return null;
         var trimmed = value.Trim();
@@ -83,7 +84,7 @@ public static class OtelSettings
         if (key.EndsWith("_TIMEOUT", StringComparison.OrdinalIgnoreCase) || key.Equals(MetricExportInterval, StringComparison.OrdinalIgnoreCase))
             return IsMilliseconds(trimmed) ? null : $"{key} must be a whole number of milliseconds, at least 1.";
         if (CertificateSuffixes.Any(suffix => key.EndsWith($"_{suffix}", StringComparison.OrdinalIgnoreCase)))
-            return File.Exists(trimmed) ? null : $"{key} must name a file the app can read.";
+            return fileExists(trimmed) ? null : $"{key} must name a file the app can read.";
         return null;
     }
 

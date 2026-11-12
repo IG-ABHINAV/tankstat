@@ -27,6 +27,41 @@ public enum SyncChangeKind
     RemoveExpensePhoto,
     SetVehiclePicture,
     RemoveVehiclePicture,
+
+    // Tyres (#287).
+    AddTyreSet,
+    UpdateTyreSet,
+    SetTyreRoughDistance,
+    RetireTyreSet,
+    UnretireTyreSet,
+    DeleteTyreSet,
+    RestoreTyreSet,
+    SwapTyres,
+    ChangeTyrePositions,
+    AddPastTyreSwaps,
+    AddTyreInstallation,
+    UpdateTyreInstallation,
+    DeleteTyreInstallation,
+    RestoreTyreInstallation,
+
+    // Tyre log entries (#288).
+    AddTyreEntry,
+    UpdateTyreEntry,
+    DeleteTyreEntry,
+    RestoreTyreEntry,
+
+    // Single tyres and their times on the car (#289).
+    BreakUpTyreSet,
+    UpdateTyre,
+    DeleteTyre,
+    RestoreTyre,
+    AddTyrePlace,
+    UpdateTyrePlace,
+    DeleteTyrePlace,
+    RestoreTyrePlace,
+
+    // Tyres replaced early (#289 step 3).
+    ReplaceTyres,
 }
 
 /// <summary>Applied: the server has it. Parked: the server could not apply it and keeps it (with why) for a person to decide.</summary>

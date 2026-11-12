@@ -1,3 +1,5 @@
+using Tankstat.Domain.Tyres;
+using Tankstat.Application.Tyres;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Tankstat.Application.Auth;
@@ -359,6 +361,37 @@ public class LoggingTests
         await w.ImageService.SetVehiclePictureAsync(car.Id, Jpeg(4), default);
         canaries.AddRange(["Canary Car", "CANARY-001", "CANARY-002", "canary refueling note", "98765.43", "41.37", "123456789", "Canary expense title",
             "Canary expense category", "5555.55", "987654321", "canary expense note", "Canary schedule", "canary schedule note", "4444.44", "Canary chart title"]);
+
+        // A tyre set, a swap with its fee and a line of the tyre log with an amount (#288): the set's name, the notes, titles, categories,
+        // amounts and readings never reach a line.
+        var tyreSet = Guid.NewGuid();
+        await w.TyreService.AddSetAsync(new NewTyreSet(car.Id, new TyreSetInput("Canary Tyre Set", TyreSeason.Summer, "Canary Size", Day, null, null, 31415), true, Day, null, null),
+            default, tyreSet, Guid.NewGuid());
+        var tyreLine = Guid.NewGuid();
+        await w.TyreService.AddEntryAsync(car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day.AddDays(2), 987654400, "canary tyre note",
+            new TyreFee(2718.28m, "EUR", "Canary tyre category", "Canary tyre title", Guid.NewGuid())), default, tyreLine);
+        await w.TyreService.UpdateEntryAsync(tyreLine, new TyreEntryInput(TyreEntryKind.ValveReplaced, tyreSet, Day.AddDays(2), 987654400, "canary tyre note 2",
+            new TyreFee(1618.03m, "EUR", "Canary tyre category", "Canary tyre title", null)), default);
+        await w.TyreService.TrashEntryAsync(tyreLine, default);
+        await w.TyreService.RestoreEntryAsync(tyreLine, default);
+        // Broken up into single tyres (#289): the labels are typed values too.
+        var (single1, single2) = (Guid.NewGuid(), Guid.NewGuid());
+        await w.TyreService.BreakUpAsync(new TyreBreakUpInput(tyreSet, Day, [
+            new(single1, "CNRYA", TyreCorner.FrontLeft), new(single2, "CNRYB", TyreCorner.FrontRight),
+            new(Guid.NewGuid(), "CNRYC", TyreCorner.RearLeft), new(Guid.NewGuid(), "CNRYD", null)]), default);
+        canaries.AddRange(["CNRYA", "CNRYB", "CNRYC", "CNRYD"]);
+        // A repair of two of them sharing one amount, then one letting go of it.
+        var (shared1, shared2) = (Guid.NewGuid(), Guid.NewGuid());
+        await w.TyreService.AddEntryAsync(car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day, null, "canary shared note",
+            new TyreFee(4242.42m, "EUR", "Canary shared category", "Canary shared title", Guid.NewGuid()), [new(single1, shared1), new(single2, shared2)]), default);
+        await w.TyreService.UpdateEntryAsync(shared1, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day, null, "canary shared note",
+            new TyreFee(null, null, null, null), SharedExpense: SharedExpenseChoice.LetGo), default);
+        canaries.AddRange(["canary shared note", "Canary shared category", "Canary shared title", "4242.42"]);
+        // A tyre replaced early: the new tyre's label and name, and the price.
+        await w.TyreService.ReplaceTyresAsync(new TyreReplaceInput(tyreSet, Day, null, TyreRetiredWhy.Worn, [new(single1, Guid.NewGuid(), "CNRYE", "Canary new tyre name", null, null, Guid.NewGuid())],
+            new TyreFee(5151.15m, "EUR", "Canary replace category", "Canary replace title", Guid.NewGuid())), default);
+        canaries.AddRange(["CNRYE", "Canary new tyre name", "Canary replace category", "Canary replace title", "5151.15"]);
+        canaries.AddRange(["Canary Tyre Set", "Canary Size", "31415", "987654400", "canary tyre note", "Canary tyre category", "Canary tyre title", "2718.28", "1618.03"]);
 
         // Sharing, an import with a file full of somebody's life, and the access settings.
         await w.Sharing.SetLogAccessAsync(car.Id, bob.Id, AccessLevel.Edit, default);

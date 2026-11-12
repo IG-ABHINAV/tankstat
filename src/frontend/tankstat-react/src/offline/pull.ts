@@ -74,7 +74,7 @@ export interface PullDeps {
  *    (`resync`); otherwise only **what changed** since the last one's watermark, whatever its date, plus what was removed for good. A
  *    window that shrank drops the older logs here and downloads nothing again. Each page is stored before the next is asked, and a full
  *    download goes on from where it stopped; at its end the logs it did not bring again are removed. The vehicle's details and schedules
- *    come with the first page and are kept as the answers of `VehicleDetails` and `RecurringExpenses`;
+ *    come with the first page and are kept as the answers of `VehicleDetails` and `RecurringExpenses` (its tyres as `VehicleTyres`);
  * 4. the pictures the screens show of it (`keepPictures`), last because they matter least.
  * One run at a time; a run asked for meanwhile follows it. A lost connection ends the run (the next one goes on from the cursors).
  */
@@ -133,6 +133,8 @@ export function createPullEngine({
     sameAccount()
     await device.keep(snapshotKey('VehicleDetails', { id: vehicleId }), { vehicle: page.vehicle })
     await device.keep(snapshotKey('RecurringExpenses', { vehicleId }), { vehicle: { __typename: 'Vehicle', id: vehicleId, recurring: page.recurring } })
+    // The vehicle's tyres, whole on the first page (#287): the Tyres tab's answer, null when the reader may not see them (any kept before goes).
+    await device.keep(snapshotKey('VehicleTyres', { vehicleId }), { vehicleTyres: page.tyres ?? null })
   }
 
   /** Stores a page's logs; one that moved out of the window (dated before its start) is removed instead. */

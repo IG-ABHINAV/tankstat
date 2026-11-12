@@ -31,4 +31,11 @@ public interface IBackupKeyMaker
 {
     /// <summary>The key set of a passphrase with a new salt; with none, a passphrase is made up. <c>backup.passphraseTooShort</c> below the minimum.</summary>
     BackupKeySet Make(string? passphrase);
+
+    /// <summary>
+    /// The key set of <paramref name="passphrase"/> as given, with a new salt (#313: <c>backup keygen</c>, <c>backup --passphrase-stdin</c>). No
+    /// minimum is checked and no Backups setting read: the command line checks the passphrase itself, and works under Backups settings the
+    /// start would refuse, the half key pair it is run to replace among them.
+    /// </summary>
+    BackupKeySet FromPassphrase(string passphrase);
 }

@@ -205,7 +205,7 @@ public sealed class RestoreTests : IDisposable
 
         Assert.Equal(["Own car"], await Vehicles(b));
         Assert.False(File.Exists(RestoreMarker.PathIn(folderB)));
-        var refused = RestoreMarker.Read(Assert.Single(Directory.GetFiles(folderB, "restore.refused.*")));
+        var refused = RestoreMarkerFile.Read(Assert.Single(Directory.GetFiles(folderB, "restore.refused.*")));
         Assert.Equal(Path.GetFileName(staged), refused.File);
         Assert.Null(refused.Identity); // it opens every backup of the folder: kept nowhere in it
         if (!OperatingSystem.IsWindows()) Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Directory.GetFiles(folderB, "restore.refused.*")[0]));

@@ -20,10 +20,9 @@ public sealed record DraftReading(PhotoDraft Draft, PhotoReading? Reading);
 /// when no provider is set up.
 /// </summary>
 public sealed class RecognitionService(
-    RecognitionAvailability availability, RecognitionSetup setup, IPhotoReadingRepository readings, IPhotoDraftRepository drafts,
-    ILogPhotoRepository logPhotos, IRefuelingRepository refuelingLogs, IExpenseRepository expenseLogs, OdometerService odometer,
-    RefuelingService refuelings, IOptionsSnapshot<VehicleDefaultsOptions> defaults, IRecognitionSignal signal, AccessService access, TimeProvider clock,
-    ILogger<RecognitionService> logger)
+    RecognitionAvailability availability, RecognitionSetup setup, IPhotoReadingRepository readings, ILogPhotoRepository logPhotos, IRefuelingRepository refuelingLogs, IExpenseRepository expenseLogs, OdometerService odometer,
+    RefuelingService refuelings, IOptionsSnapshot<VehicleDefaultsOptions> defaults, IRecognitionSignal signal, AccessService access, PhotoDraftAccess own,
+    TimeProvider clock, ILogger<RecognitionService> logger)
 {
     private static readonly string[] Locales = ["hu", "en", "de"];
 
@@ -42,8 +41,7 @@ public sealed class RecognitionService(
     public async Task QueueForDraftAsync(Guid draftId, ReadingPurpose purpose, string? locale, CancellationToken ct)
     {
         if (!availability.IsConfigured) return;
-        var me = await access.RequirePrincipalAsync(ct);
-        if (await drafts.FindAsync(draftId, ct) is not { } draft || draft.CreatedById != me.Id) return;
+        if (await own.MineAsync(draftId, ct) is not { } draft) return;
 
         var known = await refuelings.DefaultsAsync(draft.VehicleId, ct);
         var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
@@ -61,8 +59,8 @@ public sealed class RecognitionService(
     public async Task QueueForLogPhotoAsync(LogType logType, Guid logId, Guid imageId, string? locale, CancellationToken ct)
     {
         if (!availability.IsConfigured) return;
-        var me = await access.RequirePrincipalAsync(ct);
-        if (await logPhotos.FindByImageAsync(imageId, ct) is not { } photo || photo.LogType != logType || photo.LogId != logId || photo.CreatedById != me.Id) return;
+        await access.RequirePrincipalAsync(ct); // signed out is refused first, never answered as a missing photo
+        if (await logPhotos.FindByImageAsync(imageId, ct) is not { } photo || photo.LogType != logType || photo.LogId != logId || !await own.IsUploaderAsync(photo, ct)) return;
 
         var (date, readingId, currency) = logType == LogType.Refueling
             ? await refuelingLogs.FindAsync(logId, ct) is { } r ? (r.Date, r.OdometerReadingId, r.Currency) : default
@@ -85,12 +83,10 @@ public sealed class RecognitionService(
     /// <summary>The current user's drafts among <paramref name="ids"/>, in that order, with their readings; anyone else's look missing.</summary>
     public async Task<IReadOnlyList<DraftReading>> ListDraftsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
     {
-        var me = await access.RequirePrincipalAsync(ct);
-        var now = clock.GetUtcNow();
         var wanted = ids.Distinct().Take(PhotoDraft.MaxPerUserAndVehicle).ToList();
-        var own = (await drafts.FindManyAsync(wanted, ct)).Where(d => d.CreatedById == me.Id && !d.IsExpired(now)).ToDictionary(d => d.Id);
-        var found = (await readings.FindManyAsync(own.Keys, ct)).ToDictionary(r => r.Id);
-        return wanted.Where(own.ContainsKey).Select(id => new DraftReading(own[id], found.GetValueOrDefault(id))).ToList();
+        var mine = (await own.MineAsync(wanted, ct)).ToDictionary(d => d.Id);
+        var found = (await readings.FindManyAsync(mine.Keys, ct)).ToDictionary(r => r.Id);
+        return wanted.Where(mine.ContainsKey).Select(id => new DraftReading(mine[id], found.GetValueOrDefault(id))).ToList();
     }
 
     /// <summary>The values worth filling in: ones the provider is sure enough of, and read rather than the hint it was given coming back.</summary>

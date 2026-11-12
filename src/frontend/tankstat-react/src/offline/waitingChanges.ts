@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Change } from './changes.ts'
+import { createdBy, type Change } from './changes.ts'
 import { deviceData } from './deviceData.ts'
 import { outbox, usePendingCount } from './outbox.ts'
 import { snapshotKey } from './snapshotPolicy.ts'
@@ -63,6 +63,62 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
   }
   for (const c of changes) if (c.entity === 'recurring' && c.input?.title && c.action !== 'markDone') schedules.set(c.targetId, String(c.input.title))
 
+  // Tyre changes are named by their set (#287): from the kept answer of the Tyres tab, a set added here by its own change; an installation's
+  // and a tyre log line's by the set they belong to (#288). An answer an older build kept (#288: its sets have stretches, no installations,
+  // and days, no lines) still names the sets.
+  const tyreSets = new Map<string, string>()
+  const installationSet = new Map<string, string>()
+  // A single tyre's change, or one of its times on the car, is named by the tyre's label (#289).
+  const tyreLabels = new Map<string, string>()
+  const placeTyre = new Map<string, string>()
+  for (const vehicleId of new Set(changes.filter((c) => c.entity === 'tyres').map((c) => c.vehicleId))) {
+    const kept = (await deviceData.read(snapshotKey('VehicleTyres', { vehicleId })))?.data as
+      | {
+          vehicleTyres?: {
+            sets?: {
+              set: { id: string; name: string }; installations?: { installation: { id: string } }[]
+              tyres?: { tyre: { id: string; label: string }; places: { place: { id: string } }[] }[]
+            }[]
+            entries?: { id: string; setId?: string | null }[]
+          } | null
+        }
+      | undefined
+    for (const s of kept?.vehicleTyres?.sets ?? []) {
+      tyreSets.set(s.set.id, s.set.name)
+      for (const x of s.installations ?? []) installationSet.set(x.installation.id, s.set.id)
+      for (const t of s.tyres ?? []) {
+        tyreLabels.set(t.tyre.id, t.tyre.label)
+        for (const p of t.places) placeTyre.set(p.place.id, t.tyre.id)
+      }
+    }
+    for (const e of kept?.vehicleTyres?.entries ?? []) if (e.setId) installationSet.set(e.id, e.setId)
+  }
+  for (const c of changes) {
+    if (c.action === 'addTyreSet' || c.action === 'updateTyreSet') tyreSets.set(String(c.input?.id), String(c.input?.name))
+    for (const id of createdBy(c)) if (typeof c.input?.setId === 'string') installationSet.set(id, c.input.setId)
+    if (c.action === 'addTyreSet' && typeof c.input?.installationId === 'string') installationSet.set(c.input.installationId, String(c.input.id))
+    if (c.action === 'breakUpTyreSet' && Array.isArray(c.input?.tyres))
+      for (const t of c.input.tyres as { id: string; label: string }[]) tyreLabels.set(t.id, t.label)
+    if (c.action === 'replaceTyres') // the new tyres, and a whole set's it broke up
+      for (const t of [...((c.input?.tyres ?? []) as { id: string; label: string }[]), ...(((c.input?.breakUp as { tyres?: unknown } | undefined)?.tyres ?? []) as { id: string; label: string }[])])
+        tyreLabels.set(t.id, t.label)
+    if (c.action === 'updateTyre') tyreLabels.set(String(c.input?.id), String(c.input?.label))
+    if ((c.action === 'addTyrePlace' || c.action === 'updateTyrePlace') && typeof c.input?.tyreId === 'string') placeTyre.set(String(c.input.id), c.input.tyreId)
+  }
+  const TYRE_ACTIONS = new Set(['updateTyre', 'deleteTyre', 'restoreTyre'])
+  const PLACE_ACTIONS = new Set(['addTyrePlace', 'updateTyrePlace', 'deleteTyrePlace', 'restoreTyrePlace'])
+  const tyreLabelOf = (c: Change, input: Record<string, unknown>) => {
+    if (TYRE_ACTIONS.has(c.action)) return tyreLabels.get(String(input.id))
+    if (!PLACE_ACTIONS.has(c.action)) return undefined
+    const tyreId = typeof input.tyreId === 'string' ? input.tyreId : placeTyre.get(String(input.id))
+    return tyreId ? tyreLabels.get(tyreId) : undefined
+  }
+  const tyreSetOf = (c: Change, input: Record<string, unknown>) => {
+    const swaps = Array.isArray(input.swaps) ? (input.swaps as { setId: string }[]) : []
+    const ids = [input.setId, ...swaps.map((s) => s.setId), installationSet.get(c.targetId), input.id].filter((id): id is string => typeof id === 'string')
+    return [...new Set(ids.map((id) => tyreSets.get(id)).filter((n): n is string => !!n))].join(', ') || undefined
+  }
+
   const items = await Promise.all(
     changes.map(async (change): Promise<WaitingChange> => {
       const input = change.input ?? {}
@@ -82,6 +138,11 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
           return change.action === 'markDone'
             ? { change, date: input.date as string, amount: input.amount as number | null, currency: input.currency as string | null, titles: (change.targetIds ?? []).map((id) => schedules.get(id) ?? '') }
             : { change, title: schedules.get(change.targetId) }
+        case 'tyres': {
+          const swaps = Array.isArray(input.swaps) ? (input.swaps as { day: string }[]) : []
+          const date = (input.day ?? input.from ?? [...swaps].map((s) => s.day).sort()[0]) as string | undefined
+          return { change, name: tyreLabelOf(change, input) ?? tyreSetOf(change, input), date }
+        }
       }
     }),
   )

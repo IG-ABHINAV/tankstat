@@ -293,6 +293,28 @@ public class BackupKeyMakerTests
         Assert.True(maker.Make(null).Generated); // 20 characters of 100 random bits: the minimum is for what people type
         Assert.False(maker.Make("correct horse battery staple, twice").Generated);
     }
+
+    [Fact]
+    public void FromAPassphrase_TheKeySetIsMadeWithoutReadingTheSettings_WhichTheCommandLineChecksItself()
+    {
+        // The settings would not validate (a monitor that throws on read): keygen must work under them (#313).
+        var maker = new BackupKeyMaker(new ThrowingMonitor());
+
+        var set = maker.FromPassphrase("short");
+
+        Assert.False(set.Generated);
+        Assert.Equal("short", set.Passphrase);
+        Assert.True(BackupKeys.Opens(AgeKeys.ParseIdentity(set.Identity), set.Recipient));
+        Assert.Equal(AgeKeys.ParseIdentity(set.Identity), BackupKeys.Identity("short", Convert.FromBase64String(set.Salt), Argon2idParameters.Default));
+        Assert.NotEqual(set.Salt, maker.FromPassphrase("short").Salt);
+    }
+
+    private sealed class ThrowingMonitor : IOptionsMonitor<BackupOptions>
+    {
+        public BackupOptions CurrentValue => throw new OptionsValidationException("Backups", typeof(BackupOptions), ["not valid"]);
+        public BackupOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<BackupOptions, string?> listener) => null;
+    }
 }
 
 public sealed class BackupFactsTests : IDisposable

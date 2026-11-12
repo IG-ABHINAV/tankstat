@@ -1,0 +1,355 @@
+# A vehicle's tyres (#287): sets with their figures, their installations with distances (worked out by the server), the tyre log's lines (#288) and the
+# vehicle's readings, from which a day's odometer is worked out on the device (tyres/odometer.ts) for a form's hint and a log line.
+
+fragment TyreSetFields on TyreSet {
+  id
+  vehicleId
+  name
+  season
+  size
+  since
+  madeWeek
+  madeYear
+  roughDistance
+  roughUntil
+  retiredOn
+  isRetired
+  brokenUpOn
+  version
+}
+
+# A single tyre of a set tracked tyre by tyre (#289), and its times on the car.
+fragment TyreFields on Tyre {
+  id
+  setId
+  label
+  name
+  madeWeek
+  madeYear
+  since
+  roughDistance
+  retiredOn
+  retiredWhy
+  replacedById
+  isRetired
+  version
+}
+
+fragment TyrePlaceFields on TyrePlace {
+  id
+  tyreId
+  installationId
+  from
+  until
+  corner
+  version
+}
+
+fragment TyreInstallationFields on TyreInstallation {
+  id
+  setId
+  from
+  until
+  pairOneFront
+  version
+}
+
+fragment TyreEntryFields on TyreEntry {
+  id
+  kind
+  setId
+  installationId
+  day
+  odometer
+  note
+  version
+  expenseId
+  amount
+  currency
+  category
+  expenseTrashed
+  # A single tyre's line (#289), and the lines made together for several tyres: one row of the log, one expense.
+  tyreId
+  groupId
+}
+
+fragment VehicleTyresFields on VehicleTyres {
+  vehicleId
+  hasReadings
+  expenseCategory
+  spentAll {
+    currency
+    amount
+  }
+  spentNoSet {
+    currency
+    amount
+  }
+  readings {
+    date
+    value
+  }
+  entries {
+    ...TyreEntryFields
+  }
+  sets {
+    onTheCar
+    spent {
+      currency
+      amount
+    }
+    repairs
+    set {
+      ...TyreSetFields
+    }
+    figures {
+      distance
+      approximate
+      measured
+      pairOneFront
+      pairOneRear
+      pairsUnknown
+      suggestion {
+        distance
+        until
+        measuredBefore
+      }
+    }
+    installations {
+      installation {
+        ...TyreInstallationFields
+      }
+      distance {
+        distance
+        approximate
+        measure
+      }
+    }
+    tyres {
+      onTheCar
+      corner
+      spent {
+        currency
+        amount
+      }
+      repairs
+      tyre {
+        ...TyreFields
+      }
+      figures {
+        distance
+        approximate
+        measured
+        front
+        rear
+        unknown
+      }
+      places {
+        place {
+          ...TyrePlaceFields
+        }
+        distance {
+          distance
+          approximate
+          measure
+        }
+      }
+    }
+  }
+}
+
+query VehicleTyres($vehicleId: UUID!) {
+  vehicleTyres(vehicleId: $vehicleId) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddTyreSet($input: AddTyreSetInput!) {
+  addTyreSet(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreSet($input: UpdateTyreSetInput!) {
+  updateTyreSet(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation SetTyreRoughDistance($input: SetTyreRoughDistanceInput!) {
+  setTyreRoughDistance(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation SwapTyres($input: SwapTyresInput!) {
+  swapTyres(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation ChangeTyrePositions($input: SwapTyresInput!) {
+  changeTyrePositions(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddPastTyreSwaps($input: AddPastTyreSwapsInput!) {
+  addPastTyreSwaps(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddTyreInstallation($input: AddTyreInstallationInput!) {
+  addTyreInstallation(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreInstallation($input: UpdateTyreInstallationInput!) {
+  updateTyreInstallation(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreInstallation($id: UUID!) {
+  deleteTyreInstallation(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreInstallation($id: UUID!) {
+  restoreTyreInstallation(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddTyreEntry($input: AddTyreEntryInput!) {
+  addTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyreEntry($input: UpdateTyreEntryInput!) {
+  updateTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreEntry($input: DeleteTyreEntryInput!) {
+  deleteTyreEntry(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreEntry($id: UUID!) {
+  restoreTyreEntry(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RetireTyreSet($id: UUID!, $day: LocalDate!) {
+  retireTyreSet(id: $id, day: $day) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UnretireTyreSet($id: UUID!) {
+  unretireTyreSet(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyreSet($id: UUID!) {
+  deleteTyreSet(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyreSet($id: UUID!) {
+  restoreTyreSet(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+query TyreTrash($orderBy: TyreTrashSortField!, $direction: SortDirection!, $skip: Int!, $take: Int!) {
+  tyreTrash(orderBy: $orderBy, direction: $direction, skip: $skip, take: $take) {
+    kind
+    id
+    setName
+    entryKind
+    day
+    until
+    installationCount
+    deletedAt
+    version
+    withExpense
+    label
+    corner
+    canDelete
+    vehicle {
+      id
+      name
+    }
+  }
+  tyreTrashCount
+  tyreTrashDeletableCount
+}
+
+mutation EmptyTyreTrash {
+  emptyTyreTrash
+}
+
+mutation BreakUpTyreSet($input: BreakUpTyreSetInput!) {
+  breakUpTyreSet(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation ReplaceTyres($input: ReplaceTyresInput!) {
+  replaceTyres(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyre($input: UpdateTyreInput!) {
+  updateTyre(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyre($id: UUID!) {
+  deleteTyre(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyre($id: UUID!) {
+  restoreTyre(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation AddTyrePlace($input: AddTyrePlaceInput!) {
+  addTyrePlace(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation UpdateTyrePlace($input: UpdateTyrePlaceInput!) {
+  updateTyrePlace(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation DeleteTyrePlace($id: UUID!) {
+  deleteTyrePlace(id: $id) {
+    ...VehicleTyresFields
+  }
+}
+
+mutation RestoreTyrePlace($id: UUID!) {
+  restoreTyrePlace(id: $id) {
+    ...VehicleTyresFields
+  }
+}

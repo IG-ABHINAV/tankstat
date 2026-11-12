@@ -41,7 +41,7 @@ export function SyncPage() {
   const last = state.last
   const { parked } = useParkedChanges()
   const parkedById = new Map(parked?.map((p) => [p.id, p]) ?? [])
-  const notApplied = useDescribed(parked?.map(fromParked) ?? [], parked)
+  const notApplied = useDescribed(parked?.flatMap((p) => fromParked(p) ?? []) ?? [], parked)
   const resolved = (message: string) => {
     setStatus(message)
     heading.current?.focus() // the item may be gone, its buttons with it

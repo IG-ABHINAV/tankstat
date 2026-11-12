@@ -113,7 +113,7 @@ public static class SeederApp
             var pictures = options.Pictures == SeedPictures.None ? null : await AddPicturesAsync(services, options, clock, ct);
             await output.WriteLineAsync(
                 $"Done in {watch.Elapsed.TotalSeconds:F1}s: {result.Vehicles:N0} vehicles, {result.Trashed:N0} in the trash, {result.Refuelings:N0} refuelings, " +
-                $"{result.Recurring:N0} recurring expenses, {result.Expenses:N0} expenses, {result.Notifications:N0} notifications (seed {options.RandomSeed})" +
+                $"{result.Recurring:N0} recurring expenses, {result.Expenses:N0} expenses, {result.TyreSets:N0} tyre sets, {result.Notifications:N0} notifications (seed {options.RandomSeed})" +
                 (pictures is null ? "." : $"; pictures: {pictures.Photos:N0} photos, {pictures.Drawn:N0} drawn."));
             return Success;
         }

@@ -10,6 +10,7 @@ import { connectivity } from '../../src/offline/connectivity.ts'
 import { deviceData } from '../../src/offline/deviceData.ts'
 import { memoryStorage } from '../../src/offline/deviceStorage.ts'
 import { outbox } from '../../src/offline/outbox.ts'
+import { snapshotKey } from '../../src/offline/snapshotPolicy.ts'
 import { createPullEngine } from '../../src/offline/pull.ts'
 import { createPushEngine } from '../../src/offline/push.ts'
 import { provideOfflineSync } from '../../src/offline/runtime.ts'
@@ -548,4 +549,67 @@ it('merging a vehicle takes the other value into a text field and a choice alike
 
   expect(await screen.findByText('Applied.')).toBeInTheDocument()
   expect(resolved[0]).toMatchObject({ action: 'APPLY', change: { expectedVersion: 2, updateVehicle: { id: 'v1', name: 'Octavia Combi', licensePlate: 'XYZ-987', fuelType: 'LPG' } } })
+})
+
+it('a tyre swap waiting here is named by its set and day; one the server parked because another swap got there first can replace it (#287)', async () => {
+  await downloaded()
+  await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v1' }), {
+    vehicleTyres: { vehicleId: 'v1', sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, installations: [] }], entries: [{ id: 'e1', setId: 's2' }], readings: [], hasReadings: false },
+  })
+  const swap = { vehicleId: 'v1', setId: 's2', day: '2026-10-20', pairOneFront: null, replace: false, odometer: null, note: null, installationId: 'st1' }
+  await outbox.enqueue({ id: 'w1', entity: 'tyres', action: 'swapTyres', vehicleId: 'v1', targetId: 'st1', input: swap })
+  await outbox.enqueue({ id: 'w2', entity: 'tyres', action: 'deleteTyreEntry', vehicleId: 'v1', targetId: 'e1', input: { id: 'e1' } }) // a line, named by its set (#288)
+  connectivity.reset()
+  const parkedSwap = parkedRow('p1', 'SWAP_TYRES', { id: 'p1', swapTyres: { ...swap, installationId: 'st0', day: '2026-10-06' } }, 'tyres.swapExists', { targetId: 'st0' })
+  parkedSwap.reason = { __typename: 'SyncReasonInfo', key: 'tyres.swapExists', args: [{ __typename: 'SyncReasonArg', name: 'date', value: '2026-10-06' }, { __typename: 'SyncReasonArg', name: 'set', value: 'Michelin Primacy 4' }] } as never
+  const resolved: unknown[] = []
+  server.use(
+    graphql.query('ParkedChanges', () => HttpResponse.json({ data: { parkedChanges: resolved.length ? [] : [parkedSwap] } })),
+    graphql.mutation('ResolveSyncChange', ({ variables }) => {
+      resolved.push(variables.input)
+      return HttpResponse.json({ data: { resolveSyncChange: { ...parkedSwap, status: 'APPLIED' } } })
+    }),
+  )
+  renderWithApollo(<App />, '/sync')
+  const ui = userEvent.setup()
+
+  const waiting = within((await screen.findAllByRole('region', { name: /^Octavia/ }))[0]) // Waiting to sync comes first
+  expect(await waiting.findByRole('heading', { name: 'Tyre swap' })).toBeInTheDocument()
+  expect(waiting.getByText('Oct 20, 2026 · Continental WinterContact')).toBeInTheDocument()
+  expect(waiting.getByRole('heading', { name: 'Tyre log line to the trash' }).closest('li')).toHaveTextContent('Continental WinterContact')
+
+  const notApplied = within(await screen.findByRole('region', { name: 'Not applied' }))
+  expect(await notApplied.findByText(/^A swap is already logged on .* \(Michelin Primacy 4 went on\)/)).toBeInTheDocument()
+  expect(notApplied.queryByRole('button', { name: /^Apply anyway/ })).not.toBeInTheDocument() // it would only be refused again
+  await ui.click(notApplied.getByRole('button', { name: /^Replace the swap: Tyre swap/ }))
+  const confirm = await screen.findByRole('alertdialog', { name: 'Replace the swap?' })
+  expect(confirm).toHaveTextContent(/takes the place of the swap already logged that day/)
+  await ui.click(within(confirm).getByRole('button', { name: 'Replace the swap' }))
+
+  expect(await screen.findByText('Applied.')).toBeInTheDocument()
+  expect(resolved).toEqual([{ id: 'p1', action: 'APPLY', change: { id: 'p1', expectedVersion: null, swapTyres: { ...swap, installationId: 'st0', day: '2026-10-06', replace: true } } }])
+})
+
+it('a single tyre\'s change waiting here is named by its label: a relabel, a time on the car of a tyre a waiting break-up made (#289)', async () => {
+  await downloaded()
+  await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v1' }), {
+    vehicleTyres: {
+      vehicleId: 'v1', readings: [], hasReadings: false, entries: [],
+      sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, installations: [], tyres: [{ tyre: { id: 't1', label: 'W1' }, places: [{ place: { id: 'p1' } }] }] }],
+    },
+  })
+  await outbox.enqueue({ id: 'w1', entity: 'tyres', action: 'updateTyre', vehicleId: 'v1', targetId: 't1', input: { id: 't1', label: 'W1a' } })
+  await outbox.enqueue({ id: 'w2', entity: 'tyres', action: 'deleteTyrePlace', vehicleId: 'v1', targetId: 'p1', input: { id: 'p1' } })
+  await outbox.enqueue({
+    id: 'w3', entity: 'tyres', action: 'breakUpTyreSet', vehicleId: 'v1', targetId: 's3',
+    input: { setId: 's3', day: '2026-11-12', tyres: [{ id: 'n1', label: 'S1', corner: null }] },
+  })
+  await outbox.enqueue({ id: 'w4', entity: 'tyres', action: 'addTyrePlace', vehicleId: 'v1', targetId: 'q1', input: { id: 'q1', tyreId: 'n1', from: '2026-11-01', until: null, corner: null } })
+  connectivity.reset()
+  renderWithApollo(<App />, '/sync')
+
+  const waiting = within((await screen.findAllByRole('region', { name: /^Octavia/ }))[0])
+  expect((await waiting.findByRole('heading', { name: "Tyre's label changed" })).closest('li')).toHaveTextContent('W1a')
+  expect(waiting.getByRole('heading', { name: "A tyre's time on the car to the trash" }).closest('li')).toHaveTextContent('W1a')
+  expect(waiting.getByRole('heading', { name: 'New time on the car of a tyre' }).closest('li')).toHaveTextContent('S1')
 })

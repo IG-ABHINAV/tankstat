@@ -56,6 +56,33 @@ public class ChartServiceTests
     }
 
     [Fact]
+    public async Task TheSummariesOfManyVehicles_AreWhatEachOneIsOnItsOwn()
+    {
+        var s = await Setup();
+        await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(new DateOnly(2026, 9, 5), 40, 100, "EUR", 1000, true, null), default);
+        await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(new DateOnly(2026, 9, 25), 30, 12000, "HUF", 1500, true, null), default);
+        var empty = await s.W.VehicleService.AddAsync("Empty", null, FuelType.Petrol, MeasurementUnits.Metric, default);
+        var trashed = await s.W.VehicleService.AddAsync("Old", null, FuelType.Petrol, MeasurementUnits.Metric, default);
+        await s.W.RefuelingService.LogAsync(trashed.Id, new RefuelingInput(new DateOnly(2026, 9, 5), 40, 100, "EUR", 500, true, null), default);
+        await s.W.VehicleService.DeleteAsync(trashed.Id, default);
+        s.W.Current.SignInAs(s.Bob);
+        var bobs = await s.W.VehicleService.AddAsync("Bob's", null, FuelType.Diesel, MeasurementUnits.Metric, default);
+        await s.W.RefuelingService.LogAsync(bobs.Id, new RefuelingInput(new DateOnly(2026, 9, 7), 50, 90, "EUR", 300, true, null), default);
+        var ids = new[] { s.Car.Id, empty.Id, trashed.Id, bobs.Id, Guid.NewGuid(), s.Car.Id };
+
+        foreach (var who in new[] { s.Alice, s.Bob })
+        {
+            s.W.Current.SignInAs(who);
+            var together = await s.W.Stats.SummariesAsync(ids, default);
+            Assert.Equal(ids.Distinct().Count(), together.Count);
+            foreach (var id in ids) Assert.Equivalent(await s.W.Stats.SummaryAsync(id, default), together[id]);
+        }
+        s.W.Current.SignInAs(s.Alice);
+        var alices = await s.W.Stats.SummariesAsync(ids, default);
+        Assert.Equal([true, true, false, false, false], new[] { s.Car.Id, empty.Id, trashed.Id, bobs.Id, ids[4] }.Select(id => alices[id] is not null));
+    }
+
+    [Fact]
     public async Task AnInvalidConfig_IsRejectedBeforeAnythingIsLoaded()
     {
         var s = await Setup();

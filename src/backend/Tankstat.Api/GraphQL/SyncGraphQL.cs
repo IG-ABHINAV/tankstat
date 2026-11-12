@@ -1,3 +1,5 @@
+using System.Text.Unicode;
+using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using GreenDonut;
@@ -10,6 +12,7 @@ using Tankstat.Application.Photos;
 using Tankstat.Application.Recurring;
 using Tankstat.Application.Refuelings;
 using Tankstat.Application.Sync;
+using Tankstat.Application.Tyres;
 using Tankstat.Application.Vehicles;
 using Tankstat.Application;
 using Tankstat.Domain.Access;
@@ -17,6 +20,7 @@ using Tankstat.Domain.Measurements;
 using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Photos;
 using Tankstat.Domain.Sync;
+using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Vehicles;
 using Tankstat.Domain;
 
@@ -24,7 +28,7 @@ namespace Tankstat.Api.GraphQL;
 
 /// <summary>
 /// One change a device kept while the server was out of reach: its own id, the version of what it changes it was made from, and exactly
-/// one operation (the last two set or remove a vehicle's picture), with the same input as the single mutation (an add carries the id the device gave it). <c>Base</c> is the values the
+/// one operation (a log's, a vehicle's or its picture's, a schedule's, or one of the fifteen tyre changes), with the same input as the single mutation (an add carries the id the device gave it). <c>Base</c> is the values the
 /// change was made from (JSON in the shape of its input, as the device knew them), kept with it if it is parked so whoever decides can
 /// merge it; the server never reads it.
 /// </summary>
@@ -37,7 +41,16 @@ public sealed record ChangeInput(
     AddVehicleInput? AddVehicle = null, UpdateVehicleInput? UpdateVehicle = null, Guid? DeleteVehicle = null, Guid? RestoreVehicle = null,
     AddLogPhotoInput? AddRefuelingPhoto = null, RemoveLogPhotoInput? RemoveRefuelingPhoto = null,
     AddLogPhotoInput? AddExpensePhoto = null, RemoveLogPhotoInput? RemoveExpensePhoto = null,
-    SetVehiclePictureInput? SetVehiclePicture = null, Guid? RemoveVehiclePicture = null, string? Base = null);
+    SetVehiclePictureInput? SetVehiclePicture = null, Guid? RemoveVehiclePicture = null,
+    AddTyreSetInput? AddTyreSet = null, UpdateTyreSetInput? UpdateTyreSet = null, SetTyreRoughDistanceInput? SetTyreRoughDistance = null,
+    RetireTyreSetInput? RetireTyreSet = null, Guid? UnretireTyreSet = null, Guid? DeleteTyreSet = null, Guid? RestoreTyreSet = null,
+    SwapTyresInput? SwapTyres = null, SwapTyresInput? ChangeTyrePositions = null, AddPastTyreSwapsInput? AddPastTyreSwaps = null,
+    AddTyreInstallationInput? AddTyreInstallation = null, UpdateTyreInstallationInput? UpdateTyreInstallation = null, Guid? DeleteTyreInstallation = null, Guid? RestoreTyreInstallation = null,
+    AddTyreEntryInput? AddTyreEntry = null, UpdateTyreEntryInput? UpdateTyreEntry = null, DeleteTyreEntryInput? DeleteTyreEntry = null, Guid? RestoreTyreEntry = null,
+    BreakUpTyreSetInput? BreakUpTyreSet = null, UpdateTyreInput? UpdateTyre = null, Guid? DeleteTyre = null, Guid? RestoreTyre = null,
+    AddTyrePlaceInput? AddTyrePlace = null, UpdateTyrePlaceInput? UpdateTyrePlace = null, Guid? DeleteTyrePlace = null, Guid? RestoreTyrePlace = null,
+    ReplaceTyresInput? ReplaceTyres = null,
+    string? Base = null);
 
 /// <summary>A photo added to a saved log while offline: uploaded as a draft of the log's vehicle (<c>PUT /media/vehicles/{id}/photo-drafts</c>) just before.</summary>
 public sealed record AddLogPhotoInput(Guid LogId, Guid DraftId);
@@ -90,11 +103,13 @@ public enum SyncTargetState
 /// </summary>
 public sealed record SyncCurrent(
     SyncTargetState State, int Version, DateTimeOffset? ChangedAt, Guid? ChangedById, EntityChange? LastChange,
-    Vehicle? Vehicle, Refueling? Refueling, Expense? Expense, RecurringExpenseInfo? Schedule)
+    Vehicle? Vehicle, Refueling? Refueling, Expense? Expense, RecurringExpenseInfo? Schedule, TyreSet? TyreSet = null, TyreInstallation? TyreInstallation = null,
+    TyreEntry? TyreEntry = null, Tyre? Tyre = null, TyrePlace? TyrePlace = null)
 {
     public static SyncCurrent From(SyncTarget t) => new(
         t.Trashed ? SyncTargetState.Trashed : SyncTargetState.Live, t.Entity.Version, t.Entity.ChangedAt, t.Entity.ChangedById, t.Entity.LastChange,
-        t.Entity as Vehicle, t.Entity as Refueling, t.Entity as Expense, t.Schedule is { } s ? RecurringExpenseInfo.From(s) : null);
+        t.Entity as Vehicle, t.Entity as Refueling, t.Entity as Expense, t.Schedule is { } s ? RecurringExpenseInfo.From(s) : null,
+        t.Entity as TyreSet, t.Entity as TyreInstallation, t.Entity as TyreEntry, t.Entity as Tyre, t.Entity as TyrePlace);
 }
 
 [ExtendObjectType<SyncCurrent>]
@@ -201,6 +216,9 @@ public sealed class SyncMutations
         // Enums as the API spells them (PETROL, US_GALLONS), so a stored change is a ChangeInput a client can read back as it is.
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper) },
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Letters as they are, not \uXXXX: an accented note of 500 characters would take 3,000 of the ledger's 4,000 otherwise (#288). Still
+        // valid JSON, read back the same; quotes, control characters and markup are escaped as before.
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
     };
 
     /// <summary>
@@ -247,9 +265,11 @@ public sealed class SyncMutations
             AddExpense = change.AddExpense is { } ae ? ae with { PhotoIds = null } : null,
             MarkRecurringExpensesDone = change.MarkRecurringExpensesDone is { } md ? md with { PhotoIds = null } : null,
         };
-        var request = Request(change, services, stored.SubmittedById);
-        // The same change of the same thing: the ledger row stays filed under what it concerns.
-        if (request.Kind != stored.Kind || request.TargetId != stored.TargetId || (request.VehicleIdHint is { } vehicle && stored.VehicleId is { } filed && vehicle != filed))
+        var request = Request(change, services, stored.SubmittedById, resolving: true);
+        // The same change of the same thing: the ledger row stays filed under what it concerns (found through what it names when the change
+        // does not carry its vehicle, as an installation added to a set does).
+        var vehicleOf = request.VehicleIdHint ?? (input.Change is not null && request.VehicleOf is { } find ? await find(ct) : null);
+        if (request.Kind != stored.Kind || request.TargetId != stored.TargetId || (vehicleOf is { } vehicle && stored.VehicleId is { } filed && vehicle != filed))
             throw new DomainException("sync.kindMismatch", "An edited change does the same as the one parked.");
         var replacement = input.Change is null ? null : JsonSerializer.Serialize(change, Json);
         var apply = input.RestoreFirst ? RestoredFirst(stored.Kind, stored.TargetId!.Value, restoreFrom, request.Apply, services, logger) : request.Apply;
@@ -308,8 +328,206 @@ public sealed class SyncMutations
         }
     }
 
+    /// <summary>
+    /// A tyre change (#287), applied through <see cref="TyreService"/> like the mutation. An add names the id of what it creates: the set (and
+    /// the installation a fitted set starts with), the installation a swap or a past swap creates (its line takes the same id), the line an
+    /// added line is, so a change sent again changes nothing. Its answer is the set, installation or line it concerns, with its version after
+    /// the change. Sent from a device's queue, a swap (or a past swap, a change of positions) whose set is on the car already that day just as
+    /// asked is a retry's answer; not when someone applies it anyway (<paramref name="resolving"/>), which is never a retry and decides on purpose.
+    /// </summary>
+    private static SyncChangeRequest? Tyres(
+        ChangeInput c, SyncChangeServices services, int? version, bool resolving,
+        Func<SyncChangeKind, Guid?, Guid?, Func<CancellationToken, Task<AppliedChange>>, Func<CancellationToken, Task<Guid?>>?, SyncChangeRequest> make)
+    {
+        var tyres = services.Tyres;
+        static Guid Required(Guid? id, Guid change) =>
+            id is { } given && given != Guid.Empty ? given : throw new DomainException("sync.entityIdRequired", "An add sent by a device names the id it gave it.", new { Id = change });
+        async Task<AppliedChange> SetAnswer(Guid id, CancellationToken ct) =>
+            await services.TyreSetRow(id, ct) is { } set ? new AppliedChange(set.Id, set.Version, set.VehicleId) : new AppliedChange(id, null, null);
+        async Task<AppliedChange> InstallationAnswer(Guid id, CancellationToken ct) =>
+            await services.TyreInstallationRow(id, ct) is { } st ? new AppliedChange(st.Id, st.Version, st.VehicleId) : new AppliedChange(id, null, null);
+        async Task<AppliedChange> EntryAnswer(Guid id, CancellationToken ct) =>
+            await services.TyreEntryRow(id, ct) is { } e ? new AppliedChange(e.Id, e.Version, e.VehicleId) : new AppliedChange(id, null, null);
+        SyncChangeRequest OnEntry(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await EntryAnswer(id, ct); }, services.TyreEntry(id));
+        SyncChangeRequest OnSet(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await SetAnswer(id, ct); }, services.TyreSet(id));
+        SyncChangeRequest OnInstallation(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await InstallationAnswer(id, ct); }, services.TyreInstallation(id));
+
+        // An amount sent from a device makes an expense: it names that expense's id, so the change sent again makes one (#288).
+        TyreFeeInput? Fee(TyreFeeInput? fee) => fee is { Amount: not null } ? fee with { ExpenseId = Required(fee.ExpenseId, c.Id) } : fee;
+        if (c.AddTyreSet is { } a)
+        {
+            var id = Required(a.Id, c.Id);
+            var input = a with
+            {
+                Id = id, InstallationId = a.Fitted ? Required(a.InstallationId, c.Id) : a.InstallationId, Price = Fee(a.Price),
+                BoughtEntryId = a.Price is { Amount: not null } ? Required(a.BoughtEntryId, c.Id) : a.BoughtEntryId,
+            };
+            return make(SyncChangeKind.AddTyreSet, id, a.VehicleId, async ct => { await TyreChanges.Add(input, tyres, ct); return await SetAnswer(id, ct); }, null);
+        }
+        if (c.UpdateTyreSet is { } u) return OnSet(SyncChangeKind.UpdateTyreSet, u.Id, ct => TyreChanges.Update(u, tyres, ct, version));
+        if (c.SetTyreRoughDistance is { } r) return OnSet(SyncChangeKind.SetTyreRoughDistance, r.Id, ct => tyres.SetRoughAsync(r.Id, r.Distance, r.Until, ct, version));
+        if (c.RetireTyreSet is { } rt) return OnSet(SyncChangeKind.RetireTyreSet, rt.Id, ct => tyres.RetireAsync(rt.Id, rt.Day, ct, version));
+        if (c.UnretireTyreSet is { } ur) return OnSet(SyncChangeKind.UnretireTyreSet, ur, ct => tyres.UnretireAsync(ur, ct, version));
+        if (c.DeleteTyreSet is { } ds)
+            return make(SyncChangeKind.DeleteTyreSet, ds, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashSetAsync(ds, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.SetInTrashAsync(ds, ct) is null) throw; // in the trash already: nothing left to do
+                }
+                return await SetAnswer(ds, ct);
+            }, services.TyreSet(ds));
+        if (c.RestoreTyreSet is { } rs) return OnSet(SyncChangeKind.RestoreTyreSet, rs, ct => tyres.RestoreSetAsync(rs, ct, version));
+
+        if (c.SwapTyres is { } sw)
+        {
+            var id = Required(sw.InstallationId, c.Id);
+            return make(SyncChangeKind.SwapTyres, id, sw.VehicleId, async ct =>
+            {
+                await tyres.SwapAsync(TyreChanges.Swap(sw with { Fee = Fee(sw.Fee) }), ct, id, repeat: !resolving);
+                return new AppliedChange(id, null, sw.VehicleId);
+            }, null);
+        }
+        if (c.ChangeTyrePositions is { } cp)
+        {
+            var id = Required(cp.InstallationId, c.Id);
+            return make(SyncChangeKind.ChangeTyrePositions, id, cp.VehicleId, async ct =>
+            {
+                await tyres.ChangePositionsAsync(TyreChanges.Swap(cp with { Fee = Fee(cp.Fee) }), ct, id, repeat: !resolving);
+                return new AppliedChange(id, null, cp.VehicleId);
+            }, null);
+        }
+        if (c.AddPastTyreSwaps is { } ps)
+        {
+            var rows = ps with { Swaps = [.. ps.Swaps.Select(w => w with { InstallationId = Required(w.InstallationId, c.Id) })] };
+            return make(SyncChangeKind.AddPastTyreSwaps, rows.Swaps.FirstOrDefault()?.InstallationId, ps.VehicleId, async ct =>
+            {
+                await TyreChanges.Past(rows, tyres, ct, repeat: !resolving);
+                return new AppliedChange(rows.Swaps.FirstOrDefault()?.InstallationId, null, ps.VehicleId);
+            }, null);
+        }
+        if (c.AddTyreInstallation is { } ast)
+        {
+            var id = Required(ast.Id, c.Id);
+            return make(SyncChangeKind.AddTyreInstallation, id, null, async ct => { await TyreChanges.AddInstallation(ast with { Id = id }, tyres, ct); return await InstallationAnswer(id, ct); },
+                services.TyreSet(ast.SetId));
+        }
+        if (c.UpdateTyreInstallation is { } ust) return OnInstallation(SyncChangeKind.UpdateTyreInstallation, ust.Id, ct => TyreChanges.UpdateInstallation(ust, tyres, ct, version));
+        if (c.DeleteTyreInstallation is { } dst)
+            return make(SyncChangeKind.DeleteTyreInstallation, dst, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashInstallationAsync(dst, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.InstallationInTrashAsync(dst, ct) is null) throw;
+                }
+                return await InstallationAnswer(dst, ct);
+            }, services.TyreInstallation(dst));
+        if (c.RestoreTyreInstallation is { } rst) return OnInstallation(SyncChangeKind.RestoreTyreInstallation, rst, ct => tyres.RestoreInstallationAsync(rst, ct, version));
+        if (c.AddTyreEntry is { } ae)
+        {
+            // For single tyres (#289) each line names its id, and a break-up its tyres': the change sent again changes nothing.
+            var lines = ae.Tyres?.Select(t => t with { Id = Required(t.Id, c.Id) }).ToList();
+            var id = lines is [{ Id: { } first }, ..] ? first : Required(ae.Id, c.Id);
+            var input = ae with
+            {
+                Id = id, Fee = Fee(ae.Fee), Tyres = lines,
+                BreakUp = ae.BreakUp is { } b ? b with { Tyres = [.. b.Tyres.Select(t => t with { Id = Required(t.Id, c.Id) })] } : null,
+            };
+            return make(SyncChangeKind.AddTyreEntry, id, ae.VehicleId, async ct => { await TyreChanges.AddEntry(input, tyres, ct); return await EntryAnswer(id, ct); }, null);
+        }
+        if (c.UpdateTyreEntry is { } ue) return OnEntry(SyncChangeKind.UpdateTyreEntry, ue.Id, ct => TyreChanges.UpdateEntry(ue with { Fee = Fee(ue.Fee) }, tyres, ct, version));
+        if (c.DeleteTyreEntry is { } de)
+            return make(SyncChangeKind.DeleteTyreEntry, de.Id, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashEntryAsync(de.Id, ct, version, de.WithExpense);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.EntryInTrashAsync(de.Id, ct) is null) throw; // in the trash already: nothing left to do
+                }
+                return await EntryAnswer(de.Id, ct);
+            }, services.TyreEntry(de.Id));
+        if (c.RestoreTyreEntry is { } re) return OnEntry(SyncChangeKind.RestoreTyreEntry, re, ct => tyres.RestoreEntryAsync(re, ct, version));
+
+        // Single tyres (#289): a break-up names its four tyres' ids, an added time on the car its own, so a change sent again changes nothing.
+        async Task<AppliedChange> TyreAnswer(Guid id, CancellationToken ct) =>
+            await services.TyreRow(id, ct) is { } t ? new AppliedChange(t.Id, t.Version, t.VehicleId) : new AppliedChange(id, null, null);
+        async Task<AppliedChange> PlaceAnswer(Guid id, CancellationToken ct) =>
+            await services.TyrePlaceRow(id, ct) is { } p ? new AppliedChange(p.Id, p.Version, p.VehicleId) : new AppliedChange(id, null, null);
+        SyncChangeRequest OnTyre(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await TyreAnswer(id, ct); }, services.Tyre(id));
+        SyncChangeRequest OnPlace(SyncChangeKind kind, Guid id, Func<CancellationToken, Task> apply) =>
+            make(kind, id, null, async ct => { await apply(ct); return await PlaceAnswer(id, ct); }, services.TyrePlace(id));
+        if (c.BreakUpTyreSet is { } bu)
+        {
+            var input = bu with { Tyres = [.. bu.Tyres.Select(t => t with { Id = Required(t.Id, c.Id) })] };
+            return OnSet(SyncChangeKind.BreakUpTyreSet, bu.SetId, ct => TyreChanges.BreakUp(input, tyres, ct, version));
+        }
+        if (c.ReplaceTyres is { } replacing)
+        {
+            // The new tyres' ids and their lines', and a whole set's tyres: the same replacement sent again changes nothing.
+            var input = replacing with
+            {
+                Tyres = [.. replacing.Tyres.Select(t => t with { Id = Required(t.Id, c.Id), LineId = Required(t.LineId, c.Id) })], Price = Fee(replacing.Price),
+                BreakUp = replacing.BreakUp is { } b ? b with { Tyres = [.. b.Tyres.Select(t => t with { Id = Required(t.Id, c.Id) })] } : null,
+            };
+            return OnSet(SyncChangeKind.ReplaceTyres, replacing.SetId, ct => TyreChanges.Replace(input, tyres, ct));
+        }
+        if (c.UpdateTyre is { } ut) return OnTyre(SyncChangeKind.UpdateTyre, ut.Id, ct => tyres.UpdateTyreAsync(ut.Id, ut.Label, ct, version));
+        if (c.DeleteTyre is { } dt)
+            return make(SyncChangeKind.DeleteTyre, dt, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashTyreAsync(dt, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.TyreInTrashAsync(dt, ct) is null) throw; // in the trash already: nothing left to do
+                }
+                return await TyreAnswer(dt, ct);
+            }, services.Tyre(dt));
+        if (c.RestoreTyre is { } rty) return OnTyre(SyncChangeKind.RestoreTyre, rty, ct => tyres.RestoreTyreAsync(rty, ct, version));
+        if (c.AddTyrePlace is { } ap)
+        {
+            var id = Required(ap.Id, c.Id);
+            return make(SyncChangeKind.AddTyrePlace, id, null, async ct => { await TyreChanges.AddPlace(ap with { Id = id }, tyres, ct); return await PlaceAnswer(id, ct); },
+                services.Tyre(ap.TyreId));
+        }
+        if (c.UpdateTyrePlace is { } up) return OnPlace(SyncChangeKind.UpdateTyrePlace, up.Id, ct => TyreChanges.UpdatePlace(up, tyres, ct, version));
+        if (c.DeleteTyrePlace is { } dp)
+            return make(SyncChangeKind.DeleteTyrePlace, dp, null, async ct =>
+            {
+                try
+                {
+                    await tyres.TrashPlaceAsync(dp, ct, version);
+                }
+                catch (NotFoundException)
+                {
+                    if (await tyres.PlaceInTrashAsync(dp, ct) is null) throw;
+                }
+                return await PlaceAnswer(dp, ct);
+            }, services.TyrePlace(dp));
+        if (c.RestoreTyrePlace is { } rp) return OnPlace(SyncChangeKind.RestoreTyrePlace, rp, ct => tyres.RestorePlaceAsync(rp, ct, version));
+        return null;
+    }
+
     /// <param name="uploadedBy">Whose drafts a photo change takes: its sender's (null: the current user, who sends it).</param>
-    private static SyncChangeRequest Request(ChangeInput c, SyncChangeServices services, Guid? uploadedBy = null)
+    /// <param name="resolving">Applied anyway from <c>resolveSyncChange</c>: on purpose, never a retry.</param>
+    private static SyncChangeRequest Request(ChangeInput c, SyncChangeServices services, Guid? uploadedBy = null, bool resolving = false)
     {
         var (vehicles, refuelings, expenses, recurring, photos, defaults) = (services.Vehicles, services.Refuelings, services.Expenses, services.Recurring, services.Photos, services.Defaults);
         var find = services;
@@ -319,6 +537,11 @@ public sealed class SyncMutations
             c.AddRecurringExpense, c.UpdateRecurringExpense, c.DeleteRecurringExpense, c.MarkRecurringExpensesDone, c.AddVehicle, c.UpdateVehicle,
             c.DeleteVehicle, c.RestoreVehicle, c.AddRefuelingPhoto, c.RemoveRefuelingPhoto, c.AddExpensePhoto, c.RemoveExpensePhoto,
             c.SetVehiclePicture, c.RemoveVehiclePicture,
+            c.AddTyreSet, c.UpdateTyreSet, c.SetTyreRoughDistance, c.RetireTyreSet, c.UnretireTyreSet, c.DeleteTyreSet, c.RestoreTyreSet,
+            c.SwapTyres, c.ChangeTyrePositions, c.AddPastTyreSwaps, c.AddTyreInstallation, c.UpdateTyreInstallation, c.DeleteTyreInstallation, c.RestoreTyreInstallation,
+            c.AddTyreEntry, c.UpdateTyreEntry, c.DeleteTyreEntry, c.RestoreTyreEntry,
+            c.BreakUpTyreSet, c.UpdateTyre, c.DeleteTyre, c.RestoreTyre, c.AddTyrePlace, c.UpdateTyrePlace, c.DeleteTyrePlace, c.RestoreTyrePlace,
+            c.ReplaceTyres,
         }.Count(o => o is not null);
         if (set != 1) throw new DomainException("sync.oneOperationRequired", "A change carries exactly one operation.", new { c.Id });
         var payload = JsonSerializer.Serialize(c with { Base = null }, Json);
@@ -430,6 +653,8 @@ public sealed class SyncMutations
                 return new AppliedChange(rvp, null, rvp);
             });
 
+        if (Tyres(c, services, version, resolving, Make) is { } tyreChange) return tyreChange;
+
         var rv = c.RestoreVehicle!.Value;
         return Make(SyncChangeKind.RestoreVehicle, rv, rv, async ct => Of(await vehicles.RestoreAsync(rv, ct, version), v => v.Id, v => v.Version, v => v.Id));
     }
@@ -441,8 +666,27 @@ public sealed class SyncMutations
 /// </summary>
 public sealed class SyncChangeServices(
     VehicleService vehicles, RefuelingService refuelings, ExpenseService expenses, RecurringExpenseService recurring, LogPhotoService photos, ImageService images,
-    IOptionsSnapshot<VehicleDefaultsOptions> defaults, IRefuelingRepository refuelingRows, IExpenseRepository expenseRows, IRecurringExpenseRepository scheduleRows)
+    IOptionsSnapshot<VehicleDefaultsOptions> defaults, IRefuelingRepository refuelingRows, IExpenseRepository expenseRows, IRecurringExpenseRepository scheduleRows,
+    TyreService tyres, ITyreRepository tyreRows)
 {
+    public TyreService Tyres => tyres;
+    public Func<CancellationToken, Task<Guid?>> TyreSet(Guid id) => async ct => (await tyreRows.FindSetAsync(id, ct))?.VehicleId;
+    public Func<CancellationToken, Task<Guid?>> TyreInstallation(Guid id) => async ct => (await tyreRows.FindInstallationAsync(id, ct))?.VehicleId;
+    public Func<CancellationToken, Task<Guid?>> TyreEntry(Guid id) => async ct => (await tyreRows.FindEntryAsync(id, ct))?.VehicleId;
+    public Func<CancellationToken, Task<Guid?>> Tyre(Guid id) => async ct => (await TyreRow(id, ct))?.VehicleId;
+    public Func<CancellationToken, Task<Guid?>> TyrePlace(Guid id) => async ct => (await TyrePlaceRow(id, ct))?.VehicleId;
+
+    public async Task<Tyre?> TyreRow(Guid id, CancellationToken ct) => (await tyreRows.ListTyresAsync([id], ct)).FirstOrDefault();
+
+    public async Task<TyrePlace?> TyrePlaceRow(Guid id, CancellationToken ct) => (await tyreRows.ListPlacesAsync([id], ct)).FirstOrDefault();
+
+    /// <summary>A set's or installation's version after a change was applied (the change itself checked the access).</summary>
+    public Task<TyreSet?> TyreSetRow(Guid id, CancellationToken ct) => tyreRows.FindSetAsync(id, ct);
+
+    public Task<TyreInstallation?> TyreInstallationRow(Guid id, CancellationToken ct) => tyreRows.FindInstallationAsync(id, ct);
+
+    public Task<TyreEntry?> TyreEntryRow(Guid id, CancellationToken ct) => tyreRows.FindEntryAsync(id, ct);
+
     public ImageService Images => images;
     public VehicleService Vehicles => vehicles;
     public RefuelingService Refuelings => refuelings;

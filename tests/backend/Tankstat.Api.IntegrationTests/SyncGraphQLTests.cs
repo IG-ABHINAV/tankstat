@@ -44,6 +44,151 @@ public class SyncGraphQLTests : IDisposable
     }
 
     [Fact]
+    public async Task TyreChangesKeptOffline_AreApplied_OnceEach_AndAStaleEditIsParkedWithTheSetAsItIsNow()
+    {
+        var people = await _app.Users();
+        var car = Guid.NewGuid().ToString();
+        var summer = Guid.NewGuid().ToString();
+        var winter = Guid.NewGuid().ToString();
+        object[] batch =
+        [
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Octavia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = summer, installationId = Guid.NewGuid(), vehicleId = car, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = true, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = winter, vehicleId = car, name = "Continental", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = winter, day = "2026-09-20", pairOneFront = true, odometer = 148_200, installationId = Guid.NewGuid() } },
+        ];
+
+        var first = await Send(people.Alice, batch);
+        var again = await Send(people.Alice, batch);
+
+        Assert.Equal(4, first.GetProperty("applied").GetInt32());
+        Assert.Equal(summer, first.GetProperty("results")[1].GetProperty("entityId").GetString());
+        Assert.Equal(first.GetProperty("results").ToString(), again.GetProperty("results").ToString());
+        var tyres = (await people.Alice.Gql("query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { onTheCar set { id version } installations { installation { from } } } entries { kind odometer } } }", new { v = car }))
+            .Data().GetProperty("vehicleTyres");
+        var sets = tyres.GetProperty("sets").EnumerateArray().ToDictionary(x => x.GetProperty("set").GetProperty("id").GetString()!);
+        Assert.True(sets[winter].GetProperty("onTheCar").GetBoolean());
+        Assert.Equal(1, sets[winter].GetProperty("installations").GetArrayLength()); // swapped once
+        Assert.Equal(("SWAP", 148_200L), (tyres.GetProperty("entries")[0].GetProperty("kind").GetString(), tyres.GetProperty("entries")[0].GetProperty("odometer").GetInt64()));
+
+        // An edit made from an older version of the set is parked; whoever decides sees the set as it is now.
+        var version = sets[summer].GetProperty("set").GetProperty("version").GetInt32();
+        await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, updateTyreSet = new { id = summer, name = "Michelin Primacy 4", season = "SUMMER", since = "2023-03-25" } });
+        var stale = await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = version, updateTyreSet = new { id = summer, name = "Michelin P4", season = "SUMMER", since = "2023-03-25" } });
+        Assert.Equal("sync.versionMismatch", stale.GetProperty("results")[0].GetProperty("reason").GetProperty("key").GetString());
+        var parked = (await people.Alice.Gql("{ parkedChanges { kind current { state tyreSet { name } } } }")).Data().GetProperty("parkedChanges");
+        var mine = parked.EnumerateArray().Single(p => p.GetProperty("kind").GetString() == "UPDATE_TYRE_SET");
+        Assert.Equal(("LIVE", "Michelin Primacy 4"), (mine.GetProperty("current").GetProperty("state").GetString(), mine.GetProperty("current").GetProperty("tyreSet").GetProperty("name").GetString()));
+    }
+
+    [Fact]
+    public async Task EveryKindOfTyreChange_IsApplied_ARepeatedTrashToo()
+    {
+        var people = await _app.Users();
+        var (car, summer, winter, installation, entry) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        object Change(object operation) => operation;
+        var batch = new List<object>
+        {
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Octavia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = summer, installationId = Guid.NewGuid(), vehicleId = car, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = true, day = "2026-03-28", roughDistance = 30_000 } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = winter, vehicleId = car, name = "Continental", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), updateTyreSet = new { id = winter, name = "Continental TS 870", season = "WINTER", since = "2022-11-19" } },
+            new { id = Guid.NewGuid(), setTyreRoughDistance = new { id = summer, distance = 31_000 } },
+            new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = winter, day = "2026-09-20", installationId = Guid.NewGuid() } },
+            new { id = Guid.NewGuid(), changeTyrePositions = new { vehicleId = car, setId = winter, day = "2026-10-01", pairOneFront = false, installationId = Guid.NewGuid() } },
+            new { id = Guid.NewGuid(), addPastTyreSwaps = new { vehicleId = car, swaps = new object[] { new { day = "2025-11-15", setId = winter, installationId = Guid.NewGuid() } } } },
+            new { id = Guid.NewGuid(), addTyreInstallation = new { id = installation, setId = summer, from = "2025-03-29", until = "2025-11-15" } },
+            new { id = Guid.NewGuid(), updateTyreInstallation = new { id = installation, from = "2025-04-01", until = "2025-11-15", pairOneFront = true } },
+            new { id = Guid.NewGuid(), deleteTyreInstallation = installation },
+            new { id = Guid.NewGuid(), deleteTyreInstallation = installation }, // in the trash already: nothing left to do
+            new { id = Guid.NewGuid(), restoreTyreInstallation = installation },
+            new { id = Guid.NewGuid(), addTyreEntry = new { vehicleId = car, kind = "STORAGE_FEE", day = "2026-09-20", odometer = 148_200, note = "At the garage", id = entry } },
+            new { id = Guid.NewGuid(), updateTyreEntry = new { id = entry, kind = "STORAGE_FEE", setId = summer, day = "2026-09-20", odometer = 148_200, note = "Garage" } },
+            new { id = Guid.NewGuid(), deleteTyreEntry = new { id = entry } },
+            new { id = Guid.NewGuid(), deleteTyreEntry = new { id = entry } }, // in the trash already: nothing left to do
+            new { id = Guid.NewGuid(), restoreTyreEntry = entry },
+            new { id = Guid.NewGuid(), retireTyreSet = new { id = summer, day = "2026-10-02" } },
+            new { id = Guid.NewGuid(), unretireTyreSet = summer },
+            new { id = Guid.NewGuid(), deleteTyreSet = summer },
+            new { id = Guid.NewGuid(), deleteTyreSet = summer },
+            new { id = Guid.NewGuid(), restoreTyreSet = summer },
+        };
+
+        var result = await Send(people.Alice, [.. batch.Select(Change)]);
+
+        Assert.Equal(batch.Count, result.GetProperty("applied").GetInt32());
+        Assert.Equal(0, result.GetProperty("parked").GetInt32());
+        var tyres = (await people.Alice.Gql("query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { name roughDistance retiredOn } installations { installation { from pairOneFront } } } entries { kind note } readings { date value } } }", new { v = car }))
+            .Data().GetProperty("vehicleTyres");
+        var sets = tyres.GetProperty("sets").EnumerateArray().ToDictionary(x => x.GetProperty("set").GetProperty("name").GetString()!);
+        Assert.Equal(31_000, sets["Michelin"].GetProperty("set").GetProperty("roughDistance").GetInt64());
+        Assert.Equal(JsonValueKind.Null, sets["Michelin"].GetProperty("set").GetProperty("retiredOn").ValueKind);
+        Assert.Contains(sets["Michelin"].GetProperty("installations").EnumerateArray(), x => x.GetProperty("installation").GetProperty("from").GetString() == "2025-04-01");
+        Assert.Equal(3, sets["Continental TS 870"].GetProperty("installations").GetArrayLength()); // past swap, the swap, the change of positions
+        Assert.Equal((148_200L, "2026-09-20"), (tyres.GetProperty("readings")[0].GetProperty("value").GetInt64(), tyres.GetProperty("readings")[0].GetProperty("date").GetString()));
+        Assert.Contains(tyres.GetProperty("entries").EnumerateArray(), e => e.GetProperty("kind").GetString() == "STORAGE_FEE" && e.GetProperty("note").GetString() == "Garage");
+    }
+
+    [Fact]
+    public async Task EveryKindOfSingleTyreChange_IsApplied_ARepeatedBreakUpAndTrashToo()
+    {
+        var people = await _app.Users();
+        var (car, summer, winter, place, fitted) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        // A break-up's places take ids worked out from the tyre's and the installation's, as the device works them out.
+        var s4First = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[3], fitted);
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var breakUp = new { setId = summer, day = "2026-09-01", tyres = tyres.Select((id, n) => new { id, label = $"Ü{n + 1}ŐÁÉ", corner = corners[n] }) }; // six letters, accented
+        var batch = new List<object>
+        {
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Octavia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = summer, installationId = fitted, vehicleId = car, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = true, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = winter, vehicleId = car, name = "Continental", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), breakUpTyreSet = breakUp },
+            new { id = Guid.NewGuid(), breakUpTyreSet = breakUp }, // sent again: answered with what it made
+            new { id = Guid.NewGuid(), updateTyre = new { id = tyres[0], label = "S1" } },
+            new { id = Guid.NewGuid(), updateTyrePlace = new { id = s4First, from = "2026-03-28", until = "2026-06-01", corner = "REAR_RIGHT" } }, // S4 came off for a while
+            new { id = Guid.NewGuid(), addTyrePlace = new { id = place, tyreId = tyres[3], from = "2026-07-01", corner = "REAR_RIGHT" } },
+            new { id = Guid.NewGuid(), deleteTyrePlace = place },
+            new { id = Guid.NewGuid(), deleteTyrePlace = place }, // in the trash already: nothing left to do
+            new { id = Guid.NewGuid(), restoreTyrePlace = place },
+            new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = winter, day = "2026-09-20", installationId = Guid.NewGuid() } },
+            new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = summer, day = "2026-09-25", installationId = Guid.NewGuid(),
+                corners = new object[] { new { tyreId = tyres[0], corner = "REAR_LEFT" }, new { tyreId = tyres[2], corner = "FRONT_LEFT" } } } },
+            new { id = Guid.NewGuid(), deleteTyre = tyres[1] },
+            new { id = Guid.NewGuid(), deleteTyre = tyres[1] },
+            new { id = Guid.NewGuid(), restoreTyre = tyres[1] },
+        };
+
+        var result = await Send(people.Alice, [.. batch]);
+
+        Assert.True(batch.Count == result.GetProperty("applied").GetInt32(), result.ToString());
+        Assert.Equal(0, result.GetProperty("parked").GetInt32());
+        var tyresNow = (await people.Alice.Gql("query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { name brokenUpOn } tyres { corner tyre { label } places { place { id } } } } } }", new { v = car }))
+            .Data().GetProperty("vehicleTyres");
+        var michelin = tyresNow.GetProperty("sets").EnumerateArray().Single(x => x.GetProperty("set").GetProperty("name").GetString() == "Michelin");
+        var labels = michelin.GetProperty("tyres").EnumerateArray().ToDictionary(t => t.GetProperty("tyre").GetProperty("label").GetString()!);
+        Assert.Equal(["S1", "Ü2ŐÁÉ", "Ü3ŐÁÉ", "Ü4ŐÁÉ"], labels.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(("REAR_LEFT", "FRONT_LEFT"), (labels["S1"].GetProperty("corner").GetString(), labels["Ü3ŐÁÉ"].GetProperty("corner").GetString()));
+        Assert.Equal(3, labels["Ü4ŐÁÉ"].GetProperty("places").GetArrayLength()); // the set's, its own from July (cut by the winter swap), the swap back
+    }
+
+    [Fact]
+    public async Task ATyreSwapWithoutTheIdOfWhatItCreates_IsRefused_AsAnAddWithoutItsId()
+    {
+        var people = await _app.Users();
+        var car = Guid.NewGuid().ToString();
+        var winter = Guid.NewGuid().ToString();
+        await Send(people.Alice,
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Octavia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = winter, vehicleId = car, name = "Continental", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } });
+
+        var refused = await people.Alice.Gql(Sync, new { i = new { changes = new object[] { new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = winter, day = "2026-09-20" } } } } });
+
+        Assert.Equal("sync.entityIdRequired", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
+
+    [Fact]
     public async Task ADiscountKeptOffline_IsAppliedWithItsLog_KeptByAnOlderBuildsUpdate_AndClearedByZero()
     {
         var people = await _app.Users();

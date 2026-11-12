@@ -58,7 +58,9 @@ it('Undo tapped twice while the message goes runs the undo once (#243)', async (
 })
 
 it('Enter twice on Undo runs the undo once (#243)', async () => {
-  const ui = userEvent.setup()
+  // The two presses with no pause between them: the tests' theme has no transitions, so the message is gone a timer tick after the first
+  // (where a browser fades it out for a moment), and a second press after that tick met the page instead (a race that load decided).
+  const ui = userEvent.setup({ delay: null })
   const undo = vi.fn(async () => undefined)
   show(undo)
 

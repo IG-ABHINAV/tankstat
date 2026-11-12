@@ -671,6 +671,9 @@ it("says the server's minimum when it refuses a passphrase the page let through,
 
   expect(await within(dialog).findByText('A passphrase has at least 20 characters.')).toBeInTheDocument()
   expect(calls.PrepareBackupEncryption).toEqual([{ passphrase: 'fifteen-letters', passphraseConfirmation: 'fifteen-letters' }])
+  // The busy button lost the focus to the page, as browsers do (the focus fixup rule; jsdom since 31): the dialog's focus trap takes it back
+  // within 50 ms, and only from there does Escape reach the dialog.
+  await waitFor(() => expect(document.body).not.toHaveFocus())
   await ui.keyboard('{Escape}') // a refusal leaves nothing shown once, so nothing holds the dialog open
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })

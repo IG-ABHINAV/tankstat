@@ -13,6 +13,7 @@ using Tankstat.Domain.Recurring;
 using Tankstat.Domain.Settings;
 using Tankstat.Domain.Sync;
 using Tankstat.Domain.Users;
+using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Infrastructure.Persistence;
@@ -61,6 +62,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<VehicleChart> VehicleCharts => Set<VehicleChart>();
     public DbSet<VehicleDashboardLayout> VehicleDashboardLayouts => Set<VehicleDashboardLayout>();
     public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
+    public DbSet<TyreSet> TyreSets => Set<TyreSet>();
+    public DbSet<TyreInstallation> TyreInstallations => Set<TyreInstallation>();
+    public DbSet<TyreEntry> TyreEntries => Set<TyreEntry>();
+    public DbSet<Tyre> Tyres => Set<Tyre>();
+    public DbSet<TyrePlace> TyrePlaces => Set<TyrePlace>();
     public DbSet<OdometerReading> OdometerReadings => Set<OdometerReading>();
     public DbSet<Cost> Costs => Set<Cost>();
     public DbSet<StoredImage> Images => Set<StoredImage>();

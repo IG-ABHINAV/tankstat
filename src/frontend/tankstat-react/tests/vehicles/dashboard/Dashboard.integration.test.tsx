@@ -10,6 +10,11 @@ import { server } from '../../support/server.ts'
 import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeTile, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
 import { dateValue, findDateField, typeDate } from '../../support/dates.ts'
 
+// The builder's tests drive a dozen MUI selects each, every one answered by the chart preview: about 15 s on a busy CI shard with coverage
+// under jsdom 30, and jsdom 31's CSS engine is slower again (this file 58 s alone against 40 s). They get the 30 s the accessibility
+// files give theirs, so a slow runner still names an element rather than a timeout.
+vi.setConfig({ testTimeout: 30_000 })
+
 /** A key figure's value read whole: its unit is written apart in small type (#259), so the words span two elements of one paragraph. */
 const whole = (text: string) => (_: string, element: Element | null) => element?.tagName === 'P' && element.textContent?.replace(/\s+/g, ' ').trim() === text
 
@@ -209,7 +214,7 @@ it('lists the saved widgets, marks shared ones, and while customizing gives ever
   expect(shared.getByText('Bob')).toBeInTheDocument()
   // Outside Customize a tile shows only its content: the table button, nothing that changes it.
   expect(screen.queryByRole('button', { name: /^(Edit|Customize|Remove) / })).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Fuel by month as a table' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: 'Fuel by month as a table' })).toBeInTheDocument() // once its data is in
 
   await customize(ui)
   expect(screen.getByRole('button', { name: 'Edit Fuel by month' })).toBeInTheDocument()
@@ -934,8 +939,9 @@ it('does not send dates for a preset period, even after a custom one was chosen 
   expect(savedWidget(state).chart).toMatchObject({ range: 'LAST3_MONTHS', from: null, to: null })
 })
 
-it('offers a trend line, a running total and a year earlier for a chart over time, never a trend with a running total, and sends them', async () => {
-  const { ui, state } = setup(fakeVehicle(), [])
+// Two tests where there was one (#314's CI): each drives a dozen of the builder's selects, which a busy runner took past 15 s together.
+it('offers a trend line and a running total for a chart over time, never both at once', async () => {
+  const { ui } = setup(fakeVehicle(), [])
   await screen.findByText(/Compose your own charts/)
   const dialog = await addWidget(ui)
   await ui.type(within(dialog).getByLabelText('Title'), 'Where it goes')
@@ -946,7 +952,16 @@ it('offers a trend line, a running total and a year earlier for a chart over tim
   expect(radio('Trend line', 'None')).toBeChecked() // a running total has no trend line
   await pick(ui, 'Trend line', 'Moving average (3 periods)')
   expect(runningTotal()).not.toBeChecked() // and the other way round
-  await ui.click(extra('Compare with a year earlier'))
+})
+
+it('dims what a measure or a grouping rules out, and sends a trend line and a year earlier for a chart over time', async () => {
+  const { ui, state } = setup(fakeVehicle(), [])
+  await screen.findByText(/Compose your own charts/)
+  const dialog = await addWidget(ui)
+  await ui.type(within(dialog).getByLabelText('Title'), 'Where it goes')
+  const runningTotal = () => extra('Running total')
+  await ui.click(extra('Compare with a year earlier')) // chosen before a grouping rules it out: the later click must turn it on again
+  expect(extra('Compare with a year earlier')).toBeChecked()
 
   await choose(ui, 'What to measure', 'Average consumption')
   expect(runningTotal()).toBeDisabled() // an average does not add up: dimmed, never hidden
@@ -1212,7 +1227,7 @@ it("has no accessibility violations: the dashboard, and a chart's table in its d
   await screen.findByRole('heading', { name: 'Shared one' })
   await check(document.body)
 
-  await ui.click(within(await cardOf('Monthly costs')).getByRole('button', { name: 'Monthly costs as a table' }))
+  await ui.click(await within(await cardOf('Monthly costs')).findByRole('button', { name: 'Monthly costs as a table' }))
   await screen.findByRole('dialog', { name: 'Monthly costs' })
   await check(document.body)
 })

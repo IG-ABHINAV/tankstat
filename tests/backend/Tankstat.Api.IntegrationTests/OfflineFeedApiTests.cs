@@ -33,6 +33,26 @@ public class OfflineFeedApiTests : IDisposable
     private static async Task<string> Car(HttpClient c, string name = "Golf") =>
         (await c.Gql("mutation($n: String!) { addVehicle(input: { name: $n, fuelType: PETROL }) { id } }", new { n = name })).Data().GetProperty("addVehicle").GetProperty("id").GetString()!;
 
+    [Fact]
+    public async Task TheFirstPage_CarriesTheVehiclesTyresWhole_AndNoTyreTombstones()
+    {
+        var people = await _app.Users();
+        var car = await Car(people.Alice);
+        var set = Guid.NewGuid();
+        await people.Alice.Gql("mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }",
+            new { i = new { vehicleId = car, id = set, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = false, day = Day(0) } });
+        const string tyres = "query($i: OfflineChangesInput!) { offlineChanges(input: $i) { tyres { sets { set { id name } } } watermark removed { type } } }";
+
+        var page = (await people.Alice.Gql(tyres, new { i = new { vehicleId = car, take = 50 } })).Data().GetProperty("offlineChanges");
+        Assert.Equal(set.ToString(), page.GetProperty("tyres").GetProperty("sets")[0].GetProperty("set").GetProperty("id").GetString());
+
+        await people.Alice.Gql("mutation($id: UUID!) { deleteTyreSet(id: $id) { vehicleId } }", new { id = set });
+        await people.Alice.Gql("mutation { emptyTyreTrash }");
+        var later = (await people.Alice.Gql(tyres, new { i = new { vehicleId = car, since = page.GetProperty("watermark").GetString(), take = 50 } })).Data().GetProperty("offlineChanges");
+        Assert.Empty(later.GetProperty("tyres").GetProperty("sets").EnumerateArray());
+        Assert.Empty(later.GetProperty("removed").EnumerateArray()); // the tyres came whole: no tombstone of theirs
+    }
+
     private static async Task<string> Refuel(HttpClient c, string vehicleId, int daysAgo, long odometer) =>
         (await c.Gql("mutation($i: LogRefuelingInput!) { logRefueling(input: $i) { id } }",
             new { i = new { vehicleId, date = Day(daysAgo), volume = 40m, totalCost = 20000m, currency = "HUF", odometer, isFullTank = true } }))

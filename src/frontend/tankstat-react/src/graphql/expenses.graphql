@@ -21,6 +21,13 @@ query Expenses(
     reviewState
     canEdit
     canDelete
+    # The tyre log line it was made from (#288): the chip by its title.
+    tyreEntry {
+      id
+      kind
+      setName
+      trashed
+    }
     category @include(if: $withCategory)
     amount @include(if: $withAmount)
     currency @include(if: $withAmount)
@@ -61,6 +68,10 @@ query ExpenseTrash(
       id
       name
     }
+    tyreEntry {
+      id
+      trashed
+    }
     category @include(if: $withCategory)
     amount @include(if: $withAmount)
     currency @include(if: $withAmount)
@@ -90,6 +101,12 @@ query ExpenseDetails($id: UUID!) {
     note
     reviewState
     filledFromPhoto
+    tyreEntry {
+      id
+      kind
+      setName
+      trashed
+    }
     photos {
       id
       url

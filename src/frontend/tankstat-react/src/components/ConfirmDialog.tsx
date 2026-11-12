@@ -17,6 +17,8 @@ export function ConfirmDialog({
   description,
   confirmLabel,
   onConfirm,
+  confirmDisabled = false,
+  children,
 }: {
   trigger?: ReactNode
   open?: boolean
@@ -26,16 +28,22 @@ export function ConfirmDialog({
   description: string
   confirmLabel: string
   onConfirm: () => void
+  /** Nothing to confirm yet (a choice in `children` is missing, which they say). */
+  confirmDisabled?: boolean
+  /** What the confirmation asks besides (a box to tick), between the description and the buttons. */
+  children?: ReactNode
 }) {
   const [open, setOpen] = useDialogState({ open: openAsked, onOpenChange })
   return (
     <>
       <DialogTrigger trigger={trigger} open={open} onOpen={() => setOpen(true)} />
       <DialogFrame open={open} onClose={() => setOpen(false)} onClosed={onClosed} title={title} description={description} role="alertdialog">
+        {children}
         <DialogButtons>
           <DialogCancel autoFocus />
           <Button
             color="error"
+            disabled={confirmDisabled}
             onClick={() => {
               setOpen(false)
               onConfirm()

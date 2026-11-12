@@ -1,3 +1,6 @@
+using Tankstat.Application.Auth;
+using Tankstat.Domain.Tyres;
+using Tankstat.Application.Tyres;
 using Tankstat.Domain.Photos;
 using Tankstat.Application.Expenses;
 using Tankstat.Application.Recognition;
@@ -413,6 +416,47 @@ public class LogPhotoFillerTests
     }
 
     [Fact]
+    public async Task ATyreLogLinesExpense_WaitsForItsPhotoLikeAnyOther_AndTheOdometerItGivesIsTheLinesToo()
+    {
+        var s = await Setup();
+        var set = Guid.NewGuid();
+        await s.W.TyreService.AddSetAsync(new NewTyreSet(s.Car.Id, new TyreSetInput("Michelin", TyreSeason.Summer, null, Day, null, null), true, Day, null, null), default, set, Guid.NewGuid());
+        var (line, expenseId) = (Guid.NewGuid(), Guid.NewGuid());
+        await s.W.TyreService.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, set, Day, null, null, new TyreFee(25, "EUR", "Tyres", "Puncture", expenseId)), default, line);
+        await AddedAndQueued(s, LogType.Expense, expenseId);
+
+        var waiting = await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(Day, "Puncture", "Tyres", 25, "EUR", null, null), default);
+        Assert.Equal(ReviewState.AwaitingPhotos, waiting.ReviewState);
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"));
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Expenses.Items.Single(e => e.Id == expenseId);
+        Assert.Equal((45678L, ReviewState.NeedsReview), (filled.Odometer!.Value, filled.ReviewState));
+        Assert.Equal(filled.OdometerReadingId, s.W.Tyres.Entries.Single(e => e.Id == line).OdometerReadingId); // one reading for the two
+    }
+
+    [Fact]
+    public async Task ATyreLogLinesExpenseInTheTrash_IsFilledInWhenItIsRestored_LikeAnyOther()
+    {
+        var s = await Setup();
+        var set = Guid.NewGuid();
+        await s.W.TyreService.AddSetAsync(new NewTyreSet(s.Car.Id, new TyreSetInput("Michelin", TyreSeason.Summer, null, Day, null, null), true, Day, null, null), default, set, Guid.NewGuid());
+        var (line, expenseId) = (Guid.NewGuid(), Guid.NewGuid());
+        await s.W.TyreService.AddEntryAsync(s.Car.Id, new TyreEntryInput(TyreEntryKind.PunctureRepaired, set, Day, null, null, new TyreFee(25, "EUR", "Tyres", "Puncture", expenseId)), default, line);
+        await AddedAndQueued(s, LogType.Expense, expenseId);
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(Day, "Puncture", "Tyres", 25, "EUR", null, null), default);
+        await s.W.ExpenseService.DeleteAsync(expenseId, default);
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"));
+        await s.W.Processor.ProcessDueAsync(default);
+        Assert.Null(s.W.Expenses.Items.Single(e => e.Id == expenseId).Odometer); // read while it was in the trash: nothing filled
+
+        var restored = await s.W.ExpenseService.RestoreAsync(expenseId, default);
+
+        Assert.Equal((45678L, ReviewState.NeedsReview), (restored.Odometer, restored.ReviewState));
+        Assert.Equal(restored.OdometerReadingId, s.W.Tyres.Entries.Single(e => e.Id == line).OdometerReadingId); // one reading for the two
+    }
+
+    [Fact]
     public async Task APhotoAddedToASavedLog_IsQueuedWithTheHintsOfThatLog()
     {
         var s = await Setup();
@@ -441,6 +485,17 @@ public class LogPhotoFillerTests
         s.W.Current.SignInAs(s.Bob);
         await s.W.Recognition.QueueForLogPhotoAsync(LogType.Expense, expense.Id, image, "en", default); // not Bob's
 
+        Assert.Empty(s.W.Readings.Items);
+    }
+
+    [Fact]
+    public async Task SignedOut_QueueingALogPhoto_IsRefused_NeverAnsweredAsAMissingPhoto()
+    {
+        var s = await Setup();
+        var expense = await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(Day, "Tyres", null, 300, "EUR", null, null), default);
+        s.W.Current.Principal = null;
+
+        await Assert.ThrowsAsync<UnauthenticatedException>(() => s.W.Recognition.QueueForLogPhotoAsync(LogType.Expense, expense.Id, Guid.NewGuid(), "en", default));
         Assert.Empty(s.W.Readings.Items);
     }
 

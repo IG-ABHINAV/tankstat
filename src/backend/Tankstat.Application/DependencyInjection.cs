@@ -25,6 +25,7 @@ using Tankstat.Application.Stats;
 using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
+using Tankstat.Application.Tyres;
 
 namespace Tankstat.Application;
 
@@ -74,6 +75,10 @@ public static class DependencyInjection
         services.AddScoped<SetupService>();
         services.AddScoped<RestoreService>();
         services.AddScoped<BackupAdminService>();
+        // The command line runs from the root services, without a scope; the writer only once a backup is written (keygen and decrypt
+        // must not read the Backups settings that making it reads).
+        services.AddSingleton(sp => new BackupCommandService(
+            sp.GetRequiredService<IBackupKeyMaker>(), sp.GetRequiredService<IBackupWriter>, sp.GetRequiredService<IBackupArchive>(), sp.GetRequiredService<IStartupRestore>()));
         services.AddScoped<BackupFailureNotifier>();
         services.AddScoped<AccessAdminService>();
         services.AddScoped<SessionService>();
@@ -85,11 +90,14 @@ public static class DependencyInjection
         services.AddScoped<ImageService>();
         services.AddScoped<LogAccessGuard>();
         services.AddScoped<LogPhotoAccess>();
+        services.AddScoped<PhotoDraftAccess>();
         services.AddScoped<LogPhotoService>();
         services.AddScoped<PhotoDraftService>();
         services.AddScoped<RefuelingService>();
         services.AddScoped<ExpenseService>();
         services.AddScoped<RecurringExpenseService>();
+        services.AddScoped<TyreService>();
+        services.AddScoped<TyreExpenseReadings>();
         services.AddScoped<StatsService>();
         services.AddScoped<ChartService>();
         services.AddScoped<DashboardService>();

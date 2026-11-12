@@ -159,7 +159,7 @@ it('starts a new schedule from today and the latest odometer reading, both prefi
   await ui.type(within(dialog).getByLabelText(/^Odometer on that day/), '71000') // the person knows better
   await ui.click(within(dialog).getByRole('button', { name: 'Add recurring expense' }))
 
-  await screen.findByText('Tyres')
+  await screen.findByRole('rowheader', { name: /Tyres/ }) // the schedule's row: "Tyres" is a tab's name too (#287)
   expect(state.calls.AddRecurringExpense).toEqual([{ input: expect.objectContaining({ title: 'Tyres', lastDoneOdometer: 71000, lastDoneDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }) }])
 })
 

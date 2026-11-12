@@ -15,7 +15,8 @@ namespace Tankstat.Application.Photos;
 /// vehicle) are cleaned up whenever someone uploads a new one, so no background job is needed.
 /// </summary>
 public sealed class PhotoDraftService(
-    LogAccessGuard guard, IPhotoDraftRepository drafts, ImageService images, AccessService access, TimeProvider clock, ILogger<PhotoDraftService> logger)
+    LogAccessGuard guard, IPhotoDraftRepository drafts, PhotoDraftAccess own, ImageService images, AccessService access, TimeProvider clock,
+    ILogger<PhotoDraftService> logger)
 {
     /// <summary>Stores the picture (JPEG, PNG or WebP) as a draft for a new log of the vehicle and returns its id.</summary>
     public async Task<Guid> UploadAsync(Guid vehicleId, ReadOnlyMemory<byte> data, CancellationToken ct)
@@ -46,7 +47,7 @@ public sealed class PhotoDraftService(
     /// <summary>Removes one of the current user's drafts; anyone else's (or an unknown id) looks missing.</summary>
     public async Task RemoveAsync(Guid id, CancellationToken ct)
     {
-        var draft = await OwnDraftAsync(id, ct) ?? throw NotFound(id);
+        var draft = await own.MineAsync(id, ct) ?? throw NotFound(id);
         await drafts.RemoveAsync([draft.Id], ct);
         await images.DeleteDraftPicturesAsync([draft], ct);
         logger.LogDebug("Draft photo {ImageId} removed", draft.Id);
@@ -86,12 +87,6 @@ public sealed class PhotoDraftService(
 
     /// <summary>The drafts were attached to a log: only their rows go, the pictures live on as its photos.</summary>
     internal Task ForgetAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) => drafts.RemoveAsync(ids, ct);
-
-    private async Task<PhotoDraft?> OwnDraftAsync(Guid id, CancellationToken ct)
-    {
-        var me = await access.RequirePrincipalAsync(ct);
-        return await drafts.FindAsync(id, ct) is { } draft && draft.CreatedById == me.Id && !draft.IsExpired(clock.GetUtcNow()) ? draft : null;
-    }
 
     private async Task RemoveExpiredAsync(CancellationToken ct)
     {

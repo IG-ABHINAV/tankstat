@@ -23,6 +23,7 @@ using Tankstat.Application.Stats;
 using Tankstat.Application.Photos;
 using Tankstat.Application.Recognition;
 using Tankstat.Application.Users;
+using Tankstat.Application.Tyres;
 using Tankstat.Infrastructure.Auth;
 using Tankstat.Infrastructure.Backups;
 using Tankstat.Infrastructure.Recognition;
@@ -73,10 +74,12 @@ public static class DependencyInjection
         });
 
         services.AddSingleton<IDatabaseProbe, EfDatabaseProbe>();
+        services.AddSingleton<IFileProbe, FileProbe>(); // the telemetry certificate check of the settings page (#312)
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IRefuelingRepository, RefuelingRepository>();
         services.AddScoped<IExpenseRepository, ExpenseRepository>();
         services.AddScoped<IRecurringExpenseRepository, RecurringExpenseRepository>();
+        services.AddScoped<ITyreRepository, TyreRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<IStatsRepository, StatsRepository>();
         services.AddScoped<IVehicleChartRepository, VehicleChartRepository>();
@@ -109,6 +112,8 @@ public static class DependencyInjection
         services.AddSingleton<BackupRunner>();
         services.AddSingleton<IBackupRunner>(sp => sp.GetRequiredService<BackupRunner>());
         services.AddSingleton<IBackupKeyMaker, BackupKeyMaker>();
+        services.AddSingleton<IBackupArchive, BackupFileArchive>();
+        services.AddSingleton<IStartupRestore, StartupRestore>();
         services.AddSingleton<IDatabaseFacts, EfDatabaseFacts>();
         services.AddSingleton<IStorageUsage, StorageUsage>();
         services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
@@ -117,6 +122,7 @@ public static class DependencyInjection
         services.AddSingleton(_ => new PasswordResetQueue(PasswordResetQueue.DefaultCapacity));
         services.AddSingleton<IPasswordResetQueue>(sp => sp.GetRequiredService<PasswordResetQueue>());
 
+        services.AddSingleton<IPromptFileReader, PromptFileReader>(); // the operator's prompt file, for RecognitionSetup (#312)
         // Photo reading (optional): the model provider the settings choose, or one that never reads (RecognitionSetup explains why).
         // No client-wide timeout (its default of 100 s would cut OpenAiCompatible:TimeoutSeconds short): every request brings its own.
         services.AddHttpClient(OpenAiCompatibleRecognitionProvider.ClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)

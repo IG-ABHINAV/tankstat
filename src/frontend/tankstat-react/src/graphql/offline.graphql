@@ -61,6 +61,12 @@ fragment OfflineExpenseFields on Expense {
     id
     title
   }
+  tyreEntry {
+    id
+    kind
+    setName
+    trashed
+  }
   photos {
     id
     url
@@ -80,6 +86,9 @@ query OfflineChanges($input: OfflineChangesInput!) {
     }
     recurring {
       ...RecurringFields
+    }
+    tyres {
+      ...VehicleTyresFields
     }
     removed {
       type

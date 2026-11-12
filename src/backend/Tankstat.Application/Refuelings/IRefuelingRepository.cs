@@ -10,6 +10,9 @@ public interface IRefuelingRepository
     Task<IReadOnlyList<Refueling>> ListForVehicleAsync(Guid vehicleId, RefuelingQuery query, CancellationToken ct);
     Task<int> CountForVehicleAsync(Guid vehicleId, CancellationToken ct);
 
+    /// <summary><see cref="CountForVehicleAsync"/> for many vehicles in one query; a vehicle without logs is missing from the answer.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountForVehiclesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct);
+
     /// <summary>Whether the vehicle has any log, trashed ones included (its units are locked then).</summary>
     Task<bool> AnyForVehicleAsync(Guid vehicleId, CancellationToken ct);
 

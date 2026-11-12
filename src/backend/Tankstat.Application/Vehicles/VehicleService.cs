@@ -3,6 +3,7 @@ using Tankstat.Application.Access;
 using Tankstat.Application.Images;
 using Tankstat.Domain;
 using Tankstat.Application.Odometers;
+using Tankstat.Application.Tyres;
 using Tankstat.Domain.Access;
 using Tankstat.Application.Refuelings;
 using Tankstat.Application.Sync;
@@ -12,7 +13,7 @@ using Tankstat.Domain.Vehicles;
 namespace Tankstat.Application.Vehicles;
 
 public sealed class VehicleService(
-    IVehicleRepository vehicles, IRefuelingRepository refuelings, AccessService access, OdometerService odometer, ImageService images, TimeProvider clock,
+    IVehicleRepository vehicles, IRefuelingRepository refuelings, ITyreRepository tyres, AccessService access, OdometerService odometer, ImageService images, TimeProvider clock,
     ILogger<VehicleService> logger)
 {
     /// <summary>One page of the full vehicle list: an administrator feature, like the rest of the administration.</summary>
@@ -72,7 +73,8 @@ public sealed class VehicleService(
         VersionCheck.Require(expectedVersion, vehicle.Version);
         // Numbers are stored as entered, so the units may only change while the vehicle has no logs (otherwise old numbers would silently change meaning).
         var units = newUnits ?? vehicle.Units;
-        if (units != vehicle.Units && (await odometer.HasReadingsAsync(vehicle.Id, ct) || await refuelings.AnyForVehicleAsync(vehicle.Id, ct)))
+        // A tyre set's rough figure is a number in the distance unit too (#287); a tyre log's reading is one of the readings.
+        if (units != vehicle.Units && (await odometer.HasReadingsAsync(vehicle.Id, ct) || await refuelings.AnyForVehicleAsync(vehicle.Id, ct) || await tyres.HasRoughFiguresAsync(vehicle.Id, ct)))
             throw new DomainException("vehicle.unitsLocked", "The units cannot be changed once the vehicle has logs.");
         vehicle.Update(name, licensePlate, fuelType, units, (await access.RequirePrincipalAsync(ct)).Id);
         await vehicles.UpdateAsync(vehicle, ct);

@@ -40,4 +40,30 @@ public class OfflineFeedTranslationTests
             Assert.Matches(@"""?Id[""`\]]?\s*>\s*@", sql); // the id comparison is SQL, against the key's parameter
         }
     }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public void TheTyreTrash_IsOneQuery_OverSetsAndInstallations_PagedInTheDatabase(DatabaseProvider provider)
+    {
+        using var db = Context(provider);
+        var scope = Tankstat.Application.Access.OwnerScope.Of([Guid.NewGuid()], [Guid.NewGuid()]);
+
+        var sql = TyreRepository.Trash(db, scope).OrderByDescending(r => r.DeletedAt).ThenBy(r => r.Id).Skip(10).Take(50).ToQueryString();
+
+        Assert.Contains("UNION ALL", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ORDER BY", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("TyreInstallations", sql);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public void TheRefuelingCountsOfAPageOfVehicles_AreOneGroupedQuery(DatabaseProvider provider)
+    {
+        using var db = Context(provider);
+
+        var sql = RefuelingRepository.CountsByVehicle(db, [Guid.NewGuid(), Guid.NewGuid()]).ToQueryString();
+
+        Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("COUNT(", sql, StringComparison.OrdinalIgnoreCase);
+    }
 }

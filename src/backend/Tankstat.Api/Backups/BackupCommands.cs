@@ -7,13 +7,13 @@ using Tankstat.Application.SystemSettings;
 using Tankstat.Domain;
 using Tankstat.Domain.Backups;
 using Tankstat.Domain.Users;
-using Tankstat.Infrastructure.Backups;
-using Tankstat.Infrastructure.Settings;
 
 namespace Tankstat.Api.Backups;
 
 /// <summary>
-/// The backup commands of <c>dotnet Tankstat.Api.dll</c> (no server is started; every service exists, no hosted service runs):
+/// The backup commands of <c>dotnet Tankstat.Api.dll</c> (no server is started; every service exists, no hosted service runs). What they do
+/// goes through the Application (#313: <see cref="BackupCommandService"/>, the restore request's own services and ports), as the Backups
+/// page's does; here are the arguments, the prompts and the lines they print:
 /// <c>backup keygen --passphrase-stdin</c> prints the two settings that make backups encrypted and the identity, once;
 /// <c>backup [--output &lt;file&gt;] [--photos] [--passphrase-stdin]</c> writes one; <c>decrypt &lt;file&gt; --output &lt;folder&gt;
 /// (--identity &lt;file&gt; | --passphrase-stdin)</c> unpacks one. A passphrase is only ever read from the standard input, never from an
@@ -35,7 +35,7 @@ internal static class BackupCommands
             {
                 ["backup", "keygen", .. var rest] => Keygen(rest, services, prompt, output),
                 ["backup", .. var rest] => await BackupAsync(rest, services, prompt, output, error),
-                ["decrypt", .. var rest] => Decrypt(rest, prompt, output),
+                ["decrypt", .. var rest] => Decrypt(rest, services, prompt, output),
                 ["restore", .. var rest] => await RestoreAsync(rest, services, input, prompt, output),
                 _ => throw new UsageException(),
             };
@@ -73,16 +73,14 @@ internal static class BackupCommands
     private static int Keygen(string[] args, IServiceProvider services, IPassphrasePrompt prompt, TextWriter output)
     {
         if (args is not ["--passphrase-stdin"]) throw new UsageException();
-        var passphrase = NewPassphrase(services, prompt);
-        var salt = BackupKeys.NewSalt();
-        var identity = BackupKeys.Identity(passphrase, salt, Argon2idParameters.Default);
+        var key = services.GetRequiredService<BackupCommandService>().Keygen(NewPassphrase(services, prompt));
         output.WriteLine("Set these two settings (as environment variables or in the configuration), then every backup is encrypted for this passphrase:");
-        output.WriteLine($"  Backups__Encryption__Recipient={AgeKeys.FormatRecipient(BackupKeys.Recipient(identity))}");
-        output.WriteLine($"  Backups__Encryption__Salt={Convert.ToBase64String(salt)}");
+        output.WriteLine($"  Backups__Encryption__Recipient={key.Recipient}");
+        output.WriteLine($"  Backups__Encryption__Salt={key.Salt}");
         output.WriteLine("The identity below opens every backup made for this recipient, with age (age -d -i) or tankstat decrypt --identity; it is derived from the");
         output.WriteLine("passphrase and the salt, so the passphrase alone is enough to keep. Losing the passphrase (or this identity) loses the backups, by design.");
         output.WriteLine("Saved as it is, the next line is an identity file (age takes no space before the key):");
-        output.WriteLine(AgeKeys.FormatIdentity(identity));
+        output.WriteLine(key.Identity);
         return 0;
     }
 
@@ -112,14 +110,9 @@ internal static class BackupCommands
         // too, so it could come out without what the file held, its encryption say: never without a word.
         if (services.GetService<SettingsFileStatus>() is { Ignored: true } settingsFile)
             await error.WriteLineAsync($"The settings file {settingsFile.Path} was left out because the app could not start with it; the backup is written without it: {string.Join(" ", settingsFile.Problems)}");
-        BackupEncryption? encryption = null;
-        if (passphrase)
-        {
-            var salt = BackupKeys.NewSalt();
-            var identity = BackupKeys.Identity(NewPassphrase(services, prompt), salt, Argon2idParameters.Default);
-            encryption = new BackupEncryption(BackupEncryption.AgeX25519, AgeKeys.FormatRecipient(BackupKeys.Recipient(identity)), Convert.ToBase64String(salt), Argon2idParameters.Default);
-        }
-        var result = await services.GetRequiredService<IBackupWriter>().WriteAsync(new BackupRequest(file, photos ? true : null, encryption, Environment: environment, Secrets: secrets), CancellationToken.None);
+        var newPassphrase = passphrase ? NewPassphrase(services, prompt) : null;
+        var result = await services.GetRequiredService<BackupCommandService>().WriteAsync(
+            new BackupRequest(file, photos ? true : null, Environment: environment, Secrets: secrets), newPassphrase, CancellationToken.None);
         var m = result.Manifest;
         output.WriteLine($"Wrote {result.Path}");
         output.WriteLine($"  {m.Contents.Tables.Count} tables with {m.Contents.Tables.Values.Sum()} rows ({m.Sizes.Tables} bytes), pictures {m.Sizes.Pictures} bytes, photos {Photos(m)}, keys {(m.Contents.Keys ? $"{m.Sizes.Keys} bytes" : m.Encryption is null ? "left out (not encrypted)" : "none found")}");
@@ -150,7 +143,7 @@ internal static class BackupCommands
         _ => "left out (Backups:Photos is off)",
     };
 
-    private static int Decrypt(string[] args, IPassphrasePrompt prompt, TextWriter output)
+    private static int Decrypt(string[] args, IServiceProvider services, IPassphrasePrompt prompt, TextWriter output)
     {
         if (args.Length == 0 || args[0].StartsWith("--")) throw new UsageException();
         var file = args[0];
@@ -167,22 +160,11 @@ internal static class BackupCommands
             }
         }
         if (folder is null || (identityFile is not null && passphrase)) throw new UsageException();
-        var manifest = BackupFile.ReadManifest(file);
-        BackupFile.VerifyChecksum(file, manifest);
-        byte[]? identity = null;
-        if (identityFile is not null) identity = AgeKeys.ParseIdentity(IdentityLine(identityFile));
-        else if (passphrase) identity = BackupFile.IdentityOf(manifest, prompt.Read("Passphrase:"));
-        BackupFile.Extract(file, manifest, identity, folder);
-        // The settings file beside the tables, owner-only like the rest: it may hold secrets (Backups:Secrets).
-        if (BackupFile.ReadSettings(file, manifest, identity) is { } settings)
-        {
-            var path = System.IO.Path.Combine(folder, BackupSettingsFile.Plain);
-            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
-            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = SettingsFileStore.OwnerOnly;
-            using (var stream = new FileStream(path, options))
-            using (var writer = new StreamWriter(stream))
-                writer.Write(SettingsFileStore.ToJson(settings));
-        }
+        var commands = services.GetRequiredService<BackupCommandService>();
+        var manifest = commands.Decrypt(file, folder, m =>
+            identityFile is not null ? AgeKeys.ParseIdentity(IdentityLine(identityFile))
+            : passphrase ? commands.IdentityOf(m, prompt.Read("Passphrase:"))
+            : null);
         output.WriteLine($"Unpacked {file} into {System.IO.Path.GetFullPath(folder)}: {manifest.Contents.Tables.Count} tables, written by Tankstat {manifest.AppVersion} on {manifest.CreatedAt:u} ({manifest.Provider}, {manifest.Migration}), settings file {SettingsOf(manifest)}");
         return 0;
     }
@@ -249,7 +231,7 @@ internal static class BackupCommands
             return 0;
         }
         // Right away, as the server would at its start: the restore, then the migrations; the log above says how it went, and why.
-        switch (await StartupSteps.RestoreAndMigrateAsync(services, CancellationToken.None))
+        switch (await services.GetRequiredService<BackupCommandService>().RestoreNowAsync(CancellationToken.None))
         {
             case RestoreOutcome.Applied:
                 output.WriteLine($"Restored {file}.");
