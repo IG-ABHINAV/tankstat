@@ -512,7 +512,9 @@ function updateEntry(m: Model, input: Record<string, unknown>, changeId: string)
   const group = entry.groupId ? m.entries.filter((e) => e.groupId === entry.groupId) : []
   const ownDays = on !== entry.day || odometer !== (entry.odometer ?? null)
   const parted = !allHolders && ownDays && entry.expenseId != null
-  const changesAny = ownDays || kind !== entry.kind || note !== (entry.note ?? null) || setId !== (entry.setId ?? null)
+  // An amount typed for these lines alone makes an expense the rest of the group does not hold: a change of their own too.
+  const ownAmount = !!input.fee && typeof input.fee === 'object' && num((input.fee as Record<string, unknown>).amount) !== null && !entry.expenseId
+  const changesAny = ownDays || ownAmount || kind !== entry.kind || note !== (entry.note ?? null) || setId !== (entry.setId ?? null)
   const leavesGroup = changesAny && group.length > 0 && !group.every((g) => ids.has(g.id))
   const changed = new Map<string, Entry>()
   for (const line of lines_) {

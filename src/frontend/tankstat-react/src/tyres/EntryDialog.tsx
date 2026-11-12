@@ -407,7 +407,9 @@ export function TrashEntryDialog({
   const entryWords = useEntryWords()
   const notify = useTyreToasts()
   const run = useTyreMutation(vehicleId)
-  const [going, setGoing] = useState<string[]>(lines.map((l) => l.id))
+  // The lines unticked: what goes is worked out from the row's lines as they are now, so a line that left the row since is never counted.
+  const [left, setLeft] = useState<string[]>([])
+  const going = lines.filter((l) => !left.includes(l.id)).map((l) => l.id)
   const [withExpense, setWithExpense] = useState(true)
   const several = lines.length > 1
   const installation = tyres.sets.flatMap((s) => s.installations).find((x) => x.installation.id === entry.installationId)?.installation
@@ -439,7 +441,7 @@ export function TrashEntryDialog({
       onError(err)
     }
   }
-  const tick = (id: string, on: boolean) => setGoing(on ? [...going, id] : going.filter((g) => g !== id))
+  const tick = (id: string, on: boolean) => setLeft(on ? left.filter((l) => l !== id) : [...left, id])
   return (
     <ConfirmDialog
       trigger={
@@ -454,7 +456,7 @@ export function TrashEntryDialog({
       confirmDisabled={going.length === 0}
       onClosed={() => {
         setWithExpense(true)
-        setGoing(lines.map((l) => l.id))
+        setLeft([])
       }}
     >
       <Stack sx={{ gap: 0.5, mb: 1 }}>

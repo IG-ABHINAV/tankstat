@@ -449,6 +449,13 @@ describe('lines for several tyres sharing one expense on the device (#289), as t
     ])
   })
 
+  it('an amount typed for one line of a group without one makes its own expense and leaves the group', () => {
+    const plain = change('addTyreEntry', { ...repair().input, fee: null })
+    const { tyres } = replayTyres(base, [plain, edit('l3', { fee: fee(9_000, 'x3') })])
+    expect(lineOf(tyres, 'l3')).toMatchObject({ expenseId: 'x3', amount: 9_000, groupId: null })
+    expect(lineOf(tyres, 'l4')).toMatchObject({ expenseId: null, amount: null, groupId: 'l3' })
+  })
+
   it('a note changed alone leaves the group but keeps the expense', () => {
     const { tyres } = replayTyres(base, [repair(), edit('l3', { note: 'Only the rear left' })])
     expect(lineOf(tyres, 'l3')).toMatchObject({ note: 'Only the rear left', groupId: null, expenseId: 'x1', amount: 13_000 })
