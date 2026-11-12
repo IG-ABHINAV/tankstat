@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { collapse, discard, type Change } from '../../src/offline/changes.ts'
 import { batches, toChangeInput } from '../../src/offline/push.ts'
 import { fromParked } from '../../src/offline/syncKinds.ts'
-import { tyreCreates, tyreFeeExpense, tyreNeeds, tyreTarget } from '../../src/offline/tyreChanges.ts'
+import { sentInput, tyreCreates, tyreFeeExpense, tyreNeeds, tyreTarget } from '../../src/offline/tyreChanges.ts'
 
 let seq = 0
 const tyre = (action: Change['action'], input: Record<string, unknown>, targetId = ''): Change => ({ id: `c${++seq}`, seq, createdAt: seq, entity: 'tyres', action, vehicleId: 'v1', targetId, input })
@@ -83,5 +83,36 @@ describe('the expense a waiting amount makes (#288)', () => {
   it('past swaps and an installation create their installations', () => {
     expect(tyreCreates('addPastTyreSwaps', { vehicleId: 'v1', swaps: [{ setId: 'n', installationId: 'p1' }, { setId: 'n', installationId: 'p2' }] })).toEqual(['p1', 'p2'])
     expect(tyreCreates('addTyreInstallation', { id: 'i1', setId: 'n' })).toEqual(['i1'])
+  })
+})
+
+describe('single tyres kept on the device (#289)', () => {
+  const breakUp = tyre('breakUpTyreSet', { setId: 'n', day: '2026-11-10', tyres: [{ id: 't1', label: 'W1', corner: 'FRONT_LEFT' }, { id: 't2', label: 'W2', corner: null }] }, 'n')
+  const placeEdit = tyre('updateTyrePlace', { id: 'p1', from: '2026-11-10', until: null, corner: 'REAR_LEFT', tyreId: 't1', installationId: 'st' }, 'p1')
+
+  it('a break-up makes its tyres; a time on the car needs its tyre and installation, kept beside it and never sent', () => {
+    expect([tyreTarget('breakUpTyreSet', breakUp.input), tyreCreates('breakUpTyreSet', breakUp.input), tyreNeeds('breakUpTyreSet', breakUp.input)]).toEqual(['n', ['t1', 't2'], ['n']])
+    expect(tyreNeeds('updateTyrePlace', placeEdit.input)).toEqual(['p1', 't1', 'st'])
+    expect(toChangeInput({ ...placeEdit, expectedVersion: null })).toEqual({
+      id: placeEdit.id, expectedVersion: null, updateTyrePlace: { id: 'p1', from: '2026-11-10', until: null, corner: 'REAR_LEFT' },
+    })
+    expect(sentInput('updateTyrePlace', placeEdit.input)).not.toHaveProperty('tyreId')
+    const added = tyre('addTyrePlace', { id: 'p9', tyreId: 't2', from: '2026-12-01', corner: null }, 'p9')
+    expect([tyreCreates('addTyrePlace', added.input), tyreNeeds('addTyrePlace', added.input)]).toEqual([['p9'], ['t2']])
+  })
+
+  it('a swap names the tyres it places, and sends their corners', () => {
+    const placed = tyre('swapTyres', { ...swap.input, corners: [{ tyreId: 't1', corner: 'REAR_LEFT' }] }, 'st')
+    expect(tyreNeeds('swapTyres', placed.input)).toEqual(['n', 't1'])
+    expect(toChangeInput({ ...placed, expectedVersion: null })).toMatchObject({ swapTyres: { corners: [{ tyreId: 't1', corner: 'REAR_LEFT' }] } })
+  })
+
+  it('taking a break-up back takes along what was made on its tyres', () => {
+    expect(discard([breakUp, placeEdit], breakUp.id)).toEqual([])
+  })
+
+  it('a trash or restore of a tyre or a time on the car is sent as its bare id', () => {
+    expect(toChangeInput({ ...tyre('deleteTyre', { id: 't1' }, 't1'), expectedVersion: 2 })).toMatchObject({ deleteTyre: 't1' })
+    expect(toChangeInput({ ...tyre('deleteTyrePlace', { id: 'p1', tyreId: 't1', installationId: 'st' }, 'p1'), expectedVersion: 2 })).toMatchObject({ deleteTyrePlace: 'p1' })
   })
 })

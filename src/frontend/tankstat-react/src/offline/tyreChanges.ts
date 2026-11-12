@@ -23,6 +23,15 @@ export const TYRE_ACTIONS = [
   'updateTyreEntry',
   'deleteTyreEntry',
   'restoreTyreEntry',
+  // Single tyres and their times on the car (#289).
+  'breakUpTyreSet',
+  'updateTyre',
+  'deleteTyre',
+  'restoreTyre',
+  'addTyrePlace',
+  'updateTyrePlace',
+  'deleteTyrePlace',
+  'restoreTyrePlace',
 ] as const
 
 export type TyreAction = (typeof TYRE_ACTIONS)[number]
@@ -30,15 +39,32 @@ export type TyreAction = (typeof TYRE_ACTIONS)[number]
 export const isTyreAction = (action: string): action is TyreAction => (TYRE_ACTIONS as readonly string[]).includes(action)
 
 /** The actions whose `ChangeInput` field is a bare id (`deleteTyreSet: "<id>"`), kept as `{ id }`. */
-export const BARE_ID: ReadonlySet<TyreAction> = new Set(['unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet', 'deleteTyreInstallation', 'restoreTyreInstallation', 'restoreTyreEntry'])
+export const BARE_ID: ReadonlySet<TyreAction> = new Set([
+  'unretireTyreSet', 'deleteTyreSet', 'restoreTyreSet', 'deleteTyreInstallation', 'restoreTyreInstallation', 'restoreTyreEntry',
+  'deleteTyre', 'restoreTyre', 'deleteTyrePlace', 'restoreTyrePlace',
+])
 
 type Input = Record<string, unknown> | undefined
+
+/**
+ * What a kept change holds for the device only and never sends (#289): an edit or trash of a time on the car keeps its tyre's and
+ * installation's ids beside it, so it waits for the break-up or swap that made it (`tyreNeeds`) and goes when that is taken back.
+ */
+const DEVICE_ONLY: Partial<Record<TyreAction, readonly string[]>> = { updateTyrePlace: ['tyreId', 'installationId'] }
+
+/** The input as the server takes it: without what is the device's only. */
+export function sentInput(action: TyreAction, input: Input): Input {
+  const dropped = DEVICE_ONLY[action]
+  if (!dropped || !input) return input
+  return Object.fromEntries(Object.entries(input).filter(([key]) => !dropped.includes(key)))
+}
 
 const str = (v: unknown): string[] => (typeof v === 'string' && v !== '' ? [v] : [])
 /** The expense an amount makes (#288): its id, when the fee carries one. */
 const expenseOf = (fee: unknown): string[] =>
   fee && typeof fee === 'object' && typeof (fee as Record<string, unknown>).amount === 'number' ? str((fee as Record<string, unknown>).expenseId) : []
 const swapsOf = (input: Input) => (Array.isArray(input?.swaps) ? (input.swaps as Record<string, unknown>[]) : [])
+const listOf = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : [])
 
 /** The set, installation or tyre log line a change is about, as the server files it (`SyncGraphQL` `Tyres`): a swap's is the installation it creates (its line has the same id). */
 export function tyreTarget(action: TyreAction, input: Input): string {
@@ -48,6 +74,8 @@ export function tyreTarget(action: TyreAction, input: Input): string {
       return str(input?.installationId)[0] ?? ''
     case 'addPastTyreSwaps':
       return str(swapsOf(input)[0]?.installationId)[0] ?? ''
+    case 'breakUpTyreSet':
+      return str(input?.setId)[0] ?? ''
     default:
       return str(input?.id)[0] ?? ''
   }
@@ -68,6 +96,10 @@ export function tyreCreates(action: TyreAction, input: Input): string[] {
       return str(input?.id)
     case 'addTyreEntry':
       return [...str(input?.id), ...expenseOf(input?.fee)]
+    case 'breakUpTyreSet':
+      return listOf(input?.tyres).flatMap((t) => str(t.id))
+    case 'addTyrePlace':
+      return str(input?.id)
     default:
       return []
   }
@@ -76,8 +108,13 @@ export function tyreCreates(action: TyreAction, input: Input): string[] {
 /** The ids of the sets, installations and lines a change is made on (any of them may have been added here, and must reach the server first). */
 export function tyreNeeds(action: TyreAction, input: Input): string[] {
   const creates = new Set(tyreCreates(action, input))
-  const ids = [...str(input?.id), ...str(input?.setId), ...swapsOf(input).flatMap((s) => str(s.setId))]
-  return ids.filter((id) => !creates.has(id))
+  const ids = [
+    ...str(input?.id), ...str(input?.setId), ...swapsOf(input).flatMap((s) => str(s.setId)),
+    // Single tyres (#289): the tyre a time on the car is of, and the tyres a swap places, may have been made here by a break-up; a time on
+    // the car a break-up or a swap worked out (its id from its tyre's and installation's) is kept with those two ids beside it, not sent.
+    ...str(input?.tyreId), ...str(input?.installationId), ...listOf(input?.corners).flatMap((c) => str(c.tyreId)),
+  ]
+  return [...new Set(ids)].filter((id) => !creates.has(id))
 }
 
 /** The expense a waiting tyre change's amount makes or changes (#288), as the Expenses list shows it until the server has it. */

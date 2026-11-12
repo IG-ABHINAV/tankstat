@@ -8,7 +8,25 @@ export type FakeTyreSet = {
   id: string; name: string; season: string; roughDistance: number; onTheCar: boolean; isRetired?: boolean; installations: FakeTyreInstallation[]; suggestion?: { distance: number; until: string; measuredBefore: number }
   /** What it cost and its repairs (#288 step 4), as the server works them out. */
   spent?: { currency: string; amount: number }[]; repairs?: number
+  /** Tracked tyre by tyre (#289): the day it was broken up, and its tyres. */
+  brokenUpOn?: string; tyres?: FakeTyre[]
 }
+
+/** A single tyre (#289) with its times on the car, as the server answers them. */
+export type FakeTyre = {
+  id: string; label: string; distance: number; front?: number; rear?: number; isRetired?: boolean; retiredWhy?: string
+  places: { id: string; installationId: string; from: string; until: string | null; corner: string | null; distance?: number }[]
+}
+
+/** The summer set broken up (#289): S1 to S4 at their corners on its installation since 28 Mar 2026. */
+export const brokenUpSummer = (corners: (string | null)[] = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT']): FakeTyreSet => ({
+  ...tyreSummer,
+  brokenUpOn: '2026-09-01',
+  tyres: corners.map((corner, n) => ({
+    id: `t${n + 1}`, label: `S${n + 1}`, distance: 40_600, front: corner?.startsWith('FRONT') ? 7_700 : 0, rear: corner?.startsWith('REAR') ? 7_700 : 0,
+    places: [{ id: `p${n + 1}`, installationId: 'r1', from: '2026-03-28', until: null, corner, distance: 7_700 }],
+  })),
+})
 
 export const tyreSummer: FakeTyreSet = {
   id: 's1', name: 'Michelin Primacy 4', season: 'SUMMER', roughDistance: 32_900, onTheCar: true,
@@ -69,8 +87,24 @@ export function fakeTyres(initial: FakeTyreSet[], entries: FakeTyreEntry[] = [],
       repairs: s.repairs ?? 0,
       set: {
         __typename: 'TyreSet', id: s.id, vehicleId: 'v1', name: s.name, season: s.season, size: null, since: '2023-03-25', madeWeek: 5, madeYear: 2023,
-        roughDistance: s.roughDistance, roughUntil: '2026-03-28', retiredOn: s.isRetired ? '2026-10-01' : null, isRetired: s.isRetired ?? false, version: 1,
+        roughDistance: s.roughDistance, roughUntil: '2026-03-28', retiredOn: s.isRetired ? '2026-10-01' : null, isRetired: s.isRetired ?? false,
+        brokenUpOn: s.brokenUpOn ?? null, version: 1,
       },
+      tyres: (s.tyres ?? []).map((t) => ({
+        __typename: 'TyreInfo',
+        onTheCar: t.places.some((p) => p.until === null),
+        corner: t.places[0]?.corner ?? null,
+        tyre: {
+          __typename: 'Tyre', id: t.id, setId: s.id, label: t.label, name: null, madeWeek: 5, madeYear: 2023, since: '2023-03-25', roughDistance: s.roughDistance,
+          retiredOn: t.isRetired ? '2026-10-01' : null, retiredWhy: t.isRetired ? (t.retiredWhy ?? 'SET_RETIRED') : null, replacedById: null, isRetired: t.isRetired ?? false, version: 1,
+        },
+        figures: { __typename: 'TyreFigures', distance: t.distance, approximate: true, measured: (t.front ?? 0) + (t.rear ?? 0), front: t.front ?? 0, rear: t.rear ?? 0, unknown: 0 },
+        places: t.places.map((p) => ({
+          __typename: 'TyrePlaceInfo',
+          place: { __typename: 'TyrePlace', id: p.id, tyreId: t.id, installationId: p.installationId, from: p.from, until: p.until, corner: p.corner, version: 1 },
+          distance: { __typename: 'InstallationDistance', distance: p.distance ?? 0, approximate: false, measure: 'MEASURED' },
+        })),
+      })),
       figures: {
         __typename: 'TyreSetFigures', distance: s.roughDistance + s.installations.reduce((a, x) => a + x.distance, 0), approximate: true,
         measured: s.installations.reduce((a, x) => a + x.distance, 0), pairOneFront: s.installations.reduce((a, x) => a + x.distance, 0), pairOneRear: 0, pairsUnknown: 0,
