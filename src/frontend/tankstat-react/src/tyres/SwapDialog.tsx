@@ -86,8 +86,10 @@ export function SwapDialog({
   const [own, setOwn] = useState<CornerMap>({})
   // As before the swap's day, as the server's own default (`TyrePlaces.CornerBefore`): a back-dated swap goes by the corners then, not now;
   // a tyre never on the car before it, by the corner the overview gives it.
-  const cornerBefore = (x: ReturnType<typeof liveTyresOf>[number]) =>
-    [...x.places].filter((p) => p.place.from < day).sort((a, b) => (a.place.from < b.place.from ? 1 : -1))[0]?.place.corner ?? x.corner ?? null
+  const cornerBefore = (x: ReturnType<typeof liveTyresOf>[number]) => {
+    const last = [...x.places].filter((p) => p.place.from < day).sort((a, b) => (a.place.from < b.place.from ? 1 : -1))[0]
+    return last ? (last.place.corner ?? null) : (x.corner ?? null) // a time on the car without a corner is its own: none
+  }
   const baseCorners: CornerMap = Object.fromEntries(liveTyresOf(info).map((x) => [x.tyre.id, cornerBefore(x)]))
   const cornersNow: CornerMap =
     cornerMode === 'own' ? own

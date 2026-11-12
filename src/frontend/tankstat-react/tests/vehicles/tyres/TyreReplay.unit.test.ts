@@ -532,6 +532,12 @@ describe('tyres replaced early on the device (#289 step 3)', () => {
     expect([...costs].sort()).toEqual(['s1', 't5', 't6'])
   })
 
+  it('a replacement tyre whose own time on the car has no corner shows none, not the corner of the tyre it replaced', () => {
+    const own = placeOf('t5', placeOf('t1', 'r1'))
+    const { tyres } = replayTyres(base, [replacing(), change('updateTyrePlace', { id: own, from: '2026-07-09', until: null, corner: null, tyreId: 't5', installationId: 'r1' })])
+    expect(tyreOf(tyres, 't5').corner).toBeNull()
+  })
+
   it('the same replacement sent again changes nothing', () => {
     const once = applyTyreChange(base, replacing())
     expect(applyTyreChange(once, replacing()).entries.filter((e) => e.kind === 'BOUGHT')).toHaveLength(2)
