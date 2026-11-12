@@ -10,6 +10,11 @@ import { server } from '../../support/server.ts'
 import { fakeChart, fakeDashboardBackend, fakeLogBackend, fakeSummary, fakeTile, fakeVehicle, healthHandler, person, renderWithApollo, sessionHandler, stubViewport, user, type FakeLayout } from '../../support/mocks.tsx'
 import { dateValue, findDateField, typeDate } from '../../support/dates.ts'
 
+// The builder's tests drive a dozen MUI selects each, every one answered by the chart preview: about 15 s on a busy CI shard with coverage
+// under jsdom 30, and jsdom 31's CSS engine is slower again (this file 58 s alone against 40 s). They get the 30 s the accessibility
+// files give theirs, so a slow runner still names an element rather than a timeout.
+vi.setConfig({ testTimeout: 30_000 })
+
 /** A key figure's value read whole: its unit is written apart in small type (#259), so the words span two elements of one paragraph. */
 const whole = (text: string) => (_: string, element: Element | null) => element?.tagName === 'P' && element.textContent?.replace(/\s+/g, ' ').trim() === text
 
