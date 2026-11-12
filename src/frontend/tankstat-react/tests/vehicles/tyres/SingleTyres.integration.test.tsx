@@ -1,8 +1,10 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
-import { server } from '../../support/server.ts'
+import { answered, server } from '../../support/server.ts'
+import { connectivity } from '../../../src/offline/connectivity.ts'
+import { outbox } from '../../../src/offline/outbox.ts'
 import { fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { UUID } from '../../support/ids.ts'
 import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
@@ -271,7 +273,12 @@ it('a row’s bin asks which tyres’ lines go: the expense box only while every
   const ask = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
   expect(within(ask).getByRole('checkbox', { name: 'Tyre S3' })).toBeChecked()
   expect(within(ask).getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked()
+  // None ticked: said, and nothing to confirm.
+  await ui.click(within(ask).getByRole('checkbox', { name: 'Tyre S3' }))
   await ui.click(within(ask).getByRole('checkbox', { name: 'Tyre S4' }))
+  expect(within(ask).getByRole('alert')).toHaveTextContent('Tick at least one tyre.')
+  expect(within(ask).getByRole('button', { name: 'Move to the trash' })).toBeDisabled()
+  await ui.click(within(ask).getByRole('checkbox', { name: 'Tyre S3' }))
   expect(within(ask).queryByRole('checkbox', { name: /^Also move its expense/ })).not.toBeInTheDocument()
   expect(within(ask).getByText(/stays with S4\./)).toBeInTheDocument()
   await ui.click(within(ask).getByRole('button', { name: 'Move to the trash' }))
@@ -285,4 +292,38 @@ it('an expense’s Open in the tyre log naming any line of a group opens the gro
 
   const dialog = await screen.findByRole('dialog', { name: 'Edit entry' })
   expect(within(dialog).getByRole('checkbox', { name: 'Tyre S4' })).toBeChecked()
+})
+
+it('a day of its own for one tyre of a shared amount sends no amount: it parts from the expense', async () => {
+  const { ui, state } = setup([brokenUpSummer(), tyreWinter], flat())
+
+  await ui.click(await screen.findByRole('button', { name: /^Rear left: tyre S3,/ }))
+  const tyre = await screen.findByRole('dialog', { name: 'Tyre S3' })
+  await ui.click(within(tyre).getByRole('button', { name: /^Edit entry: Puncture repaired/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit entry' })
+  expect(within(dialog).getByText(/A new day or odometer for this tyre alone parts it from the shared expense\./)).toBeInTheDocument()
+  const odometer = within(dialog).getByRole('textbox', { name: /^Odometer/ })
+  await ui.clear(odometer)
+  await ui.type(odometer, '148300')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.UpdateTyreEntry).toHaveLength(1))
+  expect(state.calls.UpdateTyreEntry[0].input).toMatchObject({ id: 'l3', odometer: 148_300 })
+  expect(state.calls.UpdateTyreEntry[0].input).not.toHaveProperty('fee')
+  expect(screen.queryByRole('dialog', { name: 'The amount is shared' })).not.toBeInTheDocument()
+})
+
+it('a row’s bin offline keeps a change per line, and Undo takes every one of them back', async () => {
+  const { ui, state } = setup([brokenUpSummer(), tyreWinter], flat())
+  await screen.findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ })
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.click(screen.getByRole('button', { name: 'Move to the trash: Puncture repaired, Sep 20, 2026' }))
+  await ui.click(within(await screen.findByRole('alertdialog', { name: 'Move to the trash?' })).getByRole('button', { name: 'Move to the trash' }))
+  await waitFor(() => expect(outbox.changes.map((c) => c.input?.id)).toEqual(['l3', 'l4']))
+  await ui.click(await screen.findByRole('button', { name: 'Undo' }))
+
+  await waitFor(() => expect(outbox.changes).toEqual([]))
+  expect(state.calls.DeleteTyreEntry).toBeUndefined()
 })

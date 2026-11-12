@@ -176,6 +176,9 @@ export function EntryDialog({
     const changing = [entry, ...others.filter((o) => also.includes(o.id))]
     const keeping = sharersOf(tyres, entry).filter((s) => !changing.some((c) => c.id === s.id))
     const ownDays = values.day !== entry.day || values.odometer !== (entry.odometer ?? null)
+    // A day or odometer of its own parts it from the expense the others keep (the owner's decision 29): no amount goes, so a change kept
+    // on the device never lays its day over that expense (`tyreFeeExpense`). The server drops it too.
+    if (keeping.length > 0 && ownDays) delete (values as { fee?: unknown }).fee
     // An amount shared with lines not changed here, emptied: the person says what it does (the owner's decision 30). A line that parts
     // (a day or odometer of its own) keeps no amount anyway.
     const emptiesShared = keeping.length > 0 && !ownDays && !!fee && fee.amount == null && entry.amount != null
@@ -429,13 +432,9 @@ export function TrashEntryDialog({
     const chosen = lines.filter((l) => going.includes(l.id))
     if (chosen.length === 0) return
     try {
-      let saved
-      for (const line of chosen) saved = await run(DeleteTyreEntryDocument, { input: { id: line.id, withExpense: expense && withExpense } })
-      notify.undoable(saved!, t('tyres.toast.trashed'), async () => {
-        let back
-        for (const line of chosen) back = await run(RestoreTyreEntryDocument, { id: line.id })
-        return back!
-      })
+      const saved = []
+      for (const line of chosen) saved.push(await run(DeleteTyreEntryDocument, { input: { id: line.id, withExpense: expense && withExpense } }))
+      notify.undoableAll(saved, t('tyres.toast.trashed'), (n) => run(RestoreTyreEntryDocument, { id: chosen[n].id }))
     } catch (err) {
       onError(err)
     }
@@ -452,6 +451,7 @@ export function TrashEntryDialog({
       description={parts.join(' ')}
       confirmLabel={t('tyres.dialogs.toTrash')}
       onConfirm={() => void trash()}
+      confirmDisabled={going.length === 0}
       onClosed={() => {
         setWithExpense(true)
         setGoing(lines.map((l) => l.id))

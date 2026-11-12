@@ -109,6 +109,11 @@ export function useTyreToasts() {
     saved: (result: TyreSaved, message: string) => toast(result.queued ? t('toast.savedOnDevice') : message),
     undoable: (result: TyreSaved, message: string, restore: () => Promise<unknown>) =>
       undoable(result.queued ? t('toast.savedOnDevice') : message, () => (result.queued ? discardChange(client, result.changeId) : restore())),
+    /** Several changes undone together (#289: a row's bin, a change per line), the last first: each kept one taken back, each sent one restored. */
+    undoableAll: (results: readonly TyreSaved[], message: string, restore: (index: number) => Promise<unknown>) =>
+      undoable(results.some((r) => r.queued) ? t('toast.savedOnDevice') : message, async () => {
+        for (let i = results.length - 1; i >= 0; i--) await (results[i].queued ? discardChange(client, results[i].changeId) : restore(i))
+      }),
   }
 }
 
