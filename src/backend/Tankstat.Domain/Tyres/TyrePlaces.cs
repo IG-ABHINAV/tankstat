@@ -140,7 +140,8 @@ public sealed class TyrePlaces
     /// The places follow a change of the history, for a broken-up set's installations: each one created gets a place per live tyre of its set
     /// (the corners of <paramref name="corners"/>, else as before; a tyre retired before it has none, one retired during it comes off then),
     /// and the places at a changed installation's ends follow its new first or last day (the owner's decision 35). One that would fall outside
-    /// it is refused by the checks; a trashed installation hides its places.
+    /// it is refused by the checks; a trashed installation hides its places. A place of a tyre in the trash follows too but never refuses the
+    /// change, which the person cannot see the reason for: one that would fall outside stays as it was, and the tyre's restore says why.
     /// </summary>
     /// <param name="before">The installations' days before the change (<see cref="Ends"/>).</param>
     public TyrePlaceChanges Follow(
@@ -157,7 +158,10 @@ public sealed class TyrePlaces
                 var until = place.Until == was.Until ? installation.Until : place.Until;
                 if (from == place.From && until == place.Until) continue;
                 if (until is { } u && u <= from) // the installation lost the place's days altogether
+                {
+                    if (_tyres.FirstOrDefault(t => t.Id == place.TyreId) is not { } tyre || !IsLive(tyre)) continue; // its restore says why
                     throw Outside(place, installation);
+                }
                 place.Update(place.InstallationId, from, until, place.Corner, by);
                 result.Change(place);
             }

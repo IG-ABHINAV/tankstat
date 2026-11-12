@@ -741,4 +741,21 @@ public class TyreServiceTests
         Assert.Equal("tyres.tyreNotFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.Tyres.UpdateTyreAsync(input.Tyres[0].Id!.Value, "X", default))).Key);
         Assert.Equal("tyres.tyreNotFound", (await Assert.ThrowsAsync<NotFoundException>(() => s.Tyres.TrashTyreAsync(input.Tyres[0].Id!.Value, default))).Key);
     }
+
+    [Fact]
+    public async Task ASwapCuttingTheInstallationOfATrashedTyresLaterTime_IsNotRefusedForIt_AndTheTyresRestoreSaysWhy()
+    {
+        var s = await Setup();
+        var (overview, _, winter, input) = await BrokenUp(s);
+        var s4 = input.Tyres[3].Id!.Value;
+        var place = Tyre(overview, "S4").Places.Single().Place;
+        await s.Tyres.UpdatePlaceAsync(place.Id, new TyrePlaceInput(place.From, D(2026, 6, 1), TyreCorner.RearRight), default);
+        await s.Tyres.AddPlaceAsync(s4, new TyrePlaceInput(D(2026, 7, 1), null, TyreCorner.RearRight), default, Guid.NewGuid());
+        await s.Tyres.TrashTyreAsync(s4, default);
+
+        // The winter set on from 15 Jun: the summer set's installation ends before S4's later time began. S4 is in the trash: not a refusal.
+        await s.Tyres.SwapAsync(new TyreSwapInput(s.Car.Id, winter, D(2026, 6, 15), null, false, null, null), default, Guid.NewGuid());
+
+        Assert.NotNull((await Assert.ThrowsAsync<DomainException>(() => s.Tyres.RestoreTyreAsync(s4, default))).Key);
+    }
 }
