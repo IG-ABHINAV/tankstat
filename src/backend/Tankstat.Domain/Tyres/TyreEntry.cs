@@ -175,6 +175,15 @@ public sealed class TyreEntry : IOwned, ISoftDeletable, ISynced
         return own;
     }
 
+    /// <summary>
+    /// Holds the copy another line of the same change just took of the reading the two held (#289), so the lines changed together keep one
+    /// row; a line that holds none stays without.
+    /// </summary>
+    public void HoldCopy(OdometerReading copy)
+    {
+        if (OdometerReadingId is not null) (OdometerReading, OdometerReadingId) = (copy, copy.Id);
+    }
+
     /// <summary>Holds the reading another line of its group just made (#289: the lines made together hold one row), when it holds none.</summary>
     public void HoldReading(OdometerReading reading)
     {

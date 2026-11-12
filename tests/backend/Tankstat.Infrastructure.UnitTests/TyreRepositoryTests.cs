@@ -598,4 +598,44 @@ public class TyreRepositoryTests
         Assert.Equal([second.Id], after.TyreEntries.IgnoreQueryFilters().Where(e => e.GroupId == group).Select(e => e.Id).ToList());
         Assert.Equal(148_200, after.OdometerReadings.IgnoreQueryFilters().Single(r => r.Id == first.OdometerReadingId).Value);
     }
+
+    [Fact]
+    public async Task AnExpense_HoldsTheLiveLinesReadingObject_WhenTheFirstLineOfItHoldsACopyOfItsOwn()
+    {
+        await using var db = Database();
+        var car = await Car(db);
+        var repo = db.Get<ITyreRepository>();
+        var (set, _, tyres, _) = await BrokenUp(db, car);
+        var group = Guid.NewGuid();
+        var first = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.PunctureRepaired, set.Id, D(2026, 9, 20), 148_200, null, group, tyres[2].Id, group);
+        var second = first.ForAnotherTyre(tyres[3].Id, car.OwnerId);
+        var expense = Expense.Create(car.OwnerId, car.OwnerId, car.Id, first.Day, "Puncture repaired", "Tyres", Cost.Create(car.OwnerId, car.Id, first.Day, 13_000, "HUF"), first.OdometerReading);
+        first.LinkExpense(expense.Id);
+        second.LinkExpense(expense.Id);
+        var save = new TyreSave();
+        save.AddedEntries.Add(first);
+        save.AddedEntries.Add(second);
+        save.AddedReadings.Add(first.OdometerReading!);
+        save.AddedExpenses.Add(expense);
+        Assert.True(await repo.SaveAsync(save, default));
+        // The first line goes to the trash with a copy of its own (as before the others move the row), still naming the expense.
+        var a = (await repo.LoadAsync(car.Id, default)).Entries.Single(e => e.Id == first.Id);
+        a.MarkDeleted(_clock.GetUtcNow());
+        var own = a.KeepOwnReading(_clock.GetUtcNow())!;
+        var trash = new TyreSave();
+        trash.AddedReadings.Add(own);
+        trash.ChangedEntries.Add(a);
+        Assert.True(await repo.SaveAsync(trash, default));
+
+        var book = await repo.LoadAsync(car.Id, default);
+        var b = book.Entries.Single(e => e.Id == second.Id);
+        var linked = book.ExpenseOf(b)!;
+        Assert.Same(b.OdometerReading, linked.OdometerReading); // one row, one object: a save of both attaches it once
+        b.Update(b.Kind, b.SetId, D(2026, 9, 21), 148_300, b.Note);
+        linked.FollowLine(b.Day, b.OdometerReading);
+        var change = new TyreSave();
+        change.ChangedEntries.Add(b);
+        change.ChangedExpenses.Add(linked);
+        Assert.True(await repo.SaveAsync(change, default));
+    }
 }

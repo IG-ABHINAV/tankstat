@@ -38,8 +38,9 @@ public static class TyreCostCalculator
     {
         var all = lines.ToList();
         var paid = all.Where(l => l.Amount is not null && !string.IsNullOrEmpty(l.Currency)).ToList();
-        // One expense, counted once wherever it is summed (a line without an expense id is one of its own).
-        static IEnumerable<TyreLineCost> Once(IEnumerable<TyreLineCost> ls) => ls.GroupBy(l => (object?)l.ExpenseId ?? l).Select(g => g.First());
+        // One expense, counted once wherever it is summed (a line without an expense id is one of its own, even one equal to another).
+        static IEnumerable<TyreLineCost> Once(IEnumerable<TyreLineCost> ls) =>
+            ls.Where(l => l.ExpenseId is null).Concat(ls.Where(l => l.ExpenseId is not null).DistinctBy(l => l.ExpenseId));
         var spent = paid.Where(l => l.SetId is not null).GroupBy(l => l.SetId!.Value).ToDictionary(g => g.Key, g => Sum(Once(g)));
         var repairs = all.Where(l => l.SetId is not null && IsRepair(l.Kind)).GroupBy(l => l.SetId!.Value).ToDictionary(g => g.Key, g => g.Count());
         var holders = paid.Where(l => l.ExpenseId is not null).GroupBy(l => l.ExpenseId!.Value).ToDictionary(g => g.Key, g => g.Count());
