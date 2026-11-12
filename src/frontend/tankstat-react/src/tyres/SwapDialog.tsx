@@ -26,6 +26,7 @@ import { CarPicture, TyreButton } from './CarPicture.tsx'
 import { CROSS, EXACT, isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from './singleTyres.ts'
 import ButtonBase from '@mui/material/ButtonBase'
 import Chip from '@mui/material/Chip'
+import { COARSE } from '../theme/components.ts'
 
 type CornerMode = 'same' | 'cross' | 'unsure' | 'own'
 type CornerMap = Record<string, string | null>
@@ -198,6 +199,7 @@ export function SwapDialog({
               </Field>
               {broken && info ? (
                 <WhereEachTyre
+                  key={info.set.id} // another set's tyres: nothing picked carries over
                   info={info}
                   rotate={rotate}
                   base={baseCorners}
@@ -380,7 +382,7 @@ function WhereEachTyre({
               aria-label={t('tyres.single.chipName', { label: x.tyre.label })}
               aria-pressed={picked === x.tyre.id}
               onClick={() => setPicked(picked === x.tyre.id ? null : x.tyre.id)}
-              sx={{ fontWeight: 700 }}
+              sx={{ fontWeight: 700, [COARSE]: { height: 44, px: 1 } }} // 44 px to a finger, as every control
             />
           ))}
         </Stack>

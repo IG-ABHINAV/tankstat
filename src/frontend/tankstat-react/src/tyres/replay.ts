@@ -299,12 +299,14 @@ function apply(m: Model, c: Change, vehicleId: string) {
       return
     }
     case 'addTyreInstallation': {
-      setOf(m, input.setId)
+      const s = setOf(m, input.setId)
       if (m.installations.some((x) => x.id === input.id)) return
       const id = str(input.id) || c.id
+      // A broken-up set's installation records no pairs (#289, `TyrePlaces.AddInstallation`): its tyres' corners say it.
+      const pairOneFront = s.set.brokenUpOn ? null : ((input.pairOneFront as boolean | null) ?? null)
       history(m, checked(
         states(m),
-        [...m.installations, { id, setId: str(input.setId), from: str(input.from), until: day(input.until), pairOneFront: (input.pairOneFront as boolean | null) ?? null }],
+        [...m.installations, { id, setId: str(input.setId), from: str(input.from), until: day(input.until), pairOneFront }],
         new Set([id]),
       ), [], c.id)
       typed(m, str(input.setId), day(input.from), num(input.odometerFrom), null, c.id)
@@ -445,7 +447,7 @@ function tyresOf(base: Tyres, m: Model, setId: string, touched: Set<string>): Ty
     if (rowChanged || placesChanged) touched.add(t.id)
     return named<TyreInfo>('TyreInfo', {
       tyre: rowChanged ? { ...t, version: 0 } : t,
-      figures: was && !placesChanged ? was.figures : (was?.figures ?? NO_FIGURES),
+      figures: was?.figures ?? NO_FIGURES,
       places,
       onTheCar: own.some((p) => p.until === null),
       corner: own[0]?.corner ?? null,

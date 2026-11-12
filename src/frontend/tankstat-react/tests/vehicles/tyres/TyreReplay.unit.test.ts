@@ -374,6 +374,16 @@ describe('single tyres changed on the device, shown as done (#289)', () => {
     expect(tyresOf(tyres).map((t) => t.tyre.label)).toEqual(['S2', 'S3', 'S4'])
   })
 
+  it('an installation typed in a broken-up set\'s History records no pairs, as the server stores it, and places each tyre', () => {
+    const typed = change('addTyreInstallation', { id: 'p1', setId: 's1', from: '2025-06-01', until: '2025-10-01', pairOneFront: true })
+    const { tyres, skipped } = replayTyres(base, [breakUp, typed])
+
+    expect(skipped).toEqual([])
+    const summer = tyres.sets.find((x) => x.set.id === 's1')!
+    expect(summer.installations.find((x) => x.installation.id === 'p1')!.installation.pairOneFront).toBeNull()
+    expect(tyresOf(tyres).map((t) => t.places.at(-1)!.place.installationId)).toEqual(['p1', 'p1', 'p1', 'p1'])
+  })
+
   it('a time on the car outside the set\'s installations is refused with the reason, naming the set on the car then', () => {
     const broken = applyTyreChange(base, breakUp)
     expect(() => applyTyreChange(broken, change('addTyrePlace', { id: 'x1', tyreId: ids[0], from: '2025-12-01', until: '2026-01-01', corner: null })))
