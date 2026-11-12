@@ -303,14 +303,18 @@ test('breaks a set up in its History, shows its tyres at their corners, and swap
   await history.getByRole('button', { name: 'Track tyres one by one' }).click()
   const breakUp = page.getByRole('dialog', { name: 'Track tyres one by one' })
   await expect(breakUp.getByLabel(/^Label/).first()).toHaveValue('S1')
+  // S4: not sure where it is (decision 50: a tyre without a corner).
+  await breakUp.getByRole('combobox', { name: 'Where it is now' }).nth(3).click()
+  await page.getByRole('option', { name: 'Not sure' }).click()
   await expectSoundLayout(page)
   await breakUp.getByRole('button', { name: 'Track one by one' }).click()
   await expect(breakUp).toBeHidden()
   await expect(history).toContainText('Tracked tyre by tyre since')
   await history.getByRole('button', { name: 'Cancel' }).click()
   await expect(summer).toContainText('Tracked tyre by tyre · 4 of 4 on the car since')
-  for (const [corner, label] of [['Front left', 'S1'], ['Front right', 'S2'], ['Rear left', 'S3'], ['Rear right', 'S4']])
+  for (const [corner, label] of [['Front left', 'S1'], ['Front right', 'S2'], ['Rear left', 'S3']])
     await expect(summer.getByRole('button', { name: new RegExp(`^${corner}: tyre ${label},`) })).toBeVisible()
+  await expect(summer.getByRole('button', { name: /^S4.*corner not recorded/ })).toBeVisible() // a row under the picture
   await expectSoundLayout(page)
 
   // A tyre's own dialog.
@@ -332,14 +336,19 @@ test('breaks a set up in its History, shows its tyres at their corners, and swap
   const where = on.getByRole('group', { name: 'Where each tyre goes' })
   await expect(where.getByRole('radio', { name: 'Same as last time' })).toBeChecked()
   await where.getByRole('button', { name: 'Front left: Tyre S1' }).click()
-  await expect(where.getByRole('status')).toHaveText('Tyre S1 is picked. Tap the tyre it changes places with.')
+  await expect(where.getByRole('status')).toHaveText('Tyre S1 is picked. Tap an empty corner, or the tyre it changes places with.') // S4's corner is empty
   await where.getByRole('button', { name: 'Rear left: Tyre S3' }).click()
   await expect(where.getByRole('button', { name: 'Rear left: Tyre S1' })).toBeVisible()
+  // S4 has no corner: a chip under the picture, tapped, then the empty corner.
+  await where.getByRole('button', { name: 'Tyre S4, corner not recorded' }).click()
+  await expectSoundLayout(page) // the chip 44 px to a finger on a phone
+  await where.getByRole('button', { name: 'Put S4 at rear right' }).click()
   await expectSoundLayout(page)
   await on.getByRole('button', { name: 'Swap tyres' }).click()
   await expect(on).toBeHidden()
   await expect(summer.getByRole('button', { name: /^Rear left: tyre S1,/ })).toBeVisible()
   await expect(summer.getByRole('button', { name: /^Front left: tyre S3,/ })).toBeVisible()
+  await expect(summer.getByRole('button', { name: /^Rear right: tyre S4,/ })).toBeVisible()
 })
 
 /** A vehicle with a fill-up 60 days ago and the summer set on the car since then (through GraphQL), its Tyres tab open. */
