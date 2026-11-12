@@ -27,12 +27,33 @@ internal sealed class HttpCurrentUser(
     public Task<Principal?> GetPrincipalAsync(CancellationToken ct)
     {
         if (accessor.HttpContext is not { } context) return _cached ??= ResolveAsync(ct);
-        // Items is a plain dictionary: the lock makes the first resolver's check the only one.
+        // Items is a plain dictionary: the lock makes the first resolver's check the only one. The check itself runs outside it: SQLite's
+        // "async" queries run synchronously, which would hold every other field's thread on the lock meanwhile.
+        TaskCompletionSource<Principal?> started;
         lock (context.Items)
         {
-            if (context.Items[PrincipalKey] is not Task<Principal?> shared)
-                context.Items[PrincipalKey] = shared = ResolveAsync(ct);
-            return shared;
+            if (context.Items[PrincipalKey] is Task<Principal?> shared) return shared;
+            started = new TaskCompletionSource<Principal?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            context.Items[PrincipalKey] = started.Task;
+        }
+        _ = CheckAsync(started, ct);
+        return started.Task;
+    }
+
+    /// <summary>Runs the request's check and hands its outcome to every field awaiting it.</summary>
+    private async Task CheckAsync(TaskCompletionSource<Principal?> started, CancellationToken ct)
+    {
+        try
+        {
+            started.SetResult(await ResolveAsync(ct));
+        }
+        catch (OperationCanceledException e)
+        {
+            started.SetCanceled(e.CancellationToken);
+        }
+        catch (Exception e)
+        {
+            started.SetException(e);
         }
     }
 
