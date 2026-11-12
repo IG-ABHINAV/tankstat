@@ -278,4 +278,67 @@ public class LogLevelsTests
         var bobSees = await w.RefuelingService.LevelsForVehiclesAsync(ids, default);
         Assert.Equal([AccessLevel.Edit, AccessLevel.View, AccessLevel.Delete, AccessLevel.None, AccessLevel.Delete, AccessLevel.None], ids.Select(id => bobSees[id]));
     }
+
+    [Fact]
+    public async Task ManyOwnersAtOnce_GetWhatEachGetsOnItsOwn()
+    {
+        var w = new World();
+        var alice = w.AddUser("alice@x.co");
+        var bob = w.AddUser("bob@x.co");
+        var carol = w.AddUser("carol@x.co");
+        var dave = w.AddUser("dave@x.co");
+        w.Grants.Items.Add(AccessGrant.Create(alice.Id, bob.Id, AccessLevel.View));
+        w.Grants.Items.Add(AccessGrant.Create(carol.Id, bob.Id, AccessLevel.Delete));
+        var owners = new[] { alice.Id, bob.Id, carol.Id, dave.Id, Guid.NewGuid(), alice.Id };
+
+        foreach (var principal in new[] { bob, alice })
+        {
+            w.Current.SignInAs(principal);
+            foreach (var defaults in new[] { AccessLevel.None, AccessLevel.View, AccessLevel.Edit })
+            {
+                w.Settings.Value.SetDefaultLevelForOthers(defaults);
+                var together = await w.Access.LevelsAsync(owners, default);
+
+                Assert.Equal(owners.Distinct().Count(), together.Count);
+                foreach (var owner in owners) Assert.Equal(await w.Access.LevelAsync(owner, default), together[owner]);
+            }
+        }
+        w.Current.Principal = new(Guid.NewGuid(), "Admin", "admin@x.co", IsAdmin: true);
+        Assert.All(await w.Access.LevelsAsync(owners, default), level => Assert.Equal(AccessLevel.Delete, level.Value));
+        w.Current.SignInAs(bob);
+        w.Settings.Value.SetDefaultLevelForOthers(AccessLevel.None);
+        var bobGets = await w.Access.LevelsAsync(owners, default);
+        Assert.Equal([AccessLevel.View, AccessLevel.Delete, AccessLevel.Delete, AccessLevel.None], new[] { alice.Id, bob.Id, carol.Id, dave.Id }.Select(o => bobGets[o]));
+    }
+
+    [Fact]
+    public async Task RefuelingCountsOfManyVehicles_AreWhatEachCountsOnItsOwn()
+    {
+        var w = new World();
+        var alice = w.AddUser("alice@x.co");
+        var bob = w.AddUser("bob@x.co");
+        w.Current.SignInAs(alice);
+        var twice = await w.VehicleService.AddAsync("Alice car", null, FuelType.Petrol, default);
+        var none = await w.VehicleService.AddAsync("Alice van", null, FuelType.Petrol, default);
+        var trashed = await w.VehicleService.AddAsync("Alice old car", null, FuelType.Petrol, default);
+        foreach (var (car, odometer) in new[] { (twice, 1000L), (twice, 1500L), (trashed, 900L) })
+            await w.RefuelingService.LogAsync(car.Id, new RefuelingInput(new DateOnly(2026, 9, 1), 40, 60, "EUR", odometer, true, null), default);
+        var log = await w.RefuelingService.LogAsync(twice.Id, new RefuelingInput(new DateOnly(2026, 9, 2), 40, 60, "EUR", 2000, true, null), default);
+        await w.RefuelingService.DeleteAsync(log.Id, default);
+        await w.VehicleService.DeleteAsync(trashed.Id, default);
+        w.Current.SignInAs(bob);
+        var bobs = await w.VehicleService.AddAsync("Bob car", null, FuelType.Lpg, default);
+        await w.RefuelingService.LogAsync(bobs.Id, new RefuelingInput(new DateOnly(2026, 9, 1), 40, 60, "EUR", 500, true, null), default);
+        var ids = new[] { twice.Id, none.Id, trashed.Id, bobs.Id, Guid.NewGuid() };
+
+        foreach (var who in new[] { alice, bob })
+        {
+            w.Current.SignInAs(who);
+            var together = await w.RefuelingService.CountsAsync(ids, default);
+            foreach (var id in ids) Assert.Equal(await w.RefuelingService.CountAsync(id, default), together[id]);
+        }
+        w.Current.SignInAs(alice);
+        var alicesCounts = await w.RefuelingService.CountsAsync(ids, default);
+        Assert.Equal([2, 0, 0, 0, 0], ids.Select(id => alicesCounts[id]));
+    }
 }

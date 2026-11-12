@@ -41,6 +41,22 @@ public sealed class AccessService(
     public async Task<bool> CanAsync(Guid ownerId, AccessLevel level, CancellationToken ct) =>
         await LevelAsync(ownerId, ct) >= level;
 
+    /// <summary>
+    /// <see cref="LevelAsync"/> for many owners at once, with a fixed number of queries (the settings and the user's grants, once each) however
+    /// many there are (#311: a list of vehicles says for every row whether the user may edit it).
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, AccessLevel>> LevelsAsync(IReadOnlyCollection<Guid> ownerIds, CancellationToken ct)
+    {
+        var distinct = ownerIds.Distinct().ToList();
+        if (distinct.Count == 0) return new Dictionary<Guid, AccessLevel>();
+        var principal = await RequirePrincipalAsync(ct);
+        if (principal.IsAdmin || distinct.All(o => o == principal.Id)) return distinct.ToDictionary(o => o, _ => AccessLevel.Delete);
+
+        var defaults = (await settings.GetAsync(ct)).DefaultLevelForOthers;
+        var granted = await grants.ListForGranteeAsync(principal.Id, ct);
+        return distinct.ToDictionary(o => o, o => AccessPolicy.Resolve(principal.Id, principal.IsAdmin, o, defaults, granted));
+    }
+
     /// <summary>The owners whose data the current user may access at (at least) <paramref name="level"/>.</summary>
     public Task<OwnerScope> ScopeAsync(AccessLevel level, CancellationToken ct) => ScopeAsync(level, administration: true, ct);
 

@@ -114,6 +114,9 @@ internal sealed class InMemoryRefuelings : IRefuelingRepository
     public Task<IReadOnlyList<Refueling>> ListForVehicleAsync(Guid vehicleId, RefuelingQuery query, CancellationToken ct) =>
         Task.FromResult(Page(Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId), query));
     public Task<int> CountForVehicleAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Items.Count(r => !r.IsDeleted && r.VehicleId == vehicleId));
+    public Task<IReadOnlyDictionary<Guid, int>> CountForVehiclesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, int>>(Items.Where(r => !r.IsDeleted && vehicleIds.Contains(r.VehicleId))
+            .GroupBy(r => r.VehicleId).ToDictionary(g => g.Key, g => g.Count()));
     public Task<bool> AnyForVehicleAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Items.Any(r => r.VehicleId == vehicleId));
     public Task<IReadOnlyList<Refueling>> ListAllForVehicleAsync(Guid vehicleId, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Refueling>>(Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId).ToList());

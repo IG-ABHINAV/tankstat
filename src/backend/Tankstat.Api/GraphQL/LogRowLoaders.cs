@@ -1,4 +1,5 @@
 using GreenDonut;
+using Tankstat.Application.Access;
 using Tankstat.Application.Refuelings;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
@@ -28,6 +29,22 @@ public sealed class UserRefLoader(IUserRepository users, IBatchScheduler schedul
         var found = (await users.ListByIdsAsync(keys, ct)).ToDictionary(u => u.Id);
         return keys.ToDictionary(k => k, k => found.TryGetValue(k, out var user) ? UserRef.From(user) : null);
     }
+}
+
+/// <summary>What the user may do with each owner's data (#311: a list of vehicles says for every row whether the user may edit it).</summary>
+public sealed class AccessLevelByOwnerLoader(AccessService access, IBatchScheduler scheduler, DataLoaderOptions options)
+    : BatchDataLoader<Guid, AccessLevel>(scheduler, options)
+{
+    protected override Task<IReadOnlyDictionary<Guid, AccessLevel>> LoadBatchAsync(IReadOnlyList<Guid> keys, CancellationToken ct) =>
+        access.LevelsAsync(keys, ct);
+}
+
+/// <summary>Each vehicle's number of refuellings not in the trash (0 for one the user may not see), for a list of vehicles (#311).</summary>
+public sealed class RefuelingCountLoader(RefuelingService refuelings, IBatchScheduler scheduler, DataLoaderOptions options)
+    : BatchDataLoader<Guid, int>(scheduler, options)
+{
+    protected override Task<IReadOnlyDictionary<Guid, int>> LoadBatchAsync(IReadOnlyList<Guid> keys, CancellationToken ct) =>
+        refuelings.CountsAsync(keys, ct);
 }
 
 /// <summary>Each row's vehicle, trashed ones too (a log in the trash shows its vehicle's name and units). Only for already authorised rows.</summary>

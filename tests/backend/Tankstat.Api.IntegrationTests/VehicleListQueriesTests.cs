@@ -10,8 +10,6 @@ namespace Tankstat.Api.IntegrationTests;
 /// </summary>
 public class VehicleListQueriesTests(VehicleListQueriesTests.Data data) : IClassFixture<VehicleListQueriesTests.Data>
 {
-    private const string Grid = "vehicles(orderBy: NAME, direction: ASC, skip: 0, take: 100)";
-
     [Fact]
     public async Task WhoIsAsking_IsCheckedOncePerRequest_NotForEveryRow()
     {
@@ -20,10 +18,55 @@ public class VehicleListQueriesTests(VehicleListQueriesTests.Data data) : IClass
         Assert.InRange(withLevels.Contexts, 1, plain.Contexts);
         Assert.All(Rows(withLevels.Body, "myVehicles"), v => Assert.True(v.GetProperty("canEdit").GetBoolean()));
 
-        var adminPlain = await data.CountAsync(data.Users.Admin, $"{{ {Grid} {{ id name }} }}");
-        var adminWithLevels = await data.CountAsync(data.Users.Admin, $"{{ {Grid} {{ id canEdit }} }}");
+        const string grid = "vehicles(orderBy: NAME, direction: ASC, skip: 0, take: 100)";
+        var adminPlain = await data.CountAsync(data.Users.Admin, $"{{ {grid} {{ id name }} }}");
+        var adminWithLevels = await data.CountAsync(data.Users.Admin, $"{{ {grid} {{ id canEdit }} }}");
         Assert.Equal(100, Rows(adminWithLevels.Body, "vehicles").Count);
         Assert.InRange(adminWithLevels.Contexts, 1, adminPlain.Contexts);
+    }
+
+    [Fact]
+    public async Task EveryRowsOwnerLevelsAndCounts_AreLoadedForTheWholePage()
+    {
+        var grid = await PageAsync(data.Users.Admin, "vehicles", take => $"{{ vehicles(orderBy: NAME, direction: ASC, skip: 0, take: {take}) {{ id canEdit logAccess owner {{ id }} refuelingCount }} }}", 100);
+        Assert.Equal(100, grid.Count);
+        Assert.All(grid, v =>
+        {
+            Assert.True(v.GetProperty("canEdit").GetBoolean());
+            Assert.Equal("DELETE", v.GetProperty("logAccess").GetString());
+            Assert.Equal(data.Users.AliceId, v.GetProperty("owner").GetProperty("id").GetString());
+            Assert.Equal(1, v.GetProperty("refuelingCount").GetInt32());
+        });
+
+        var trash = await PageAsync(data.Users.Admin, "trash", take => $"{{ trash(take: {take}) {{ id owner {{ id }} }} }}", 100);
+        Assert.Equal(20, trash.Count);
+        Assert.All(trash, v => Assert.Equal(data.Users.AliceId, v.GetProperty("owner").GetProperty("id").GetString()));
+
+        var granted = await PageAsync(data.Users.Bob, "myVehicles", take => $"{{ myVehicles(skip: 0, take: {take}) {{ id canEdit logAccess refuelingCount }} }}", 24);
+        Assert.Equal(24, granted.Count);
+        Assert.All(granted, v =>
+        {
+            Assert.False(v.GetProperty("canEdit").GetBoolean());
+            Assert.Equal("VIEW", v.GetProperty("logAccess").GetString());
+            Assert.Equal(1, v.GetProperty("refuelingCount").GetInt32());
+        });
+
+        var importTargets = await PageAsync(data.Users.Alice, "myVehicles", take => $"{{ myVehicles(take: {take}) {{ id canEdit logAccess }} }}", 200);
+        Assert.Equal(110, importTargets.Count);
+    }
+
+    /// <summary>
+    /// A page of <paramref name="take"/> rows, which must take the very number of database contexts that a page of three takes (a fixed number,
+    /// whatever the rows), and a small one.
+    /// </summary>
+    private async Task<List<JsonElement>> PageAsync(HttpClient client, string list, Func<int, string> query, int take)
+    {
+        var few = await data.CountAsync(client, query(3));
+        var page = await data.CountAsync(client, query(take));
+        Assert.Equal(3, Rows(few.Body, list).Count);
+        Assert.Equal(few.Contexts, page.Contexts);
+        Assert.InRange(page.Contexts, 1, 25);
+        return Rows(page.Body, list);
     }
 
     private static List<JsonElement> Rows(JsonElement body, string list) => [.. body.Data().GetProperty(list).EnumerateArray()];
