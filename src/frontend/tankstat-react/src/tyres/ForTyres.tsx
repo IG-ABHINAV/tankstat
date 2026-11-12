@@ -19,7 +19,7 @@ import type { TyreSetInfo } from './tyres.ts'
  * or a tyre is pressed; the picture is only a picture, every button names itself.
  */
 export function ForTyres({
-  info, whole, onWhole, picked, onPicked, labels, onLabels, locked = false,
+  info, whole, onWhole, picked, onPicked, labels, onLabels, locked = false, legend, tap, breakUpNote,
 }: {
   info: TyreSetInfo
   whole: boolean
@@ -32,6 +32,10 @@ export function ForTyres({
   onLabels: (labels: string[]) => void
   /** Opened for one tyre (its dialog's *Add entry*): *The whole set* is not offered. */
   locked?: boolean
+  /** Its own words in another dialog (*Replace tyres*): the legend, what to tap, and the note a whole set's labels get. */
+  legend?: string
+  tap?: string
+  breakUpNote?: string
 }) {
   const { t } = useTranslation()
   const corners = useCornerWords()
@@ -65,7 +69,7 @@ export function ForTyres({
           ))}
         </Box>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          {t('tyres.entries.breakUpOnSave')}
+          {breakUpNote ?? t('tyres.entries.breakUpOnSave')}
         </Typography>
       </>
     )
@@ -120,7 +124,7 @@ export function ForTyres({
   return (
     <Stack component="fieldset" sx={{ gap: 1.5, border: 0, p: 0, m: 0, minWidth: 0 }}>
       <Typography component="legend" variant="body2" sx={{ fontWeight: 600, p: 0, mb: 0.5 }}>
-        {t('tyres.entries.for')}
+        {legend ?? t('tyres.entries.for')}
       </Typography>
       {!locked && (
         <FormControlLabel control={<Checkbox checked={whole} onChange={(e) => onWhole(e.target.checked)} />} label={t('tyres.entries.wholeSet')} />
@@ -134,7 +138,7 @@ export function ForTyres({
       ) : (
         <>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            {where} {t('tyres.entries.tapTyres')} {t('tyres.entries.pickSeveral')}
+            {where} {tap ?? `${t('tyres.entries.tapTyres')} ${t('tyres.entries.pickSeveral')}`}
           </Typography>
           {picture}
         </>

@@ -123,3 +123,20 @@ it('an entry for several tyres, the ask on save of a shared amount and a row’s
   await ui.click(screen.getByRole('button', { name: 'Move to the trash: Puncture repaired, Sep 20, 2026' }))
   await check(await screen.findByRole('alertdialog', { name: 'Move to the trash?' }))
 })
+
+it('the replace dialog and the retired tyres’ rows are labelled and free of violations (#289)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=tyres')
+  const set = brokenUpSummer()
+  server.use(...fakeTyres([{ ...set, tyres: [...set.tyres!, { id: 't0', label: 'S0', distance: 30_000, isRetired: true, retiredWhy: 'WORN', places: [] }] }, tyreWinter]).handlers)
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'History' }))
+  await ui.click(within(await screen.findByRole('dialog', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Replace tyres' }))
+  const replace = await screen.findByRole('dialog', { name: 'Replace tyres' })
+  await ui.click(within(replace).getByRole('button', { name: 'Tyre S2, front right' }))
+  await check(replace) // the new tyre's fields
+  await ui.click(within(replace).getByRole('button', { name: 'Cancel' }))
+  await ui.click(within(screen.getByRole('dialog', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Cancel' }))
+
+  expect(await screen.findByRole('button', { name: /^Tyre S0, Michelin Primacy 4, retired on/ })).toBeInTheDocument()
+  await check(document.body)
+})

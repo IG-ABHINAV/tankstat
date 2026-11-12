@@ -327,3 +327,62 @@ it('a row’s bin offline keeps a change per line, and Undo takes every one of t
   await waitFor(() => expect(outbox.changes).toEqual([]))
   expect(state.calls.DeleteTyreEntry).toBeUndefined()
 })
+
+// Tyres replaced early (#289 step 3).
+
+it('replaces two tyres from the set’s History: a new tyre each with the next label, why, and one price', async () => {
+  const { ui, state } = setup([brokenUpSummer(), tyreWinter])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Michelin Primacy 4' })
+  await ui.click(within(history).getByRole('button', { name: 'Replace tyres' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Replace tyres' })
+  // Nothing tapped: said, nothing sent.
+  await ui.click(within(dialog).getByRole('button', { name: 'Replace' }))
+  expect(await within(dialog).findByText('Tap the tyres to replace.')).toBeInTheDocument()
+  expect(state.calls.ReplaceTyres).toBeUndefined()
+
+  await ui.click(within(dialog).getByRole('button', { name: 'Tyre S1, front left' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Tyre S2, front right' }))
+  expect(within(dialog).getByRole('group', { name: 'New tyre S5, for S1' })).toBeInTheDocument()
+  const second = within(dialog).getByRole('group', { name: 'New tyre S6, for S2' })
+  const made = within(second).getByRole('textbox', { name: 'Made' })
+  await ui.type(made, '2026')
+  await ui.click(within(dialog).getByRole('combobox', { name: 'Why' }))
+  await ui.click(await screen.findByRole('option', { name: 'Worn' }))
+  await ui.type(within(dialog).getByRole('textbox', { name: 'Price' }), '78000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Replace' }))
+
+  await waitFor(() => expect(state.calls.ReplaceTyres).toHaveLength(1))
+  expect(state.calls.ReplaceTyres[0].input).toMatchObject({
+    setId: 's1', why: 'WORN',
+    tyres: [
+      { tyreId: 't1', id: UUID, lineId: UUID, label: 'S5', name: null, madeWeek: null },
+      { tyreId: 't2', id: UUID, lineId: UUID, label: 'S6', name: null, madeWeek: 20, madeYear: 2026 },
+    ],
+    price: { amount: 78_000, expenseId: UUID },
+  })
+  expect(state.calls.ReplaceTyres[0].input).not.toHaveProperty('breakUp')
+  expect(await screen.findByText('Replaced. S1, S2 are under Retired.')).toBeInTheDocument()
+})
+
+it('replaces one tyre from its own dialog, picked at first; a retired tyre is a row under Retired that opens read only', async () => {
+  const set = brokenUpSummer()
+  const { ui, state } = setup([{ ...set, tyres: [...set.tyres!, { id: 't0', label: 'S0', distance: 30_000, isRetired: true, retiredWhy: 'DAMAGED', places: [] }] }, tyreWinter])
+
+  await ui.click(await screen.findByRole('button', { name: /^Rear left: tyre S3,/ }))
+  const tyre = await screen.findByRole('dialog', { name: 'Tyre S3' })
+  await ui.click(within(tyre).getByRole('button', { name: 'Replace this tyre' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Replace this tyre' })
+  expect(within(dialog).getByRole('button', { name: 'Tyre S3, rear left' })).toHaveAttribute('aria-pressed', 'true')
+  await ui.click(within(dialog).getByRole('button', { name: 'Replace' }))
+  await waitFor(() => expect(state.calls.ReplaceTyres).toHaveLength(1))
+  expect(state.calls.ReplaceTyres[0].input).toMatchObject({ why: 'DAMAGED', tyres: [{ tyreId: 't3', label: 'S5' }] })
+  expect(state.calls.ReplaceTyres[0].input).not.toHaveProperty('price')
+  await ui.click(within(tyre).getByRole('button', { name: 'Close' }))
+
+  await ui.click(screen.getByRole('button', { name: /^Tyre S0, Michelin Primacy 4, retired on Oct 1, 2026: Damaged/ }))
+  const retired = await screen.findByRole('dialog', { name: 'Tyre S0' })
+  expect(within(retired).getByText(/^Retired on Oct 1, 2026: Damaged/)).toBeInTheDocument()
+  expect(within(retired).queryByRole('button', { name: 'Replace this tyre' })).not.toBeInTheDocument()
+})

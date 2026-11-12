@@ -2,7 +2,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { CalendarPlus, NotebookPen, Pencil, Trash2 } from 'lucide-react'
+import { CalendarPlus, NotebookPen, Pencil, Replace, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
@@ -18,6 +18,7 @@ import { ErrorMessage } from '../messages.tsx'
 import { EntryDialog, TrashEntryDialog } from './EntryDialog.tsx'
 import { isDeviceLine, isSwapLine, labelsOf, sharersOf, useEntryWords } from './entries.ts'
 import { PlaceDialog } from './PlaceDialog.tsx'
+import { ReplaceDialog } from './ReplaceDialog.tsx'
 import { useCornerWords } from './singleTyres.ts'
 import { type Tyres, useTyreMutation, useTyreToasts, useTyreWords } from './tyres.ts'
 
@@ -274,6 +275,10 @@ export function TyreDialog({
             <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
               <PlaceDialog vehicleId={vehicleId} tyres={tyres} tyreId={tyre.tyre.id} trigger={<Button variant="soft" startIcon={<CalendarPlus size={16} aria-hidden />}>{t('tyres.single.addPlace')}</Button>} />
               <EntryDialog vehicleId={vehicleId} unit={unit} tyres={tyres} tyreId={tyre.tyre.id} trigger={<Button variant="soft" startIcon={<NotebookPen size={16} aria-hidden />}>{t('tyres.entries.add')}</Button>} />
+              {!set.isRetired && (
+                <ReplaceDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} tyreId={tyre.tyre.id}
+                  trigger={<Button variant="soft" startIcon={<Replace size={16} aria-hidden />}>{t('tyres.replace.thisTyre')}</Button>} />
+              )}
               <ConfirmDialog
                 trigger={<Button variant="soft" color="error" startIcon={<Trash2 size={16} aria-hidden />}>{t('tyres.single.trashTyre')}</Button>}
                 title={t('tyres.single.trashTyreTitle')}

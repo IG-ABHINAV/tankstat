@@ -55,6 +55,10 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
   const onCar = live.filter((s) => s.onTheCar)
   const stored = live.filter((s) => !s.onTheCar)
   const retired = tyres.sets.filter((s) => s.set.isRetired)
+  // A row per retired single tyre (#289, the owner's decision 46), newest first.
+  const retiredTyres = tyres.sets
+    .flatMap((s) => (s.tyres ?? []).filter((x) => x.tyre.isRetired).map((x) => ({ info: x, set: s.set })))
+    .sort((a, b) => ((a.info.tyre.retiredOn ?? '') < (b.info.tyre.retiredOn ?? '') ? 1 : -1))
   const addSet = (label: string, primary = false) => (
     <TyreSetDialog
       vehicleId={vehicle.id}
@@ -136,7 +140,12 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
               )}
             </Stack>
           )}
-          {retired.length > 0 && <Section title={t('tyres.retired')}>{retired.map(card)}</Section>}
+          {(retired.length > 0 || retiredTyres.length > 0) && (
+            <Section title={t('tyres.retired')}>
+              {retired.map(card)}
+              {retiredTyres.length > 0 && <RetiredTyres tyres={tyres} vehicleId={vehicle.id} unit={unit} rows={retiredTyres} />}
+            </Section>
+          )}
           <SpentOnTyres tyres={tyres} costs={pending.costs} />
         </Stack>
         <TyreLog tyres={tyres} vehicleId={vehicle.id} unit={unit} canLog={canLog} />
@@ -224,6 +233,49 @@ function SingleTyres({
           pending={pending.has(opened)}
           costsPending={costs.has(opened)}
         />
+      )}
+    </>
+  )
+}
+
+/** The tab's *Retired* rows of single tyres (#289): its label, its set, why and the day; each opens the tyre's dialog, read only. */
+function RetiredTyres({
+  tyres, vehicleId, unit, rows,
+}: {
+  tyres: Tyres
+  vehicleId: string
+  unit: DistanceUnit
+  rows: { info: TyreSetInfo['tyres'][number]; set: TyreSetInfo['set'] }[]
+}) {
+  const { t } = useTranslation()
+  const format = useFormat()
+  const [opened, setOpened] = useState<string | null>(null)
+  return (
+    <>
+      <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+        {rows.map(({ info, set }) => {
+          const why = t(`tyres.single.why.${info.tyre.retiredWhy ?? 'SET_RETIRED'}`)
+          const date = info.tyre.retiredOn ? format.date(info.tyre.retiredOn) : ''
+          return (
+            <Box component="li" key={info.tyre.id} sx={{ borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
+              <ButtonBase
+                onClick={() => setOpened(info.tyre.id)}
+                aria-label={t('tyres.replace.retiredName', { label: info.tyre.label, set: set.name, date, why })}
+                sx={{ width: 1, minHeight: 44, py: 1, px: 0.5, display: 'flex', flexWrap: 'wrap', gap: '2px 10px', justifyContent: 'flex-start', textAlign: 'left', borderRadius: 1 }}
+              >
+                <Typography component="span" variant="body2" sx={{ fontWeight: 700 }}>
+                  {info.tyre.label}
+                </Typography>
+                <Typography component="span" variant="body2" sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>
+                  {t('tyres.replace.retiredRow', { set: set.name, why, date })}
+                </Typography>
+              </ButtonBase>
+            </Box>
+          )
+        })}
+      </Box>
+      {opened && (
+        <TyreDialog open onOpenChange={(next) => !next && setOpened(null)} vehicleId={vehicleId} unit={unit} tyres={tyres} tyreId={opened} canLog={false} pending={false} />
       )}
     </>
   )

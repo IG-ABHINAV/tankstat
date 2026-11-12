@@ -1134,7 +1134,12 @@
       "tyreTwice": "Each tyre can be picked once.",
       "tyreNotOfSet": "A tyre's line is a line of its set.",
       "sharedExpenseChoice": "This amount is shared with other tyres: say whether only these let go of it or it goes to the trash.",
-      "tapTyres": "Tap the tyres it is for."
+      "tapTyres": "Tap the tyres it is for.",
+      "notBrokenUp": "Track the {{set}} tyre by tyre first.",
+      "replaceRetiredSet": "A retired set's tyres cannot be replaced: {{set}}.",
+      "whyInvalid": "Say why: damaged, worn or too old.",
+      "tapToReplace": "Tap the tyres to replace.",
+      "tyreNotYet": "Tyre {{label}} came on {{date}}: it cannot be on the car before."
     }
   },
   "a11y": {
@@ -2902,6 +2907,23 @@
       "putHere": "Put {{label}} here",
       "putAt": "Put {{label}} at {{corner}}",
       "pickedOrCorner": "Tyre {{label}} is picked. Tap an empty corner, or the tyre it changes places with."
+    },
+    "replace": {
+      "title": "Replace tyres",
+      "thisTyre": "Replace this tyre",
+      "button": "Replace",
+      "intro": "The tyres picked are retired with their history. Each new tyre gets the next label, its own age, and starts at 0 km at the same corner.",
+      "toReplace": "Tyres to replace",
+      "tap": "Tap the tyres to replace.",
+      "newTyres": "New tyres",
+      "newTyre": "New tyre {{label}}, for {{old}}",
+      "why": "Why",
+      "priceHint": "One expense for the tyres picked: a Bought line each, sharing it.",
+      "breakUpFirst": "Saving tracks this set tyre by tyre first. Write the labels on the tyres.",
+      "toastOne": "Replaced. {{tyres}} is under Retired.",
+      "toastMany": "Replaced. {{tyres}} are under Retired.",
+      "retiredRow": "{{set}} · {{why}}, {{date}}",
+      "retiredName": "Tyre {{label}}, {{set}}, retired on {{date}}: {{why}}"
     }
   }
 }

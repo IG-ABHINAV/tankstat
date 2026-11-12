@@ -6,6 +6,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BreakUpDialog } from './BreakUpDialog.tsx'
+import { ReplaceDialog } from './ReplaceDialog.tsx'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { IconAction } from '../components/IconAction.tsx'
 import { LabeledSelect } from '../components/UnitSelect.tsx'
@@ -112,16 +113,18 @@ export function HistoryDialog({
               </Typography>
             </Box>
 
-            {set.brokenUpOn ? (
+            {set.brokenUpOn && (
               <Typography variant="body2" sx={{ p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
                 {t('tyres.single.historyNote', { date: format.date(set.brokenUpOn) })}
               </Typography>
-            ) : (
-              canLog && !set.isRetired && (
-                <Box>
+            )}
+            {canLog && !set.isRetired && (
+              <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+                {!set.brokenUpOn && (
                   <BreakUpDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} trigger={<Button variant="soft">{t('tyres.single.trackOneByOne')}</Button>} />
-                </Box>
-              )
+                )}
+                <ReplaceDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} trigger={<Button variant="soft">{t('tyres.replace.title')}</Button>} />
+              </Stack>
             )}
             <Box>
               <Typography component="h3" variant="subtitle2" sx={{ mb: 0.5 }}>
