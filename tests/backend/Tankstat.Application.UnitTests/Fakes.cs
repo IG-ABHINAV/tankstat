@@ -114,6 +114,9 @@ internal sealed class InMemoryRefuelings : IRefuelingRepository
     public Task<IReadOnlyList<Refueling>> ListForVehicleAsync(Guid vehicleId, RefuelingQuery query, CancellationToken ct) =>
         Task.FromResult(Page(Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId), query));
     public Task<int> CountForVehicleAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Items.Count(r => !r.IsDeleted && r.VehicleId == vehicleId));
+    public Task<IReadOnlyDictionary<Guid, int>> CountForVehiclesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, int>>(Items.Where(r => !r.IsDeleted && vehicleIds.Contains(r.VehicleId))
+            .GroupBy(r => r.VehicleId).ToDictionary(g => g.Key, g => g.Count()));
     public Task<bool> AnyForVehicleAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Items.Any(r => r.VehicleId == vehicleId));
     public Task<IReadOnlyList<Refueling>> ListAllForVehicleAsync(Guid vehicleId, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Refueling>>(Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId).ToList());
@@ -277,6 +280,13 @@ internal sealed class InMemoryStats(InMemoryRefuelings refuelings, InMemoryExpen
             fuel.Select(r => new FuelPoint(r.Date, r.Volume!.Value, r.TotalCost!.Value, r.Currency!, r.Odometer!.Value, r.IsFullTank, r.Consumption, r.Discount ?? 0)).ToList(),
             costs.Select(e => new ExpensePoint(e.Date, e.Category, e.Amount!.Value, e.Currency!)).ToList(),
             fuel.Select(r => new OdometerPoint(r.Date, r.Odometer!.Value)).Concat(costs.Where(e => e.Odometer is not null).Select(e => new OdometerPoint(e.Date, e.Odometer!.Value))).ToList()));
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, StatsData>> LoadManyAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        var all = new Dictionary<Guid, StatsData>();
+        foreach (var id in vehicleIds.Distinct()) all[id] = await LoadAsync(id, ct);
+        return all;
     }
 }
 
@@ -1095,7 +1105,7 @@ internal sealed class World
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
         RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
         Imports = new ImportService([new FuelioCsvParser()], ImportSessions, Access, VehicleService, RefuelingService, ExpenseService, RecurringService, Refuelings, Expenses, Defaults.Create(), Log.For<ImportService>());
-        Stats = new StatsService(Vehicles, new InMemoryStats(Refuelings, Expenses), Access, Clock);
+        Stats = new StatsService(LogGuard, new InMemoryStats(Refuelings, Expenses), Clock);
         ChartService = new ChartService(Vehicles, Charts, Access, Clock, Log.For<ChartService>());
         UiSettings = new UiSettingsService(UiSettingsStore, Access, Defaults.Create(), Clock, Log.For<UiSettingsService>());
         VehicleOrder = new VehicleOrderService(VehicleOrders, Vehicles, Access, Log.For<VehicleOrderService>());
