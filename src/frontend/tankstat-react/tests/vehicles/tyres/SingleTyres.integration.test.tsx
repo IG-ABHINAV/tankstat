@@ -5,6 +5,7 @@ import App from '../../../src/App.tsx'
 import { server } from '../../support/server.ts'
 import { fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { UUID } from '../../support/ids.ts'
+import { findDateField, typeDate } from '../../support/dates.ts'
 import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreSet } from '../../support/tyres.ts'
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
@@ -177,4 +178,33 @@ it('says a refusal of a time on the car in words: the tyre at that corner, the s
   expect(await within(edit).findByText('Tyre S2 is at that corner then, from 2026-03-28.')).toBeInTheDocument()
   await ui.click(within(edit).getByRole('button', { name: 'Save' }))
   expect(await within(edit).findByText(/^The Michelin Primacy 4 was not on the car then: Continental WinterContact was on from 2025-11-15\./)).toBeInTheDocument()
+})
+
+it('a swap dated back goes by the corners before that day, as the server does, not the latest ones', async () => {
+  // The summer set: on until 1 Jun at its first corners, again from 1 Aug to 10 Nov with S1 and S3 exchanged.
+  const set = storedBrokenUp()
+  const later: Record<string, string> = { t1: 'REAR_LEFT', t2: 'FRONT_RIGHT', t3: 'FRONT_LEFT', t4: 'REAR_RIGHT' }
+  const rotated: FakeTyreSet = {
+    ...set,
+    installations: [{ ...set.installations[0], until: '2026-06-01' }, { id: 'r1b', setId: 's1', from: '2026-08-01', until: '2026-11-10', pairOneFront: null, distance: 3_000 }],
+    tyres: set.tyres!.map((x) => ({
+      ...x,
+      places: [
+        { id: `${x.id}b`, installationId: 'r1b', from: '2026-08-01', until: '2026-11-10', corner: later[x.id] },
+        { ...x.places[0], until: '2026-06-01' },
+      ],
+    })),
+  }
+  const { ui, state } = setup([rotated, winterOn])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Swap to this set' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Swap tyres' })
+  const where = within(dialog).getByRole('group', { name: 'Where each tyre goes' })
+  expect(within(where).getByRole('button', { name: 'Rear left: Tyre S1' })).toBeInTheDocument() // today: the latest corners
+  await typeDate(ui, await findDateField(/^Day/, dialog), '2026-07-01')
+  expect(await within(where).findByRole('button', { name: 'Front left: Tyre S1' })).toBeInTheDocument() // 1 Jul: the corners before it
+  await ui.click(within(dialog).getByRole('button', { name: 'Swap tyres' }))
+
+  await waitFor(() => expect(state.calls.SwapTyres).toHaveLength(1))
+  expect(state.calls.SwapTyres[0].input).toMatchObject({ day: '2026-07-01', corners: [{ tyreId: 't1', corner: 'FRONT_LEFT' }, { tyreId: 't2', corner: 'FRONT_RIGHT' }, { tyreId: 't3', corner: 'REAR_LEFT' }, { tyreId: 't4', corner: 'REAR_RIGHT' }] })
 })
