@@ -15,6 +15,8 @@ export type FakeTyreSet = {
 /** A single tyre (#289) with its times on the car, as the server answers them. */
 export type FakeTyre = {
   id: string; label: string; distance: number; front?: number; rear?: number; isRetired?: boolean; retiredWhy?: string
+  /** What it cost (its even share of each expense) and its repairs, as the server works them out. */
+  spent?: { currency: string; amount: number }[]; repairs?: number
   places: { id: string; installationId: string; from: string; until: string | null; corner: string | null; distance?: number }[]
 }
 
@@ -48,6 +50,8 @@ export type FakeTyreEntry = {
   id: string; kind: string; setId: string | null; day: string; odometer: number | null; note: string | null
   /** Its expense (#288): the amount and currency it shows; `expenseTrashed` while the expense is in the trash. */
   expenseId?: string; amount?: number; currency?: string; category?: string; expenseTrashed?: boolean
+  /** A single tyre's line (#289), and the lines made together for several tyres. */
+  tyreId?: string; groupId?: string
 }
 
 /**
@@ -66,7 +70,7 @@ export function fakeTyres(initial: FakeTyreSet[], entries: FakeTyreEntry[] = [],
       ...state.entries.map((e) => ({ ...e, installationId: null })),
     ]
       .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : a.id < b.id ? -1 : 1))
-      .map((e) => ({ __typename: 'TyreEntry', version: 1, expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false, ...e }))
+      .map((e) => ({ __typename: 'TyreEntry', version: 1, expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false, tyreId: null, groupId: null, ...e }))
   const answer = () => ({
     __typename: 'VehicleTyres',
     vehicleId: 'v1',
@@ -94,6 +98,8 @@ export function fakeTyres(initial: FakeTyreSet[], entries: FakeTyreEntry[] = [],
         __typename: 'TyreInfo',
         onTheCar: t.places.some((p) => p.until === null),
         corner: t.places[0]?.corner ?? null,
+        spent: (t.spent ?? []).map((x) => ({ __typename: 'TyreSpent', ...x })),
+        repairs: t.repairs ?? 0,
         tyre: {
           __typename: 'Tyre', id: t.id, setId: s.id, label: t.label, name: null, madeWeek: 5, madeYear: 2023, since: '2023-03-25', roughDistance: s.roughDistance,
           retiredOn: t.isRetired ? '2026-10-01' : null, retiredWhy: t.isRetired ? (t.retiredWhy ?? 'SET_RETIRED') : null, replacedById: null, isRetired: t.isRetired ?? false, version: 1,

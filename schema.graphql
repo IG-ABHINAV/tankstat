@@ -627,6 +627,16 @@ type OdometerPoint {
   value: Long!
 }
 
+type OdometerReading {
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  date: LocalDate!
+  value: Long!
+  deletedAt: DateTime
+  isDeleted: Boolean!
+}
+
 type OfflineChanges {
   vehicle: Vehicle!
   refuelings: [Refueling!]!
@@ -1013,6 +1023,7 @@ type TyreEntry {
   expenseId: UUID
   "The installation whose line it is (the same id): set on a swap's and a change of positions' line."
   installationId: UUID
+  keepOwnReading(now: DateTime!): OdometerReading
   id: UUID!
   ownerId: UUID!
   vehicleId: UUID!

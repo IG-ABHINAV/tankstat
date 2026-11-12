@@ -95,7 +95,10 @@ export function tyreCreates(action: TyreAction, input: Input): string[] {
     case 'addTyreInstallation':
       return str(input?.id)
     case 'addTyreEntry':
-      return [...str(input?.id), ...expenseOf(input?.fee)]
+      // For several tyres (#289) a line each, and a whole set's tyres when it breaks it up.
+      return [
+        ...str(input?.id), ...listOf(input?.tyres).flatMap((t) => str(t.id)), ...listOf((input?.breakUp as Input)?.tyres).flatMap((t) => str(t.id)), ...expenseOf(input?.fee),
+      ]
     case 'breakUpTyreSet':
       return listOf(input?.tyres).flatMap((t) => str(t.id))
     case 'addTyrePlace':
@@ -113,6 +116,8 @@ export function tyreNeeds(action: TyreAction, input: Input): string[] {
     // Single tyres (#289): the tyre a time on the car is of, and the tyres a swap places, may have been made here by a break-up; a time on
     // the car a break-up or a swap worked out (its id from its tyre's and installation's) is kept with those two ids beside it, not sent.
     ...str(input?.tyreId), ...str(input?.installationId), ...listOf(input?.corners).flatMap((c) => str(c.tyreId)),
+    // The tyres an entry is for, and the other lines an edit changes too (*Also change it for*).
+    ...listOf(input?.tyres).flatMap((t) => str(t.tyreId)), ...(Array.isArray(input?.also) ? (input.also as unknown[]).flatMap(str) : []),
   ]
   return [...new Set(ids)].filter((id) => !creates.has(id))
 }
@@ -141,7 +146,8 @@ export function tyreFeeExpense(action: string, input: Input): TyreFeeExpense | n
   switch (action) {
     case 'addTyreEntry':
     case 'updateTyreEntry':
-      return { ...base, lineId: String(input?.id ?? ''), kind: String(input?.kind ?? 'OTHER'), day: String(input?.day ?? ''), odometer, edit: action === 'updateTyreEntry' }
+      // For several tyres (#289) the expense names the first line, as the server's `Expense.tyreEntry`.
+      return { ...base, lineId: String(listOf(input?.tyres)[0]?.id ?? input?.id ?? ''), kind: String(input?.kind ?? 'OTHER'), day: String(input?.day ?? ''), odometer, edit: action === 'updateTyreEntry' }
     case 'swapTyres':
     case 'changeTyrePositions':
       return {

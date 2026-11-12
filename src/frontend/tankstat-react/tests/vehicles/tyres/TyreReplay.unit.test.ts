@@ -21,7 +21,7 @@ const set = (id: string, name: string, onTheCar: boolean, installations: ReturnT
 })
 const line = (id: string, setId: string | null, day: string, kind: Tyres['entries'][number]['kind'] = 'SWAP', odometer: number | null = null, note: string | null = null) => ({
   id, kind, setId, installationId: kind === 'SWAP' ? id : null, day, odometer, note, version: 4,
-  expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false,
+  expenseId: null, amount: null, currency: null, category: null, expenseTrashed: false, tyreId: null, groupId: null,
 })
 const base: Tyres = {
   vehicleId: 'v1',
@@ -386,5 +386,93 @@ describe('single tyres changed on the device, shown as done (#289)', () => {
     const { tyres, touched } = replayTyres(older, [])
     expect(tyres.sets.map((x) => x.set.brokenUpOn)).toEqual([null, null])
     expect([...touched]).toEqual([]) // nothing changed by it
+  })
+})
+
+describe('lines for several tyres sharing one expense on the device (#289), as the server’s TyreExpenseTests', () => {
+  const corners = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT']
+  const fee = (amount: number | null, expenseId = 'x1') => ({ amount, currency: 'HUF', category: 'Tyres', title: 'Puncture repaired', expenseId })
+  /** A flat on S3 and S4 of the whole summer set: broken up on save, a line each, one expense of 13,000 and one reading. */
+  const repair = (odometer: number | null = 148_200) => change('addTyreEntry', {
+    vehicleId: 'v1', kind: 'PUNCTURE_REPAIRED', day: '2026-09-20', setId: 's1', odometer, note: 'Screws in the tread', fee: fee(13_000),
+    tyres: [{ tyreId: 't3', id: 'l3' }, { tyreId: 't4', id: 'l4' }],
+    breakUp: { setId: 's1', day: '2026-09-20', tyres: ['t1', 't2', 't3', 't4'].map((id, n) => ({ id, label: `S${n + 1}`, corner: corners[n] })) },
+  })
+  const edit = (id: string, input: Record<string, unknown>) =>
+    change('updateTyreEntry', { id, kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-09-20', odometer: 148_200, note: 'Screws in the tread', ...input })
+  const lineOf = (tyres: Tyres, id: string) => tyres.entries.find((e) => e.id === id)!
+
+  it('a flat on two tyres of a whole set breaks it up, makes a line each in one group with one expense, and counts one reading', () => {
+    const { tyres, skipped, costs } = replayTyres(base, [repair()])
+
+    expect(skipped).toEqual([])
+    expect(tyres.sets.find((s) => s.set.id === 's1')!.set.brokenUpOn).toBe('2026-09-20')
+    expect(['l3', 'l4'].map((id) => lineOf(tyres, id))).toMatchObject([
+      { tyreId: 't3', groupId: 'l3', expenseId: 'x1', amount: 13_000, version: 0 },
+      { tyreId: 't4', groupId: 'l3', expenseId: 'x1', amount: 13_000, version: 0 },
+    ])
+    expect(tyres.readings.filter((r) => r.date === '2026-09-20')).toHaveLength(1) // one row for both lines
+    expect([...costs].sort()).toEqual(['s1', 't3', 't4'])
+  })
+
+  it('the same add sent again is found by its first line before the break-up would refuse it', () => {
+    const once = applyTyreChange(base, repair())
+    expect(applyTyreChange(once, repair()).entries.filter((e) => e.kind === 'PUNCTURE_REPAIRED')).toHaveLength(2)
+  })
+
+  it('a new amount on one line changes the one expense for all; nothing of its own keeps the group', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { fee: fee(15_000) })])
+    expect(['l3', 'l4'].map((id) => [lineOf(tyres, id).amount, lineOf(tyres, id).groupId])).toEqual([[15_000, 'l3'], [15_000, 'l3']])
+  })
+
+  it('a day of its own parts a line from the expense, whatever amount the dialog still sent; the other keeps it', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { day: '2026-09-22', odometer: 148_400, fee: fee(13_000, 'new') })])
+    expect(lineOf(tyres, 'l3')).toMatchObject({ day: '2026-09-22', odometer: 148_400, expenseId: null, amount: null, groupId: null })
+    expect(lineOf(tyres, 'l4')).toMatchObject({ day: '2026-09-20', expenseId: 'x1', amount: 13_000 })
+  })
+
+  it('Also change it for moves every ticked line together, still sharing', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { day: '2026-09-21', odometer: 148_300, also: ['l4'] })])
+    expect(['l3', 'l4'].map((id) => lineOf(tyres, id))).toMatchObject([
+      { day: '2026-09-21', odometer: 148_300, expenseId: 'x1', groupId: 'l3' },
+      { day: '2026-09-21', odometer: 148_300, expenseId: 'x1', groupId: 'l3' },
+    ])
+  })
+
+  it('a note changed alone leaves the group but keeps the expense', () => {
+    const { tyres } = replayTyres(base, [repair(), edit('l3', { note: 'Only the rear left' })])
+    expect(lineOf(tyres, 'l3')).toMatchObject({ note: 'Only the rear left', groupId: null, expenseId: 'x1', amount: 13_000 })
+  })
+
+  it('an amount emptied on one line asks what it does: refused without a choice, LET_GO parts it, TRASH empties it for all', () => {
+    const emptied = (sharedExpense?: string) => edit('l3', { fee: fee(null), ...(sharedExpense ? { sharedExpense } : {}) })
+    const once = applyTyreChange(base, repair())
+    expect(() => applyTyreChange(once, emptied())).toThrow(TyreRuleError)
+    try {
+      applyTyreChange(once, emptied())
+    } catch (e) {
+      expect((e as TyreRuleError).key).toBe('tyres.sharedExpenseChoice')
+    }
+
+    const letGo = applyTyreChange(once, emptied('LET_GO'))
+    expect([lineOf(letGo, 'l3').expenseId, lineOf(letGo, 'l4').amount]).toEqual([null, 13_000])
+
+    const trashed = applyTyreChange(once, emptied('TRASH'))
+    expect(['l3', 'l4'].map((id) => [lineOf(trashed, id).amount, lineOf(trashed, id).expenseTrashed])).toEqual([[null, true], [null, true]])
+  })
+
+  it('one line to the trash leaves the other with the expense and the reading; its sharer’s costs are out of date', () => {
+    const { tyres, costs } = replayTyres(base, [repair(), change('deleteTyreEntry', { id: 'l3', withExpense: true })])
+    expect(tyres.entries.some((e) => e.id === 'l3')).toBe(false)
+    expect(lineOf(tyres, 'l4')).toMatchObject({ expenseId: 'x1', amount: 13_000 })
+    expect(tyres.readings.filter((r) => r.date === '2026-09-20')).toHaveLength(1)
+    expect([...costs].sort()).toEqual(['s1', 't4']) // S3's line was only ever on the device: its share is as the server will have it
+  })
+
+  it('a line of a tyre keeps its set, and names no tyre twice', () => {
+    const once = applyTyreChange(base, repair())
+    expect(() => applyTyreChange(once, edit('l3', { setId: 's2' }))).toThrow(TyreRuleError)
+    const twice = change('addTyreEntry', { vehicleId: 'v1', kind: 'VALVE_REPLACED', day: '2026-09-21', setId: 's1', tyres: [{ tyreId: 't1', id: 'a' }, { tyreId: 't1', id: 'b' }] })
+    expect(() => applyTyreChange(once, twice)).toThrow(TyreRuleError)
   })
 })

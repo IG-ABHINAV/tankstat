@@ -111,6 +111,25 @@ describe('single tyres kept on the device (#289)', () => {
     expect(discard([breakUp, placeEdit], breakUp.id)).toEqual([])
   })
 
+  it('an entry for several tyres makes a line each (and a whole set’s tyres it breaks up); an edit needs the other lines it changes', () => {
+    const repair = tyre('addTyreEntry', {
+      id: 'l3', vehicleId: 'v1', kind: 'PUNCTURE_REPAIRED', day: '2026-11-12', setId: 'n', tyres: [{ tyreId: 't3', id: 'l3' }, { tyreId: 't4', id: 'l4' }],
+      breakUp: { setId: 'n', day: '2026-11-12', tyres: ['t1', 't2', 't3', 't4'].map((id) => ({ id, label: id.toUpperCase(), corner: null })) },
+      fee: { amount: 13_000, currency: 'HUF', category: 'Tyres', title: 'Puncture repaired', expenseId: 'x1' },
+    }, 'l3')
+    expect(tyreCreates('addTyreEntry', repair.input)).toEqual(['l3', 'l3', 'l4', 't1', 't2', 't3', 't4', 'x1'])
+    expect(tyreNeeds('addTyreEntry', repair.input)).toEqual(['n'])
+    expect(tyreFeeExpense('addTyreEntry', repair.input)).toMatchObject({ expenseId: 'x1', lineId: 'l3', amount: 13_000 })
+    const both = tyre('updateTyreEntry', { id: 'l3', kind: 'PUNCTURE_REPAIRED', day: '2026-11-13', setId: 'n', also: ['l4'], sharedExpense: null }, 'l3')
+    expect(tyreNeeds('updateTyreEntry', both.input)).toEqual(['l3', 'n', 'l4'])
+    expect(toChangeInput({ ...both, expectedVersion: null })).toMatchObject({ updateTyreEntry: { also: ['l4'] } })
+
+    // Taken back, it takes along what was made on its lines and tyres.
+    const onS4 = tyre('updateTyreEntry', { id: 'l4', kind: 'PUNCTURE_REPAIRED', day: '2026-11-12', setId: 'n', note: 'Rear right' }, 'l4')
+    const onT1 = tyre('updateTyre', { id: 't1', label: 'W1' }, 't1')
+    expect(discard([repair, onS4, onT1, other], repair.id)).toEqual([other])
+  })
+
   it('a trash or restore of a tyre or a time on the car is sent as its bare id', () => {
     expect(toChangeInput({ ...tyre('deleteTyre', { id: 't1' }, 't1'), expectedVersion: 2 })).toMatchObject({ deleteTyre: 't1' })
     expect(toChangeInput({ ...tyre('deleteTyrePlace', { id: 'p1', tyreId: 't1', installationId: 'st' }, 'p1'), expectedVersion: 2 })).toMatchObject({ deleteTyrePlace: 'p1' })
