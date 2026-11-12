@@ -2850,7 +2850,12 @@
       "unsureNote": "A csere pozíciók nélkül kerül mentésre. Az egyes gumik autón töltött idejéhez később is megadható a pozíció.",
       "lastCorners": "Legutóbb az autón: {{corners}}.",
       "nowCorners": "Most: {{corners}}.",
-      "cornerList": "{{label}} {{corner}}"
+      "cornerList": "{{label}} {{corner}}",
+      "withoutCorner": "Pozíció nélkül:",
+      "chipName": "{{label}} gumi, a pozíció nincs rögzítve",
+      "putHere": "{{label}} ide",
+      "putAt": "{{label}} ide: {{corner}}",
+      "pickedOrCorner": "A(z) {{label}} gumi kiválasztva. Koppints egy üres pozícióra, vagy arra a gumira, amellyel helyet cserél."
     }
   }
 }

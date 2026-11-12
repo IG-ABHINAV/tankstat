@@ -53,7 +53,7 @@ const named = <T extends object>(typename: string, value: T): T => ({ __typename
 const UNMEASURED: Distance = named('InstallationDistance', { distance: 0, approximate: true, measure: 'NOT_MEASURED' })
 
 const modelOf = (tyres: Tyres): Model => ({
-  sets: tyres.sets.map((s) => ({ ...s, set: { ...s.set } })),
+  sets: tyres.sets.map((s) => ({ ...s, set: { ...s.set, brokenUpOn: s.set.brokenUpOn ?? null } })), // an older kept answer has none
   installations: tyres.sets.flatMap((s) =>
     s.installations.map((x) => ({ id: x.installation.id, setId: s.set.id, from: x.installation.from, until: x.installation.until ?? null, pairOneFront: x.installation.pairOneFront ?? null })),
   ),
@@ -471,7 +471,7 @@ function answerOf(base: Tyres, m: Model): { tyres: Tyres; touched: Set<string>; 
     const own = m.installations.filter((x) => x.setId === id).sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))
     const was = before.installations.filter((x) => x.setId === id)
     const prior = baseSet.get(id)
-    const detailsChanged = !!prior && JSON.stringify({ ...prior.set, version: 0 }) !== JSON.stringify({ ...info.set, version: 0 })
+    const detailsChanged = !!prior && JSON.stringify({ ...prior.set, brokenUpOn: prior.set.brokenUpOn ?? null, version: 0 }) !== JSON.stringify({ ...info.set, version: 0 })
     if (!prior) added.add(id)
     const tyres = tyresOf(base, m, id, touchedTyres)
     const tyresChanged = tyres.some((t) => touchedTyres.has(t.tyre.id)) || (prior?.tyres ?? []).length !== tyres.length

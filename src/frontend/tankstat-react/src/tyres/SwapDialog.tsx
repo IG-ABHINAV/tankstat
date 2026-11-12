@@ -23,7 +23,9 @@ import { feeOf } from './entries.ts'
 import { FeeFields } from './FeeFields.tsx'
 import { keyedOf, type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
 import { CarPicture, TyreButton } from './CarPicture.tsx'
-import { CROSS, isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from './singleTyres.ts'
+import { CROSS, EXACT, isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from './singleTyres.ts'
+import ButtonBase from '@mui/material/ButtonBase'
+import Chip from '@mui/material/Chip'
 
 type CornerMode = 'same' | 'cross' | 'unsure' | 'own'
 type CornerMap = Record<string, string | null>
@@ -209,6 +211,10 @@ export function SwapDialog({
                     setOwn({ ...cornersNow, [a]: cornersNow[b] ?? null, [b]: cornersNow[a] ?? null })
                     setCornerMode('own')
                   }}
+                  onPlace={(id, corner) => {
+                    setOwn({ ...cornersNow, [id]: corner })
+                    setCornerMode('own')
+                  }}
                 />
               ) : (
               <Stack component="fieldset" sx={{ gap: 1, border: 0, p: 0, m: 0 }}>
@@ -279,7 +285,7 @@ function PairPicture({ front, dim }: { front: 1 | 2; dim: boolean }) {
  * exchanges them (*Your own*), a status line saying what to tap next.
  */
 function WhereEachTyre({
-  info, rotate, base, corners, mode, onMode, onExchange,
+  info, rotate, base, corners, mode, onMode, onExchange, onPlace,
 }: {
   info: TyreSetInfo
   rotate: boolean
@@ -288,6 +294,8 @@ function WhereEachTyre({
   mode: CornerMode
   onMode: (mode: CornerMode) => void
   onExchange: (a: string, b: string) => void
+  /** A tyre without a corner put at an empty one (the owner's decision 50). */
+  onPlace: (tyreId: string, corner: ExactCorner) => void
 }) {
   const { t } = useTranslation()
   const words = useCornerWords()
@@ -322,6 +330,24 @@ function WhereEachTyre({
       )]
     }),
   ) as Partial<Record<ExactCorner, ReactNode>>
+  // A tyre without a corner (#289, decision 50): a chip under the picture; picked, an empty corner takes it.
+  const loose = mode === 'unsure' ? [] : tyres.filter((x) => !isExactCorner(corners[x.tyre.id]))
+  if (picked && mode !== 'unsure')
+    for (const corner of EXACT)
+      if (!cells[corner])
+        cells[corner] = (
+          <ButtonBase
+            onClick={() => {
+              onPlace(picked, corner)
+              setPicked(null)
+            }}
+            aria-label={t('tyres.single.putAt', { label: labelOf(picked), corner: words.of(corner) })}
+            sx={{ flex: 1, minHeight: 60, borderRadius: 2, border: 1, borderStyle: 'dashed', borderColor: 'primary.main', color: 'primary.main', p: 1, typography: 'caption', textAlign: 'center' }}
+          >
+            {t('tyres.single.putHere', { label: labelOf(picked) })}
+          </ButtonBase>
+        )
+  const emptyCorner = EXACT.some((c) => !tyres.some((x) => corners[x.tyre.id] === c))
   return (
     <Stack component="fieldset" sx={{ gap: 1, border: 0, p: 0, m: 0 }}>
       <Typography component="legend" variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
@@ -340,8 +366,31 @@ function WhereEachTyre({
         }}
       />
       <CarPicture cells={cells} dim={mode === 'unsure'} />
+      {loose.length > 0 && (
+        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            {t('tyres.single.withoutCorner')}
+          </Typography>
+          {loose.map((x) => (
+            <Chip
+              key={x.tyre.id}
+              label={x.tyre.label}
+              variant={picked === x.tyre.id ? 'filled' : 'outlined'}
+              color={picked === x.tyre.id ? 'primary' : 'default'}
+              aria-label={t('tyres.single.chipName', { label: x.tyre.label })}
+              aria-pressed={picked === x.tyre.id}
+              onClick={() => setPicked(picked === x.tyre.id ? null : x.tyre.id)}
+              sx={{ fontWeight: 700 }}
+            />
+          ))}
+        </Stack>
+      )}
       <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>
-        {mode === 'unsure' ? t('tyres.single.unsureNote') : picked ? t('tyres.single.picked', { label: labelOf(picked) }) : t('tyres.single.tapTwo')}
+        {mode === 'unsure'
+          ? t('tyres.single.unsureNote')
+          : picked
+            ? emptyCorner ? t('tyres.single.pickedOrCorner', { label: labelOf(picked) }) : t('tyres.single.picked', { label: labelOf(picked) })
+            : t('tyres.single.tapTwo')}
       </Typography>
     </Stack>
   )

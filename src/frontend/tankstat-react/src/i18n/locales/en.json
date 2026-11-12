@@ -2850,7 +2850,12 @@
       "unsureNote": "The swap is saved without corners. Each tyre's time on the car can be given its corner later.",
       "lastCorners": "Last time on the car: {{corners}}.",
       "nowCorners": "Now: {{corners}}.",
-      "cornerList": "{{label}} {{corner}}"
+      "cornerList": "{{label}} {{corner}}",
+      "withoutCorner": "Without a corner:",
+      "chipName": "Tyre {{label}}, corner not recorded",
+      "putHere": "Put {{label}} here",
+      "putAt": "Put {{label}} at {{corner}}",
+      "pickedOrCorner": "Tyre {{label}} is picked. Tap an empty corner, or the tyre it changes places with."
     }
   }
 }

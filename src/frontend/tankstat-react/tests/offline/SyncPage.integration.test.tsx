@@ -589,3 +589,27 @@ it('a tyre swap waiting here is named by its set and day; one the server parked 
   expect(await screen.findByText('Applied.')).toBeInTheDocument()
   expect(resolved).toEqual([{ id: 'p1', action: 'APPLY', change: { id: 'p1', expectedVersion: null, swapTyres: { ...swap, installationId: 'st0', day: '2026-10-06', replace: true } } }])
 })
+
+it('a single tyre\'s change waiting here is named by its label: a relabel, a time on the car of a tyre a waiting break-up made (#289)', async () => {
+  await downloaded()
+  await deviceData.keep(snapshotKey('VehicleTyres', { vehicleId: 'v1' }), {
+    vehicleTyres: {
+      vehicleId: 'v1', readings: [], hasReadings: false, entries: [],
+      sets: [{ set: { id: 's2', name: 'Continental WinterContact' }, installations: [], tyres: [{ tyre: { id: 't1', label: 'W1' }, places: [{ place: { id: 'p1' } }] }] }],
+    },
+  })
+  await outbox.enqueue({ id: 'w1', entity: 'tyres', action: 'updateTyre', vehicleId: 'v1', targetId: 't1', input: { id: 't1', label: 'W1a' } })
+  await outbox.enqueue({ id: 'w2', entity: 'tyres', action: 'deleteTyrePlace', vehicleId: 'v1', targetId: 'p1', input: { id: 'p1' } })
+  await outbox.enqueue({
+    id: 'w3', entity: 'tyres', action: 'breakUpTyreSet', vehicleId: 'v1', targetId: 's3',
+    input: { setId: 's3', day: '2026-11-12', tyres: [{ id: 'n1', label: 'S1', corner: null }] },
+  })
+  await outbox.enqueue({ id: 'w4', entity: 'tyres', action: 'addTyrePlace', vehicleId: 'v1', targetId: 'q1', input: { id: 'q1', tyreId: 'n1', from: '2026-11-01', until: null, corner: null } })
+  connectivity.reset()
+  renderWithApollo(<App />, '/sync')
+
+  const waiting = within((await screen.findAllByRole('region', { name: /^Octavia/ }))[0])
+  expect((await waiting.findByRole('heading', { name: "Tyre's label changed" })).closest('li')).toHaveTextContent('W1a')
+  expect(waiting.getByRole('heading', { name: "A tyre's time on the car to the trash" }).closest('li')).toHaveTextContent('W1a')
+  expect(waiting.getByRole('heading', { name: 'New time on the car of a tyre' }).closest('li')).toHaveTextContent('S1')
+})

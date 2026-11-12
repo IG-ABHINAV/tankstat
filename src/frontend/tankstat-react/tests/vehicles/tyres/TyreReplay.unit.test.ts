@@ -383,5 +383,8 @@ describe('single tyres changed on the device, shown as done (#289)', () => {
   it('a kept answer from before single tyres counts its sets as whole', () => {
     const older = { ...base, sets: base.sets.map((x) => ({ ...x, tyres: undefined, set: { ...x.set, brokenUpOn: undefined } })) } as unknown as Tyres
     expect(tyresOf(replayTyres(older, []).tyres)).toEqual([])
+    const { tyres, touched } = replayTyres(older, [])
+    expect(tyres.sets.map((x) => x.set.brokenUpOn)).toEqual([null, null])
+    expect([...touched]).toEqual([]) // nothing changed by it
   })
 })

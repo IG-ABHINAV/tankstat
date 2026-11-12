@@ -138,3 +138,43 @@ it('moves a tyre to the trash from its dialog, saying its corner is empty for th
   await ui.click(within(confirm).getByRole('button', { name: 'Move the tyre to the trash' }))
   await waitFor(() => expect(state.calls.DeleteTyre).toEqual([{ id: 't2' }]))
 })
+
+it('changes a broken-up set\'s positions front to rear at first, and puts a tyre without a corner at an empty one (#289, decision 50)', async () => {
+  const { ui, state } = setup([brokenUpSummer(['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', null]), tyreWinter])
+
+  const card = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
+  await ui.click(within(card).getByRole('button', { name: 'Change positions' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Change positions' })
+  const where = within(dialog).getByRole('group', { name: 'Where each tyre goes' })
+  expect(within(where).getByRole('radio', { name: 'Front ↔ rear, same side' })).toBeChecked()
+  expect(within(where).getByRole('button', { name: 'Rear left: Tyre S1' })).toBeInTheDocument()
+
+  // S4 has no corner: tapped, then the empty corner (front right, S2 at the rear now) takes it.
+  await ui.click(within(where).getByRole('button', { name: 'Tyre S4, corner not recorded' }))
+  expect(within(where).getByRole('status')).toHaveTextContent('Tyre S4 is picked. Tap an empty corner, or the tyre it changes places with.')
+  await ui.click(within(where).getByRole('button', { name: 'Put S4 at front right' }))
+  expect(within(where).getByRole('button', { name: 'Front right: Tyre S4' })).toBeInTheDocument()
+  expect(within(where).getByRole('radio', { name: 'Your own' })).toBeChecked()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save positions' }))
+
+  await waitFor(() => expect(state.calls.ChangeTyrePositions).toHaveLength(1))
+  expect(state.calls.ChangeTyrePositions[0].input).toMatchObject({
+    setId: 's1', pairOneFront: null,
+    corners: [{ tyreId: 't1', corner: 'REAR_LEFT' }, { tyreId: 't2', corner: 'REAR_RIGHT' }, { tyreId: 't3', corner: 'FRONT_LEFT' }, { tyreId: 't4', corner: 'FRONT_RIGHT' }],
+  })
+})
+
+it('says a refusal of a time on the car in words: the tyre at that corner, the set on the car then (#289)', async () => {
+  const { ui, state } = setup([brokenUpSummer(), tyreWinter])
+  state.failNext.push({ key: 'tyres.cornerTaken', args: { label: 'S2', from: '2026-03-28', until: null } })
+  state.failNext.push({ key: 'tyres.placeWhileOtherSet', args: { set: 'Michelin Primacy 4', label: 'S1', other: 'Continental WinterContact', otherFrom: '2025-11-15', otherUntil: '2026-03-28' } })
+
+  await ui.click(await screen.findByRole('button', { name: /^Front left: tyre S1,/ }))
+  const tyre = await screen.findByRole('dialog', { name: 'Tyre S1' })
+  await ui.click(within(tyre).getByRole('button', { name: 'Edit time on the car' }))
+  const edit = await screen.findByRole('dialog', { name: 'Edit time on the car' })
+  await ui.click(within(edit).getByRole('button', { name: 'Save' }))
+  expect(await within(edit).findByText('Tyre S2 is at that corner then, from 2026-03-28.')).toBeInTheDocument()
+  await ui.click(within(edit).getByRole('button', { name: 'Save' }))
+  expect(await within(edit).findByText(/^The Michelin Primacy 4 was not on the car then: Continental WinterContact was on from 2025-11-15\./)).toBeInTheDocument()
+})

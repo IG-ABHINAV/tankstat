@@ -716,3 +716,36 @@ it('marks the costs a repair kept on the device puts out of date, and only those
   expect(within(block).getByText('Continental WinterContact').nextSibling).toHaveTextContent('€15.00')
   expect(within(block).queryByText('Not tied to a set')).not.toBeInTheDocument()
 })
+
+it('lists a trashed tyre and a trashed time on the car on the Trash page, and restores each with its own mutation (#289)', async () => {
+  stubViewport('desktop')
+  const calls: Record<string, unknown[]> = {}
+  const base = { __typename: 'TyreTrashRow', entryKind: null, setName: 'Michelin Primacy 4', installationCount: 0, version: 2, withExpense: false, canDelete: true, vehicle: { __typename: 'Vehicle', id: 'v1', name: 'Octavia' } }
+  const rows = [
+    { ...base, kind: 'TYRE', id: 't9', label: 'S2', corner: null, day: null, until: null, deletedAt: '2026-11-09T21:14:00Z' },
+    { ...base, kind: 'PLACE', id: 'p9', label: 'S3', corner: 'REAR_LEFT', day: '2026-03-28', until: '2026-06-01', deletedAt: '2026-11-02T18:02:00Z' },
+  ]
+  const answer = { __typename: 'VehicleTyres', vehicleId: 'v1', hasReadings: false, expenseCategory: null, spentAll: [], spentNoSet: [], readings: [], entries: [], sets: [] }
+  server.use(
+    sessionHandler('NONE', () => null),
+    healthHandler,
+    graphql.query('TyreTrash', () => HttpResponse.json({ data: { tyreTrash: rows, tyreTrashCount: 2, tyreTrashDeletableCount: 2 } })),
+    graphql.mutation('RestoreTyre', ({ variables }) => {
+      ;(calls.RestoreTyre ??= []).push(variables)
+      return HttpResponse.json({ data: { restoreTyre: answer } })
+    }),
+    graphql.mutation('RestoreTyrePlace', ({ variables }) => {
+      ;(calls.RestoreTyrePlace ??= []).push(variables)
+      return HttpResponse.json({ data: { restoreTyrePlace: answer } })
+    }),
+  )
+  renderWithApollo(<App />, '/trash?tab=tyres')
+  const ui = userEvent.setup()
+
+  expect(await screen.findByText('with its times on the car and lines')).toBeInTheDocument()
+  expect(screen.getByText('S3: on the car, rear left')).toBeInTheDocument()
+  await ui.click(screen.getByRole('button', { name: 'Restore Tyre S2' }))
+  await waitFor(() => expect(calls.RestoreTyre).toEqual([{ id: 't9' }]))
+  await ui.click(screen.getByRole('button', { name: 'Restore S3: on the car, rear left' }))
+  await waitFor(() => expect(calls.RestoreTyrePlace).toEqual([{ id: 'p9' }]))
+})
