@@ -46,6 +46,7 @@ export const SYNC_KINDS: Record<SyncChangeKind, [ChangeEntity, ChangeAction]> = 
   DELETE_TYRE_ENTRY: ['tyres', 'deleteTyreEntry'],
   RESTORE_TYRE_ENTRY: ['tyres', 'restoreTyreEntry'],
   BREAK_UP_TYRE_SET: ['tyres', 'breakUpTyreSet'],
+  REPLACE_TYRES: ['tyres', 'replaceTyres'],
   UPDATE_TYRE: ['tyres', 'updateTyre'],
   DELETE_TYRE: ['tyres', 'deleteTyre'],
   RESTORE_TYRE: ['tyres', 'restoreTyre'],

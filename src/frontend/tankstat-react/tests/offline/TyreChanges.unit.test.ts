@@ -130,6 +130,18 @@ describe('single tyres kept on the device (#289)', () => {
     expect(discard([repair, onS4, onT1, other], repair.id)).toEqual([other])
   })
 
+  it('a replacement makes its new tyres and their Bought lines (and a whole set’s tyres), needs the tyres it replaces, and its price is an expense', () => {
+    const replacing = tyre('replaceTyres', {
+      setId: 'n', day: '2026-11-12', why: 'WORN', odometer: 150_000, tyres: [{ tyreId: 't1', id: 't5', label: 'W5', lineId: 'b5' }],
+      price: { amount: 39_000, currency: 'HUF', category: 'Tyres', title: 'Bought', expenseId: 'x5' },
+    }, 'n')
+    expect([tyreTarget('replaceTyres', replacing.input), tyreCreates('replaceTyres', replacing.input), tyreNeeds('replaceTyres', replacing.input)]).toEqual(['n', ['t5', 'b5', 'x5'], ['n', 't1']])
+    expect(tyreFeeExpense('replaceTyres', replacing.input)).toMatchObject({ expenseId: 'x5', lineId: 'b5', kind: 'BOUGHT', day: '2026-11-12', odometer: 150_000, amount: 39_000 })
+    expect(toChangeInput({ ...replacing, expectedVersion: null })).toMatchObject({ replaceTyres: { setId: 'n', tyres: [{ id: 't5' }] } })
+    const onNew = tyre('updateTyre', { id: 't5', label: 'W5a' }, 't5')
+    expect(discard([replacing, onNew, other], replacing.id)).toEqual([other])
+  })
+
   it('a trash or restore of a tyre or a time on the car is sent as its bare id', () => {
     expect(toChangeInput({ ...tyre('deleteTyre', { id: 't1' }, 't1'), expectedVersion: 2 })).toMatchObject({ deleteTyre: 't1' })
     expect(toChangeInput({ ...tyre('deleteTyrePlace', { id: 'p1', tyreId: 't1', installationId: 'st' }, 'p1'), expectedVersion: 2 })).toMatchObject({ deleteTyrePlace: 'p1' })

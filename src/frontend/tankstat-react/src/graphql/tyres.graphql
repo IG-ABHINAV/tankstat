@@ -306,6 +306,12 @@ mutation BreakUpTyreSet($input: BreakUpTyreSetInput!) {
   }
 }
 
+mutation ReplaceTyres($input: ReplaceTyresInput!) {
+  replaceTyres(input: $input) {
+    ...VehicleTyresFields
+  }
+}
+
 mutation UpdateTyre($input: UpdateTyreInput!) {
   updateTyre(input: $input) {
     ...VehicleTyresFields

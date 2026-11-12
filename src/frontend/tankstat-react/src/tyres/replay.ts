@@ -3,7 +3,7 @@ import { isTyreAction } from '../offline/tyreChanges.ts'
 import { checked, moveSwap, TyreRuleError, type SetState, type InstallationState } from './tyreHistory.ts'
 import { follow, type Joined, type LineState } from './tyreLog.ts'
 import {
-  addPlace, breakUp, changePositionsPlaced, follow as followPlaces, editPlace, livePlaces, requireLabelFree, checkedLabel, swapPlaced,
+  addPlace, breakUp, changePositionsPlaced, replace, predecessorOf, follow as followPlaces, editPlace, livePlaces, requireLabelFree, checkedLabel, swapPlaced,
   type Corner, type Corners, type PlaceBook, type PlaceState,
 } from './tyrePlaces.ts'
 import type { Tyres, TyreSetInfo } from './tyres.ts'
@@ -72,7 +72,7 @@ const placeStateOf = (p: TyreInfo['places'][number]['place']): PlaceState => ({
 const bookOf = (m: Model): PlaceBook => ({
   sets: m.sets.map((s) => ({ id: s.set.id, name: s.set.name, retiredOn: s.set.retiredOn ?? null, brokenUpOn: s.set.brokenUpOn ?? null })),
   installations: m.installations,
-  tyres: m.tyres.map((t) => ({ id: t.id, setId: t.setId, label: t.label, retiredOn: t.retiredOn ?? null })),
+  tyres: m.tyres.map((t) => ({ id: t.id, setId: t.setId, label: t.label, retiredOn: t.retiredOn ?? null, replacedById: t.replacedById ?? null })),
   places: m.places,
 })
 
@@ -384,6 +384,43 @@ function apply(m: Model, c: Change, vehicleId: string) {
       breakUpIn(m, input)
       return
     }
+    case 'replaceTyres': {
+      // Sent before: the server answers it with what it made (found before a break-up that already happened would refuse it).
+      const given = listOf(input.tyres)
+      if (given.length > 0 && m.tyres.some((t) => t.id === given[0].id)) return
+      const s = setOf(m, input.setId)
+      const breakUpInput = input.breakUp as Record<string, unknown> | null | undefined
+      if (breakUpInput) {
+        if (breakUpInput.setId !== input.setId) throw new TyreRuleError('tyres.tyreNotOfSet')
+        breakUpIn(m, breakUpInput)
+      }
+      const on = str(input.day)
+      const why = str(input.why) as TyreRow['retiredWhy']
+      if (why === 'SET_RETIRED') throw new TyreRuleError('tyres.whyInvalid')
+      if (given.length === 0) throw new TyreRuleError('tyres.tapToReplace')
+      const book = replace(bookOf(m), s.set.id, given.map((g) => ({ oldId: str(g.tyreId), id: str(g.id), label: str(g.label) })), on)
+      const fresh = given.map((g) => ({
+        ...tyreRowOf(str(g.id), s.set.id, book.tyres.find((t) => t.id === g.id)!.label, s.set, null),
+        name: text(g.name), madeWeek: num(g.madeWeek), madeYear: num(g.madeYear), since: on, roughDistance: 0,
+      }))
+      m.tyres = [
+        ...m.tyres.map((t) => {
+          const next = given.find((g) => g.tyreId === t.id)
+          return next ? { ...t, retiredOn: on, retiredWhy: why, replacedById: str(next.id), isRetired: true, version: 0 } : t
+        }),
+        ...fresh,
+      ]
+      m.places = [...book.places]
+      // A Bought line per new tyre, made together, sharing the price's one expense (the first line's id the group's).
+      const firstId = str(given[0].lineId) || `${c.id}:line:0`
+      const lines = given.map((g, n) => entryOf(
+        { id: n === 0 ? firstId : str(g.lineId) || `${c.id}:line:${n}`, kind: 'BOUGHT', setId: s.set.id, installationId: null, day: on, odometer: num(input.odometer), note: null },
+        undefined, NO_MONEY, { tyreId: str(g.id), groupId: given.length > 1 ? firstId : null },
+      ))
+      const money = feeOn(lines[0], input.price)
+      m.entries = [...m.entries, ...lines.map((e) => entryOf(lineOf(e), e, money))]
+      return
+    }
     case 'updateTyre': {
       const tyre = tyreOf(m, input.id)
       const label = checkedLabel(str(input.label))
@@ -508,6 +545,12 @@ const tyreRowOf = (id: string, setId: string, label: string, set: SetInfo['set']
   retiredOn, retiredWhy: retiredOn ? 'SET_RETIRED' : null, replacedById: null, isRetired: retiredOn !== null, version: 0,
 })
 
+/** A tyre's latest live place's corner, through the tyres it replaced when it has none. */
+function lastCornerOf(live: readonly PlaceState[], tyreId: string | undefined): Corner | null {
+  if (!tyreId) return null
+  return [...live].filter((p) => p.tyreId === tyreId).sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0]?.corner ?? null
+}
+
 const NO_FIGURES: TyreInfo['figures'] = named('TyreFigures', { distance: 0, approximate: true, measured: 0, front: 0, rear: 0, unknown: 0 })
 const samePlace = (a: PlaceState | undefined, b: PlaceState) =>
   !!a && a.installationId === b.installationId && a.from === b.from && a.until === b.until && a.corner === b.corner
@@ -537,7 +580,8 @@ function tyresOf(base: Tyres, m: Model, setId: string, touched: Set<string>): Ty
       figures: was && !placesChanged ? was.figures : (was?.figures ?? NO_FIGURES),
       places,
       onTheCar: own.some((p) => p.until === null),
-      corner: own[0]?.corner ?? null,
+      // Never on yet, a tyre that came as a replacement shows the corner of the one it replaced (#289).
+      corner: own[0]?.corner ?? lastCornerOf(live, predecessorOf(bookOf(m), t.id)?.id),
       spent: was?.spent ?? [], // the server's to work out once synced (`Replayed.costs`)
       repairs: was?.repairs ?? 0,
     })

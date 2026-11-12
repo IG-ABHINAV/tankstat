@@ -2031,7 +2031,8 @@
         "addTyrePlace": "New time on the car of a tyre",
         "updateTyrePlace": "Changed time on the car of a tyre",
         "deleteTyrePlace": "A tyre's time on the car to the trash",
-        "restoreTyrePlace": "A tyre's time on the car back from the trash"
+        "restoreTyrePlace": "A tyre's time on the car back from the trash",
+        "replaceTyres": "Tyres replaced"
       }
     },
     "remove": "Remove the change",

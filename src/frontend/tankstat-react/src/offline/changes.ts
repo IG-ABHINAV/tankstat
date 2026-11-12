@@ -56,7 +56,7 @@ const MARKS: Record<ChangeAction, PendingMark> = {
   deleteTyreSet: 'deleted', restoreTyreSet: 'restored', swapTyres: 'changed', changeTyrePositions: 'changed', addPastTyreSwaps: 'changed',
   addTyreInstallation: 'new', updateTyreInstallation: 'changed', deleteTyreInstallation: 'deleted', restoreTyreInstallation: 'restored',
   addTyreEntry: 'new', updateTyreEntry: 'changed', deleteTyreEntry: 'deleted', restoreTyreEntry: 'restored',
-  breakUpTyreSet: 'changed', updateTyre: 'changed', deleteTyre: 'deleted', restoreTyre: 'restored',
+  breakUpTyreSet: 'changed', replaceTyres: 'changed', updateTyre: 'changed', deleteTyre: 'deleted', restoreTyre: 'restored',
   addTyrePlace: 'new', updateTyrePlace: 'changed', deleteTyrePlace: 'deleted', restoreTyrePlace: 'restored',
 }
 export const markOf = (change: Change): PendingMark => MARKS[change.action]

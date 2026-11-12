@@ -32,6 +32,8 @@ export const TYRE_ACTIONS = [
   'updateTyrePlace',
   'deleteTyrePlace',
   'restoreTyrePlace',
+  // Tyres replaced early (#289 step 3).
+  'replaceTyres',
 ] as const
 
 export type TyreAction = (typeof TYRE_ACTIONS)[number]
@@ -75,6 +77,7 @@ export function tyreTarget(action: TyreAction, input: Input): string {
     case 'addPastTyreSwaps':
       return str(swapsOf(input)[0]?.installationId)[0] ?? ''
     case 'breakUpTyreSet':
+    case 'replaceTyres':
       return str(input?.setId)[0] ?? ''
     default:
       return str(input?.id)[0] ?? ''
@@ -101,6 +104,12 @@ export function tyreCreates(action: TyreAction, input: Input): string[] {
       ]
     case 'breakUpTyreSet':
       return listOf(input?.tyres).flatMap((t) => str(t.id))
+    case 'replaceTyres':
+      // The new tyres and their Bought lines, a whole set's tyres it breaks up, and the price's expense.
+      return [
+        ...listOf(input?.tyres).flatMap((t) => [...str(t.id), ...str(t.lineId)]), ...listOf((input?.breakUp as Input)?.tyres).flatMap((t) => str(t.id)),
+        ...expenseOf(input?.price),
+      ]
     case 'addTyrePlace':
       return str(input?.id)
     default:
@@ -117,6 +126,7 @@ export function tyreNeeds(action: TyreAction, input: Input): string[] {
     // the car a break-up or a swap worked out (its id from its tyre's and installation's) is kept with those two ids beside it, not sent.
     ...str(input?.tyreId), ...str(input?.installationId), ...listOf(input?.corners).flatMap((c) => str(c.tyreId)),
     // The tyres an entry is for, and the other lines an edit changes too (*Also change it for*).
+    // The tyres an entry is for, or a replacement replaces, and the other lines an edit changes too (*Also change it for*).
     ...listOf(input?.tyres).flatMap((t) => str(t.tyreId)), ...(Array.isArray(input?.also) ? (input.also as unknown[]).flatMap(str) : []),
   ]
   return [...new Set(ids)].filter((id) => !creates.has(id))
@@ -139,7 +149,7 @@ export interface TyreFeeExpense {
 }
 
 export function tyreFeeExpense(action: string, input: Input): TyreFeeExpense | null {
-  const fee = (action === 'addTyreSet' ? input?.price : input?.fee) as Record<string, unknown> | null | undefined
+  const fee = (action === 'addTyreSet' || action === 'replaceTyres' ? input?.price : input?.fee) as Record<string, unknown> | null | undefined
   if (!fee || typeof fee.amount !== 'number' || typeof fee.expenseId !== 'string') return null
   const odometer = typeof input?.odometer === 'number' ? input.odometer : null
   const base = { expenseId: fee.expenseId, title: String(fee.title ?? ''), category: (fee.category as string | null) ?? null, amount: fee.amount, currency: (fee.currency as string | null) ?? null }
@@ -155,6 +165,8 @@ export function tyreFeeExpense(action: string, input: Input): TyreFeeExpense | n
       }
     case 'addTyreSet':
       return { ...base, lineId: String(input?.boughtEntryId ?? ''), kind: 'BOUGHT', day: String(input?.boughtOn ?? input?.day ?? ''), odometer: null, edit: false }
+    case 'replaceTyres':
+      return { ...base, lineId: String(listOf(input?.tyres)[0]?.lineId ?? ''), kind: 'BOUGHT', day: String(input?.day ?? ''), odometer, edit: false }
     default:
       return null
   }

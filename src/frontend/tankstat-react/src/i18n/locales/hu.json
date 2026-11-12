@@ -2031,7 +2031,8 @@
         "addTyrePlace": "Gumi új autón töltött ideje",
         "updateTyrePlace": "Gumi módosított autón töltött ideje",
         "deleteTyrePlace": "Gumi autón töltött ideje a kukába",
-        "restoreTyrePlace": "Gumi autón töltött ideje vissza a kukából"
+        "restoreTyrePlace": "Gumi autón töltött ideje vissza a kukából",
+        "replaceTyres": "Gumik pótolva"
       }
     },
     "remove": "Módosítás eltávolítása",

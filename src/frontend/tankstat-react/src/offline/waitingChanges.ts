@@ -99,6 +99,9 @@ async function describe(changes: readonly Change[]): Promise<WaitingGroup[]> {
     if (c.action === 'addTyreSet' && typeof c.input?.installationId === 'string') installationSet.set(c.input.installationId, String(c.input.id))
     if (c.action === 'breakUpTyreSet' && Array.isArray(c.input?.tyres))
       for (const t of c.input.tyres as { id: string; label: string }[]) tyreLabels.set(t.id, t.label)
+    if (c.action === 'replaceTyres') // the new tyres, and a whole set's it broke up
+      for (const t of [...((c.input?.tyres ?? []) as { id: string; label: string }[]), ...(((c.input?.breakUp as { tyres?: unknown } | undefined)?.tyres ?? []) as { id: string; label: string }[])])
+        tyreLabels.set(t.id, t.label)
     if (c.action === 'updateTyre') tyreLabels.set(String(c.input?.id), String(c.input?.label))
     if ((c.action === 'addTyrePlace' || c.action === 'updateTyrePlace') && typeof c.input?.tyreId === 'string') placeTyre.set(String(c.input.id), c.input.tyreId)
   }

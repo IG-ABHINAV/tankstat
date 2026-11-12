@@ -489,3 +489,39 @@ describe('lines for several tyres sharing one expense on the device (#289), as t
     expect(() => applyTyreChange(once, twice)).toThrow(TyreRuleError)
   })
 })
+
+describe('tyres replaced early on the device (#289 step 3)', () => {
+  const corners = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT']
+  const breakUp = { setId: 's1', day: '2026-07-09', tyres: ['t1', 't2', 't3', 't4'].map((id, n) => ({ id, label: `S${n + 1}`, corner: corners[n] })) }
+  const replacing = (more: Record<string, unknown> = {}) => change('replaceTyres', {
+    setId: 's1', day: '2026-07-09', why: 'DAMAGED', odometer: 145_500, breakUp,
+    tyres: [{ tyreId: 't1', id: 't5', label: 'S5', madeWeek: 20, madeYear: 2026, lineId: 'b5' }, { tyreId: 't2', id: 't6', label: 'S6', name: 'Pilot Sport 5', lineId: 'b6' }],
+    price: { amount: 78_000, currency: 'HUF', category: 'Tyres', title: 'Bought', expenseId: 'x9' }, ...more,
+  })
+  const tyreOf = (tyres: Tyres, id: string) => tyres.sets.flatMap((s) => s.tyres ?? []).find((t) => t.tyre.id === id)!
+
+  it('retires the old tyres, puts the new ones at their corners from the day, and makes a Bought line each sharing one expense', () => {
+    const { tyres, skipped, costs } = replayTyres(base, [replacing()])
+
+    expect(skipped).toEqual([])
+    expect(tyreOf(tyres, 't1').tyre).toMatchObject({ isRetired: true, retiredOn: '2026-07-09', retiredWhy: 'DAMAGED', replacedById: 't5', version: 0 })
+    expect([tyreOf(tyres, 't5').corner, tyreOf(tyres, 't6').corner]).toEqual(['FRONT_LEFT', 'FRONT_RIGHT'])
+    expect(tyreOf(tyres, 't5').tyre).toMatchObject({ label: 'S5', since: '2026-07-09', roughDistance: 0, madeWeek: 20, isRetired: false })
+    expect(tyreOf(tyres, 't6').tyre.name).toBe('Pilot Sport 5')
+    expect(tyreOf(tyres, 't5').places.map((p) => [p.place.from, p.place.until])).toEqual([['2026-07-09', null]])
+    expect(tyreOf(tyres, 't1').places.map((p) => p.place.until)).toEqual(['2026-07-09'])
+    const bought = tyres.entries.filter((e) => e.kind === 'BOUGHT')
+    expect(bought.map((e) => [e.id, e.tyreId, e.groupId, e.expenseId, e.amount])).toEqual([['b5', 't5', 'b5', 'x9', 78_000], ['b6', 't6', 'b5', 'x9', 78_000]])
+    expect([...costs].sort()).toEqual(['s1', 't5', 't6'])
+  })
+
+  it('the same replacement sent again changes nothing', () => {
+    const once = applyTyreChange(base, replacing())
+    expect(applyTyreChange(once, replacing()).entries.filter((e) => e.kind === 'BOUGHT')).toHaveLength(2)
+  })
+
+  it('refuses a reason the set gives, and nothing tapped', () => {
+    expect(() => applyTyreChange(base, replacing({ why: 'SET_RETIRED' }))).toThrow(TyreRuleError)
+    expect(() => applyTyreChange(base, replacing({ tyres: [] }))).toThrow(TyreRuleError)
+  })
+})
