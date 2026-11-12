@@ -335,4 +335,41 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Contains(trash.EnumerateArray(), r => r.GetProperty("kind").GetString() == "TYRE" && r.GetProperty("label").GetString() == "S2");
         Assert.Equal("S2", TyreLabelled(await ById("restoreTyre", ids[1].ToString()), "S2").GetProperty("tyre").GetProperty("label").GetString());
     }
+
+    [Fact]
+    public async Task AFlatOnTwoTyresOfAWholeSet_BreaksItUpOnSave_OneExpenseNamesBothLines_AndTheSetCountsItOnce()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var (s3, s4, expense) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var added = await Mutate("addTyreEntry", "AddTyreEntryInput", new
+        {
+            vehicleId = vehicle, kind = "PUNCTURE_REPAIRED", day = "2026-09-20", setId = summer, note = "Screws in the tread",
+            fee = new { amount = 13_000, currency = "HUF", category = "Tyres", title = "Puncture repaired: Michelin", expenseId = expense },
+            tyres = new object[] { new { tyreId = tyres[2], id = s3 }, new { tyreId = tyres[3], id = s4 } },
+            breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        }, "sets { set { name brokenUpOn } spent { amount } repairs tyres { tyre { label } spent { amount } repairs } } entries { id tyreId groupId amount }");
+
+        var set = SetNamed(added, "Michelin");
+        Assert.Equal(("2026-09-20", 13_000m, 2), (set.GetProperty("set").GetProperty("brokenUpOn").GetString(), set.GetProperty("spent")[0].GetProperty("amount").GetDecimal(),
+            set.GetProperty("repairs").GetInt32()));
+        Assert.Equal(6_500m, TyreLabelled(added, "S3").GetProperty("spent")[0].GetProperty("amount").GetDecimal());
+        var lines = added.GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("groupId").ValueKind != JsonValueKind.Null).ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.All(lines, l => Assert.Equal(s3.ToString(), l.GetProperty("groupId").GetString()));
+
+        var names = (await Send("query($v: UUID!) { expenses(vehicleId: $v, take: 10) { id tyreEntry { id } tyreEntries { id tyreLabel groupId } } }", new { v = vehicle }))
+            .GetProperty("data").GetProperty("expenses").EnumerateArray().Single(e => e.GetProperty("id").GetString() == expense.ToString());
+        Assert.Equal(["S3", "S4"], names.GetProperty("tyreEntries").EnumerateArray().Select(e => e.GetProperty("tyreLabel").GetString()));
+        Assert.Equal(s3.ToString(), names.GetProperty("tyreEntry").GetProperty("id").GetString()); // the first, for an older app
+
+        // S3's day of its own parts it from the expense; S4 keeps it.
+        var parted = await Mutate("updateTyreEntry", "UpdateTyreEntryInput", new { id = s3, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-21", note = "Screws in the tread" },
+            "entries { id groupId amount }");
+        var byId = parted.GetProperty("entries").EnumerateArray().ToDictionary(e => e.GetProperty("id").GetString()!);
+        Assert.Equal((JsonValueKind.Null, JsonValueKind.Null, 13_000m), (byId[s3.ToString()].GetProperty("amount").ValueKind, byId[s3.ToString()].GetProperty("groupId").ValueKind,
+            byId[s4.ToString()].GetProperty("amount").GetDecimal()));
+    }
 }

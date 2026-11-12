@@ -50,6 +50,7 @@ export type AddRecurringExpenseInput = {
 };
 
 export type AddTyreEntryInput = {
+  breakUp?: BreakUpTyreSetInput | null | undefined;
   day: string;
   fee?: TyreFeeInput | null | undefined;
   id?: string | null | undefined;
@@ -57,6 +58,7 @@ export type AddTyreEntryInput = {
   note?: string | null | undefined;
   odometer?: number | null | undefined;
   setId?: string | null | undefined;
+  tyres?: Array<TyreLineInput> | null | undefined;
   vehicleId: string;
 };
 
@@ -679,6 +681,10 @@ export type SetupFinishInput = {
   passwordConfirmation?: string | null | undefined;
 };
 
+export type SharedExpenseChoice =
+  | 'LET_GO'
+  | 'TRASH';
+
 export type SortDirection =
   | 'ASC'
   | 'DESC';
@@ -845,6 +851,11 @@ export type TyreFeeInput = {
   title?: string | null | undefined;
 };
 
+export type TyreLineInput = {
+  id?: string | null | undefined;
+  tyreId: string;
+};
+
 export type TyreRetiredWhy =
   | 'DAMAGED'
   | 'SET_RETIRED'
@@ -910,6 +921,7 @@ export type UpdateRefuelingInput = {
 };
 
 export type UpdateTyreEntryInput = {
+  also?: Array<string> | null | undefined;
   day: string;
   fee?: TyreFeeInput | null | undefined;
   id: string;
@@ -917,6 +929,7 @@ export type UpdateTyreEntryInput = {
   note?: string | null | undefined;
   odometer?: number | null | undefined;
   setId?: string | null | undefined;
+  sharedExpense?: SharedExpenseChoice | null | undefined;
 };
 
 export type UpdateTyreInput = {

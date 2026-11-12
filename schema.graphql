@@ -464,6 +464,7 @@ type Expense {
   photos: [LogPhotoInfo!]! @cost(weight: "10")
   schedules: [RecurringRef!]! @cost(weight: "10")
   tyreEntry: TyreEntryRef @cost(weight: "10")
+  tyreEntries: [TyreEntryRef!]! @cost(weight: "10")
 }
 
 type FigureData {
@@ -1004,6 +1005,10 @@ type Tyre {
 }
 
 type TyreEntry {
+  "The single tyre it is for (#289); null for a line of the whole set, or of no set."
+  tyreId: UUID
+  "The lines made together for several tyres, sharing one expense: one row of the tyre log."
+  groupId: UUID
   "The expense its amount made (#288), an ordinary one on the Expenses tab; in the trash or not."
   expenseId: UUID
   "The installation whose line it is (the same id): set on a swap's and a change of positions' line."
@@ -1034,6 +1039,8 @@ type TyreEntryRef {
   kind: TyreEntryKind!
   setName: String
   trashed: Boolean!
+  tyreLabel: String
+  groupId: UUID
 }
 
 type TyreFigures {
@@ -1051,6 +1058,10 @@ type TyreInfo {
   places: [TyrePlaceInfo!]!
   "Its corner now when on the car, else the last one it had; null: not recorded."
   corner: TyreCorner
+  "What it cost: its lines' expenses, one shared by several tyres by its even share, per currency."
+  spent: [TyreSpent!]! @cost(weight: "10")
+  "Its punctures repaired and valves replaced."
+  repairs: Int!
   tyre: Tyre!
   figures: TyreFigures!
   onTheCar: Boolean!
@@ -1362,6 +1373,8 @@ input AddTyreEntryInput {
   note: String
   id: UUID
   fee: TyreFeeInput
+  tyres: [TyreLineInput!]
+  breakUp: BreakUpTyreSetInput
 }
 
 input AddTyreInstallationInput {
@@ -1754,6 +1767,11 @@ input TyreFeeInput {
   expenseId: UUID
 }
 
+input TyreLineInput {
+  tyreId: UUID!
+  id: UUID
+}
+
 input UpdateExpenseInput {
   id: UUID!
   date: LocalDate!
@@ -1806,6 +1824,8 @@ input UpdateTyreEntryInput {
   odometer: Long
   note: String
   fee: TyreFeeInput
+  also: [UUID!]
+  sharedExpense: SharedExpenseChoice
 }
 
 input UpdateTyreInput {
@@ -2198,6 +2218,11 @@ enum SettingSource {
   FILE
   SHIPPED
   DEFAULT
+}
+
+enum SharedExpenseChoice {
+  LET_GO
+  TRASH
 }
 
 enum SortDirection {

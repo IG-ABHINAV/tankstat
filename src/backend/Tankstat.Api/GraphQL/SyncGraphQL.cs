@@ -435,8 +435,14 @@ public sealed class SyncMutations
         if (c.RestoreTyreInstallation is { } rst) return OnInstallation(SyncChangeKind.RestoreTyreInstallation, rst, ct => tyres.RestoreInstallationAsync(rst, ct, version));
         if (c.AddTyreEntry is { } ae)
         {
-            var id = Required(ae.Id, c.Id);
-            var input = ae with { Id = id, Fee = Fee(ae.Fee) };
+            // For single tyres (#289) each line names its id, and a break-up its tyres': the change sent again changes nothing.
+            var lines = ae.Tyres?.Select(t => t with { Id = Required(t.Id, c.Id) }).ToList();
+            var id = lines is [{ Id: { } first }, ..] ? first : Required(ae.Id, c.Id);
+            var input = ae with
+            {
+                Id = id, Fee = Fee(ae.Fee), Tyres = lines,
+                BreakUp = ae.BreakUp is { } b ? b with { Tyres = [.. b.Tyres.Select(t => t with { Id = Required(t.Id, c.Id) })] } : null,
+            };
             return make(SyncChangeKind.AddTyreEntry, id, ae.VehicleId, async ct => { await TyreChanges.AddEntry(input, tyres, ct); return await EntryAnswer(id, ct); }, null);
         }
         if (c.UpdateTyreEntry is { } ue) return OnEntry(SyncChangeKind.UpdateTyreEntry, ue.Id, ct => TyreChanges.UpdateEntry(ue with { Fee = Fee(ue.Fee) }, tyres, ct, version));

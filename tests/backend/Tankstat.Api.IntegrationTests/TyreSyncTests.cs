@@ -300,4 +300,26 @@ public class TyreSyncTests : IDisposable
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), updateTyrePlace = new { id = s1Place, from = "2026-03-28", corner = "FRONT_RIGHT" } })));
         Assert.Equal(("PARKED", "tyres.tyreRestoreConflict"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyrePlace = s2Place })));
     }
+
+    [Fact]
+    public async Task TheLargestTyreChange_AFlatOnTwoTyresBreakingASetUpOnSave_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            addTyreEntry = new
+            {
+                vehicleId = car, kind = "PUNCTURE_REPAIRED", day = "2026-09-20", setId = summer, odometer = 148_200, note = new string('ő', 500),
+                fee = new { amount = 13_000.25m, currency = "HUF", category = new string('é', 60), title = new string('á', 120), expenseId = Guid.NewGuid() },
+                tyres = tyres.Select(t => new { tyreId = t, id = Guid.NewGuid() }).ToArray(), // once: the same ids on every send
+                breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "PUNCTURE_REPAIRED"));
+    }
 }
