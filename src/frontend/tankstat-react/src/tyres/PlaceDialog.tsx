@@ -47,7 +47,7 @@ export function PlaceDialog({
   const tyre = info?.tyres.find((x) => x.tyre.id === tyreId)
   const [from, setFrom] = useState(place?.from ?? todayIso())
   const [until, setUntil] = useState(place?.until ?? '')
-  const [corner, setCorner] = useState<TyreCorner | ''>(place?.corner ?? tyre?.corner ?? '')
+  const [corner, setCorner] = useState<TyreCorner | ''>((place ? place.corner : tyre?.corner) ?? '')
   const [also, setAlso] = useState<Set<string>>(new Set())
   const [ids, setIds] = useState<Record<string, string>>({})
   const [error, setError] = useState<unknown>()
@@ -62,7 +62,7 @@ export function PlaceDialog({
   const reset = () => {
     setFrom(place?.from ?? todayIso())
     setUntil(place?.until ?? '')
-    setCorner(place?.corner ?? tyre.corner ?? '')
+    setCorner((place ? place.corner : tyre.corner) ?? '') // an edit starts from the place's own corner, never the tyre's now
     setAlso(new Set())
     setIds(Object.fromEntries([tyreId, ...others.map((o) => o.tyre.id)].map((id) => [id, uuidV4()]))) // one per opening: a Save sent again adds nothing twice
     setError(undefined)
