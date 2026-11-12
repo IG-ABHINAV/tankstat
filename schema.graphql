@@ -196,6 +196,15 @@ type Mutation {
   unretireTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
   deleteTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
   restoreTyreSet(id: UUID!): VehicleTyres! @cost(weight: "10")
+  breakUpTyreSet(input: BreakUpTyreSetInput!): VehicleTyres! @cost(weight: "10")
+  updateTyre(input: UpdateTyreInput!): VehicleTyres! @cost(weight: "10")
+  deleteTyre(id: UUID!): VehicleTyres! @cost(weight: "10")
+  restoreTyre(id: UUID!): VehicleTyres! @cost(weight: "10")
+  addTyrePlace(input: AddTyrePlaceInput!): VehicleTyres! @cost(weight: "10")
+  updateTyrePlace(input: UpdateTyrePlaceInput!): VehicleTyres!
+    @cost(weight: "10")
+  deleteTyrePlace(id: UUID!): VehicleTyres! @cost(weight: "10")
+  restoreTyrePlace(id: UUID!): VehicleTyres! @cost(weight: "10")
   emptyTyreTrash: Int! @cost(weight: "10")
   markNotificationsRead(ids: [UUID!]): [NotificationInfo!]! @cost(weight: "10")
   confirmImport(input: ConfirmImportInput!): ImportResultInfo!
@@ -966,6 +975,32 @@ type TrendWindow {
   fillUps: Int!
 }
 
+type Tyre {
+  "Written on the tyre itself; unique among the vehicle's tyres not in the trash, without case."
+  label: String!
+  "Its own model name; null: the set's."
+  name: String
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  setId: UUID!
+  createdById: UUID!
+  madeWeek: Int
+  madeYear: Int
+  since: LocalDate!
+  roughDistance: Long!
+  roughUntil: LocalDate
+  retiredOn: LocalDate
+  retiredWhy: TyreRetiredWhy
+  replacedById: UUID
+  isRetired: Boolean!
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+}
+
 type TyreEntry {
   "The expense its amount made (#288), an ordinary one on the Expenses tab; in the trash or not."
   expenseId: UUID
@@ -999,6 +1034,26 @@ type TyreEntryRef {
   trashed: Boolean!
 }
 
+type TyreFigures {
+  distance: Long!
+  approximate: Boolean!
+  measured: Long!
+  front: Long!
+  rear: Long!
+  unknown: Long!
+  suggestion: RoughSuggestion
+}
+
+type TyreInfo {
+  "Its times on the car, newest first, each with its distance."
+  places: [TyrePlaceInfo!]!
+  "Its corner now when on the car, else the last one it had; null: not recorded."
+  corner: TyreCorner
+  tyre: Tyre!
+  figures: TyreFigures!
+  onTheCar: Boolean!
+}
+
 type TyreInstallation {
   id: UUID!
   ownerId: UUID!
@@ -1022,6 +1077,29 @@ type TyreInstallationInfo {
   distance: InstallationDistance!
 }
 
+type TyrePlace {
+  "Where the tyre was; null: not recorded. FRONT and REAR: that end, the side not recorded."
+  corner: TyreCorner
+  id: UUID!
+  ownerId: UUID!
+  vehicleId: UUID!
+  tyreId: UUID!
+  installationId: UUID!
+  createdById: UUID!
+  from: LocalDate!
+  until: LocalDate
+  version: Int!
+  updatedAt: DateTime!
+  changedAt: DateTime
+  changedById: UUID
+  lastChange: EntityChange
+}
+
+type TyrePlaceInfo {
+  place: TyrePlace!
+  distance: InstallationDistance!
+}
+
 type TyreSet {
   id: UUID!
   ownerId: UUID!
@@ -1036,6 +1114,8 @@ type TyreSet {
   roughDistance: Long!
   roughUntil: LocalDate
   retiredOn: LocalDate
+  brokenUpOn: LocalDate
+  isBrokenUp: Boolean!
   deletedAt: DateTime
   isRetired: Boolean!
   version: Int!
@@ -1062,6 +1142,8 @@ type TyreSetInfo {
   spent: [TyreSpent!]! @cost(weight: "10")
   "Its punctures repaired and valves replaced."
   repairs: Int!
+  "A set tracked tyre by tyre (#289): its tyres not in the trash, retired ones included, by label; none for a whole set."
+  tyres: [TyreInfo!]! @cost(weight: "10")
   set: TyreSet!
   figures: TyreSetFigures!
   installations: [TyreInstallationInfo!]!
@@ -1085,6 +1167,8 @@ type TyreTrashRow {
   deletedAt: DateTime!
   version: Int!
   withExpense: Boolean!
+  label: String
+  corner: TyreCorner
   vehicle: Vehicle @cost(weight: "10")
   canDelete: Boolean! @cost(weight: "10")
 }
@@ -1288,6 +1372,14 @@ input AddTyreInstallationInput {
   id: UUID
 }
 
+input AddTyrePlaceInput {
+  tyreId: UUID!
+  from: LocalDate!
+  until: LocalDate
+  corner: TyreCorner
+  id: UUID
+}
+
 input AddTyreSetInput {
   vehicleId: UUID!
   name: String!
@@ -1315,6 +1407,12 @@ input AddVehicleInput {
   fuelType: FuelType!
   units: MeasurementUnitsInput
   id: UUID
+}
+
+input BreakUpTyreSetInput {
+  setId: UUID!
+  day: LocalDate!
+  tyres: [NewTyreInput!]!
 }
 
 input ChangeInput {
@@ -1474,6 +1572,12 @@ input MeasurementUnitsInput {
   volume: VolumeUnit!
 }
 
+input NewTyreInput {
+  label: String!
+  corner: TyreCorner
+  id: UUID
+}
+
 input NewVehicleInput {
   name: String!
   licensePlate: String
@@ -1597,6 +1701,7 @@ input SwapTyresInput {
   note: String
   installationId: UUID
   fee: TyreFeeInput
+  corners: [TyreCornerInput!]
 }
 
 input SyncChangesInput {
@@ -1624,6 +1729,11 @@ input TrendPeriodInput {
   since: LocalDate
   whole: Boolean
   against: TrendComparison
+}
+
+input TyreCornerInput {
+  tyreId: UUID!
+  corner: TyreCorner
 }
 
 input TyreFeeInput {
@@ -1688,6 +1798,11 @@ input UpdateTyreEntryInput {
   fee: TyreFeeInput
 }
 
+input UpdateTyreInput {
+  id: UUID!
+  label: String!
+}
+
 input UpdateTyreInstallationInput {
   id: UUID!
   from: LocalDate!
@@ -1695,6 +1810,13 @@ input UpdateTyreInstallationInput {
   pairOneFront: Boolean
   odometerFrom: Long
   odometerUntil: Long
+}
+
+input UpdateTyrePlaceInput {
+  id: UUID!
+  from: LocalDate!
+  until: LocalDate
+  corner: TyreCorner
 }
 
 input UpdateTyreSetInput {
@@ -1955,6 +2077,8 @@ enum OfflineEntityType {
   TYRE_SET
   TYRE_INSTALLATION
   TYRE_ENTRY
+  TYRE
+  TYRE_PLACE
 }
 
 enum ReadingFieldName {
@@ -2169,6 +2293,15 @@ enum TrendWindowKind {
   THIS_MONTH
 }
 
+enum TyreCorner {
+  FRONT_LEFT
+  FRONT_RIGHT
+  REAR_LEFT
+  REAR_RIGHT
+  FRONT
+  REAR
+}
+
 enum TyreEntryKind {
   SWAP
   POSITIONS_CHANGED
@@ -2181,6 +2314,13 @@ enum TyreEntryKind {
   NOTE
 }
 
+enum TyreRetiredWhy {
+  DAMAGED
+  WORN
+  TOO_OLD
+  SET_RETIRED
+}
+
 enum TyreSeason {
   SUMMER
   WINTER
@@ -2190,6 +2330,8 @@ enum TyreSeason {
 enum TyreTrashKind {
   SET
   ENTRY
+  TYRE
+  PLACE
 }
 
 enum TyreTrashSortField {

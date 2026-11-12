@@ -457,8 +457,10 @@ export type OfflineEntityType =
   | 'EXPENSE'
   | 'RECURRING_EXPENSE'
   | 'REFUELING'
+  | 'TYRE'
   | 'TYRE_ENTRY'
   | 'TYRE_INSTALLATION'
+  | 'TYRE_PLACE'
   | 'TYRE_SET'
   | 'VEHICLE';
 
@@ -659,6 +661,7 @@ export type SurfaceStyle =
   | 'TRANSPARENT';
 
 export type SwapTyresInput = {
+  corners?: Array<TyreCornerInput> | null | undefined;
   day: string;
   fee?: TyreFeeInput | null | undefined;
   installationId?: string | null | undefined;
@@ -774,6 +777,19 @@ export type TrendWindowKind =
   | 'THIS_MONTH'
   | 'THIS_YEAR';
 
+export type TyreCorner =
+  | 'FRONT'
+  | 'FRONT_LEFT'
+  | 'FRONT_RIGHT'
+  | 'REAR'
+  | 'REAR_LEFT'
+  | 'REAR_RIGHT';
+
+export type TyreCornerInput = {
+  corner?: TyreCorner | null | undefined;
+  tyreId: string;
+};
+
 export type TyreEntryKind =
   | 'BOUGHT'
   | 'NOTE'
@@ -800,7 +816,9 @@ export type TyreSeason =
 
 export type TyreTrashKind =
   | 'ENTRY'
-  | 'SET';
+  | 'PLACE'
+  | 'SET'
+  | 'TYRE';
 
 export type TyreTrashSortField =
   | 'DELETED_AT';

@@ -266,4 +266,73 @@ public class TyreGraphQLTests(ApiFixture api)
         var lines = (await Send($"query($id: UUID!) {{ vehicleTyres(vehicleId: $id) {{ {Tyres} }} }}", new { id = vehicle })).GetProperty("data").GetProperty("vehicleTyres").GetProperty("entries");
         Assert.Contains(lines.EnumerateArray(), e => e.GetProperty("kind").GetString() == "NOTE" && e.GetProperty("day").GetString() == "2026-09-10" && e.GetProperty("odometer").GetInt64() == 147_500);
     }
+
+    private const string SingleTyres = """
+        sets { onTheCar set { id name brokenUpOn version }
+               tyres { onTheCar corner tyre { id label version retiredWhy } figures { distance front rear unknown } places { place { id corner from until version } distance { distance } } } }
+        """;
+
+    private async Task<JsonElement> Mutate(string field, string inputType, object input, string selection = SingleTyres)
+    {
+        var body = await Send($"mutation($i: {inputType}!) {{ {field}(input: $i) {{ {selection} }} }}", new { i = input });
+        Assert.False(body.TryGetProperty("errors", out var errors), errors.ToString());
+        return body.GetProperty("data").GetProperty(field);
+    }
+
+    private async Task<JsonElement> ById(string field, string id) =>
+        (await Send($"mutation($id: UUID!) {{ {field}(id: $id) {{ {SingleTyres} }} }}", new { id })).GetProperty("data").GetProperty(field);
+
+    private static JsonElement TyreLabelled(JsonElement tyres, string label) => tyres.GetProperty("sets").EnumerateArray()
+        .SelectMany(s => s.GetProperty("tyres").EnumerateArray()).Single(t => t.GetProperty("tyre").GetProperty("label").GetString() == label);
+
+    [Fact]
+    public async Task ASetIsBrokenUp_ATyreRelabelled_ATimeOnTheCarAddedChangedTrashedAndRestored_AndASwapPlacesEachTyre()
+    {
+        var vehicle = await AddVehicle();
+        var summerSet = SetNamed(await AddSet(vehicle, "Michelin", fitted: true, rough: 10_000), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var winterSet = SetNamed(await AddSet(vehicle, "Continental", fitted: false), "Continental").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] ids = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+
+        var broken = await Mutate("breakUpTyreSet", "BreakUpTyreSetInput", new
+        {
+            setId = summerSet, day = "2026-09-01", tyres = ids.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }),
+        });
+        var summer = SetNamed(broken, "Michelin");
+        Assert.Equal("2026-09-01", summer.GetProperty("set").GetProperty("brokenUpOn").GetString());
+        Assert.Equal(["S1", "S2", "S3", "S4"], summer.GetProperty("tyres").EnumerateArray().Select(t => t.GetProperty("tyre").GetProperty("label").GetString()));
+        Assert.Equal((10_000L, "REAR_LEFT", true), (TyreLabelled(broken, "S3").GetProperty("figures").GetProperty("distance").GetInt64(),
+            TyreLabelled(broken, "S3").GetProperty("corner").GetString(), TyreLabelled(broken, "S3").GetProperty("onTheCar").GetBoolean()));
+
+        Assert.Equal("S1x", TyreLabelled(await Mutate("updateTyre", "UpdateTyreInput", new { id = ids[0], label = "S1x" }), "S1x").GetProperty("tyre").GetProperty("label").GetString());
+        var refused = await Send("mutation($i: UpdateTyreInput!) { updateTyre(input: $i) { vehicleId } }", new { i = new { id = ids[1], label = "s3" } });
+        Assert.Equal("tyres.labelTaken", refused.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+
+        // S4's own time on the car: it came off in June and went back on in July.
+        var s4Place = TyreLabelled(broken, "S4").GetProperty("places")[0].GetProperty("place").GetProperty("id").GetString()!;
+        await Mutate("updateTyrePlace", "UpdateTyrePlaceInput", new { id = s4Place, from = "2026-03-28", until = "2026-06-01", corner = "REAR_RIGHT" });
+        var placeId = Guid.NewGuid();
+        var added = await Mutate("addTyrePlace", "AddTyrePlaceInput", new { tyreId = ids[3], from = "2026-07-01", corner = "REAR_RIGHT", id = placeId });
+        Assert.Equal(2, TyreLabelled(added, "S4").GetProperty("places").GetArrayLength());
+        Assert.Equal(1, TyreLabelled(await ById("deleteTyrePlace", placeId.ToString()), "S4").GetProperty("places").GetArrayLength());
+        Assert.Equal(2, TyreLabelled(await ById("restoreTyrePlace", placeId.ToString()), "S4").GetProperty("places").GetArrayLength());
+
+        // Off the car, and back on with S1 and S3 crossed.
+        await Mutate("swapTyres", "SwapTyresInput", new { vehicleId = vehicle, setId = winterSet, day = "2026-09-20", installationId = Guid.NewGuid() });
+        var back = await Mutate("swapTyres", "SwapTyresInput", new
+        {
+            vehicleId = vehicle, setId = summerSet, day = "2026-09-25", installationId = Guid.NewGuid(),
+            corners = new object[] { new { tyreId = ids[0], corner = "REAR_LEFT" }, new { tyreId = ids[2], corner = "FRONT_LEFT" }, new { tyreId = ids[1], corner = "FRONT_RIGHT" } },
+        });
+        Assert.Equal(("REAR_LEFT", "FRONT_LEFT", (string?)null),
+            (TyreLabelled(back, "S1x").GetProperty("corner").GetString(), TyreLabelled(back, "S3").GetProperty("corner").GetString(),
+                TyreLabelled(back, "S4").GetProperty("corner").GetString()));
+
+        // A tyre to the trash, and its row on the Trash page.
+        var trashed = await ById("deleteTyre", ids[1].ToString());
+        Assert.DoesNotContain(SetNamed(trashed, "Michelin").GetProperty("tyres").EnumerateArray(), t => t.GetProperty("tyre").GetProperty("label").GetString() == "S2");
+        var trash = (await Send("query { tyreTrash(take: 100) { kind id label corner setName day until } }")).GetProperty("data").GetProperty("tyreTrash");
+        Assert.Contains(trash.EnumerateArray(), r => r.GetProperty("kind").GetString() == "TYRE" && r.GetProperty("label").GetString() == "S2");
+        Assert.Equal("S2", TyreLabelled(await ById("restoreTyre", ids[1].ToString()), "S2").GetProperty("tyre").GetProperty("label").GetString());
+    }
 }
