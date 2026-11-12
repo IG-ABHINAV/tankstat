@@ -191,7 +191,8 @@ export const touchesTyres = (c: Change) => c.entity === 'tyres' || (c.entity ===
 
 /**
  * A waiting edit of a line's expense (#288), as the server's `UpdateExpenseAsync`: its date and odometer are the line's (a swap's day moving
- * the swap by the history's rules), its amount the line's to show. An expense no live line made changes nothing here.
+ * the swap by the history's rules), its amount the line's to show, on every line holding it (#289). An expense no live line made changes
+ * nothing here.
  */
 function expenseEdited(m: Model, c: Change) {
   const line = m.entries.find((e) => e.expenseId === c.targetId)
@@ -200,8 +201,9 @@ function expenseEdited(m: Model, c: Change) {
   const on = day(input.date) ?? line.day
   const odometer = 'odometer' in input ? num(input.odometer) : (line.odometer ?? null)
   if (LINE_KINDS.has(line.kind) && on !== line.day) history(m, moveSwap(states(m), m.installations, line.installationId ?? line.id, on), [], c.id)
+  // Every line holding it follows (#289, the owner's decision 34): the lines made together for several tyres share one expense.
   m.entries = m.entries.map((e) =>
-    e.id === line.id
+    e.expenseId === c.targetId
       ? entryOf({ ...lineOf(e), day: on, odometer }, e, { ...moneyOf(e), amount: num(input.amount) ?? e.amount ?? null, currency: str(input.currency) || (e.currency ?? null) })
       : e,
   )

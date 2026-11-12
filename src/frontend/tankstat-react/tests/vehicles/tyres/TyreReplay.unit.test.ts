@@ -469,6 +469,13 @@ describe('lines for several tyres sharing one expense on the device (#289), as t
     expect([...costs].sort()).toEqual(['s1', 't4']) // S3's line was only ever on the device: its share is as the server will have it
   })
 
+  it('the expense’s new day on the Expenses tab moves every line holding it', () => {
+    const made = repair() // first: the changes replay in the order they were made
+    const moved: Change = { id: `c${++seq}`, seq, createdAt: seq, entity: 'expenses', action: 'update', vehicleId: 'v1', targetId: 'x1', input: { date: '2026-09-21', odometer: 148_300, amount: 13_000 } }
+    const { tyres } = replayTyres(base, [made, moved])
+    expect(['l3', 'l4'].map((id) => [lineOf(tyres, id).day, lineOf(tyres, id).odometer])).toEqual([['2026-09-21', 148_300], ['2026-09-21', 148_300]])
+  })
+
   it('a line of a tyre keeps its set, and names no tyre twice', () => {
     const once = applyTyreChange(base, repair())
     expect(() => applyTyreChange(once, edit('l3', { setId: 's2' }))).toThrow(TyreRuleError)
