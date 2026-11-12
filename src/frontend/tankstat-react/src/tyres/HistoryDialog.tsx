@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { BreakUpDialog } from './BreakUpDialog.tsx'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { IconAction } from '../components/IconAction.tsx'
 import { LabeledSelect } from '../components/UnitSelect.tsx'
@@ -111,6 +112,17 @@ export function HistoryDialog({
               </Typography>
             </Box>
 
+            {set.brokenUpOn ? (
+              <Typography variant="body2" sx={{ p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
+                {t('tyres.single.historyNote', { date: format.date(set.brokenUpOn) })}
+              </Typography>
+            ) : (
+              canLog && !set.isRetired && (
+                <Box>
+                  <BreakUpDialog vehicleId={vehicleId} unit={unit} tyres={tyres} setId={set.id} trigger={<Button variant="soft">{t('tyres.single.trackOneByOne')}</Button>} />
+                </Box>
+              )
+            )}
             <Box>
               <Typography component="h3" variant="subtitle2" sx={{ mb: 0.5 }}>
                 {t('tyres.history')}

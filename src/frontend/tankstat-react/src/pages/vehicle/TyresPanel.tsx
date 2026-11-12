@@ -26,6 +26,9 @@ import { NO_SET, noTyres } from '../../tyres/replay.ts'
 import { EntryDialog, TrashEntryDialog } from '../../tyres/EntryDialog.tsx'
 import { isDeviceLine, isSwapLine, useEntryWords } from '../../tyres/entries.ts'
 import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords } from '../../tyres/tyres.ts'
+import { CarPicture, TyreButton } from '../../tyres/CarPicture.tsx'
+import { isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from '../../tyres/singleTyres.ts'
+import { TyreDialog } from '../../tyres/TyreDialog.tsx'
 
 const SEASON_ICON: Record<TyreSeason, ReactNode> = {
   SUMMER: <Sun size={14} aria-hidden />,
@@ -89,6 +92,7 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
       canSwap={stored.length > 0 || !info.onTheCar}
       pending={pending.cards.get(info.set.id) ?? null}
       costsWaiting={pending.costs.has(info.set.id)}
+      pendingTyres={pending.tyres}
     />
   )
   return (
@@ -137,6 +141,84 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
         <TyreLog tyres={tyres} vehicleId={vehicle.id} unit={unit} canLog={canLog} />
       </Box>
     </Stack>
+  )
+}
+
+/**
+ * A broken-up set's tyres on its card (#289): on the car, a picture of the car with a button per tyre at its corner (label, distance, age);
+ * a tyre on the car without a corner, and every tyre of a set in storage, a row under it. Each opens the tyre's dialog.
+ */
+function SingleTyres({
+  info, tyres, vehicleId, unit, canLog, pending,
+}: {
+  info: TyreSetInfo
+  tyres: Tyres
+  vehicleId: string
+  unit: DistanceUnit
+  canLog: boolean
+  pending: ReadonlySet<string>
+}) {
+  const { t } = useTranslation()
+  const words = useTyreWords(unit)
+  const corners = useCornerWords()
+  const [opened, setOpened] = useState<string | null>(null)
+  const live = liveTyresOf(info)
+  const placed = info.onTheCar ? live.filter((x) => x.onTheCar && isExactCorner(x.corner)) : []
+  const rows = live.filter((x) => !placed.includes(x))
+  const distance = (x: (typeof live)[number]) => (pending.has(x.tyre.id) ? t('tyres.updatedOnSync') : words.distance(x.figures.distance, x.figures.approximate))
+  const cells = Object.fromEntries(
+    placed.map((x) => {
+      const corner = x.corner as ExactCorner
+      return [corner, (
+        <TyreButton
+          key={x.tyre.id}
+          corner={corner}
+          label={x.tyre.label}
+          lines={[distance(x), words.age(x.tyre)]}
+          name={t('tyres.single.tyreName', { corner: corners.title(corner), label: x.tyre.label, distance: distance(x), age: words.age(x.tyre) })}
+          onClick={() => setOpened(x.tyre.id)}
+        />
+      )]
+    }),
+  ) as Partial<Record<ExactCorner, ReactNode>>
+  return (
+    <>
+      {placed.length > 0 && <CarPicture cells={cells} />}
+      {rows.length > 0 && (
+        <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {rows.map((x) => (
+            <Box component="li" key={x.tyre.id} sx={{ borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}>
+              <ButtonBase
+                onClick={() => setOpened(x.tyre.id)}
+                sx={{ width: 1, minHeight: 44, py: 1, px: 0.5, display: 'flex', flexWrap: 'wrap', gap: '2px 10px', justifyContent: 'flex-start', textAlign: 'left', borderRadius: 1 }}
+              >
+                <Typography component="span" variant="body2" sx={{ fontWeight: 700 }}>
+                  {x.tyre.label}
+                </Typography>
+                <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>
+                  {x.onTheCar ? t('tyres.single.onNoCorner') : t('tyres.single.lastCorner', { corner: corners.of(x.corner) })}
+                </Typography>
+                <Typography component="span" variant="body2" sx={{ ml: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+                  {distance(x)}
+                </Typography>
+              </ButtonBase>
+            </Box>
+          ))}
+        </Box>
+      )}
+      {opened && (
+        <TyreDialog
+          open
+          onOpenChange={(next) => !next && setOpened(null)}
+          vehicleId={vehicleId}
+          unit={unit}
+          tyres={tyres}
+          tyreId={opened}
+          canLog={canLog}
+          pending={pending.has(opened)}
+        />
+      )}
+    </>
   )
 }
 
@@ -200,6 +282,7 @@ function SetCard({
   canSwap,
   pending,
   costsWaiting,
+  pendingTyres,
 }: {
   info: TyreSetInfo
   tyres: Tyres
@@ -210,6 +293,8 @@ function SetCard({
   pending: 'new' | 'changed' | null
   /** A waiting change put what it cost or its repairs out of date (#288). */
   costsWaiting: boolean
+  /** The single tyres a waiting change touched (#289): their figures are updated once synced. */
+  pendingTyres: ReadonlySet<string>
 }) {
   const { t } = useTranslation()
   const format = useFormat()
@@ -250,6 +335,10 @@ function SetCard({
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         {set.isRetired && set.retiredOn
           ? t('tyres.retiredOn', { date: format.date(set.retiredOn) })
+          : set.brokenUpOn
+            ? open
+              ? t('tyres.single.trackedOn', { on: liveTyresOf(info).filter((x) => x.onTheCar).length, all: liveTyresOf(info).length, date: format.date(open.installation.from) })
+              : t('tyres.single.trackedStored')
           : open
             ? t('tyres.onSince', {
                 date: format.date(open.installation.from),
@@ -293,6 +382,7 @@ function SetCard({
           </Typography>
         </Box>
       </Box>
+      {set.brokenUpOn && <SingleTyres info={info} tyres={tyres} vehicleId={vehicleId} unit={unit} canLog={canLog} pending={pendingTyres} />}
       {nothingMeasured && set.roughDistance > 0 && (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {t('tyres.noReading')}
