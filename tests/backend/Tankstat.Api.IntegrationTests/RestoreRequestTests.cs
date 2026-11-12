@@ -42,7 +42,7 @@ public sealed class RestoreRequestTests : IDisposable
         var pending = (await client.Gql(Restore, new { i = new { file, passphrase = Passphrase } })).Data().GetProperty("restoreBackup");
 
         Assert.Equal(file, pending.GetProperty("file").GetString());
-        var marker = RestoreMarker.Read(RestoreMarker.PathIn(_folder));
+        var marker = RestoreMarkerFile.Read(RestoreMarker.PathIn(_folder));
         Assert.Equal(file, marker.File);
         Assert.Equal(AgeKeys.FormatIdentity(Identity), marker.Identity);
         Assert.NotEqual(Guid.Empty, marker.RequestedById);
@@ -92,7 +92,7 @@ public sealed class RestoreRequestTests : IDisposable
         File.Delete(RestoreMarker.PathIn(_folder));
 
         (await client.Gql(Restore, new { i = new { file, code = code.ToLowerInvariant() } })).Data();
-        Assert.Null(RestoreMarker.Read(RestoreMarker.PathIn(_folder)).Identity); // a plain backup needs none
+        Assert.Null(RestoreMarkerFile.Read(RestoreMarker.PathIn(_folder)).Identity); // a plain backup needs none
         Assert.Equal(1, app.Restarts.Count);
     }
 
@@ -163,7 +163,7 @@ public sealed class RestoreRequestTests : IDisposable
 
         Assert.Equal(0, app.Restarts.Count);
         (await client.Gql(Restore, new { i = new { file, identity = AgeKeys.FormatIdentity(Identity).ToLowerInvariant() } })).Data(); // either case is the same key
-        Assert.Equal(AgeKeys.FormatIdentity(Identity), RestoreMarker.Read(RestoreMarker.PathIn(_folder)).Identity);
+        Assert.Equal(AgeKeys.FormatIdentity(Identity), RestoreMarkerFile.Read(RestoreMarker.PathIn(_folder)).Identity);
         Assert.Equal(1, app.Restarts.Count);
         Assert.False(app.Log.Mentions(AgeKeys.FormatIdentity(Identity)));
     }
@@ -232,6 +232,6 @@ public sealed class RestoreRequestTests : IDisposable
 
         var ok = await BackupCommands.RunAsync(["restore", file, "--yes", "--identity", good], app.Factory.Services, new StringReader(""), output, error);
         Assert.Equal(0, ok);
-        Assert.Equal(AgeKeys.FormatIdentity(Identity), RestoreMarker.Read(RestoreMarker.PathIn(_folder)).Identity);
+        Assert.Equal(AgeKeys.FormatIdentity(Identity), RestoreMarkerFile.Read(RestoreMarker.PathIn(_folder)).Identity);
     }
 }

@@ -1,3 +1,4 @@
+using Tankstat.Infrastructure.Backups;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -224,7 +225,7 @@ public sealed class SetupTests : IDisposable
         Assert.Equal("backup.codeRequired", (await client.Gql(Restore, new { i = new { file } })).ErrorKey());
         Assert.Equal(file, (await client.Gql(Restore, new { i = new { file, code } })).Data().GetProperty("restoreBackup").GetProperty("file").GetString());
 
-        Assert.Equal(file, RestoreMarker.Read(RestoreMarker.PathIn(_folder)).File);
+        Assert.Equal(file, RestoreMarkerFile.Read(RestoreMarker.PathIn(_folder)).File);
         Assert.Equal(1, app.Restarts.Count);
     }
 
