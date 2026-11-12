@@ -143,7 +143,7 @@ export function TyresPanel({ vehicle, canLog }: { vehicle: { id: string; units: 
           {(retired.length > 0 || retiredTyres.length > 0) && (
             <Section title={t('tyres.retired')}>
               {retired.map(card)}
-              {retiredTyres.length > 0 && <RetiredTyres tyres={tyres} vehicleId={vehicle.id} unit={unit} rows={retiredTyres} />}
+              {retiredTyres.length > 0 && <RetiredTyres tyres={tyres} vehicleId={vehicle.id} unit={unit} rows={retiredTyres} pending={pending.tyres} />}
             </Section>
           )}
           <SpentOnTyres tyres={tyres} costs={pending.costs} />
@@ -240,12 +240,14 @@ function SingleTyres({
 
 /** The tab's *Retired* rows of single tyres (#289): its label, its set, why and the day; each opens the tyre's dialog, read only. */
 function RetiredTyres({
-  tyres, vehicleId, unit, rows,
+  tyres, vehicleId, unit, rows, pending,
 }: {
   tyres: Tyres
   vehicleId: string
   unit: DistanceUnit
   rows: { info: TyreSetInfo['tyres'][number]; set: TyreSetInfo['set'] }[]
+  /** The tyres a change waiting on this device touched (a tyre replaced offline): their figures the server's to work out once synced. */
+  pending: ReadonlySet<string>
 }) {
   const { t } = useTranslation()
   const format = useFormat()
@@ -275,7 +277,7 @@ function RetiredTyres({
         })}
       </Box>
       {opened && (
-        <TyreDialog open onOpenChange={(next) => !next && setOpened(null)} vehicleId={vehicleId} unit={unit} tyres={tyres} tyreId={opened} canLog={false} pending={false} />
+        <TyreDialog open onOpenChange={(next) => !next && setOpened(null)} vehicleId={vehicleId} unit={unit} tyres={tyres} tyreId={opened} canLog={false} pending={pending.has(opened)} />
       )}
     </>
   )

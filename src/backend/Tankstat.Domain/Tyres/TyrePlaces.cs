@@ -275,6 +275,9 @@ public sealed class TyrePlaces
             var old = TyresOf(set.Id).FirstOrDefault(t => t.Id == given[i].OldId)
                 ?? throw new DomainException("tyres.tyreNotFound", "This tyre no longer exists.", new { Id = given[i].OldId });
             if (old.IsRetired) throw new DomainException("tyres.tyreAlreadyRetired", "This tyre is retired already.", new { Label = old.Label });
+            // A tyre that came as a replacement is replaced no earlier than the day it came.
+            if (ArrivedOn(old) is { } arrived && day < arrived)
+                throw new DomainException("tyres.tyreNotYet", "A tyre that replaced another cannot be on the car before it came.", new { Label = old.Label, Date = Iso(arrived) });
             var fresh = Tyre.Create(_ownerId, by, _vehicleId, set.Id, labels[i], given[i].Name, day, given[i].MadeWeek, given[i].MadeYear, 0, null, given[i].Id);
             _tyres.Add(fresh);
             changes.CreatedTyres.Add(fresh);
@@ -408,11 +411,13 @@ public sealed class TyrePlaces
         var onAtStart = OnTheCarFrom(set.Id, installation.From).ToList();
         var arriving = TyresOf(set.Id).Where(t => ArrivedOn(t) is { } a && a > installation.From && (installation.Until is null || a < installation.Until)
             && (t.RetiredOn is not { } r || r > a)).ToList();
+        // A tyre with no corner given takes that of the tyre it replaced, through a chain of replacements inside the installation.
+        TyreCorner? CornerOf(Guid tyreId) => given.TryGetValue(tyreId, out var own) ? own : Predecessor(tyreId) is { } replaced ? CornerOf(replaced.Id) : null;
         foreach (var tyre in onAtStart.Concat(arriving))
         {
             var from = arriving.Contains(tyre) ? ArrivedOn(tyre)!.Value : installation.From;
             var until = tyre.RetiredOn is { } r && (installation.Until is null || installation.Until > r) ? r : installation.Until;
-            var corner = given.TryGetValue(tyre.Id, out var own) ? own : Predecessor(tyre.Id) is { } replaced ? given.GetValueOrDefault(replaced.Id) : null;
+            var corner = CornerOf(tyre.Id);
             var place = TyrePlace.Create(_ownerId, by, _vehicleId, tyre.Id, installation.Id, from, until, corner, TyreIds.PlaceOf(tyre.Id, installation.Id));
             _places.Add(place);
             result.Created.Add(place);

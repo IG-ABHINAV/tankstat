@@ -118,6 +118,9 @@ public class TyreReplaceTests
         Assert.Equal("tyres.labelTaken", (await Assert.ThrowsAsync<DomainException>(() => Replace(new(s.Summer, D(2026, 7, 9), null, TyreRetiredWhy.Damaged, [one(s.Tyres[0], "s2")])))).Key);
         Assert.Equal("tyres.whyInvalid", (await Assert.ThrowsAsync<DomainException>(() => Replace(new(s.Summer, D(2026, 7, 9), null, TyreRetiredWhy.SetRetired, [one(s.Tyres[0], "S5")])))).Key);
         Assert.Equal("tyres.tapToReplace", (await Assert.ThrowsAsync<DomainException>(() => Replace(new(s.Summer, D(2026, 7, 9), null, TyreRetiredWhy.Damaged, [])))).Key);
+        var unbroken = await Setup(brokenUp: false);
+        Assert.Equal("refueling.dateInFuture", (await Assert.ThrowsAsync<DomainException>(() => unbroken.Service.ReplaceTyresAsync(new(unbroken.Summer, D(2026, 7, 9), null, TyreRetiredWhy.Damaged,
+            [one(unbroken.Tyres[0], "S5")], BreakUp: BreakUp(unbroken.Summer, unbroken.Tyres) with { Day = D(2027, 7, 9) }), default))).Key);
         Assert.Equal(4, s.W.Tyres.Tyres.Count);
         Assert.DoesNotContain(s.W.Tyres.Tyres, t => t.IsRetired);
     }
@@ -141,5 +144,34 @@ public class TyreReplaceTests
         var s7 = overview.Sets.Single(x => x.Set.Id == s.Summer).Tyres!.Single(t => t.Tyre.Id == w7);
         Assert.Equal((false, TyreCorner.RearLeft), (s7.OnTheCar, s7.Corner!.Value));
         Assert.Empty(s7.Places);
+    }
+
+    [Fact]
+    public async Task ATyreThatCameAsAReplacement_CannotBeReplacedOnADayBeforeItCame()
+    {
+        var s = await Setup();
+        var w5 = Guid.NewGuid();
+        await s.Service.ReplaceTyresAsync(new TyreReplaceInput(s.Summer, D(2026, 7, 9), null, TyreRetiredWhy.Damaged, [new(s.Tyres[0], w5, "S5")]), default);
+
+        var refused = await Assert.ThrowsAsync<DomainException>(() =>
+            s.Service.ReplaceTyresAsync(new TyreReplaceInput(s.Summer, D(2026, 6, 1), null, TyreRetiredWhy.Worn, [new(w5, Guid.NewGuid(), "S6")]), default));
+        Assert.Equal("tyres.tyreNotYet", refused.Key);
+        Assert.False(s.W.Tyres.Tyres.Single(t => t.Id == w5).IsRetired);
+    }
+
+    [Fact]
+    public async Task ATrashedReplacedTyre_RestoredWhileItsReplacementWasMovedBeforeIt_IsRefused()
+    {
+        var s = await Setup();
+        var w5 = Guid.NewGuid();
+        await s.Service.ReplaceTyresAsync(new TyreReplaceInput(s.Summer, D(2026, 7, 9), null, TyreRetiredWhy.Damaged, [new(s.Tyres[0], w5, "S5")]), default);
+        await s.Service.TrashTyreAsync(s.Tyres[0], default); // S1 in the trash: S5's arrival bound goes with it
+        var place = s.W.Tyres.Places.Single(p => p.TyreId == w5 && !p.IsDeleted);
+        // S2 off the car from 1 May, S5 at its corner from then: fine while S1 is in the trash.
+        var s2 = s.W.Tyres.Places.Single(p => p.TyreId == s.Tyres[1] && !p.IsDeleted);
+        await s.Service.UpdatePlaceAsync(s2.Id, new TyrePlaceInput(s2.From, D(2026, 5, 1), TyreCorner.FrontRight), default);
+        await s.Service.UpdatePlaceAsync(place.Id, new TyrePlaceInput(D(2026, 5, 1), null, TyreCorner.FrontRight), default);
+
+        Assert.NotNull((await Assert.ThrowsAsync<DomainException>(() => s.Service.RestoreTyreAsync(s.Tyres[0], default))).Key); // S5 would be on before it came
     }
 }

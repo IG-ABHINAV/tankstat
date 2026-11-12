@@ -191,14 +191,17 @@ function placeTyres(book: PlaceBook, installation: InstallationState, corners: C
     const a = arrivedOn(book, t.id)
     return t.setId === set.id && a !== null && a > installation.from && (installation.until === null || a < installation.until) && (t.retiredOn === null || t.retiredOn > a)
   })
-  return [...onAtStart, ...arriving].map((t) => {
-    const replaced = predecessorOf(book, t.id)
-    return {
-      id: placeOf(t.id, installation.id), tyreId: t.id, installationId: installation.id, from: arriving.includes(t) ? arrivedOn(book, t.id)! : installation.from,
-      until: t.retiredOn !== null && (installation.until === null || installation.until > t.retiredOn) ? t.retiredOn : installation.until,
-      corner: t.id in given ? (given[t.id] ?? null) : replaced ? (given[replaced.id] ?? null) : null,
-    }
-  })
+  // A tyre with no corner given takes that of the tyre it replaced, through a chain of replacements inside the installation.
+  const cornerOf = (tyreId: string): Corner | null => {
+    if (tyreId in given) return given[tyreId] ?? null
+    const replaced = predecessorOf(book, tyreId)
+    return replaced ? cornerOf(replaced.id) : null
+  }
+  return [...onAtStart, ...arriving].map((t) => ({
+    id: placeOf(t.id, installation.id), tyreId: t.id, installationId: installation.id, from: arriving.includes(t) ? arrivedOn(book, t.id)! : installation.from,
+    until: t.retiredOn !== null && (installation.until === null || installation.until > t.retiredOn) ? t.retiredOn : installation.until,
+    corner: cornerOf(t.id),
+  }))
 }
 
 /**
@@ -347,6 +350,9 @@ export function replace(book: PlaceBook, setId: string, given: readonly Replacin
     const old = tyres.find((t) => t.id === g.oldId && t.setId === setId)
     if (!old) throw new TyreRuleError('tyres.tyreNotFound', { id: g.oldId })
     if (old.retiredOn !== null) throw new TyreRuleError('tyres.tyreAlreadyRetired', { label: old.label })
+    // A tyre that came as a replacement is replaced no earlier than the day it came.
+    const arrived = arrivedOn({ ...book, tyres }, old.id)
+    if (arrived !== null && day < arrived) throw new TyreRuleError('tyres.tyreNotYet', { label: old.label, date: arrived })
     tyres = [...tyres.map((t) => (t === old ? { ...t, retiredOn: day, replacedById: g.id } : t)), { id: g.id, setId, label: labels[i], retiredOn: null, replacedById: null }]
     const live = new Set(livePlaces({ ...book, tyres, places }).map((p) => p.id))
     places = places.flatMap((p) => {

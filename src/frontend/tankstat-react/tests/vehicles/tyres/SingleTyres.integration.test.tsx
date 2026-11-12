@@ -416,3 +416,17 @@ it('a swap dated back goes by the corners before that day, as the server does, n
   await waitFor(() => expect(state.calls.SwapTyres).toHaveLength(1))
   expect(state.calls.SwapTyres[0].input).toMatchObject({ day: '2026-07-01', corners: [{ tyreId: 't1', corner: 'FRONT_LEFT' }, { tyreId: 't2', corner: 'FRONT_RIGHT' }, { tyreId: 't3', corner: 'REAR_LEFT' }, { tyreId: 't4', corner: 'REAR_RIGHT' }] })
 })
+
+it('on a whole set, a new tyre’s suggested label leaves out the labels typed for the break-up', async () => {
+  const { ui } = setup([tyreSummer, tyreWinter])
+
+  await ui.click(within(await screen.findByRole('article', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'History' }))
+  await ui.click(within(await screen.findByRole('dialog', { name: 'Michelin Primacy 4' })).getByRole('button', { name: 'Replace tyres' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Replace tyres' })
+  await ui.click(within(dialog).getByRole('button', { name: 'The front left tyre' }))
+  expect(within(dialog).getByRole('group', { name: 'New tyre S5, for S1' })).toBeInTheDocument()
+  const label = within(dialog).getByRole('textbox', { name: 'Label, front left' })
+  await ui.clear(label)
+  await ui.type(label, 'S5')
+  expect(within(dialog).getByRole('group', { name: 'New tyre S1, for S5' })).toBeInTheDocument() // S1 is free now; S5 is the break-up's
+})

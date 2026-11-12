@@ -86,8 +86,9 @@ export function ReplaceDialog({
   const chosen = whole
     ? EXACT.flatMap((corner, n) => (picked.includes(corner) ? [{ key: corner, old: (labels[n] ?? '').trim(), tyreId: breakIds[n] }] : []))
     : live.filter((x) => picked.includes(x.tyre.id)).map((x) => ({ key: x.tyre.id, old: x.tyre.label, tyreId: x.tyre.id }))
-  // The next labels free: after a whole set's four, which its break-up takes.
-  const nextLabels = whole ? suggestLabels(tyres, set.season, 4 + chosen.length).slice(4) : suggestLabels(tyres, set.season, chosen.length)
+  // The next labels free: none of a whole set's four as typed for its break-up.
+  const breakUpLabels = new Set(whole ? labels.map((l) => l.trim().toUpperCase()) : [])
+  const nextLabels = suggestLabels(tyres, set.season, breakUpLabels.size + chosen.length).filter((l) => !breakUpLabels.has(l.toUpperCase())).slice(0, chosen.length)
   const valueOf = (key: string, n: number) => ({
     label: typed[key]?.label ?? nextLabels[n] ?? '',
     name: typed[key]?.name ?? set.name,

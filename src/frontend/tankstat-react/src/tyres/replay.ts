@@ -3,7 +3,7 @@ import { isTyreAction } from '../offline/tyreChanges.ts'
 import { checked, moveSwap, TyreRuleError, type SetState, type InstallationState } from './tyreHistory.ts'
 import { follow, type Joined, type LineState } from './tyreLog.ts'
 import {
-  addPlace, breakUp, changePositionsPlaced, replace, predecessorOf, follow as followPlaces, editPlace, livePlaces, requireLabelFree, checkedLabel, swapPlaced,
+  addPlace, breakUp, changePositionsPlaced, replace, follow as followPlaces, editPlace, livePlaces, requireLabelFree, checkedLabel, swapPlaced,
   type Corner, type Corners, type PlaceBook, type PlaceState,
 } from './tyrePlaces.ts'
 import type { Tyres, TyreSetInfo } from './tyres.ts'
@@ -549,10 +549,12 @@ const tyreRowOf = (id: string, setId: string, label: string, set: SetInfo['set']
   retiredOn, retiredWhy: retiredOn ? 'SET_RETIRED' : null, replacedById: null, isRetired: retiredOn !== null, version: 0,
 })
 
-/** A tyre's latest live place's corner, through the tyres it replaced when it has none. */
-function lastCornerOf(live: readonly PlaceState[], tyreId: string | undefined): Corner | null {
-  if (!tyreId) return null
-  return [...live].filter((p) => p.tyreId === tyreId).sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0]?.corner ?? null
+/** A tyre's latest live place's corner; one never on yet, through the tyres it replaced (the server's `LastCorner`). */
+function lastCornerOf(m: Model, live: readonly PlaceState[], tyreId: string): Corner | null {
+  const last = live.filter((p) => p.tyreId === tyreId).sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0]
+  if (last) return last.corner
+  const replaced = m.tyres.find((t) => t.replacedById === tyreId)
+  return replaced ? lastCornerOf(m, live, replaced.id) : null
 }
 
 const NO_FIGURES: TyreInfo['figures'] = named('TyreFigures', { distance: 0, approximate: true, measured: 0, front: 0, rear: 0, unknown: 0 })
@@ -585,7 +587,7 @@ function tyresOf(base: Tyres, m: Model, setId: string, touched: Set<string>): Ty
       places,
       onTheCar: own.some((p) => p.until === null),
       // Never on yet, a tyre that came as a replacement shows the corner of the one it replaced (#289).
-      corner: own[0]?.corner ?? lastCornerOf(live, predecessorOf(bookOf(m), t.id)?.id),
+      corner: own.length > 0 ? own[0].corner : lastCornerOf(m, live, t.id),
       spent: was?.spent ?? [], // the server's to work out once synced (`Replayed.costs`)
       repairs: was?.repairs ?? 0,
     })
