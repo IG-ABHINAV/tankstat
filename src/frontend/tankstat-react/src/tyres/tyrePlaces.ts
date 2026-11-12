@@ -191,14 +191,17 @@ function placeTyres(book: PlaceBook, installation: InstallationState, corners: C
     const a = arrivedOn(book, t.id)
     return t.setId === set.id && a !== null && a > installation.from && (installation.until === null || a < installation.until) && (t.retiredOn === null || t.retiredOn > a)
   })
-  return [...onAtStart, ...arriving].map((t) => {
-    const replaced = predecessorOf(book, t.id)
-    return {
-      id: placeOf(t.id, installation.id), tyreId: t.id, installationId: installation.id, from: arriving.includes(t) ? arrivedOn(book, t.id)! : installation.from,
-      until: t.retiredOn !== null && (installation.until === null || installation.until > t.retiredOn) ? t.retiredOn : installation.until,
-      corner: t.id in given ? (given[t.id] ?? null) : replaced ? (given[replaced.id] ?? null) : null,
-    }
-  })
+  // A tyre with no corner given takes that of the tyre it replaced, through a chain of replacements inside the installation.
+  const cornerOf = (tyreId: string): Corner | null => {
+    if (tyreId in given) return given[tyreId] ?? null
+    const replaced = predecessorOf(book, tyreId)
+    return replaced ? cornerOf(replaced.id) : null
+  }
+  return [...onAtStart, ...arriving].map((t) => ({
+    id: placeOf(t.id, installation.id), tyreId: t.id, installationId: installation.id, from: arriving.includes(t) ? arrivedOn(book, t.id)! : installation.from,
+    until: t.retiredOn !== null && (installation.until === null || installation.until > t.retiredOn) ? t.retiredOn : installation.until,
+    corner: cornerOf(t.id),
+  }))
 }
 
 /**

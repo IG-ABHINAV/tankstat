@@ -701,6 +701,7 @@ public sealed class TyreService(
         if (input.BreakUp is { } breakUp)
         {
             if (breakUp.SetId != set.Id) throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
+            RequireNotFuture(breakUp.Day); // as a break-up of its own (BreakUpAsync)
             save.Take(places.BreakUp(set, breakUp.Tyres, breakUp.Day, by));
             save.ChangedSets.Add(set);
         }
