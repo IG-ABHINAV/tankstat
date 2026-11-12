@@ -52,7 +52,7 @@ jobs:
             fi
             version="${TAG#v}"
           else
-            version="0.0.0-dev.${GITHUB_SHA::7}"
+            version="0.0.0-dev.g${GITHUB_SHA::7}" # the g as in ci.yml: never a numeric identifier with a leading zero
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # Registry repository names must be lowercase.
