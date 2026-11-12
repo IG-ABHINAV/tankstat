@@ -261,4 +261,11 @@ public class SettingsFileNoticeTests
 
         Assert.True(unworded.Count == 0, $"Without a label or a help text in {language}.json: {string.Join(", ", unworded)}");
     }
+
+    [Fact]
+    public void EveryOpenTelemetrySettingOfTheCatalog_IsInTheTelemetryGroup_WhichProblemsLeavesOut()
+    {
+        // Problems asks no file (#312): it may only because the one kind of setting that names a file, the SDK's, is never among those it checks.
+        Assert.All(SettingsCatalog.All.Where(s => OtelSettings.IsOtelKey(s.Key)), s => Assert.Equal(SettingsGroup.Telemetry, s.Group));
+    }
 }

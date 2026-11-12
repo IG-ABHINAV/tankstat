@@ -7,7 +7,7 @@ namespace Tankstat.Infrastructure.Backups;
 /// The restore marker's file (#312: moved here from the record, Application touching no file): written readable by the app's user only, since
 /// it carries a backup's identity in plain, and read back.
 /// </summary>
-public static class RestoreMarkerFile
+internal static class RestoreMarkerFile
 {
     private const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
