@@ -63,4 +63,13 @@ public class TyreCostCalculatorTests
         Assert.All(tyres, t => Assert.Equal([new TyreSpent("EUR", 3.33m)], costs.SpentOnTyre(t)));
         Assert.Equal([new TyreSpent("EUR", 10)], costs.SpentOn(Winter));
     }
+
+    [Fact]
+    public void TwoLinesAlike_WithoutAnExpenseId_CountTwice()
+    {
+        var costs = TyreCostCalculator.Costs([new(Summer, TyreEntryKind.StorageFee, 15, "EUR"), new(Summer, TyreEntryKind.StorageFee, 15, "EUR")]);
+
+        Assert.Equal([new TyreSpent("EUR", 30)], costs.SpentOn(Summer));
+        Assert.Equal([new TyreSpent("EUR", 30)], costs.All);
+    }
 }
