@@ -83,6 +83,13 @@ internal sealed class UserDataRepository(IDbContextFactory<AppDbContext> dbFacto
         await db.TyreEntries.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
         await db.TyreEntries.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
         await db.TyreEntries.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
+        // Single tyres and their times on the car (#289), the same way.
+        await db.Tyres.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.Tyres.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.Tyres.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
+        await db.TyrePlaces.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.TyrePlaces.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to).SetProperty(x => x.UpdatedAt, now), ct);
+        await db.TyrePlaces.Where(x => x.ChangedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedById, to), ct);
         await db.VehicleCharts.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to), ct);
         await db.LogPhotos.Where(x => x.OwnerId == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.OwnerId, to), ct);
         await db.LogPhotos.Where(x => x.CreatedById == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedById, to), ct);

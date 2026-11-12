@@ -7,14 +7,16 @@ namespace Tankstat.Application.Tyres;
 
 /// <summary>
 /// A vehicle's tyres as stored: every set, installation and tyre log line (the trash included; the lines with their readings), the
-/// expenses the lines' amounts made (#288, the trash included, each holding its line's very reading object), and the vehicle's live
-/// odometer readings.
+/// expenses the lines' amounts made (#288, the trash included, each holding its line's very reading object), the vehicle's live
+/// odometer readings, and the single tyres of broken-up sets with their places (#289, the trash included).
 /// </summary>
 public sealed record TyreBook(
     IReadOnlyList<TyreSet> Sets, IReadOnlyList<TyreInstallation> Installations, IReadOnlyList<TyreEntry> Entries, IReadOnlyList<ReadingPoint> Readings,
-    IReadOnlyList<Expense>? Expenses = null)
+    IReadOnlyList<Expense>? Expenses = null, IReadOnlyList<Tyre>? Tyres = null, IReadOnlyList<TyrePlace>? Places = null)
 {
     public IReadOnlyList<Expense> LinkedExpenses => Expenses ?? [];
+    public IReadOnlyList<Tyre> SingleTyres => Tyres ?? [];
+    public IReadOnlyList<TyrePlace> TyrePlaces => Places ?? [];
 
     /// <summary>The expense a line's amount made, when it still exists (a purged one is gone, the line's link with it).</summary>
     public Expense? ExpenseOf(TyreEntry line) => line.ExpenseId is { } id ? LinkedExpenses.FirstOrDefault(e => e.Id == id) : null;
@@ -35,6 +37,10 @@ public sealed class TyreSave
     public List<TyreEntry> AddedEntries { get; } = [];
     public List<TyreEntry> ChangedEntries { get; } = [];
     public List<OdometerReading> AddedReadings { get; } = [];
+    public List<Tyre> AddedTyres { get; } = [];
+    public List<Tyre> ChangedTyres { get; } = [];
+    public List<TyrePlace> AddedPlaces { get; } = [];
+    public List<TyrePlace> ChangedPlaces { get; } = [];
 
     /// <summary>Expenses a line's amount made (#288), with their new <see cref="Expense.Cost"/>; a line and its expense are saved together.</summary>
     public List<Expense> AddedExpenses { get; } = [];
@@ -65,6 +71,25 @@ public sealed class TyreSave
         foreach (var e in changes.Changed) Change(e);
     }
 
+    public void Take(TyrePlaceChanges changes)
+    {
+        foreach (var t in changes.CreatedTyres)
+            if (!AddedTyres.Contains(t)) AddedTyres.Add(t);
+        foreach (var p in changes.Created)
+            if (!AddedPlaces.Contains(p)) AddedPlaces.Add(p);
+        foreach (var p in changes.Changed) Change(p);
+    }
+
+    public void Change(Tyre tyre)
+    {
+        if (!AddedTyres.Contains(tyre) && !ChangedTyres.Contains(tyre)) ChangedTyres.Add(tyre);
+    }
+
+    public void Change(TyrePlace place)
+    {
+        if (!AddedPlaces.Contains(place) && !ChangedPlaces.Contains(place)) ChangedPlaces.Add(place);
+    }
+
     public void Change(TyreEntry entry)
     {
         if (!AddedEntries.Contains(entry) && !ChangedEntries.Contains(entry)) ChangedEntries.Add(entry);
@@ -76,21 +101,28 @@ public sealed class TyreSave
     }
 }
 
-/// <summary>A row of the Trash page's Tyres tab: a trashed set, or a trashed tyre log line of no set or of a set that is not in the trash.</summary>
+/// <summary>
+/// A row of the Trash page's Tyres tab: a trashed set, a trashed tyre log line of no set or of a set that is not in the trash, a trashed
+/// single tyre of a set not in the trash, or a trashed time on the car of a tyre not in the trash (#289).
+/// </summary>
 /// <param name="SetName">The set's name; null for a line of no set.</param>
 /// <param name="EntryKind">For a line: what it says was done.</param>
 /// <param name="Day">For a line: its day.</param>
 /// <param name="Until">For a swap's line: the day its installation came off (null while it would still be on the car).</param>
 /// <param name="InstallationCount">For a set: its installations that come back with it.</param>
 /// <param name="WithExpense">For a line: its expense went to the trash with it and comes back with it (#288).</param>
+/// <param name="Label">For a tyre or a time on the car: the tyre's label (#289).</param>
+/// <param name="Corner">For a time on the car: its corner, if recorded (its days are <paramref name="Day"/> and <paramref name="Until"/>).</param>
 public sealed record TyreTrashRow(
     TyreTrashKind Kind, Guid Id, Guid VehicleId, string? SetName, TyreEntryKind? EntryKind, DateOnly? Day, DateOnly? Until, int InstallationCount,
-    DateTimeOffset DeletedAt, int Version, bool WithExpense = false);
+    DateTimeOffset DeletedAt, int Version, bool WithExpense = false, string? Label = null, TyreCorner? Corner = null);
 
 public enum TyreTrashKind
 {
     Set,
     Entry,
+    Tyre,
+    Place,
 }
 
 /// <summary>What the Tyres tab of the Trash page sorts by: when a row was moved to the trash (then the id).</summary>
@@ -118,6 +150,12 @@ public interface ITyreRepository
 
     /// <summary>The lines that made these expenses (#288), the trash included.</summary>
     Task<IReadOnlyList<TyreEntry>> ListEntriesByExpenseAsync(IReadOnlyCollection<Guid> expenseIds, CancellationToken ct);
+
+    /// <summary>The single tyres with these ids, the trash included (#289).</summary>
+    Task<IReadOnlyList<Tyre>> ListTyresAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
+
+    /// <summary>The times on the car with these ids, the trash included (#289).</summary>
+    Task<IReadOnlyList<TyrePlace>> ListPlacesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
 
     /// <summary>The tyre log lines with these ids, the trash included.</summary>
     Task<IReadOnlyList<TyreEntry>> ListEntriesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);

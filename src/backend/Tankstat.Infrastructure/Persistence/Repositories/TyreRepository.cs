@@ -18,7 +18,9 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var installations = await db.TyreInstallations.AsNoTracking().Where(s => s.VehicleId == vehicleId).ToListAsync(ct);
         var entries = await Entries(db).Where(e => e.VehicleId == vehicleId).ToListAsync(ct);
         var readings = await db.OdometerReadings.AsNoTracking().Where(r => r.VehicleId == vehicleId).Select(r => new ReadingPoint(r.Date, r.Value)).ToListAsync(ct);
-        return new TyreBook(sets, installations, entries, TyreCalculator.Sorted(readings), await LinkedExpensesAsync(db, entries, ct));
+        var tyres = await db.Tyres.AsNoTracking().Where(t => t.VehicleId == vehicleId).ToListAsync(ct);
+        var places = await db.TyrePlaces.AsNoTracking().Where(p => p.VehicleId == vehicleId).ToListAsync(ct);
+        return new TyreBook(sets, installations, entries, TyreCalculator.Sorted(readings), await LinkedExpensesAsync(db, entries, ct), tyres, places);
     }
 
     /// <summary>The expenses the lines' amounts made, the trash included, each holding its line's reading object (one row, one object).</summary>
@@ -72,6 +74,20 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         return await Entries(db).Where(e => e.ExpenseId != null && expenseIds.Contains(e.ExpenseId.Value)).ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<Tyre>> ListTyresAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.Tyres.AsNoTracking().Where(t => ids.Contains(t.Id)).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<TyrePlace>> ListPlacesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.TyrePlaces.AsNoTracking().Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<TyreEntry>> ListEntriesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
     {
         if (ids.Count == 0) return [];
@@ -96,7 +112,8 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
             await SaveInOneAsync(save, ct);
             return true;
         }
-        catch (DbUpdateException e) when (e is not DbUpdateConcurrencyException && save.AddedSets.Count + save.AddedInstallations.Count + save.AddedEntries.Count + save.AddedExpenses.Count > 0)
+        catch (DbUpdateException e) when (e is not DbUpdateConcurrencyException
+            && save.AddedSets.Count + save.AddedInstallations.Count + save.AddedEntries.Count + save.AddedExpenses.Count + save.AddedTyres.Count + save.AddedPlaces.Count > 0)
         {
             failure = ExceptionDispatchInfo.Capture(e);
         }
@@ -104,9 +121,12 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var installations = save.AddedInstallations.Select(s => s.Id).ToList();
         var entries = save.AddedEntries.Select(e => e.Id).ToList();
         var expenses = save.AddedExpenses.Select(e => e.Id).ToList();
+        var tyres = save.AddedTyres.Select(t => t.Id).ToList();
+        var places = save.AddedPlaces.Select(p => p.Id).ToList();
         await using var check = await dbFactory.CreateDbContextAsync(ct); // a fresh context: the failed one still holds the inserts
         if (await check.TyreSets.AnyAsync(s => sets.Contains(s.Id), ct) || await check.TyreInstallations.AnyAsync(s => installations.Contains(s.Id), ct)
-            || await check.TyreEntries.AnyAsync(e => entries.Contains(e.Id), ct) || await check.Expenses.IgnoreQueryFilters().AnyAsync(e => expenses.Contains(e.Id), ct))
+            || await check.TyreEntries.AnyAsync(e => entries.Contains(e.Id), ct) || await check.Expenses.IgnoreQueryFilters().AnyAsync(e => expenses.Contains(e.Id), ct)
+            || await check.Tyres.AnyAsync(t => tyres.Contains(t.Id), ct) || await check.TyrePlaces.AnyAsync(p => places.Contains(p.Id), ct))
             return false;
         failure.Throw();
         return false; // not reached
@@ -123,6 +143,10 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         foreach (var s in save.ChangedSets) db.TyreSets.Update(s);
         foreach (var s in save.AddedInstallations) db.TyreInstallations.Add(s);
         foreach (var s in save.ChangedInstallations) db.TyreInstallations.Update(s);
+        foreach (var t in save.AddedTyres) db.Tyres.Add(t);
+        foreach (var t in save.ChangedTyres) db.Tyres.Update(t);
+        foreach (var p in save.AddedPlaces) db.TyrePlaces.Add(p);
+        foreach (var p in save.ChangedPlaces) db.TyrePlaces.Update(p);
         foreach (var r in save.AddedReadings) db.OdometerReadings.Add(r);
         // A line's reading that is not new may have moved, gone to the trash or come back with it, or passed to another line of its day.
         foreach (var e in save.AddedEntries.Concat(save.ChangedEntries))
@@ -164,8 +188,9 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var trash = Trash(db, scope);
         var ordered = descending ? trash.OrderByDescending(r => r.DeletedAt) : trash.OrderBy(r => r.DeletedAt);
         var rows = await ordered.ThenBy(r => r.Id).Skip(skip).Take(take).ToListAsync(ct);
-        return [.. rows.Select(r => new TyreTrashRow(r.IsSet ? TyreTrashKind.Set : TyreTrashKind.Entry, r.Id, r.VehicleId, r.SetName,
-            r.EntryKind is null ? null : Enum.Parse<TyreEntryKind>(r.EntryKind), r.Day, r.Until, r.InstallationCount, r.DeletedAt, r.Version, r.WithExpense))];
+        return [.. rows.Select(r => new TyreTrashRow(Enum.Parse<TyreTrashKind>(r.RowKind), r.Id, r.VehicleId, r.SetName,
+            r.EntryKind is null ? null : Enum.Parse<TyreEntryKind>(r.EntryKind), r.Day, r.Until, r.InstallationCount, r.DeletedAt, r.Version, r.WithExpense,
+            r.Label, r.Corner is null ? null : Enum.Parse<TyreCorner>(r.Corner)))];
     }
 
     public async Task<int> CountTrashAsync(OwnerScope scope, CancellationToken ct)
@@ -184,6 +209,14 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var entries = await db.TyreEntries.IgnoreQueryFilters().Include(e => e.OdometerReading)
             .Where(e => e.DeletedAt != null || (e.SetId != null && setIds.Contains(e.SetId.Value))).InScope(scope, e => e.VehicleId).ToListAsync(ct);
         var listed = sets.Count + entries.Count(e => e.SetId is not { } setId || !setIds.Contains(setId));
+        // Single tyres (#289): a set's go with it, a trashed tyre of a live set is a row; places go with their tyre or installation, a trashed
+        // one of a live tyre is a row of its own.
+        var tyres = await db.Tyres.Where(t => t.DeletedAt != null || setIds.Contains(t.SetId)).InScope(scope, t => t.VehicleId).ToListAsync(ct);
+        var tyreIds = tyres.Select(t => t.Id).ToList();
+        var installationIds = installations.Select(s => s.Id).ToList();
+        var places = await db.TyrePlaces.Where(p => p.DeletedAt != null || tyreIds.Contains(p.TyreId) || installationIds.Contains(p.InstallationId))
+            .InScope(scope, p => p.VehicleId).ToListAsync(ct);
+        listed += tyres.Count(t => !setIds.Contains(t.SetId)) + places.Count(p => p.DeletedAt != null && !tyreIds.Contains(p.TyreId) && !installationIds.Contains(p.InstallationId));
         // Through the change tracker (not the cascade alone), so devices get a tombstone for every row. A reading an expense still holds (the
         // line's amount made it, #288; in the trash or not) stays with it, and so does the expense.
         var readingIds = entries.Where(e => e.OdometerReadingId is not null).Select(e => e.OdometerReadingId!.Value).ToList();
@@ -192,36 +225,59 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         await db.TouchExpensesOfTyreLinesAsync([.. entries.Where(e => e.ExpenseId is not null).Select(e => e.Id)], [], clock.GetUtcNow(), ct); // they no longer show a line
         db.TyreEntries.RemoveRange(entries);
         db.OdometerReadings.RemoveRange(entries.Where(e => e.OdometerReading is not null && !held.Contains(e.OdometerReading.Id)).Select(e => e.OdometerReading!));
+        db.TyrePlaces.RemoveRange(places);
+        db.Tyres.RemoveRange(tyres);
         db.TyreInstallations.RemoveRange(installations);
         db.TyreSets.RemoveRange(sets);
         await db.SaveChangesAsync(ct);
         return listed;
     }
 
-    /// <summary>The trashed sets, and the trashed lines of no set or of a set not in the trash, in one query (each projected to the same shape).</summary>
+    /// <summary>
+    /// The trashed sets, the trashed lines of no set or of a set not in the trash, the trashed tyres of a set not in the trash and the trashed
+    /// times on the car of a tyre and a set not in the trash (#289), in one query (each projected to the same shape).
+    /// </summary>
     internal static IQueryable<TrashRow> Trash(AppDbContext db, OwnerScope scope)
     {
         var sets = db.TyreSets.Where(s => s.DeletedAt != null).InScope(scope, s => s.VehicleId)
             .Select(s => new TrashRow
             {
-                IsSet = true, Id = s.Id, VehicleId = s.VehicleId, SetName = s.Name, EntryKind = null, Day = (DateOnly?)null, Until = (DateOnly?)null,
+                RowKind = "Set", Id = s.Id, VehicleId = s.VehicleId, SetName = s.Name, EntryKind = null, Day = (DateOnly?)null, Until = (DateOnly?)null,
                 InstallationCount = db.TyreInstallations.Count(x => x.SetId == s.Id && x.DeletedAt == null), DeletedAt = s.DeletedAt!.Value, Version = s.Version,
-                WithExpense = false,
+                WithExpense = false, Label = null, Corner = null,
             });
         var entries = db.TyreEntries.IgnoreQueryFilters().Where(e => e.DeletedAt != null).InScope(scope, e => e.VehicleId)
             .Where(e => e.SetId == null || db.TyreSets.Any(s => s.Id == e.SetId && s.DeletedAt == null))
             .Select(e => new TrashRow
             {
-                IsSet = false, Id = e.Id, VehicleId = e.VehicleId, SetName = db.TyreSets.Where(s => s.Id == e.SetId).Select(s => s.Name).FirstOrDefault(),
+                RowKind = "Entry", Id = e.Id, VehicleId = e.VehicleId, SetName = db.TyreSets.Where(s => s.Id == e.SetId).Select(s => s.Name).FirstOrDefault(),
                 EntryKind = e.Kind.ToString(), Day = e.Day, Until = db.TyreInstallations.Where(x => x.Id == e.InstallationId).Select(x => x.Until).FirstOrDefault(),
-                InstallationCount = 0, DeletedAt = e.DeletedAt!.Value, Version = e.Version, WithExpense = e.ExpenseTrashedWithEntry,
+                InstallationCount = 0, DeletedAt = e.DeletedAt!.Value, Version = e.Version, WithExpense = e.ExpenseTrashedWithEntry, Label = null, Corner = null,
             });
-        return sets.Concat(entries);
+        var tyres = db.Tyres.Where(t => t.DeletedAt != null).InScope(scope, t => t.VehicleId)
+            .Where(t => db.TyreSets.Any(s => s.Id == t.SetId && s.DeletedAt == null))
+            .Select(t => new TrashRow
+            {
+                RowKind = "Tyre", Id = t.Id, VehicleId = t.VehicleId, SetName = db.TyreSets.Where(s => s.Id == t.SetId).Select(s => s.Name).FirstOrDefault(),
+                EntryKind = null, Day = (DateOnly?)null, Until = (DateOnly?)null, InstallationCount = 0, DeletedAt = t.DeletedAt!.Value, Version = t.Version,
+                WithExpense = false, Label = t.Label, Corner = null,
+            });
+        var places = db.TyrePlaces.Where(p => p.DeletedAt != null).InScope(scope, p => p.VehicleId)
+            .Where(p => db.Tyres.Any(t => t.Id == p.TyreId && t.DeletedAt == null && db.TyreSets.Any(s => s.Id == t.SetId && s.DeletedAt == null)))
+            .Select(p => new TrashRow
+            {
+                RowKind = "Place", Id = p.Id, VehicleId = p.VehicleId,
+                SetName = db.Tyres.Where(t => t.Id == p.TyreId).SelectMany(t => db.TyreSets.Where(s => s.Id == t.SetId)).Select(s => s.Name).FirstOrDefault(),
+                EntryKind = null, Day = p.From, Until = p.Until, InstallationCount = 0, DeletedAt = p.DeletedAt!.Value, Version = p.Version, WithExpense = false,
+                Label = db.Tyres.Where(t => t.Id == p.TyreId).Select(t => t.Label).FirstOrDefault(), Corner = p.Corner.ToString(),
+            });
+        return sets.Concat(entries).Concat(tyres).Concat(places);
     }
 
     internal sealed class TrashRow
     {
-        public bool IsSet { get; init; }
+        /// <summary>Set, Entry, Tyre or Place (a string, as <see cref="EntryKind"/>).</summary>
+        public string RowKind { get; init; } = "";
         public Guid Id { get; init; }
         public Guid VehicleId { get; init; }
         public string? SetName { get; init; }
@@ -234,5 +290,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         public DateTimeOffset DeletedAt { get; init; }
         public int Version { get; init; }
         public bool WithExpense { get; init; }
+        public string? Label { get; init; }
+        public string? Corner { get; init; }
     }
 }
