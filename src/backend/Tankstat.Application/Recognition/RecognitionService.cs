@@ -59,6 +59,7 @@ public sealed class RecognitionService(
     public async Task QueueForLogPhotoAsync(LogType logType, Guid logId, Guid imageId, string? locale, CancellationToken ct)
     {
         if (!availability.IsConfigured) return;
+        await access.RequirePrincipalAsync(ct); // signed out is refused first, never answered as a missing photo
         if (await logPhotos.FindByImageAsync(imageId, ct) is not { } photo || photo.LogType != logType || photo.LogId != logId || !await own.IsUploaderAsync(photo, ct)) return;
 
         var (date, readingId, currency) = logType == LogType.Refueling

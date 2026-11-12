@@ -1,3 +1,4 @@
+using Tankstat.Application.Auth;
 using Tankstat.Domain.Photos;
 
 namespace Tankstat.Application.UnitTests;
@@ -28,6 +29,16 @@ public class PhotoDraftAccessTests
         Assert.False(await w.DraftAccess.IsMineAsync(alices, default));
         Assert.Null(await w.DraftAccess.MineAsync(alices.Id, default));
         Assert.Empty(await w.DraftAccess.MineAsync([alices.Id], default));
+    }
+
+    [Fact]
+    public async Task SignedOut_IsRefused_NeverAnsweredAsAMissingDraft()
+    {
+        var w = new World();
+        w.Current.Principal = null;
+
+        await Assert.ThrowsAsync<UnauthenticatedException>(() => w.DraftAccess.MineAsync(Guid.NewGuid(), default));
+        await Assert.ThrowsAsync<UnauthenticatedException>(() => w.DraftAccess.MineAsync([], default));
     }
 
     [Fact]

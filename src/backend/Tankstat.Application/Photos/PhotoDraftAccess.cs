@@ -14,15 +14,21 @@ public sealed class PhotoDraftAccess(IPhotoDraftRepository drafts, AccessService
     public async Task<bool> IsMineAsync(PhotoDraft draft, CancellationToken ct) =>
         draft.VisibleTo((await access.RequirePrincipalAsync(ct)).Id, clock.GetUtcNow());
 
-    /// <summary>The current user's draft with this id; anyone else's, an expired one or an unknown id is null.</summary>
-    public async Task<PhotoDraft?> MineAsync(Guid id, CancellationToken ct) =>
-        await drafts.FindAsync(id, ct) is { } draft && await IsMineAsync(draft, ct) ? draft : null;
+    /// <summary>
+    /// The current user's draft with this id; anyone else's, an expired one or an unknown id is null. Signed out is refused first, as the use
+    /// cases did before they asked here, never answered as a missing draft.
+    /// </summary>
+    public async Task<PhotoDraft?> MineAsync(Guid id, CancellationToken ct)
+    {
+        var me = (await access.RequirePrincipalAsync(ct)).Id;
+        return await drafts.FindAsync(id, ct) is { } draft && draft.VisibleTo(me, clock.GetUtcNow()) ? draft : null;
+    }
 
-    /// <summary>The current user's drafts among <paramref name="ids"/> (in no particular order); the others are left out.</summary>
+    /// <summary>The current user's drafts among <paramref name="ids"/> (in no particular order); the others are left out. Signed out is refused, none asked for too.</summary>
     public async Task<IReadOnlyList<PhotoDraft>> MineAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
     {
-        if (ids.Count == 0) return [];
         var me = (await access.RequirePrincipalAsync(ct)).Id;
+        if (ids.Count == 0) return [];
         var now = clock.GetUtcNow();
         return [.. (await drafts.FindManyAsync(ids, ct)).Where(d => d.VisibleTo(me, now))];
     }
