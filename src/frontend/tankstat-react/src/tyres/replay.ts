@@ -395,6 +395,7 @@ function apply(m: Model, c: Change, vehicleId: string) {
       const tyre = tyreOf(m, input.id)
       m.tyres = m.tyres.filter((t) => t !== tyre)
       m.places = m.places.filter((p) => p.tyreId !== tyre.id) // its corner is empty for that time
+      m.entries = m.entries.filter((e) => e.tyreId !== tyre.id) // its lines go with it (#289), as the server hides them
       return
     }
     case 'addTyrePlace': {

@@ -476,6 +476,12 @@ describe('lines for several tyres sharing one expense on the device (#289), as t
     expect(['l3', 'l4'].map((id) => [lineOf(tyres, id).day, lineOf(tyres, id).odometer])).toEqual([['2026-09-21', 148_300], ['2026-09-21', 148_300]])
   })
 
+  it('a tyre to the trash takes its lines along; its sharer keeps the expense', () => {
+    const { tyres } = replayTyres(base, [repair(), change('deleteTyre', { id: 't3' })])
+    expect(tyres.entries.some((e) => e.id === 'l3')).toBe(false)
+    expect(lineOf(tyres, 'l4')).toMatchObject({ expenseId: 'x1', amount: 13_000 })
+  })
+
   it('a line of a tyre keeps its set, and names no tyre twice', () => {
     const once = applyTyreChange(base, repair())
     expect(() => applyTyreChange(once, edit('l3', { setId: 's2' }))).toThrow(TyreRuleError)

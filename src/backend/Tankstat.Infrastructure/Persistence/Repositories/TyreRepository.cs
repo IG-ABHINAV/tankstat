@@ -219,14 +219,15 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var sets = await db.TyreSets.Where(s => s.DeletedAt != null).InScope(scope, s => s.VehicleId).ToListAsync(ct);
         var setIds = sets.Select(s => s.Id).ToList();
         var installations = await db.TyreInstallations.Where(s => s.DeletedAt != null || setIds.Contains(s.SetId)).InScope(scope, s => s.VehicleId).ToListAsync(ct);
-        // A set's lines go with it, trashed or not; a trashed line of a live set (or of none) is a row of the list.
-        var entries = await db.TyreEntries.IgnoreQueryFilters().Include(e => e.OdometerReading)
-            .Where(e => e.DeletedAt != null || (e.SetId != null && setIds.Contains(e.SetId.Value))).InScope(scope, e => e.VehicleId).ToListAsync(ct);
-        var listed = sets.Count + entries.Count(e => e.SetId is not { } setId || !setIds.Contains(setId));
         // Single tyres (#289): a set's go with it, a trashed tyre of a live set is a row; places go with their tyre or installation, a trashed
         // one of a live tyre is a row of its own.
         var tyres = await db.Tyres.Where(t => t.DeletedAt != null || setIds.Contains(t.SetId)).InScope(scope, t => t.VehicleId).ToListAsync(ct);
         var tyreIds = tyres.Select(t => t.Id).ToList();
+        // A set's lines go with it, trashed or not, and a tyre's with it (#289); a trashed line of a live set and tyre (or of none) is a row of the list.
+        var entries = await db.TyreEntries.IgnoreQueryFilters().Include(e => e.OdometerReading)
+            .Where(e => e.DeletedAt != null || (e.SetId != null && setIds.Contains(e.SetId.Value)) || (e.TyreId != null && tyreIds.Contains(e.TyreId.Value)))
+            .InScope(scope, e => e.VehicleId).ToListAsync(ct);
+        var listed = sets.Count + entries.Count(e => (e.SetId is not { } setId || !setIds.Contains(setId)) && (e.TyreId is not { } tyreId || !tyreIds.Contains(tyreId)));
         var installationIds = installations.Select(s => s.Id).ToList();
         var places = await db.TyrePlaces.Where(p => p.DeletedAt != null || tyreIds.Contains(p.TyreId) || installationIds.Contains(p.InstallationId))
             .InScope(scope, p => p.VehicleId).ToListAsync(ct);
@@ -253,7 +254,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
     }
 
     /// <summary>
-    /// The trashed sets, the trashed lines of no set or of a set not in the trash, the trashed tyres of a set not in the trash and the trashed
+    /// The trashed sets, the trashed lines of no set or of a set (and a tyre, #289) not in the trash, the trashed tyres of a set not in the trash and the trashed
     /// times on the car of a tyre and a set not in the trash (#289), in one query (each projected to the same shape).
     /// </summary>
     internal static IQueryable<TrashRow> Trash(AppDbContext db, OwnerScope scope)
@@ -267,6 +268,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
             });
         var entries = db.TyreEntries.IgnoreQueryFilters().Where(e => e.DeletedAt != null).InScope(scope, e => e.VehicleId)
             .Where(e => e.SetId == null || db.TyreSets.Any(s => s.Id == e.SetId && s.DeletedAt == null))
+            .Where(e => e.TyreId == null || db.Tyres.Any(t => t.Id == e.TyreId && t.DeletedAt == null)) // a trashed tyre's lines come back with it (#289)
             .Select(e => new TrashRow
             {
                 RowKind = "Entry", Id = e.Id, VehicleId = e.VehicleId, SetName = db.TyreSets.Where(s => s.Id == e.SetId).Select(s => s.Name).FirstOrDefault(),

@@ -545,7 +545,8 @@ internal sealed class InMemoryTyres : ITyreRepository
     private IEnumerable<TyreTrashRow> Trash(OwnerScope scope) =>
         Sets.Where(s => s.IsDeleted && scope.Contains(s.OwnerId, s.VehicleId))
             .Select(s => new TyreTrashRow(TyreTrashKind.Set, s.Id, s.VehicleId, s.Name, null, null, null, Installations.Count(x => x.SetId == s.Id && !x.IsDeleted), s.DeletedAt!.Value, s.Version))
-            .Concat(Entries.Where(e => e.IsDeleted && scope.Contains(e.OwnerId, e.VehicleId) && (e.SetId is null || Sets.Any(s => s.Id == e.SetId && !s.IsDeleted)))
+            .Concat(Entries.Where(e => e.IsDeleted && scope.Contains(e.OwnerId, e.VehicleId) && (e.SetId is null || Sets.Any(s => s.Id == e.SetId && !s.IsDeleted))
+                    && (e.TyreId is null || Tyres.Any(t => t.Id == e.TyreId && !t.IsDeleted)))
                 .Select(e => new TyreTrashRow(TyreTrashKind.Entry, e.Id, e.VehicleId, Sets.FirstOrDefault(s => s.Id == e.SetId)?.Name, e.Kind, e.Day,
                     Installations.FirstOrDefault(x => x.Id == e.InstallationId)?.Until, 0, e.DeletedAt!.Value, e.Version, e.ExpenseTrashedWithEntry)))
             .Concat(Tyres.Where(t => t.IsDeleted && scope.Contains(t.OwnerId, t.VehicleId) && Sets.Any(s => s.Id == t.SetId && !s.IsDeleted))
@@ -574,7 +575,7 @@ internal sealed class InMemoryTyres : ITyreRepository
         Places.RemoveAll(p => places.Contains(p.Id) || tyres.Contains(p.TyreId) || installations.Contains(p.InstallationId));
         Tyres.RemoveAll(t => tyres.Contains(t.Id));
         Installations.RemoveAll(x => sets.Contains(x.SetId) || entries.Contains(x.Id));
-        Entries.RemoveAll(e => entries.Contains(e.Id) || (e.SetId is { } setId && sets.Contains(setId)));
+        Entries.RemoveAll(e => entries.Contains(e.Id) || (e.SetId is { } setId && sets.Contains(setId)) || (e.TyreId is { } tyreId && tyres.Contains(tyreId)));
         Sets.RemoveAll(s => sets.Contains(s.Id));
         return Task.FromResult(rows.Count);
     }

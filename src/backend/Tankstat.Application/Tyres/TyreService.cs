@@ -778,7 +778,8 @@ public sealed class TyreService(
     /// <summary>The line when it is in the trash (on its own, or with its set) and the user may restore it, else null.</summary>
     public async Task<TyreEntry?> EntryInTrashAsync(Guid id, CancellationToken ct) =>
         await tyres.FindEntryAsync(id, ct) is { } entry
-        && (entry.IsDeleted || (entry.SetId is { } setId && await tyres.FindSetAsync(setId, ct) is { IsDeleted: true }))
+        && (entry.IsDeleted || (entry.SetId is { } setId && await tyres.FindSetAsync(setId, ct) is { IsDeleted: true })
+            || (entry.TyreId is { } tyreId && (await tyres.ListTyresAsync([tyreId], ct)).FirstOrDefault() is { IsDeleted: true }))
         && await guard.ForVehicleAsync(entry.VehicleId, ct) is { Level: >= AccessLevel.Edit }
             ? entry
             : null;
