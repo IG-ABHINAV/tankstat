@@ -387,6 +387,10 @@ public class LoggingTests
         await w.TyreService.UpdateEntryAsync(shared1, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day, null, "canary shared note",
             new TyreFee(null, null, null, null), SharedExpense: SharedExpenseChoice.LetGo), default);
         canaries.AddRange(["canary shared note", "Canary shared category", "Canary shared title", "4242.42"]);
+        // A tyre replaced early: the new tyre's label and name, and the price.
+        await w.TyreService.ReplaceTyresAsync(new TyreReplaceInput(tyreSet, Day, null, TyreRetiredWhy.Worn, [new(single1, Guid.NewGuid(), "CNRYE", "Canary new tyre name", null, null, Guid.NewGuid())],
+            new TyreFee(5151.15m, "EUR", "Canary replace category", "Canary replace title", Guid.NewGuid())), default);
+        canaries.AddRange(["CNRYE", "Canary new tyre name", "Canary replace category", "Canary replace title", "5151.15"]);
         canaries.AddRange(["Canary Tyre Set", "Canary Size", "31415", "987654400", "canary tyre note", "Canary tyre category", "Canary tyre title", "2718.28", "1618.03"]);
 
         // Sharing, an import with a file full of somebody's life, and the access settings.

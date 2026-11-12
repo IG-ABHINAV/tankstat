@@ -37,6 +37,16 @@ public sealed record TyreSwapInput(
 /// <summary>Breaking a set up into four single tyres (#289) on <paramref name="Day"/> (the client's today): each tyre's id, label and corner.</summary>
 public sealed record TyreBreakUpInput(Guid SetId, DateOnly Day, IReadOnlyList<NewTyre> Tyres);
 
+/// <summary>A new tyre of a replacement (#289): the tyre it replaces, its own id, label, name (null: the set's) and made date, and its Bought line's id.</summary>
+public sealed record TyreReplacement(Guid OldId, Guid? Id, string Label, string? Name = null, int? MadeWeek = null, int? MadeYear = null, Guid? LineId = null);
+
+/// <summary>
+/// Tyres of a set replaced early (#289): the day, its reading, why (damaged, worn, too old), the new tyres, and the price, one expense the new
+/// tyres' Bought lines share. On a whole set, `BreakUp` breaks it up first (its tyres' ids are the ones `Tyres` replace).
+/// </summary>
+public sealed record TyreReplaceInput(
+    Guid SetId, DateOnly Day, long? Odometer, TyreRetiredWhy Why, IReadOnlyList<TyreReplacement> Tyres, TyreFee? Price = null, TyreBreakUpInput? BreakUp = null);
+
 /// <summary>A single tyre's time on the car, typed in its history (#289): the days and the corner (null: not recorded).</summary>
 public sealed record TyrePlaceInput(DateOnly From, DateOnly? Until, TyreCorner? Corner);
 
@@ -641,6 +651,45 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
+    /// <summary>
+    /// Replaces tyres of a set early (#289, <see cref="TyrePlaces.Replace"/>): breaking a whole set up first when asked, the old tyres retired
+    /// on the day and the new ones on the car at their corners from it; a Bought line for each new tyre, made together, holding the day's
+    /// reading and sharing the price's one expense. The new tyres' ids are the client's: the same replacement sent again changes nothing.
+    /// </summary>
+    public async Task<TyreOverview> ReplaceTyresAsync(TyreReplaceInput input, CancellationToken ct)
+    {
+        var (vehicle, set, book) = await EditableSetAsync(input.SetId, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        Task<bool> Repeat() => RepeatedTyresAsync(input.Tyres.Select(t => t.Id), vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, book);
+        RequireNotFuture(input.Day);
+        if (input.Tyres.Count == 0) throw new DomainException("tyres.tapToReplace", "Tap the tyres to replace.");
+        if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Day, value, exceptReadingId: null, ct);
+        var save = new TyreSave { Book = book, By = by };
+        var (_, places) = Rules(vehicle, book);
+        if (input.BreakUp is { } breakUp)
+        {
+            if (breakUp.SetId != set.Id) throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
+            save.Take(places.BreakUp(set, breakUp.Tyres, breakUp.Day, by));
+            save.ChangedSets.Add(set);
+        }
+        var replaced = places.Replace(set, [.. input.Tyres.Select(t => new ReplacingTyre(t.OldId, t.Id, t.Label, t.Name, t.MadeWeek, t.MadeYear))], input.Why, input.Day, by);
+        save.Take(replaced);
+        // A Bought line per new tyre, made together: the first one's id is the group's; one reading, one expense.
+        var made = replaced.CreatedTyres;
+        var firstId = input.Tyres[0].LineId ?? Guid.NewGuid();
+        var first = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, TyreEntryKind.Bought, set.Id, input.Day, input.Odometer, null, firstId, made[0].Id,
+            groupId: made.Count > 1 ? firstId : null);
+        List<TyreEntry> lines = [first, .. made.Skip(1).Select((t, n) => first.ForAnotherTyre(t.Id, by, input.Tyres[n + 1].LineId))];
+        foreach (var line in lines) save.AddedEntries.Add(line);
+        if (first.OdometerReading is { } reading) save.AddedReadings.Add(reading);
+        await ApplyFeeAsync(vehicle, book, save, first, input.Price, by, ct);
+        if (first.ExpenseId is { } expenseId) foreach (var other in lines.Skip(1)) other.LinkExpense(expenseId);
+        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+        logger.LogDebug("User {UserId} replaced {Count} tyre(s) of tyre set {SetId} of vehicle {VehicleId}", by, made.Count, set.Id, vehicle.Id);
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
     /// <summary>A single tyre's new label (#289): unique among the vehicle's tyres not in the trash, without case.</summary>
     public async Task<TyreOverview> UpdateTyreAsync(Guid id, string label, CancellationToken ct, int? expectedVersion = null)
     {
@@ -811,13 +860,17 @@ public sealed class TyreService(
         // The single tyres (#289): each live tyre's live places, as the rules count them (its tyre, installation and set live).
         var places = new TyrePlaces(Guid.Empty, vehicleId, new TyreHistory(Guid.Empty, vehicleId, book.Sets, book.Installations), book.Sets, book.SingleTyres, book.TyrePlaces);
         var livePlaces = places.LivePlaces.ToList();
+        // Its corner now or the last one; a tyre that came as a replacement and was never on yet, the one of the tyre it replaced (#289).
+        TyreCorner? LastCorner(Guid tyreId) =>
+            livePlaces.Where(p => p.TyreId == tyreId).OrderByDescending(p => p.From).FirstOrDefault() is { } last ? last.Corner
+            : places.Predecessor(tyreId) is { } before ? LastCorner(before.Id) : null;
         IReadOnlyList<TyreView> TyresOf(TyreSet set) =>
         [
             .. places.TyresOf(set.Id).OrderBy(t => t.Label, StringComparer.CurrentCultureIgnoreCase).ThenBy(t => t.Id).Select(t =>
             {
                 var own = livePlaces.Where(p => p.TyreId == t.Id).OrderByDescending(p => p.From).ToList();
                 return new TyreView(t, TyreCalculator.TyreFigures(book.Readings, t, own),
-                    [.. own.Select(p => new TyrePlaceView(p, TyreCalculator.Distance(book.Readings, p.From, p.Until)))], own.Any(p => p.Until is null), own.FirstOrDefault()?.Corner);
+                    [.. own.Select(p => new TyrePlaceView(p, TyreCalculator.Distance(book.Readings, p.From, p.Until)))], own.Any(p => p.Until is null), LastCorner(t.Id));
             }),
         ];
         var liveSets = book.Sets.Where(s => !s.IsDeleted).Select(s => s.Id).ToHashSet();
