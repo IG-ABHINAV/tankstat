@@ -395,6 +395,25 @@ test('a repair of two tyres with one amount is one row and one expense; one tyre
   await expect(row).toBeVisible()
   await expectSoundLayout(page)
 
+  // The row's bin asks which tyres' lines go; the ask on save of a shared amount emptied for one tyre. Both looked at, then cancelled.
+  await page.getByRole('button', { name: /^Move to the trash: Puncture repaired,/ }).click()
+  const bin = page.getByRole('alertdialog', { name: 'Move to the trash?' })
+  await expect(bin.getByRole('checkbox', { name: 'Tyre S4' })).toBeChecked()
+  await expectSoundLayout(page)
+  await bin.getByRole('button', { name: 'Cancel' }).click()
+  await expect(bin).toBeHidden()
+  await row.click()
+  const both = page.getByRole('dialog', { name: 'Edit entry' })
+  await both.getByRole('checkbox', { name: 'Tyre S4' }).click()
+  await both.getByLabel(/^Paid/).fill('')
+  await both.getByRole('button', { name: 'Save' }).click()
+  const shared = page.getByRole('dialog', { name: 'The amount is shared' })
+  await expect(shared.getByRole('radio', { name: /Only S3 lets go of it/ })).toBeChecked()
+  await expectSoundLayout(page)
+  await shared.getByRole('button', { name: 'Cancel' }).click()
+  await both.getByRole('button', { name: 'Cancel' }).click()
+  await expect(both).toBeHidden()
+
   // S3's line alone a day earlier: it parts, without an amount; S4 keeps the expense.
   await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
   const tyre = page.getByRole('dialog', { name: 'Tyre S3' })

@@ -24,7 +24,7 @@ import { TyreSetDialog } from '../../tyres/TyreSetDialog.tsx'
 import { usePendingTyres } from '../../tyres/usePendingTyres.ts'
 import { NO_SET, noTyres } from '../../tyres/replay.ts'
 import { EntryDialog, TrashEntryDialog } from '../../tyres/EntryDialog.tsx'
-import { isDeviceLine, isSwapLine, labelsOf, logRows, sharersOf, useEntryWords } from '../../tyres/entries.ts'
+import { byLabel, isDeviceLine, isSwapLine, labelsOf, logRows, sharersOf, useEntryWords } from '../../tyres/entries.ts'
 import { type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords } from '../../tyres/tyres.ts'
 import { CarPicture, TyreButton } from '../../tyres/CarPicture.tsx'
 import { isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from '../../tyres/singleTyres.ts'
@@ -479,7 +479,10 @@ function TyreLog({ tyres, vehicleId, unit, canLog }: { tyres: Tyres; vehicleId: 
         </Typography>
       ) : (
         <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {logRows(tyres.entries).map(({ lead: entry, lines }) => {
+          {logRows(tyres.entries).map((row) => {
+            // A row of several tyres leads with its first tyre by label, as it names them ("S3, S4"): its dialog edits that one's line.
+            const lines = row.lines.length > 1 ? byLabel(tyres, row.lines) : row.lines
+            const entry = lines[0]
             // Lines made together for several tyres (#289) are one row, the amount once; it says whom else it is shared with.
             const ofSet = entryWords.setName(tyres, entry.setId)
             const labels = labelsOf(tyres, lines)

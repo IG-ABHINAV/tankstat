@@ -52,11 +52,16 @@ export const sharersOf = (tyres: Tyres, entry: TyreEntry): TyreEntry[] =>
 export const labelOf = (tyres: Tyres, tyreId: string | null | undefined): string | null =>
   tyreId ? (tyres.sets.flatMap((s) => s.tyres ?? []).find((t) => t.tyre.id === tyreId)?.tyre.label ?? null) : null
 
-/** The labels of the lines' tyres, in the order the server sorts tyres (by label), joined for a sentence ("S3, S4"). */
-export function labelsOf(tyres: Tyres, lines: readonly TyreEntry[]): string {
+/** Lines in the order the server sorts their tyres: by label, then by id. */
+export function byLabel(tyres: Tyres, lines: readonly TyreEntry[]): TyreEntry[] {
   const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
-  return lines.map((l) => labelOf(tyres, l.tyreId)).filter((l): l is string => !!l).sort(collator.compare).join(', ')
+  const label = (l: TyreEntry) => labelOf(tyres, l.tyreId) ?? ''
+  return [...lines].sort((a, b) => collator.compare(label(a), label(b)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
+
+/** The labels of the lines' tyres, in the order the server sorts tyres (by label), joined for a sentence ("S3, S4"). */
+export const labelsOf = (tyres: Tyres, lines: readonly TyreEntry[]): string =>
+  byLabel(tyres, lines).map((l) => labelOf(tyres, l.tyreId)).filter((l): l is string => !!l).join(', ')
 
 /** The words of a line: its kind, its set's name (or none) and its day, as the log names it to a screen reader. */
 export function useEntryWords() {
