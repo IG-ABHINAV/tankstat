@@ -143,6 +143,7 @@ public sealed class TyreEntryType : ObjectType<TyreEntry>
         descriptor.Ignore(e => e.TakeReading(default!, default));
         descriptor.Ignore(e => e.ForAnotherTyre(default, default, default));
         descriptor.Ignore(e => e.LeaveGroup(default));
+        descriptor.Ignore(e => e.KeepOwnReading(default));
         descriptor.Field(e => e.TyreId).Description("The single tyre it is for (#289); null for a line of the whole set, or of no set.");
         descriptor.Field(e => e.GroupId).Description("The lines made together for several tyres, sharing one expense: one row of the tyre log.");
         descriptor.Ignore(e => e.ExpenseTrashedWithEntry);
