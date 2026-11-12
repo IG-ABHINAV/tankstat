@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Tankstat.Application.Access;
 using Tankstat.Application.Odometers;
+using Tankstat.Application.Sync;
 using Tankstat.Application.Tyres;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
@@ -490,6 +491,8 @@ public class TyreRepositoryTests
         Assert.Equal(2, ctx.TyrePlaces.Count()); // W1's went with it, W2's alone
         (OfflineEntityType, Guid)[] expected = [(OfflineEntityType.Tyre, w1.Id), (OfflineEntityType.TyrePlace, places.Single(p => p.TyreId == w1.Id).Id), (OfflineEntityType.TyrePlace, w2Place.Id)];
         Assert.Equal(expected.Order(), ctx.Tombstones.Select(t => new { t.EntityType, t.EntityId }).AsEnumerable().Select(t => (t.EntityType, t.EntityId)).Order());
+        // The tyres come whole with the offline feed's first page: their tombstones are never sent as removed.
+        Assert.Empty(await db.Get<IOfflineFeedRepository>().RemovedSinceAsync(car.Id, _clock.GetUtcNow().AddDays(-1), default));
     }
 
     [Fact]

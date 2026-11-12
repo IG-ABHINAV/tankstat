@@ -304,6 +304,23 @@ public class TyrePlacesTests
         Assert.NotEqual(TyreIds.PlaceOf(tyre, a), TyreIds.PlaceOf(tyre, b));
     }
 
+    [Fact]
+    public void ATrashedTyresPlace_TheInstallationNoLongerHolds_NeverRefusesTheChange_StaysAsItWas_AndItsRestoreIsRefused()
+    {
+        var (_, places, _, now, _) = BrokenUp();
+        var w4 = T(places, "W4");
+        places.Edit(P(places, "W4", now), now.From, D(2026, 12, 1), TyreCorner.RearRight, Owner);
+        var later = places.Add(w4, D(2027, 1, 5), null, TyreCorner.RearRight, Owner);
+        w4.MarkDeleted(Now);
+
+        places.EditInstallation(now, now.From, D(2027, 1, 1), now.PairOneFront, Owner); // ends before W4's later time began
+
+        Assert.Equal((D(2027, 1, 5), (DateOnly?)null), (later.From, later.Until)); // left as it was
+        Assert.Equal(D(2027, 1, 1), P(places, "W1", now).Until);
+        w4.Restore();
+        Assert.StartsWith("tyres.place", Key(() => places.CheckRestored([later])));
+    }
+
     private static TyreChanges Changed(TyreInstallation installation)
     {
         var changes = new TyreChanges();
