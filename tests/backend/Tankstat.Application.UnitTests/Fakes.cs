@@ -463,7 +463,7 @@ internal sealed class InMemoryTyres : ITyreRepository
         var ids = entries.Where(e => e.ExpenseId is not null).Select(e => e.ExpenseId!.Value).ToHashSet();
         var copies = (Expenses?.Items ?? []).Where(x => ids.Contains(x.Id)).Select(CopyExpense).ToList();
         foreach (var copy in copies)
-            if (entries.FirstOrDefault(e => e.ExpenseId == copy.Id)?.OdometerReading is { } reading) copy.ShareReadingObject(reading);
+            if (entries.FirstOrDefault(e => e.ExpenseId == copy.Id && e.OdometerReadingId == copy.OdometerReadingId)?.OdometerReading is { } reading) copy.ShareReadingObject(reading);
         return copies;
     }
 

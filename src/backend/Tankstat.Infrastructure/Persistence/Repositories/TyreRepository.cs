@@ -38,8 +38,10 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         if (ids.Count == 0) return [];
         var expenses = await db.Expenses.IgnoreQueryFilters().AsNoTracking().Include(e => e.Cost).Include(e => e.OdometerReading)
             .Where(e => ids.Contains(e.Id)).ToListAsync(ct);
+        // The line holding the very row (#289: a line in the trash may hold a copy of its own, its expense still named).
         foreach (var expense in expenses)
-            if (entries.FirstOrDefault(e => e.ExpenseId == expense.Id)?.OdometerReading is { } reading) expense.ShareReadingObject(reading);
+            if (entries.FirstOrDefault(e => e.ExpenseId == expense.Id && e.OdometerReadingId == expense.OdometerReadingId)?.OdometerReading is { } reading)
+                expense.ShareReadingObject(reading);
         return expenses;
     }
 
@@ -177,7 +179,7 @@ internal sealed class TyreRepository(IDbContextFactory<AppDbContext> dbFactory, 
         var removedReadings = save.RemovedReadings.Concat(save.ExpenseChanges.Select(c => c.RemovedReading).OfType<OdometerReading>()).Distinct().ToList();
         // A row another line or expense still holds stays (#289: the lines made together share one): only the last holder lets it go.
         var removedIds = removedReadings.Select(r => r.Id).ToList();
-        var stillHeld = (await db.TyreEntries.IgnoreQueryFilters().Where(e => e.OdometerReadingId != null && removedIds.Contains(e.OdometerReadingId.Value)).Select(e => e.OdometerReadingId!.Value).ToListAsync(ct))
+        HashSet<Guid> stillHeld = removedIds.Count == 0 ? [] : (await db.TyreEntries.IgnoreQueryFilters().Where(e => e.OdometerReadingId != null && removedIds.Contains(e.OdometerReadingId.Value)).Select(e => e.OdometerReadingId!.Value).ToListAsync(ct))
             .Concat(await db.Expenses.IgnoreQueryFilters().Where(x => x.OdometerReadingId != null && removedIds.Contains(x.OdometerReadingId.Value)).Select(x => x.OdometerReadingId!.Value).ToListAsync(ct))
             .ToHashSet();
         removedReadings = [.. removedReadings.Where(r => !stillHeld.Contains(r.Id))];
