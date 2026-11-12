@@ -349,11 +349,6 @@ const over = <T extends Record<string, unknown>>(base: T, input: Record<string, 
 
 const VEHICLE_FIELDS = ['name', 'licensePlate', 'fuelType', 'units']
 
-/** Today on this device's calendar (a schedule added without a last-done day starts today, as on the server). */
-const localToday = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 const SCHEDULE_FIELDS = ['title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance']
 
 /**
@@ -397,7 +392,8 @@ function schedulesOf(vehicleId: string, base: readonly Record<string, unknown>[]
     } else if (change.action === 'add')
       byId.set(change.targetId, over({
         __typename: 'RecurringExpenseInfo', id: change.targetId, version: 0, category: null, note: null, intervalMonths: null, intervalDistance: null,
-        lastDoneOdometer: null, warnDays: 30, warnDistance: 500, lastDoneDate: localToday(),
+        // Without a last-done day a schedule starts today on this device's calendar, as on the server.
+        lastDoneOdometer: null, warnDays: 30, warnDistance: 500, lastDoneDate: todayIso(),
         status: { __typename: 'RecurrenceStatusInfo', state: 'UPCOMING', limit: null, dueDate: null, dueOdometer: null, daysLeft: null, distanceLeft: null },
       }, change.input, SCHEDULE_FIELDS))
     else if (change.action === 'update' && byId.has(change.targetId)) byId.set(change.targetId, over(byId.get(change.targetId)!, change.input, SCHEDULE_FIELDS))
