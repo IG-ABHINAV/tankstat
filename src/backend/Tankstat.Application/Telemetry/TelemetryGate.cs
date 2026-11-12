@@ -39,12 +39,13 @@ public sealed record TelemetryPlan(
 /// </summary>
 public static class TelemetryGate
 {
-    public static TelemetryPlan Decide(Func<string, string?> valueOf)
+    /// <param name="fileExists">Whether a certificate file named is there (the start passes the file system's answer, #312).</param>
+    public static TelemetryPlan Decide(Func<string, string?> valueOf, Func<string, bool> fileExists)
     {
         string? Value(string key) => valueOf(key) is { } value && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 
         // The one rule for every shape the SDK would throw on (the Server settings page checks with it too).
-        var problems = OtelSettings.CheckedKeys.Select(key => Value(key) is { } value ? OtelSettings.ProblemOf(key, value) : null).OfType<string>().ToList();
+        var problems = OtelSettings.CheckedKeys.Select(key => Value(key) is { } value ? OtelSettings.ProblemOf(key, value, fileExists) : null).OfType<string>().ToList();
 
         var signalEndpoints = OtelSettings.Signals.Select(OtelSettings.SignalEndpoint).Where(k => Value(k) is not null).ToList();
         var anyEndpoint = Value(OtelSettings.Endpoint) is not null || signalEndpoints.Count > 0;

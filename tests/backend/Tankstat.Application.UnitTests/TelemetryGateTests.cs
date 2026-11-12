@@ -4,12 +4,16 @@ namespace Tankstat.Application.UnitTests;
 
 public class TelemetryGateTests
 {
+    /// <summary>The files the app can read, as the test gives them (#312: the gate asks its caller, never the disk).</summary>
+    private const string Certificate = "/certs/collector-ca.pem";
+    private static readonly HashSet<string> Files = [Certificate];
+
     private const string Endpoint = "http://collector:4317";
 
     private static TelemetryPlan Decide(params (string Key, string? Value)[] settings)
     {
         var values = settings.ToDictionary(s => s.Key, s => s.Value, StringComparer.OrdinalIgnoreCase);
-        return TelemetryGate.Decide(key => values.GetValueOrDefault(key));
+        return TelemetryGate.Decide(key => values.GetValueOrDefault(key), Files.Contains);
     }
 
     [Fact]
@@ -80,15 +84,7 @@ public class TelemetryGateTests
     [Fact]
     public void ACertificateFileThatIsThere_IsNoProblem()
     {
-        var file = Path.GetTempFileName();
-        try
-        {
-            Assert.Equal(TelemetryState.On, Decide((OtelSettings.Endpoint, Endpoint), ("OTEL_EXPORTER_OTLP_CERTIFICATE", file)).State);
-        }
-        finally
-        {
-            File.Delete(file);
-        }
+        Assert.Equal(TelemetryState.On, Decide((OtelSettings.Endpoint, Endpoint), ("OTEL_EXPORTER_OTLP_CERTIFICATE", Certificate)).State);
     }
 
     [Fact]
@@ -96,7 +92,7 @@ public class TelemetryGateTests
     {
         var problem = Assert.Single(Decide((OtelSettings.Endpoint, Endpoint), (OtelSettings.Protocol, "GRPC")).Problems);
 
-        Assert.Equal(OtelSettings.ProblemOf(OtelSettings.Protocol, "GRPC"), problem); // what the catalog's Validate says too
+        Assert.Equal(OtelSettings.ProblemOf(OtelSettings.Protocol, "GRPC", Files.Contains), problem); // what the catalog's Validate says too
     }
 
     [Fact]
