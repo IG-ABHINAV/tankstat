@@ -565,4 +565,30 @@ public class TyreExpenseTests
         Assert.NotEqual(Line(s, s3).OdometerReadingId, Line(s, s4).OdometerReadingId);
         GroupHolds(s, expenseId);
     }
+
+    [Fact]
+    public async Task APhotosReadingOnASharedExpense_ReachesEveryLiveLine_AsOneRow()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s, odometer: null);
+        var reading = Domain.Odometers.OdometerReading.Create(s.Car.OwnerId, s.Car.Id, D(2026, 9, 20), 148_250);
+
+        await new TyreExpenseReadings(s.W.Tyres).FilledAsync(expenseId, reading, default);
+
+        Assert.Equal((reading.Id, reading.Id), (Line(s, s3).OdometerReadingId!.Value, Line(s, s4).OdometerReadingId!.Value));
+    }
+
+    [Fact]
+    public async Task ATrashedLinesOwnCopy_NeverCountsAgainstTheLiveLinesNewReading()
+    {
+        var s = await Setup();
+        var (s3, s4, expenseId, _) = await SharedRepair(s);
+        await s.Tyres.TrashEntryAsync(s3, default, withExpense: false);
+
+        // A later day with a lower odometer than the trashed line kept: the copy is in the trash, it does not count.
+        await s.W.ExpenseService.UpdateAsync(expenseId, new ExpenseInput(D(2026, 9, 25), "Puncture repaired", "Tyres", 13_000, "HUF", 148_100, null), default);
+
+        Assert.Equal((D(2026, 9, 25), 148_100L), (Line(s, s4).Day, Line(s, s4).Odometer!.Value));
+        Assert.Equal(148_200, Line(s, s3).OdometerReading!.Value);
+    }
 }

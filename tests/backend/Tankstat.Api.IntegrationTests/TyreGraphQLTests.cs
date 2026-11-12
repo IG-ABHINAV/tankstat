@@ -397,4 +397,36 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Equal((148_200L, 13_000m), (byId[s4.ToString()].GetProperty("odometer").GetInt64(), byId[s4.ToString()].GetProperty("amount").GetDecimal()));
         Assert.Equal(13_000m, parted.GetProperty("spentAll")[0].GetProperty("amount").GetDecimal()); // no second expense
     }
+
+    [Fact]
+    public async Task AlsoChangeItFor_EmptiesTheSharedOdometerForBoth_ThenTrashTakesTheExpenseFromEveryLine()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var (s3, s4) = (Guid.NewGuid(), Guid.NewGuid());
+        await Mutate("addTyreEntry", "AddTyreEntryInput", new
+        {
+            vehicleId = vehicle, kind = "PUNCTURE_REPAIRED", day = "2026-09-20", setId = summer, odometer = 148_200,
+            fee = new { amount = 13_000, currency = "HUF", category = "Tyres", title = "Puncture repaired: Michelin", expenseId = Guid.NewGuid() },
+            tyres = new object[] { new { tyreId = tyres[2], id = s3 }, new { tyreId = tyres[3], id = s4 } },
+            breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        }, "vehicleId");
+
+        var emptied = await Mutate("updateTyreEntry", "UpdateTyreEntryInput", new { id = s3, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", also = new[] { s4 } },
+            "entries { id odometer amount groupId } readings { date value }");
+        var lines = emptied.GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("groupId").ValueKind != JsonValueKind.Null).ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.All(lines, l => Assert.Equal((JsonValueKind.Null, 13_000m), (l.GetProperty("odometer").ValueKind, l.GetProperty("amount").GetDecimal())));
+        Assert.DoesNotContain(emptied.GetProperty("readings").EnumerateArray(), r => r.GetProperty("value").GetInt64() == 148_200);
+
+        var trashed = await Mutate("updateTyreEntry", "UpdateTyreEntryInput", new
+        {
+            id = s3, kind = "PUNCTURE_REPAIRED", setId = summer, day = "2026-09-20", fee = new { amount = (decimal?)null }, sharedExpense = "TRASH",
+        }, "entries { id amount expenseTrashed } spentAll { amount }");
+        var byId = trashed.GetProperty("entries").EnumerateArray().ToDictionary(e => e.GetProperty("id").GetString()!);
+        Assert.All([byId[s3.ToString()], byId[s4.ToString()]], l => Assert.True(l.GetProperty("expenseTrashed").GetBoolean()));
+        Assert.Empty(trashed.GetProperty("spentAll").EnumerateArray());
+    }
 }
