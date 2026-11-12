@@ -28,7 +28,25 @@ public sealed record NewTyreSet(
 
 /// <param name="Replace">A swap logged on that day already is replaced (its installation goes to the trash) instead of refused.</param>
 /// <param name="Fee">What the swap (or the change of positions) cost (#288): on the line of the installation that starts that day.</param>
-public sealed record TyreSwapInput(Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note, TyreFee? Fee = null);
+/// <param name="Corners">For a broken-up set (#289): each tyre's corner from that day (a tyre left out has none, "Not sure"); null gives each
+/// the corner it had before. A whole set ignores it.</param>
+public sealed record TyreSwapInput(
+    Guid VehicleId, Guid SetId, DateOnly Day, bool? PairOneFront, bool Replace, long? Odometer, string? Note, TyreFee? Fee = null,
+    IReadOnlyDictionary<Guid, TyreCorner?>? Corners = null);
+
+/// <summary>Breaking a set up into four single tyres (#289) on <paramref name="Day"/> (the client's today): each tyre's id, label and corner.</summary>
+public sealed record TyreBreakUpInput(Guid SetId, DateOnly Day, IReadOnlyList<NewTyre> Tyres);
+
+/// <summary>A single tyre's time on the car, typed in its history (#289): the days and the corner (null: not recorded).</summary>
+public sealed record TyrePlaceInput(DateOnly From, DateOnly? Until, TyreCorner? Corner);
+
+/// <summary>A time on the car of a single tyre with its distance, worked out on read.</summary>
+public sealed record TyrePlaceView(TyrePlace Place, InstallationDistance Distance);
+
+/// <summary>A single tyre of a broken-up set (#289), with its figures and its live places, newest first.</summary>
+/// <param name="OnTheCar">One of its places is open (its set on the car, the tyre on it).</param>
+/// <param name="Corner">Its corner now when on the car, else the last one it had (null: not recorded).</param>
+public sealed record TyreView(Tyre Tyre, TyreFigures Figures, IReadOnlyList<TyrePlaceView> Places, bool OnTheCar, TyreCorner? Corner);
 
 /// <summary>
 /// The amount a tyre log line carries (#288): an ordinary expense on the Expenses tab, with the line's day and reading. Null as a whole leaves
@@ -56,8 +74,9 @@ public sealed record TyreInstallationView(TyreInstallation Installation, Install
 /// <summary>A set with its figures and its live installations (none while it is in the trash).</summary>
 /// <param name="Spent">What it cost (#288 step 4): its live lines' live expenses, per currency.</param>
 /// <param name="Repairs">Its live punctures repaired and valves replaced.</param>
+/// <param name="Tyres">A broken-up set's tyres not in the trash, retired ones included, by label (#289).</param>
 public sealed record TyreSetView(TyreSet Set, TyreSetFigures Figures, IReadOnlyList<TyreInstallationView> Installations, bool OnTheCar,
-    IReadOnlyList<TyreSpent>? Spent = null, int Repairs = 0);
+    IReadOnlyList<TyreSpent>? Spent = null, int Repairs = 0, IReadOnlyList<TyreView>? Tyres = null);
 
 /// <summary>
 /// A vehicle's tyres as the Tyres tab shows them: the sets that are not in the trash and the tyre log's lines (those not in the trash, of
@@ -109,8 +128,8 @@ public sealed class TyreService(
         save.AddedSets.Add(set);
         if (input.Fitted)
         {
-            var history = History(vehicle, book, extra: set);
-            Follow(save, book, history, history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId), by);
+            var (history, places) = Rules(vehicle, book, extra: set);
+            Follow(save, book, history, places.Swap(set, input.Day, input.PairOneFront, input.Replace, null, by, clock.GetUtcNow(), installationId), by);
             await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, note: null, by, ct, installationId);
         }
         if (input.Price is { Amount: not null } price)
@@ -175,8 +194,9 @@ public sealed class TyreService(
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave { Book = book, By = by };
-        var history = History(vehicle, book);
-        Follow(save, book, history, history.Swap(set, input.Day, input.PairOneFront, input.Replace, by, clock.GetUtcNow(), installationId, repeatable: repeat), by);
+        var (history, places) = Rules(vehicle, book);
+        Follow(save, book, history,
+            places.Swap(set, input.Day, input.PairOneFront, input.Replace, input.Corners, by, clock.GetUtcNow(), installationId, repeatable: repeat), by);
         await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId, input.Fee);
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} went on the car", set.Id, vehicle.Id);
@@ -195,8 +215,8 @@ public sealed class TyreService(
         RequireNotFuture(input.Day);
         var set = LiveSet(book, input.SetId);
         var save = new TyreSave { Book = book, By = by };
-        var history = History(vehicle, book);
-        Follow(save, book, history, history.ChangePositions(set, input.Day, input.PairOneFront, by, installationId, repeatable: repeat), by);
+        var (history, places) = Rules(vehicle, book);
+        Follow(save, book, history, places.ChangePositions(set, input.Day, input.PairOneFront, input.Corners, by, installationId, repeatable: repeat), by);
         await TypedAsync(vehicle, book, save, history, set.Id, input.Day, input.Odometer, input.Note, by, ct, installationId, input.Fee);
         await SaveOnceAsync(save, Repeat, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -226,12 +246,14 @@ public sealed class TyreService(
         var day = rows.GroupBy(r => r.Day).FirstOrDefault(g => g.Count() > 1)?.Key;
         if (day is { } twice)
             throw new DomainException("tyres.pastSwapsSameDay", "Two swaps on one day: one day holds one swap.", new { Date = twice.ToString("yyyy-MM-dd") });
-        var history = History(vehicle, book);
+        var (history, places) = Rules(vehicle, book);
         var save = new TyreSave { Book = book, By = by };
         foreach (var row in rows.OrderBy(r => r.Day))
         {
             RequireNotFuture(row.Day);
-            Follow(save, book, history, history.Swap(LiveSet(book, row.SetId), row.Day, null, replace, by, clock.GetUtcNow(), row.InstallationId, pairsGiven: false, repeatable: repeat), by);
+            // From papers: a broken-up set's tyres take the corners they had before (#289).
+            Follow(save, book, history,
+                places.Swap(LiveSet(book, row.SetId), row.Day, null, replace, null, by, clock.GetUtcNow(), row.InstallationId, pairsGiven: false, repeatable: repeat), by);
             await TypedAsync(vehicle, book, save, history, row.SetId, row.Day, row.Odometer, note: null, by, ct, row.InstallationId);
         }
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
@@ -247,9 +269,10 @@ public sealed class TyreService(
         if (await Repeat()) return Overview(vehicle.Id, book);
         RequireDays(input);
         var save = new TyreSave { Book = book, By = by };
-        var history = History(vehicle, book);
-        var created = history.Add(set, input.From, input.Until, input.PairOneFront, by, id);
+        var (history, places) = Rules(vehicle, book);
+        var (created, placed) = places.AddInstallation(set, input.From, input.Until, input.PairOneFront, by, id); // a broken-up set's tyres at their corners before (#289)
         save.AddedInstallations.Add(created);
+        save.Take(placed);
         save.AddedEntries.Add(TyreLog.LineFor(created, history, by));
         await InstallationReadingsAsync(vehicle, book, save, history, set.Id, input, by, ct);
         await SaveOnceAsync(save, Repeat, ct);
@@ -263,8 +286,10 @@ public sealed class TyreService(
         RequireDays(input);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
         var save = new TyreSave { Book = book, By = by };
-        var history = History(vehicle, book);
-        if (history.Edit(installation, input.From, input.Until, input.PairOneFront, by))
+        var (history, places) = Rules(vehicle, book);
+        var (edited, placed) = places.EditInstallation(installation, input.From, input.Until, input.PairOneFront, by); // the places at its ends follow (#289)
+        save.Take(placed);
+        if (edited)
         {
             save.ChangedInstallations.Add(installation);
             if (LineOf(book, installation.Id) is { IsDeleted: false } line && line.MoveTo(installation.From, by))
@@ -338,8 +363,8 @@ public sealed class TyreService(
             if (input.Kind != entry.Kind || input.SetId != entry.SetId)
                 throw new DomainException("tyres.swapLineLocked", "A swap keeps its set. For another set, move the swap to the trash and log it again.");
             var installation = book.Installations.First(s => s.Id == entry.InstallationId);
-            var history = History(vehicle, book);
-            Follow(save, book, history, history.MoveSwap(installation, input.Day, by), by);
+            var (history, places) = Rules(vehicle, book);
+            Follow(save, book, history, places.MoveSwap(installation, input.Day, by), by);
         }
         else if (input.SetId is { } setId && setId != entry.SetId) LiveSet(book, setId);
         if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Day, value, exceptReadingId: entry.OdometerReadingId, ct);
@@ -385,18 +410,35 @@ public sealed class TyreService(
         RequireNotFuture(day);
         if (book.Installations.Any(s => s.SetId == id && !s.IsDeleted && (s.Until is null || s.Until > day)))
             throw new DomainException("tyres.retireOnCar", "A tyre set on the car cannot be retired; swap it off first.", new { Set = set.Name });
-        set.Retire(day, (await access.RequirePrincipalAsync(ct)).Id);
-        await SaveSetAsync(set, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        set.Retire(day, by);
+        var save = new TyreSave();
+        save.ChangedSets.Add(set);
+        // Its tyres retire with it (#289), so unretiring it brings back these and not one replaced before.
+        foreach (var tyre in book.SingleTyres.Where(t => t.SetId == id && !t.IsDeleted && !t.IsRetired))
+        {
+            tyre.Retire(day, TyreRetiredWhy.SetRetired, by);
+            save.Change(tyre);
+        }
+        await SaveAsync(save, ct);
         logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} retired", id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
     public async Task<TyreOverview> UnretireAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {
-        var (vehicle, set, _) = await EditableSetAsync(id, ct);
+        var (vehicle, set, book) = await EditableSetAsync(id, ct);
         VersionCheck.Require(expectedVersion, set.Version);
-        set.Unretire((await access.RequirePrincipalAsync(ct)).Id);
-        await SaveSetAsync(set, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        set.Unretire(by);
+        var save = new TyreSave();
+        save.ChangedSets.Add(set);
+        foreach (var tyre in book.SingleTyres.Where(t => t.SetId == id && !t.IsDeleted && t.RetiredWhy == TyreRetiredWhy.SetRetired))
+        {
+            tyre.Unretire(by);
+            save.Change(tyre);
+        }
+        await SaveAsync(save, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
@@ -416,10 +458,156 @@ public sealed class TyreService(
         var (vehicle, set, book) = await EditableSetAsync(id, ct, trashed: true);
         VersionCheck.Require(expectedVersion, set.Version);
         set.Restore((await access.RequirePrincipalAsync(ct)).Id);
-        var history = new TyreHistory(vehicle.OwnerId, vehicle.Id, book.Sets, book.Installations);
+        var (history, places) = Rules(vehicle, book);
         history.CheckRestored([.. history.Live.Where(s => s.SetId == id)]); // the set's own live installations now count again
+        // Its tyres come back too (#289): a label another tyre took meanwhile is refused, as are places that no longer fit.
+        foreach (var tyre in places.TyresOf(id)) places.RequireLabelFree(tyre.Label, except: tyre);
+        places.CheckRestored([.. places.LivePlaces.Where(p => places.TyresOf(id).Any(t => t.Id == p.TyreId))]);
         await SaveSetAsync(set, ct);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>
+    /// Breaks a set up into four single tyres (#289), never undone: each starts with the set's history and rough figure (<see cref="TyrePlaces.BreakUp"/>).
+    /// The tyres' ids are the client's: the same break-up sent again is answered with what it made.
+    /// </summary>
+    public async Task<TyreOverview> BreakUpAsync(TyreBreakUpInput input, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, set, book) = await EditableSetAsync(input.SetId, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        Task<bool> Repeat() => RepeatedTyresAsync(input.Tyres.Select(t => t.Id), vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, book);
+        VersionCheck.Require(expectedVersion, set.Version);
+        RequireNotFuture(input.Day);
+        var (_, places) = Rules(vehicle, book);
+        var save = new TyreSave { Book = book, By = by };
+        save.Take(places.BreakUp(set, input.Tyres, input.Day, by));
+        save.ChangedSets.Add(set);
+        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+        logger.LogDebug("Tyre set {SetId} of vehicle {VehicleId} is tracked tyre by tyre from now on", set.Id, vehicle.Id);
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>A single tyre's new label (#289): unique among the vehicle's tyres not in the trash, without case.</summary>
+    public async Task<TyreOverview> UpdateTyreAsync(Guid id, string label, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, tyre, book) = await EditableTyreAsync(id, ct);
+        VersionCheck.Require(expectedVersion, tyre.Version);
+        var (_, places) = Rules(vehicle, book);
+        places.RequireLabelFree(Tyre.CheckedLabel(label), except: tyre);
+        if (tyre.Relabel(label, (await access.RequirePrincipalAsync(ct)).Id))
+        {
+            var save = new TyreSave();
+            save.Change(tyre);
+            await SaveAsync(save, ct);
+        }
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>Moves a single tyre to the trash (#289): its places hide through it, so its corner is empty for that time; they come back with it.</summary>
+    public async Task<TyreOverview> TrashTyreAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, tyre, _) = await EditableTyreAsync(id, ct);
+        VersionCheck.Require(expectedVersion, tyre.Version);
+        tyre.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
+        var save = new TyreSave();
+        save.Change(tyre);
+        await SaveAsync(save, ct);
+        logger.LogDebug("Tyre {TyreId} of vehicle {VehicleId} moved to the trash", id, vehicle.Id);
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>Brings a single tyre back with its places: refused when another tyre took its label meanwhile, or another tyre is at its corner then.</summary>
+    public async Task<TyreOverview> RestoreTyreAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, tyre, book) = await EditableTyreAsync(id, ct, trashed: true);
+        VersionCheck.Require(expectedVersion, tyre.Version);
+        tyre.Restore((await access.RequirePrincipalAsync(ct)).Id);
+        var (_, places) = Rules(vehicle, book);
+        places.RequireLabelFree(tyre.Label, except: tyre);
+        places.CheckRestored([.. places.LivePlaces.Where(p => p.TyreId == id)]);
+        var save = new TyreSave();
+        save.Change(tyre);
+        await SaveAsync(save, ct);
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>A time on the car typed in a single tyre's history (#289), inside one of its set's installations.</summary>
+    /// <param name="id">The client's id: the same add sent again is answered with what it made.</param>
+    public async Task<TyreOverview> AddPlaceAsync(Guid tyreId, TyrePlaceInput input, CancellationToken ct, Guid? id = null)
+    {
+        var (vehicle, tyre, book) = await EditableTyreAsync(tyreId, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        Task<bool> Repeat() => RepeatedPlaceAsync(id, vehicle.Id, by, ct);
+        if (await Repeat()) return Overview(vehicle.Id, book);
+        RequireNotFuture(input.From);
+        if (input.Until is { } until) RequireNotFuture(until);
+        var (_, places) = Rules(vehicle, book);
+        var save = new TyreSave { Book = book, By = by };
+        save.AddedPlaces.Add(places.Add(tyre, input.From, input.Until, input.Corner, by, id));
+        if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>Changes a single tyre's time on the car (#289): that tyre's alone.</summary>
+    public async Task<TyreOverview> UpdatePlaceAsync(Guid id, TyrePlaceInput input, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, place, book) = await EditablePlaceAsync(id, ct);
+        VersionCheck.Require(expectedVersion, place.Version);
+        RequireNotFuture(input.From);
+        if (input.Until is { } until) RequireNotFuture(until);
+        var (_, places) = Rules(vehicle, book);
+        if (places.Edit(place, input.From, input.Until, input.Corner, (await access.RequirePrincipalAsync(ct)).Id))
+        {
+            var save = new TyreSave();
+            save.Change(place);
+            await SaveAsync(save, ct);
+        }
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>Moves a single tyre's time on the car to the trash (#289): its corner is empty for that time.</summary>
+    public async Task<TyreOverview> TrashPlaceAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, place, _) = await EditablePlaceAsync(id, ct);
+        VersionCheck.Require(expectedVersion, place.Version);
+        place.MarkDeleted(clock.GetUtcNow(), (await access.RequirePrincipalAsync(ct)).Id);
+        var save = new TyreSave();
+        save.Change(place);
+        await SaveAsync(save, ct);
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>Brings a time on the car back: refused, with the reason, when another tyre is at its corner then (or the checks no longer pass).</summary>
+    public async Task<TyreOverview> RestorePlaceAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
+    {
+        var (vehicle, place, book) = await EditablePlaceAsync(id, ct, trashed: true);
+        VersionCheck.Require(expectedVersion, place.Version);
+        place.Restore((await access.RequirePrincipalAsync(ct)).Id);
+        var (_, places) = Rules(vehicle, book);
+        places.CheckRestored([place]);
+        var save = new TyreSave();
+        save.Change(place);
+        await SaveAsync(save, ct);
+        return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>The single tyre when it is in the trash (on its own, or with its set) and the user may restore it, else null.</summary>
+    public async Task<Tyre?> TyreInTrashAsync(Guid id, CancellationToken ct) =>
+        (await tyres.ListTyresAsync([id], ct)).FirstOrDefault() is { } tyre
+        && (tyre.IsDeleted || await tyres.FindSetAsync(tyre.SetId, ct) is { IsDeleted: true })
+        && await guard.ForVehicleAsync(tyre.VehicleId, ct) is { Level: >= AccessLevel.Edit }
+            ? tyre
+            : null;
+
+    /// <summary>The time on the car when it is in the trash (on its own, or with its tyre or set) and the user may restore it, else null.</summary>
+    public async Task<TyrePlace?> PlaceInTrashAsync(Guid id, CancellationToken ct)
+    {
+        if ((await tyres.ListPlacesAsync([id], ct)).FirstOrDefault() is not { } place) return null;
+        if (await guard.ForVehicleAsync(place.VehicleId, ct) is not { Level: >= AccessLevel.Edit }) return null;
+        if (place.IsDeleted) return place;
+        return (await tyres.ListTyresAsync([place.TyreId], ct)).FirstOrDefault() is { } tyre
+            && (tyre.IsDeleted || await tyres.FindSetAsync(tyre.SetId, ct) is { IsDeleted: true }) ? place : null;
     }
 
     /// <summary>The set when it is in the trash and the user may restore it, else null (a trash sent again finds it there).</summary>
@@ -466,6 +654,18 @@ public sealed class TyreService(
     private static TyreOverview Overview(Guid vehicleId, TyreBook book)
     {
         var live = book.Installations.Where(s => !s.IsDeleted).ToList();
+        // The single tyres (#289): each live tyre's live places, as the rules count them (its tyre, installation and set live).
+        var places = new TyrePlaces(Guid.Empty, vehicleId, new TyreHistory(Guid.Empty, vehicleId, book.Sets, book.Installations), book.Sets, book.SingleTyres, book.TyrePlaces);
+        var livePlaces = places.LivePlaces.ToList();
+        IReadOnlyList<TyreView> TyresOf(TyreSet set) =>
+        [
+            .. places.TyresOf(set.Id).OrderBy(t => t.Label, StringComparer.CurrentCultureIgnoreCase).ThenBy(t => t.Id).Select(t =>
+            {
+                var own = livePlaces.Where(p => p.TyreId == t.Id).OrderByDescending(p => p.From).ToList();
+                return new TyreView(t, TyreCalculator.TyreFigures(book.Readings, t, own),
+                    [.. own.Select(p => new TyrePlaceView(p, TyreCalculator.Distance(book.Readings, p.From, p.Until)))], own.Any(p => p.Until is null), own.FirstOrDefault()?.Corner);
+            }),
+        ];
         var liveSets = book.Sets.Where(s => !s.IsDeleted).Select(s => s.Id).ToHashSet();
         var entries = book.Entries.Where(e => !e.IsDeleted && (e.SetId is null || liveSets.Contains(e.SetId.Value)))
             .OrderByDescending(e => e.Day).ThenBy(e => e.IsSwapLine ? 0 : 1).ThenBy(e => e.Id).ToList();
@@ -478,7 +678,7 @@ public sealed class TyreService(
                 var own = live.Where(s => s.SetId == set.Id).OrderByDescending(s => s.From).ToList();
                 return new TyreSetView(set, TyreCalculator.SetFigures(book.Readings, set, own),
                     [.. own.Select(s => new TyreInstallationView(s, TyreCalculator.Distance(book.Readings, s.From, s.Until)))], own.Any(s => s.IsOpen),
-                    costs.SpentOn(set.Id), costs.RepairsOf(set.Id));
+                    costs.SpentOn(set.Id), costs.RepairsOf(set.Id), set.IsBrokenUp ? TyresOf(set) : []);
             })
             .ToList();
         var category = book.Entries.Where(e => !e.IsDeleted && e.ExpenseId is not null).OrderByDescending(e => e.Day).ThenByDescending(e => e.UpdatedAt)
@@ -488,6 +688,13 @@ public sealed class TyreService(
 
     private static TyreHistory History(Vehicle vehicle, TyreBook book, TyreSet? extra = null) =>
         new(vehicle.OwnerId, vehicle.Id, extra is null ? book.Sets : [.. book.Sets, extra], book.Installations);
+
+    /// <summary>The history and the single tyres' rules over it (#289): every change of the history goes through the places.</summary>
+    private static (TyreHistory History, TyrePlaces Places) Rules(Vehicle vehicle, TyreBook book, TyreSet? extra = null)
+    {
+        var history = History(vehicle, book, extra);
+        return (history, new TyrePlaces(vehicle.OwnerId, vehicle.Id, history, extra is null ? book.Sets : [.. book.Sets, extra], book.SingleTyres, book.TyrePlaces));
+    }
 
     /// <summary>
     /// A change that creates an installation with this id came again: it was applied already (same creator and vehicle), else the id is taken
@@ -522,6 +729,23 @@ public sealed class TyreService(
         return true;
     }
 
+    /// <summary>The same for the tyres of a break-up (#289): any of them there means the break-up was made (or the id is someone else's).</summary>
+    private async Task<bool> RepeatedTyresAsync(IEnumerable<Guid?> ids, Guid vehicleId, Guid by, CancellationToken ct)
+    {
+        var given = ids.OfType<Guid>().ToList();
+        if (given.Count == 0 || (await tyres.ListTyresAsync(given, ct)).FirstOrDefault() is not { } existing) return false;
+        ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, existing.Id);
+        return true;
+    }
+
+    /// <summary>The same for a time on the car typed in a tyre's history.</summary>
+    private async Task<bool> RepeatedPlaceAsync(Guid? id, Guid vehicleId, Guid by, CancellationToken ct)
+    {
+        if (id is not { } given || (await tyres.ListPlacesAsync([given], ct)).FirstOrDefault() is not { } existing) return false;
+        ClientIds.Repeat(existing, existing.VehicleId == vehicleId && existing.CreatedById == by, given);
+        return true;
+    }
+
     /// <summary>The same for an added set.</summary>
     private async Task<bool> RepeatedSetAsync(Guid? id, Guid vehicleId, Guid by, CancellationToken ct)
     {
@@ -533,6 +757,13 @@ public sealed class TyreService(
     private static TyreSet LiveSet(TyreBook book, Guid id) =>
         book.Sets.FirstOrDefault(s => s.Id == id && !s.IsDeleted)
         ?? throw new NotFoundException("tyres.setNotFound", $"Tyre set {id} does not exist.", new { Id = id });
+
+    /// <summary>A change of the history with its places (#289): the places are saved, the rest as below.</summary>
+    private void Follow(TyreSave save, TyreBook book, TyreHistory history, (TyreChanges History, TyrePlaceChanges Places) changes, Guid by)
+    {
+        save.Take(changes.Places);
+        Follow(save, book, history, changes.History, by);
+    }
 
     /// <summary>The lines a change of the history makes, moves or trashes (<see cref="TyreLog.Follow"/>), with the installations.</summary>
     private void Follow(TyreSave save, TyreBook book, TyreHistory history, TyreChanges changes, Guid by)
@@ -697,7 +928,9 @@ public sealed class TyreService(
         if (installation is not null)
         {
             installation.Restore(by);
-            History(vehicle, book).CheckRestored([installation]);
+            var (history, places) = Rules(vehicle, book);
+            history.CheckRestored([installation]);
+            places.CheckRestored([.. places.LivePlaces.Where(p => p.InstallationId == installation.Id)]); // its tyres' places come back with it (#289)
             save.Change(installation);
         }
         if (line is { IsDeleted: true })
@@ -760,8 +993,8 @@ public sealed class TyreService(
         {
             if (line.IsSwapLine && input.Date != line.Day)
             {
-                var history = History(vehicle, book);
-                Follow(save, book, history, history.MoveSwap(book.Installations.First(s => s.Id == line.InstallationId), input.Date, by), by);
+                var (history, places) = Rules(vehicle, book);
+                Follow(save, book, history, places.MoveSwap(book.Installations.First(s => s.Id == line.InstallationId), input.Date, by), by);
             }
             if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Date, value, exceptReadingId: line.OdometerReadingId, ct);
             var (added, removed, _) = line.Update(line.Kind, line.SetId, input.Date, input.Odometer, line.Note, by);
@@ -891,6 +1124,34 @@ public sealed class TyreService(
         var loaded = book.Entries.First(e => e.Id == id);
         if (loaded.SetId is { } setId && book.Sets.First(s => s.Id == setId).IsDeleted) throw Missing();
         if (loaded.IsDeleted != trashed) throw trashed ? new DomainException("tyres.entryNotTrashed", "This line of the tyre log is not in the trash.") : Missing();
+        return (vehicle, loaded, book);
+    }
+
+    /// <summary>A single tyre the user may change: one hidden through its set in the trash does not exist (restore the set).</summary>
+    private async Task<(Vehicle, Tyre, TyreBook)> EditableTyreAsync(Guid id, CancellationToken ct, bool trashed = false)
+    {
+        var tyre = (await tyres.ListTyresAsync([id], ct)).FirstOrDefault();
+        NotFoundException Missing() => new("tyres.tyreNotFound", $"Tyre {id} does not exist.", new { Id = id });
+        var vehicle = LogAccessGuard.RequireEdit(await guard.ForVehicleAsync(tyre?.VehicleId, ct), Missing).Vehicle;
+        var book = await tyres.LoadAsync(vehicle.Id, ct);
+        var loaded = book.SingleTyres.First(t => t.Id == id);
+        if (book.Sets.First(s => s.Id == loaded.SetId).IsDeleted) throw Missing();
+        if (loaded.IsDeleted != trashed) throw trashed ? new DomainException("tyres.tyreNotTrashed", "This tyre is not in the trash.") : Missing();
+        return (vehicle, loaded, book);
+    }
+
+    /// <summary>A time on the car the user may change: one hidden through its tyre, installation or set does not exist (restore that first).</summary>
+    private async Task<(Vehicle, TyrePlace, TyreBook)> EditablePlaceAsync(Guid id, CancellationToken ct, bool trashed = false)
+    {
+        var place = (await tyres.ListPlacesAsync([id], ct)).FirstOrDefault();
+        NotFoundException Missing() => new("tyres.placeNotFound", $"Time on the car {id} does not exist.", new { Id = id });
+        var vehicle = LogAccessGuard.RequireEdit(await guard.ForVehicleAsync(place?.VehicleId, ct), Missing).Vehicle;
+        var book = await tyres.LoadAsync(vehicle.Id, ct);
+        var loaded = book.TyrePlaces.First(p => p.Id == id);
+        var tyre = book.SingleTyres.First(t => t.Id == loaded.TyreId);
+        if (tyre.IsDeleted || book.Sets.First(s => s.Id == tyre.SetId).IsDeleted || book.Installations.FirstOrDefault(s => s.Id == loaded.InstallationId) is not { IsDeleted: false })
+            throw Missing();
+        if (loaded.IsDeleted != trashed) throw trashed ? new DomainException("tyres.placeNotTrashed", "This time on the car is not in the trash.") : Missing();
         return (vehicle, loaded, book);
     }
 

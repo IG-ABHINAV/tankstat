@@ -374,6 +374,11 @@ public class LoggingTests
             new TyreFee(1618.03m, "EUR", "Canary tyre category", "Canary tyre title", null)), default);
         await w.TyreService.TrashEntryAsync(tyreLine, default);
         await w.TyreService.RestoreEntryAsync(tyreLine, default);
+        // Broken up into single tyres (#289): the labels are typed values too.
+        await w.TyreService.BreakUpAsync(new TyreBreakUpInput(tyreSet, Day, [
+            new(Guid.NewGuid(), "CNRYA", TyreCorner.FrontLeft), new(Guid.NewGuid(), "CNRYB", TyreCorner.FrontRight),
+            new(Guid.NewGuid(), "CNRYC", TyreCorner.RearLeft), new(Guid.NewGuid(), "CNRYD", null)]), default);
+        canaries.AddRange(["CNRYA", "CNRYB", "CNRYC", "CNRYD"]);
         canaries.AddRange(["Canary Tyre Set", "Canary Size", "31415", "987654400", "canary tyre note", "Canary tyre category", "Canary tyre title", "2718.28", "1618.03"]);
 
         // Sharing, an import with a file full of somebody's life, and the access settings.
