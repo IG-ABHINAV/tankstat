@@ -281,6 +281,13 @@ internal sealed class InMemoryStats(InMemoryRefuelings refuelings, InMemoryExpen
             costs.Select(e => new ExpensePoint(e.Date, e.Category, e.Amount!.Value, e.Currency!)).ToList(),
             fuel.Select(r => new OdometerPoint(r.Date, r.Odometer!.Value)).Concat(costs.Where(e => e.Odometer is not null).Select(e => new OdometerPoint(e.Date, e.Odometer!.Value))).ToList()));
     }
+
+    public async Task<IReadOnlyDictionary<Guid, StatsData>> LoadManyAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        var all = new Dictionary<Guid, StatsData>();
+        foreach (var id in vehicleIds.Distinct()) all[id] = await LoadAsync(id, ct);
+        return all;
+    }
 }
 
 internal sealed class InMemoryCharts : IVehicleChartRepository

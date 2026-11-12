@@ -6,6 +6,9 @@ public interface IStatsRepository
 {
     /// <summary>All live fill-ups, expenses and odometer readings of a vehicle, reduced to what statistics need.</summary>
     Task<StatsData> LoadAsync(Guid vehicleId, CancellationToken ct);
+
+    /// <summary><see cref="LoadAsync"/> for many vehicles in a fixed number of queries (#311: a page of vehicle cards), every id in the answer.</summary>
+    Task<IReadOnlyDictionary<Guid, StatsData>> LoadManyAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct);
 }
 
 public interface IVehicleChartRepository

@@ -64,6 +64,7 @@ do
         .AddDataLoader<LogLevelByVehicleLoader>()
         .AddDataLoader<AccessLevelByOwnerLoader>()
         .AddDataLoader<RefuelingCountLoader>()
+        .AddDataLoader<VehicleSummaryLoader>()
         .AddDataLoader<UserRefLoader>()
         .AddDataLoader<VehicleIncludingDeletedLoader>()
         .AddDataLoader<PhotoReadingsLoader>()

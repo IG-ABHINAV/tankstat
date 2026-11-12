@@ -57,6 +57,20 @@ public sealed class StatsService(IVehicleRepository vehicles, IStatsRepository s
     public async Task<VehicleSummary?> SummaryAsync(Guid vehicleId, CancellationToken ct) =>
         await IsVisibleAsync(vehicleId, ct) ? StatsCalculator.Summary(await stats.LoadAsync(vehicleId, ct), Today) : null;
 
+    /// <summary>
+    /// <see cref="SummaryAsync"/> for many vehicles in a fixed number of queries (#311: a page of vehicle cards shows every card's figures):
+    /// the vehicles and what the user may do with their logs once, their statistics in one load; null for one that is not visible, as one by one.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, VehicleSummary?>> SummariesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        var live = await vehicles.ListByIdsAsync(vehicleIds, ct);
+        var levels = await access.LogLevelsAsync(live, ct);
+        var visible = live.Where(v => levels.GetValueOrDefault(v.Id) >= AccessLevel.View).Select(v => v.Id).ToList();
+        var data = await stats.LoadManyAsync(visible, ct);
+        var today = Today;
+        return vehicleIds.Distinct().ToDictionary(id => id, id => data.TryGetValue(id, out var d) ? StatsCalculator.Summary(d, today) : (VehicleSummary?)null);
+    }
+
     private async Task<bool> IsVisibleAsync(Guid vehicleId, CancellationToken ct)
     {
         var vehicle = await vehicles.FindAsync(vehicleId, ct);

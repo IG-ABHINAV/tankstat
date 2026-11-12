@@ -153,11 +153,19 @@ public sealed class VehicleChartExtensions
     }
 }
 
+/// <summary>Each vehicle's summary (null for one that is not visible), for a page of vehicle cards at once (#311).</summary>
+public sealed class VehicleSummaryLoader(StatsService stats, IBatchScheduler scheduler, DataLoaderOptions options)
+    : BatchDataLoader<Guid, VehicleSummary?>(scheduler, options)
+{
+    protected override Task<IReadOnlyDictionary<Guid, VehicleSummary?>> LoadBatchAsync(IReadOnlyList<Guid> keys, CancellationToken ct) =>
+        stats.SummariesAsync(keys, ct);
+}
+
 [ExtendObjectType<Vehicle>]
 public sealed class VehicleSummaryExtensions
 {
-    /// <summary>Key figures for the vehicle's card and dashboard.</summary>
-    public Task<VehicleSummary?> GetSummary([Parent] Vehicle vehicle, [Service] StatsService stats, CancellationToken ct) => stats.SummaryAsync(vehicle.Id, ct);
+    /// <summary>Key figures for the vehicle's card and dashboard; loaded for a whole page of cards at once (#311).</summary>
+    public Task<VehicleSummary?> GetSummary([Parent] Vehicle vehicle, VehicleSummaryLoader summaries, CancellationToken ct) => summaries.LoadAsync(vehicle.Id, ct);
 
     /// <summary>
     /// How the vehicle's dashboard is arranged: the vehicle's own and the user's, each null until someone made one (the Standard preset).

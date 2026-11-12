@@ -55,6 +55,26 @@ public class VehicleListQueriesTests(VehicleListQueriesTests.Data data) : IClass
         Assert.Equal(110, importTargets.Count);
     }
 
+    [Fact]
+    public async Task TheHomePagesCards_TakeAFixedNumberOfContexts_ForTheOwnerAndForAGrantee()
+    {
+        // The fields of the home page's cards (VehicleCardFields: what the user may do, the schedules and the summary).
+        string Cards(int take) =>
+            $"{{ myVehicles(skip: 0, take: {take}) {{ id canEdit logAccess recurring {{ id }} summary {{ fillUpCount latestOdometer spending {{ currency }} }} }} }}";
+        foreach (var (client, canEdit) in new[] { (data.Users.Alice, true), (data.Users.Bob, false) })
+        {
+            var cards = await PageAsync(client, "myVehicles", Cards, 24);
+            Assert.Equal(24, cards.Count);
+            Assert.All(cards, card =>
+            {
+                Assert.Equal(canEdit, card.GetProperty("canEdit").GetBoolean());
+                var summary = card.GetProperty("summary");
+                Assert.Equal(1, summary.GetProperty("fillUpCount").GetInt32());
+                Assert.True(summary.GetProperty("latestOdometer").GetInt64() >= 1000);
+            });
+        }
+    }
+
     /// <summary>
     /// A page of <paramref name="take"/> rows, which must take the very number of database contexts that a page of three takes (a fixed number,
     /// whatever the rows), and a small one.
