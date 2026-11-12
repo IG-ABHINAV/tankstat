@@ -187,6 +187,8 @@ public sealed class BackupCommandsTests : IDisposable
                 ["Backups:Photos"] = "yes",
                 ["Backups:PassphraseMinLength"] = minimum,
             }).Build())
+            // Making the real writer reads the Backups settings (its folder), which would refuse these: keygen and decrypt never make it.
+            .AddCommands(_ => throw new InvalidOperationException("The command made the backup writer."))
             .BuildServiceProvider();
         async Task<Run> Keygen(ServiceProvider services, string passphrase)
         {
@@ -200,6 +202,11 @@ public sealed class BackupCommandsTests : IDisposable
             var made = await Keygen(services, "correct horse battery staple");
             Assert.Equal((0, ""), (made.Code, made.Error));
             Assert.Matches(@"Backups__Encryption__Recipient=age1\S+", made.Out);
+            // decrypt needs none of them either: what it says is the file's, not the settings'.
+            var (output, error) = (new StringWriter(), new StringWriter());
+            var missing = Path.Combine(Path.GetTempPath(), $"tankstat-it-{Guid.NewGuid():N}.zip");
+            Assert.Equal(1, await BackupCommands.RunAsync(["decrypt", missing, "--output", missing + "-out", "--passphrase-stdin"], services, new StringReader(""), output, error));
+            Assert.Contains(missing, error.ToString());
         }
         using (var services = Services(minimum: "30"))
         {
@@ -221,7 +228,7 @@ public sealed class BackupCommandsTests : IDisposable
             ["Backups:Encryption:Recipient and Backups:Encryption:Salt are set together (tankstat backup keygen prints both) or not at all."]);
         using var services = new ServiceCollection()
             .AddSingleton(new SettingsFileStatus("/data/settings.json", Exists: true, Ignored: true, ["Smtp:Port must be a whole number."]))
-            .AddSingleton<IBackupWriter>(new FailingWriter(refusal))
+            .AddCommands(_ => new FailingWriter(refusal))
             .BuildServiceProvider();
         var (output, error) = (new StringWriter(), new StringWriter());
 
@@ -323,5 +330,28 @@ public sealed class BackupCommandsTests : IDisposable
         Assert.Contains("without Smtp:Password", plain.Out);
         Assert.Contains("its secrets IN PLAIN (anyone with the file reads them)", withSecrets.Out);
         Assert.DoesNotContain("zzzz", plain.Out + withSecrets.Out);
+    }
+}
+
+/// <summary>
+/// The command line's own service for a container a test builds by hand (#313), registered as the Application registers it: the real key maker
+/// and archive, over the given writer, made only when a backup is written. The key maker's Backups settings throw when read, so a command that
+/// needs nothing else of them (keygen) shows it never reads them.
+/// </summary>
+internal static class CommandServices
+{
+    public static IServiceCollection AddCommands(this IServiceCollection services, Func<IServiceProvider, IBackupWriter> writer) => services
+        .AddSingleton<IBackupKeyMaker>(new BackupKeyMaker(new UnreadOptions()))
+        .AddSingleton<IBackupArchive, BackupFileArchive>()
+        .AddSingleton<IStartupRestore>(sp => new StartupRestore(sp))
+        .AddSingleton(writer)
+        .AddSingleton(sp => new BackupCommandService(
+            sp.GetRequiredService<IBackupKeyMaker>(), sp.GetRequiredService<IBackupWriter>, sp.GetRequiredService<IBackupArchive>(), sp.GetRequiredService<IStartupRestore>()));
+
+    private sealed class UnreadOptions : IOptionsMonitor<BackupOptions>
+    {
+        public BackupOptions CurrentValue => throw new InvalidOperationException("The command read the Backups settings.");
+        public BackupOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<BackupOptions, string?> listener) => null;
     }
 }

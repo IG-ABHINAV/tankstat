@@ -44,6 +44,7 @@ public class BackupHoldTests
         public Task<IReadOnlyList<string>> KnownMigrationsAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<FileUsage> MeasureAsync(CancellationToken ct) => throw new NotSupportedException();
         public BackupKeySet Make(string? passphrase) => throw new NotSupportedException();
+        public BackupKeySet FromPassphrase(string passphrase) => throw new NotSupportedException();
     }
 
     private static (World World, Backups Folder, BackupAdminService Service) Admin(bool restorePending = false)

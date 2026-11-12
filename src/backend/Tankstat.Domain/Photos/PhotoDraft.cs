@@ -30,6 +30,9 @@ public sealed class PhotoDraft : IOwned
 
     public bool IsExpired(DateTimeOffset now) => now - CreatedAt >= Lifetime;
 
+    /// <summary>A draft is shown to its uploader only, until it expires.</summary>
+    public bool VisibleTo(Guid userId, DateTimeOffset now) => CreatedById == userId && !IsExpired(now);
+
     /// <summary>The uploader's draft for this vehicle, not expired: what may be made a photo or a picture of it.</summary>
-    public bool UsableBy(Guid userId, Guid vehicleId, DateTimeOffset now) => CreatedById == userId && VehicleId == vehicleId && !IsExpired(now);
+    public bool UsableBy(Guid userId, Guid vehicleId, DateTimeOffset now) => VisibleTo(userId, now) && VehicleId == vehicleId;
 }

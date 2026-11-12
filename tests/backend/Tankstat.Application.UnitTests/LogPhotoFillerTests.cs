@@ -1,3 +1,4 @@
+using Tankstat.Application.Auth;
 using Tankstat.Domain.Tyres;
 using Tankstat.Application.Tyres;
 using Tankstat.Domain.Photos;
@@ -484,6 +485,17 @@ public class LogPhotoFillerTests
         s.W.Current.SignInAs(s.Bob);
         await s.W.Recognition.QueueForLogPhotoAsync(LogType.Expense, expense.Id, image, "en", default); // not Bob's
 
+        Assert.Empty(s.W.Readings.Items);
+    }
+
+    [Fact]
+    public async Task SignedOut_QueueingALogPhoto_IsRefused_NeverAnsweredAsAMissingPhoto()
+    {
+        var s = await Setup();
+        var expense = await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(Day, "Tyres", null, 300, "EUR", null, null), default);
+        s.W.Current.Principal = null;
+
+        await Assert.ThrowsAsync<UnauthenticatedException>(() => s.W.Recognition.QueueForLogPhotoAsync(LogType.Expense, expense.Id, Guid.NewGuid(), "en", default));
         Assert.Empty(s.W.Readings.Items);
     }
 

@@ -20,6 +20,13 @@ internal sealed class BackupKeyMaker(IOptionsMonitor<BackupOptions> options) : I
         var generated = string.IsNullOrWhiteSpace(passphrase);
         var phrase = generated ? NewPassphrase() : passphrase!;
         if (!generated) BackupPassphrase.Validate(phrase, options.CurrentValue.PassphraseMinLength);
+        return Derive(phrase, generated);
+    }
+
+    public BackupKeySet FromPassphrase(string passphrase) => Derive(passphrase, generated: false);
+
+    private static BackupKeySet Derive(string phrase, bool generated)
+    {
         var salt = BackupKeys.NewSalt();
         var identity = BackupKeys.Identity(phrase, salt, Argon2idParameters.Default);
         return new BackupKeySet(phrase, generated, AgeKeys.FormatIdentity(identity), AgeKeys.FormatRecipient(BackupKeys.Recipient(identity)), Convert.ToBase64String(salt));

@@ -24,7 +24,8 @@ public sealed record ImageContent(Stream Content, string ContentType, long SizeB
 /// may see the log for its photos.
 /// </summary>
 public sealed class ImageService(
-    IImageStore store, IImageRepository images, IUserRepository users, IVehicleRepository vehicles, AccessService access, LogPhotoAccess logPhotos, IPhotoDraftRepository drafts, TimeProvider clock,
+    IImageStore store, IImageRepository images, IUserRepository users, IVehicleRepository vehicles, AccessService access, LogPhotoAccess logPhotos, IPhotoDraftRepository drafts,
+    PhotoDraftAccess ownDrafts, TimeProvider clock,
     ILogger<ImageService> logger)
 {
     // One picture change of a vehicle at a time within this process (an upload, a removal, a change from a device and the same one sent
@@ -214,13 +215,9 @@ public sealed class ImageService(
             if (await vehicles.FindByPictureImageAsync(image.Id, ct) is { } vehicle) return await access.VehicleLevelAsync(vehicle, ct) >= AccessLevel.View;
             if (folder is not null) return false;
         }
-        if (folder is not null && folder.EndsWith("/drafts", StringComparison.Ordinal)) return await drafts.FindAsync(image.Id, ct) is { } draft && await IsMineAsync(draft, ct);
+        if (folder is not null && folder.EndsWith("/drafts", StringComparison.Ordinal)) return await ownDrafts.MineAsync(image.Id, ct) is not null;
         return await logPhotos.CanSeeImageAsync(image.Id, ct);
     }
-
-    /// <summary>A draft is shown to its uploader only, until it expires.</summary>
-    private async Task<bool> IsMineAsync(Domain.Photos.PhotoDraft draft, CancellationToken ct) =>
-        draft.CreatedById == (await access.RequirePrincipalAsync(ct)).Id && !draft.IsExpired(clock.GetUtcNow());
 
     private async Task<User> CurrentUserAsync(CancellationToken ct)
     {

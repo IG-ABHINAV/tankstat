@@ -1052,6 +1052,7 @@ internal sealed class World
     public OdometerService Odometer { get; }
     public ResourceSharingService Sharing { get; }
     public ImageService ImageService { get; }
+    public PhotoDraftAccess DraftAccess { get; }
     public LogPhotoService Photos { get; }
     public PhotoDraftService Drafts { get; }
     /// <summary>The password requirements as an administrator saved them (<c>PasswordSettings.CurrentValue.PasswordMinLength</c> is read afresh).</summary>
@@ -1070,7 +1071,7 @@ internal sealed class World
     public InMemoryPhotoReadings Readings { get; } = new();
     public FakeRecognitionSignal Signal { get; } = new();
     public RecognitionAvailability Availability { get; }
-    public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Readings, PhotoDrafts, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, Clock, Log.For<RecognitionService>());
+    public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Readings, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, DraftAccess, Clock, Log.For<RecognitionService>());
     public LogPhotoFiller Filler { get; }
     /// <summary>The app's own metrics of this world alone (a meter of its own: a test listens to it, never to another test's).</summary>
     public Tankstat.Application.Telemetry.AppMetrics Metrics { get; } = new();
@@ -1096,8 +1097,9 @@ internal sealed class World
         Odometer = new OdometerService(readings);
         var resets = new PasswordResetService(Tokens, Users, Email, options, Clock, Log.For<PasswordResetService>());
         var logPhotoAccess = new LogPhotoAccess(LogGuard, Expenses, Refuelings, LogPhotos);
-        ImageService = new ImageService(ImageStore, Images, Users, Vehicles, Access, logPhotoAccess, PhotoDrafts, Clock, Log.For<ImageService>());
-        Drafts = new PhotoDraftService(LogGuard, PhotoDrafts, ImageService, Access, Clock, Log.For<PhotoDraftService>());
+        DraftAccess = new PhotoDraftAccess(PhotoDrafts, Access, Clock);
+        ImageService = new ImageService(ImageStore, Images, Users, Vehicles, Access, logPhotoAccess, PhotoDrafts, DraftAccess, Clock, Log.For<ImageService>());
+        Drafts = new PhotoDraftService(LogGuard, PhotoDrafts, DraftAccess, ImageService, Access, Clock, Log.For<PhotoDraftService>());
         Photos = new LogPhotoService(logPhotoAccess, LogPhotos, ImageService, Drafts, Access, Clock, Log.For<LogPhotoService>());
         VehicleService = new VehicleService(Vehicles, Refuelings, Tyres, Access, Odometer, ImageService, Clock, Log.For<VehicleService>());
         Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
