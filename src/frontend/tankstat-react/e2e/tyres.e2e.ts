@@ -341,3 +341,78 @@ test('breaks a set up in its History, shows its tyres at their corners, and swap
   await expect(summer.getByRole('button', { name: /^Rear left: tyre S1,/ })).toBeVisible()
   await expect(summer.getByRole('button', { name: /^Front left: tyre S3,/ })).toBeVisible()
 })
+
+/** A vehicle with a fill-up 60 days ago and the summer set on the car since then (through GraphQL), its Tyres tab open. */
+async function summerOnTheCar(page: Page) {
+  const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
+  const vehicle = await addVehicle(page)
+  await logRefueling(page, vehicle.id, { date: day(60), odometer: 1000 })
+  await graphql(page, 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }', {
+    i: { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false, name: 'Michelin Primacy 4', season: 'SUMMER', since: day(400), fitted: true, day: day(60) },
+  })
+  await openVehicle(page, vehicle.id, 'tyres')
+  return { vehicle, day }
+}
+
+test('a flat on one tyre of a whole set: tapped on the car, the set tracked tyre by tyre on save, the line in the tyre’s history (#289)', async ({ page }) => {
+  await summerOnTheCar(page)
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await add.getByRole('checkbox', { name: 'The whole set' }).click()
+  await add.getByRole('button', { name: 'The rear left tyre' }).click()
+  await expect(add.getByRole('button', { name: 'The rear left tyre' })).toHaveAttribute('aria-pressed', 'true')
+  await expectSoundLayout(page)
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  await expect(page.getByText('Saved for S3.')).toBeVisible()
+
+  await expect(summer).toContainText('Tracked tyre by tyre')
+  await expect(page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3,/ })).toBeVisible()
+  await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
+  const tyre = page.getByRole('dialog', { name: 'Tyre S3' })
+  await expect(tyre).toContainText('Puncture repaired')
+  await expectSoundLayout(page)
+})
+
+test('a repair of two tyres with one amount is one row and one expense; one tyre’s day changed alone parts it from the expense (#289)', async ({ page }) => {
+  const { vehicle, day } = await summerOnTheCar(page)
+  const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
+  await expect(summer).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add entry' }).click()
+  const add = page.getByRole('dialog', { name: 'Add entry' })
+  await add.getByRole('checkbox', { name: 'The whole set' }).click()
+  await add.getByRole('button', { name: 'The rear left tyre' }).click()
+  await add.getByRole('button', { name: 'The rear right tyre' }).click()
+  await add.getByLabel(/^Paid/).fill('13000')
+  await add.getByRole('button', { name: 'Save' }).click()
+  await expect(add).toBeHidden()
+  await expect(page.getByText('Saved for S3, S4, with one expense.')).toBeVisible()
+  const row = page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ })
+  await expect(row).toBeVisible()
+  await expectSoundLayout(page)
+
+  // S3's line alone a day earlier: it parts, without an amount; S4 keeps the expense.
+  await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
+  const tyre = page.getByRole('dialog', { name: 'Tyre S3' })
+  await expect(tyre).toContainText('shared with S4')
+  await tyre.getByRole('button', { name: /^Edit entry: Puncture repaired/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit entry' })
+  await expect(edit.getByRole('checkbox', { name: 'Tyre S4' })).not.toBeChecked()
+  await expectSoundLayout(page)
+  await typeDate(page, dateField(edit, /^Day/), day(1))
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(edit).toBeHidden()
+  await tyre.getByRole('button', { name: 'Close' }).click()
+
+  await expect(page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S4,/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3,/ })).toBeVisible()
+  type Lines = { vehicleTyres: { entries: { kind: string; day: string; amount: number | null; groupId: string | null }[] } }
+  const { vehicleTyres } = await graphql<Lines>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { kind day amount groupId } } }', { v: vehicle.id })
+  const lines = vehicleTyres.entries.filter((e) => e.kind === 'PUNCTURE_REPAIRED').map((e) => [e.day, e.amount])
+  expect(lines).toHaveLength(2)
+  expect(lines).toEqual(expect.arrayContaining([[day(1), null], [expect.any(String), 13_000]])) // S3 a day earlier without an amount, S4 with it
+})
