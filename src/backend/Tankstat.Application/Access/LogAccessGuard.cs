@@ -22,6 +22,18 @@ public sealed class LogAccessGuard(IVehicleRepository vehicles, AccessService ac
         return level >= AccessLevel.View ? new LogContext(vehicle, level) : null;
     }
 
+    /// <summary>
+    /// <see cref="ForVehicleAsync"/> for many vehicles in a fixed number of queries (#311: a page of vehicles): the contexts of those that are
+    /// live and visible, keyed by vehicle id; the others are missing.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, LogContext>> ForVehiclesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        var live = await vehicles.ListByIdsAsync(vehicleIds, ct);
+        var levels = await access.LogLevelsAsync(live, ct);
+        return live.Where(v => levels.GetValueOrDefault(v.Id) >= AccessLevel.View)
+            .ToDictionary(v => v.Id, v => new LogContext(v, levels[v.Id]));
+    }
+
     /// <summary>The context for changing logs: unseen is <paramref name="notFound"/>, view-only is forbidden.</summary>
     public static LogContext RequireEdit(LogContext? context, Func<NotFoundException> notFound)
     {

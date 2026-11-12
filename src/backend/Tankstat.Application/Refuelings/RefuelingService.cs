@@ -53,10 +53,8 @@ public sealed class RefuelingService(
     /// </summary>
     public async Task<IReadOnlyDictionary<Guid, int>> CountsAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
     {
-        var live = await vehicles.ListByIdsAsync(vehicleIds, ct);
-        var levels = await access.LogLevelsAsync(live, ct);
-        var visible = live.Where(v => levels.GetValueOrDefault(v.Id) >= AccessLevel.View).Select(v => v.Id).ToList();
-        var counts = await refuelings.CountForVehiclesAsync(visible, ct);
+        var visible = await guard.ForVehiclesAsync(vehicleIds, ct);
+        var counts = await refuelings.CountForVehiclesAsync([.. visible.Keys], ct);
         return vehicleIds.Distinct().ToDictionary(id => id, id => counts.GetValueOrDefault(id));
     }
 

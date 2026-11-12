@@ -1104,7 +1104,7 @@ internal sealed class World
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
         RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
         Imports = new ImportService([new FuelioCsvParser()], ImportSessions, Access, VehicleService, RefuelingService, ExpenseService, RecurringService, Refuelings, Expenses, Defaults.Create(), Log.For<ImportService>());
-        Stats = new StatsService(Vehicles, new InMemoryStats(Refuelings, Expenses), Access, Clock);
+        Stats = new StatsService(LogGuard, new InMemoryStats(Refuelings, Expenses), Clock);
         ChartService = new ChartService(Vehicles, Charts, Access, Clock, Log.For<ChartService>());
         UiSettings = new UiSettingsService(UiSettingsStore, Access, Defaults.Create(), Clock, Log.For<UiSettingsService>());
         VehicleOrder = new VehicleOrderService(VehicleOrders, Vehicles, Access, Log.For<VehicleOrderService>());

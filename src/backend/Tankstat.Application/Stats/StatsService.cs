@@ -1,10 +1,7 @@
 using Tankstat.Application.Access;
 using Tankstat.Application.Auth;
-using Tankstat.Application.Vehicles;
 using Tankstat.Domain;
-using Tankstat.Domain.Access;
 using Tankstat.Domain.Charts;
-using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Application.Stats;
 
@@ -12,7 +9,7 @@ namespace Tankstat.Application.Stats;
 /// Statistics of a vehicle's logs (charts and key figures). Anyone who may view the vehicle's logs may see them; for everyone else the
 /// vehicle does not exist.
 /// </summary>
-public sealed class StatsService(IVehicleRepository vehicles, IStatsRepository stats, AccessService access, TimeProvider clock)
+public sealed class StatsService(LogAccessGuard guard, IStatsRepository stats, TimeProvider clock)
 {
     private DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
@@ -63,19 +60,13 @@ public sealed class StatsService(IVehicleRepository vehicles, IStatsRepository s
     /// </summary>
     public async Task<IReadOnlyDictionary<Guid, VehicleSummary?>> SummariesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
     {
-        var live = await vehicles.ListByIdsAsync(vehicleIds, ct);
-        var levels = await access.LogLevelsAsync(live, ct);
-        var visible = live.Where(v => levels.GetValueOrDefault(v.Id) >= AccessLevel.View).Select(v => v.Id).ToList();
-        var data = await stats.LoadManyAsync(visible, ct);
+        var visible = await guard.ForVehiclesAsync(vehicleIds, ct);
+        var data = await stats.LoadManyAsync([.. visible.Keys], ct);
         var today = Today;
         return vehicleIds.Distinct().ToDictionary(id => id, id => data.TryGetValue(id, out var d) ? StatsCalculator.Summary(d, today) : (VehicleSummary?)null);
     }
 
-    private async Task<bool> IsVisibleAsync(Guid vehicleId, CancellationToken ct)
-    {
-        var vehicle = await vehicles.FindAsync(vehicleId, ct);
-        return vehicle is not null && await access.LogLevelAsync(vehicle, ct) >= AccessLevel.View;
-    }
+    private async Task<bool> IsVisibleAsync(Guid vehicleId, CancellationToken ct) => await guard.ForVehicleAsync(vehicleId, ct) is not null;
 
     private async Task RequireVisibleAsync(Guid vehicleId, CancellationToken ct)
     {
