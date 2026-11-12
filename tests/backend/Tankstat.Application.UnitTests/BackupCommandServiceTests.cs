@@ -49,12 +49,17 @@ public class BackupCommandServiceTests
         }
     }
 
+    /// <summary>Making the real writer reads the Backups settings: only writing a backup may ask for it.</summary>
+    private static IBackupWriter NoWriter() => throw new InvalidOperationException("Only a backup makes the writer.");
+
     [Fact]
     public async Task ABackupForANewPassphrase_IsEncryptedForItsKey_AndOneWithoutAsTheSettingsSay()
     {
         var keys = new Keys();
         var writer = new Writer();
-        var service = new BackupCommandService(keys, writer, new Archive(), new Startup(RestoreOutcome.None));
+        var service = new BackupCommandService(keys, () => writer, new Archive(), new Startup(RestoreOutcome.None));
+        Assert.Same(Key, new BackupCommandService(keys, NoWriter, new Archive(), new Startup(RestoreOutcome.None)).Keygen("first"));
+        keys.Derived.Clear();
 
         await service.WriteAsync(new BackupRequest("file.zip", Photos: true), "typed twice", default);
         Assert.Equal(["typed twice"], keys.Derived);
@@ -71,7 +76,7 @@ public class BackupCommandServiceTests
     public void Decrypting_ReadsTheManifestAndTheChecksumsBeforeTheIdentityIsAskedFor()
     {
         var archive = new Archive();
-        var service = new BackupCommandService(new Keys(), new Writer(), archive, new Startup(RestoreOutcome.None));
+        var service = new BackupCommandService(new Keys(), NoWriter, archive, new Startup(RestoreOutcome.None));
 
         service.Decrypt("b.zip", "out", m => { archive.Steps.Add("asked"); return service.IdentityOf(m, "pass"); });
         service.Decrypt("c.zip", "plain", _ => null);
@@ -83,7 +88,7 @@ public class BackupCommandServiceTests
     public async Task RestoringNow_RunsTheStartsStepsOnce_AndSaysHowItWent()
     {
         var startup = new Startup(RestoreOutcome.Refused);
-        var service = new BackupCommandService(new Keys(), new Writer(), new Archive(), startup);
+        var service = new BackupCommandService(new Keys(), NoWriter, new Archive(), startup);
 
         Assert.Equal(RestoreOutcome.Refused, await service.RestoreNowAsync(default));
         Assert.Equal(1, startup.Runs);

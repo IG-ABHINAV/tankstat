@@ -23,7 +23,6 @@ using Tankstat.Infrastructure.Persistence;
 
 namespace Tankstat.Infrastructure.Backups;
 
-
 /// <summary>
 /// A restore that waits in the backups folder (<see cref="RestoreMarker"/>), applied first thing at start, before the database migrations
 /// (<see cref="DatabaseMigrator"/> asks <see cref="ApplyWaitingAsync"/> before anything else touches the data); then, as a hosted step after

@@ -4,9 +4,11 @@ namespace Tankstat.Application.Backups;
 /// What the backup commands of <c>dotnet Tankstat.Api.dll</c> do (#313), behind the Application's ports as the Backups page's service is
 /// (<see cref="BackupAdminService"/>): the command line keeps its arguments, prompts and the lines it prints. A singleton, every port it uses
 /// one too: a command runs from the root services, with no request scope. A passphrase it is given was checked by the command already
-/// (typed twice, at least the minimum), so nothing here reads the Backups settings beyond what writing a backup reads.
+/// (typed twice, at least the minimum), so nothing here reads the Backups settings beyond what writing a backup reads. The writer is asked
+/// for only when a backup is written: making it reads the Backups settings (its folder), which <c>keygen</c> and <c>decrypt</c> must work
+/// without, the half key pair keygen is run to replace among them.
 /// </summary>
-public sealed class BackupCommandService(IBackupKeyMaker keys, IBackupWriter writer, IBackupArchive archive, IStartupRestore startup)
+public sealed class BackupCommandService(IBackupKeyMaker keys, Func<IBackupWriter> writer, IBackupArchive archive, IStartupRestore startup)
 {
     /// <summary><c>backup keygen</c>: the recipient, the salt and the identity of <paramref name="passphrase"/>.</summary>
     public BackupKeySet Keygen(string passphrase) => keys.FromPassphrase(passphrase);
@@ -19,7 +21,7 @@ public sealed class BackupCommandService(IBackupKeyMaker keys, IBackupWriter wri
             var key = keys.FromPassphrase(newPassphrase);
             request = request with { Encryption = new BackupEncryption(BackupEncryption.AgeX25519, key.Recipient, key.Salt, Argon2idParameters.Default) };
         }
-        return writer.WriteAsync(request, ct);
+        return writer().WriteAsync(request, ct);
     }
 
     /// <summary>
