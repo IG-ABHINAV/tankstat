@@ -271,12 +271,13 @@ public static class SettingsCatalog
     /// Why <paramref name="value"/> is not a value for <paramref name="setting"/> (null when it is): the shape its kind needs, a choice among the
     /// choices, and the log levels' floor. The message names the setting and the rule, never the value: it goes into the log.
     /// </summary>
-    public static string? Validate(SettingDefinition setting, string value) =>
-        ShapeProblem(setting, value)
+    /// <param name="fileExists">Whether a file the app can read is at a path, for the telemetry certificates (#312: the caller asks the file system).</param>
+    public static string? Validate(SettingDefinition setting, string value, Func<string, bool> fileExists) =>
+        ShapeProblem(setting, value, fileExists)
         ?? (IsBelowLogLevelFloor(setting.Key, value) ? $"{setting.Key} must not be below {LogLevelFloor}: the request lines of ASP.NET Core hold the tokens of password reset links." : null);
 
     /// <summary>The shape <paramref name="setting"/>'s kind needs, a choice among the choices (or a spelling still accepted); no rule beyond that.</summary>
-    private static string? ShapeProblem(SettingDefinition setting, string value)
+    private static string? ShapeProblem(SettingDefinition setting, string value, Func<string, bool> fileExists)
     {
         switch (setting.Kind)
         {
@@ -299,7 +300,7 @@ public static class SettingsCatalog
                 break;
         }
         // The OpenTelemetry settings' own shapes, as the SDK reads them: the same rule the start applies (TelemetryGate).
-        return OtelSettings.ProblemOf(setting.Key, value);
+        return OtelSettings.ProblemOf(setting.Key, value, fileExists);
     }
 
     /// <summary>A log level category under <see cref="LogLevelFloorCategory"/> set below <see cref="LogLevelFloor"/>.</summary>
@@ -329,7 +330,8 @@ public static class SettingsCatalog
             if (setting.IsList || setting.Group is SettingsGroup.PhotoReading or SettingsGroup.Telemetry) continue;
             var value = valueOf(setting.Key);
             if (string.IsNullOrEmpty(value)) continue;
-            if (ShapeProblem(setting, value) is { } problem) problems.Add(problem);
+            // The telemetry settings, the only ones naming a file, are left out above: no file is asked about.
+            if (ShapeProblem(setting, value, static _ => true) is { } problem) problems.Add(problem);
         }
         return problems;
     }

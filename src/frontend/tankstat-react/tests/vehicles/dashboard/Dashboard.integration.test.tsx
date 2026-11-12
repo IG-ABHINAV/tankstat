@@ -934,8 +934,9 @@ it('does not send dates for a preset period, even after a custom one was chosen 
   expect(savedWidget(state).chart).toMatchObject({ range: 'LAST3_MONTHS', from: null, to: null })
 })
 
-it('offers a trend line, a running total and a year earlier for a chart over time, never a trend with a running total, and sends them', async () => {
-  const { ui, state } = setup(fakeVehicle(), [])
+// Two tests where there was one (#314's CI): each drives a dozen of the builder's selects, which a busy runner took past 15 s together.
+it('offers a trend line and a running total for a chart over time, never both at once', async () => {
+  const { ui } = setup(fakeVehicle(), [])
   await screen.findByText(/Compose your own charts/)
   const dialog = await addWidget(ui)
   await ui.type(within(dialog).getByLabelText('Title'), 'Where it goes')
@@ -946,7 +947,16 @@ it('offers a trend line, a running total and a year earlier for a chart over tim
   expect(radio('Trend line', 'None')).toBeChecked() // a running total has no trend line
   await pick(ui, 'Trend line', 'Moving average (3 periods)')
   expect(runningTotal()).not.toBeChecked() // and the other way round
-  await ui.click(extra('Compare with a year earlier'))
+})
+
+it('dims what a measure or a grouping rules out, and sends a trend line and a year earlier for a chart over time', async () => {
+  const { ui, state } = setup(fakeVehicle(), [])
+  await screen.findByText(/Compose your own charts/)
+  const dialog = await addWidget(ui)
+  await ui.type(within(dialog).getByLabelText('Title'), 'Where it goes')
+  const runningTotal = () => extra('Running total')
+  await ui.click(extra('Compare with a year earlier')) // chosen before a grouping rules it out: the later click must turn it on again
+  expect(extra('Compare with a year earlier')).toBeChecked()
 
   await choose(ui, 'What to measure', 'Average consumption')
   expect(runningTotal()).toBeDisabled() // an average does not add up: dimmed, never hidden

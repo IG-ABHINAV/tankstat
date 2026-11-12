@@ -70,6 +70,37 @@ public class RecognitionSetupTests
     }
 
     [Fact]
+    public void ThePromptFile_IsReadThroughInfrastructure_AndAMissingOneTurnsReadingOffWithAWarning()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(file, " Read it from the file.\n");
+            var settings = new Dictionary<string, string?>
+            {
+                ["Recognition:Provider"] = "OpenAiCompatible",
+                ["Recognition:OpenAiCompatible:BaseUrl"] = "http://localhost:1234/v1",
+                ["Recognition:OpenAiCompatible:Model"] = "qwen2.5-vl",
+                ["Recognition:OpenAiCompatible:SystemPromptFile"] = file,
+            };
+            var (services, _) = Build(settings);
+            using (services) Assert.Equal("Read it from the file.", services.GetRequiredService<RecognitionSetup>().SystemPrompt);
+
+            settings["Recognition:OpenAiCompatible:SystemPromptFile"] = file + ".missing";
+            var (without, _) = Build(settings);
+            using var _w = without;
+            var setup = without.GetRequiredService<RecognitionSetup>();
+            Assert.False(setup.Enabled);
+            Assert.Contains("SystemPromptFile does not exist", Assert.Single(setup.Problems));
+            Assert.IsType<NullRecognitionProvider>(without.GetRequiredService<IRecognitionProvider>());
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
     public void TheModelServersClient_LeavesTheTimeoutToTheSettings()
     {
         var (services, _) = Build([]);

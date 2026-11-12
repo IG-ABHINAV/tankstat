@@ -331,7 +331,7 @@ public class RecognitionTests
 
     // ---- settings ------------------------------------------------------------------------------------------
 
-    private static RecognitionSetup SetupOf(RecognitionOptions o) => new(Options.Create(o));
+    private static RecognitionSetup SetupOf(RecognitionOptions o, FakePromptFiles? files = null) => new(Options.Create(o), files ?? new FakePromptFiles());
 
     /// <summary>Usable settings for a model behind an OpenAI-compatible API, changed as the test needs.</summary>
     private static RecognitionOptions ModelServer(Action<OpenAiCompatibleRecognitionOptions>? change = null)
@@ -393,49 +393,48 @@ public class RecognitionTests
     [Fact]
     public void ThePromptFile_WinsOverThePromptSetting_AndEitherReplacesTheBuiltInOne()
     {
-        var file = Path.GetTempFileName();
-        try
-        {
-            File.WriteAllText(file, "  From the file.\n");
+        const string file = "/data/prompt.txt";
+        var files = new FakePromptFiles { Files = { [file] = PromptFileRead.Of("From the file.") } }; // the reader trims it (PromptFileReaderTests)
 
-            var fromFile = SetupOf(ModelServer(o => { o.SystemPrompt = "Inline."; o.SystemPromptFile = file; }));
-            var fromSetting = SetupOf(ModelServer(o => o.SystemPrompt = " Inline. "));
-            Assert.Equal("From the file.", fromFile.SystemPrompt);
-            Assert.Equal("Inline.", fromSetting.SystemPrompt);
-            // The log names where the prompt came from, never its text.
-            Assert.Equal("Recognition:OpenAiCompatible:SystemPromptFile", fromFile.SystemPromptSetting);
-            Assert.Equal("Recognition:OpenAiCompatible:SystemPrompt", fromSetting.SystemPromptSetting);
-            Assert.Null(SetupOf(ModelServer()).SystemPromptSetting);
-        }
-        finally
-        {
-            File.Delete(file);
-        }
+        var fromFile = SetupOf(ModelServer(o => { o.SystemPrompt = "Inline."; o.SystemPromptFile = file; }), files);
+        var fromSetting = SetupOf(ModelServer(o => o.SystemPrompt = " Inline. "));
+        Assert.Equal("From the file.", fromFile.SystemPrompt);
+        Assert.Equal("Inline.", fromSetting.SystemPrompt);
+        // The log names where the prompt came from, never its text.
+        Assert.Equal("Recognition:OpenAiCompatible:SystemPromptFile", fromFile.SystemPromptSetting);
+        Assert.Equal("Recognition:OpenAiCompatible:SystemPrompt", fromSetting.SystemPromptSetting);
+        Assert.Null(SetupOf(ModelServer()).SystemPromptSetting);
+    }
+
+    [Theory]
+    [InlineData(PromptFileProblem.Missing)]
+    [InlineData(PromptFileProblem.Empty)]
+    [InlineData(PromptFileProblem.TooLarge)]
+    [InlineData(PromptFileProblem.Unreadable)]
+    public void APromptFileThatIsMissing_Empty_FarTooLarge_OrUnreadable_TurnsReadingOff_WithoutQuotingIt(PromptFileProblem kind)
+    {
+        const string path = "/data/xxx-prompt.txt";
+        var files = new FakePromptFiles { Files = { [path] = PromptFileRead.Failed(kind) } };
+
+        var setup = SetupOf(ModelServer(o => o.SystemPromptFile = path), files);
+
+        Assert.False(setup.Enabled);
+        var problem = Assert.Single(setup.Problems);
+        Assert.Contains("SystemPromptFile", problem);
+        Assert.DoesNotContain("xxx", problem); // the setting only: never the path or the file's content
     }
 
     [Fact]
-    public void APromptFileThatIsMissing_Empty_FarTooLarge_OrUnreadable_TurnsReadingOff_WithoutQuotingIt()
+    public void APromptFileReadAsBlank_IsAnEmptyFile_NeverABlankPrompt()
     {
-        var empty = Path.GetTempFileName();
-        var huge = Path.GetTempFileName();
-        try
-        {
-            File.WriteAllText(huge, new string('x', RecognitionSetup.MaxPromptFileBytes + 1));
-            foreach (var path in new[] { Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")), empty, huge, "prompt\0.txt" }) // the last is no path at all
-            {
-                var setup = SetupOf(ModelServer(o => o.SystemPromptFile = path));
+        const string path = "/data/prompt.txt";
+        var files = new FakePromptFiles { Files = { [path] = PromptFileRead.Of("  \n") } };
 
-                Assert.False(setup.Enabled);
-                var problem = Assert.Single(setup.Problems);
-                Assert.Contains("SystemPromptFile", problem);
-                Assert.DoesNotContain("xxx", problem);
-            }
-        }
-        finally
-        {
-            File.Delete(empty);
-            File.Delete(huge);
-        }
+        var setup = SetupOf(ModelServer(o => o.SystemPromptFile = path), files);
+
+        Assert.False(setup.Enabled);
+        Assert.Null(setup.SystemPrompt);
+        Assert.Contains("SystemPromptFile is empty", Assert.Single(setup.Problems));
     }
 
     // ---- normalising ---------------------------------------------------------------------------------------

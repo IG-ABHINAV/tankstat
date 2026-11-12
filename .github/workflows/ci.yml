@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version the build job publishes the API as (empty = 0.0.0-dev.<sha>)
+        description: The version the build job publishes the API as (empty = 0.0.0-dev.g<sha>)
         type: string
         default: ""
 
@@ -67,7 +67,9 @@ jobs:
         id: version
         env:
           REQUESTED: ${{ inputs.version }}
-        run: echo "version=${REQUESTED:-0.0.0-dev.${GITHUB_SHA::7}}" >> "$GITHUB_OUTPUT"
+        # The g keeps the identifier alphanumeric: a SHA's first seven characters can be a 0 and digits only (0957595), which SemVer forbids
+        # as a numeric identifier with a leading zero, and NuGet's restore then fails without a word.
+        run: echo "version=${REQUESTED:-0.0.0-dev.g${GITHUB_SHA::7}}" >> "$GITHUB_OUTPUT"
 
       # `vite build` only: `npm run build` would type-check again.
       - run: npx vite build

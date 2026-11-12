@@ -114,6 +114,9 @@ internal sealed class InMemoryRefuelings : IRefuelingRepository
     public Task<IReadOnlyList<Refueling>> ListForVehicleAsync(Guid vehicleId, RefuelingQuery query, CancellationToken ct) =>
         Task.FromResult(Page(Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId), query));
     public Task<int> CountForVehicleAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Items.Count(r => !r.IsDeleted && r.VehicleId == vehicleId));
+    public Task<IReadOnlyDictionary<Guid, int>> CountForVehiclesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, int>>(Items.Where(r => !r.IsDeleted && vehicleIds.Contains(r.VehicleId))
+            .GroupBy(r => r.VehicleId).ToDictionary(g => g.Key, g => g.Count()));
     public Task<bool> AnyForVehicleAsync(Guid vehicleId, CancellationToken ct) => Task.FromResult(Items.Any(r => r.VehicleId == vehicleId));
     public Task<IReadOnlyList<Refueling>> ListAllForVehicleAsync(Guid vehicleId, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Refueling>>(Items.Where(r => !r.IsDeleted && r.VehicleId == vehicleId).ToList());
@@ -277,6 +280,13 @@ internal sealed class InMemoryStats(InMemoryRefuelings refuelings, InMemoryExpen
             fuel.Select(r => new FuelPoint(r.Date, r.Volume!.Value, r.TotalCost!.Value, r.Currency!, r.Odometer!.Value, r.IsFullTank, r.Consumption, r.Discount ?? 0)).ToList(),
             costs.Select(e => new ExpensePoint(e.Date, e.Category, e.Amount!.Value, e.Currency!)).ToList(),
             fuel.Select(r => new OdometerPoint(r.Date, r.Odometer!.Value)).Concat(costs.Where(e => e.Odometer is not null).Select(e => new OdometerPoint(e.Date, e.Odometer!.Value))).ToList()));
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, StatsData>> LoadManyAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        var all = new Dictionary<Guid, StatsData>();
+        foreach (var id in vehicleIds.Distinct()) all[id] = await LoadAsync(id, ct);
+        return all;
     }
 }
 
@@ -1001,6 +1011,7 @@ internal sealed class World
     public FakeSystemConfiguration SystemConfiguration => _systemConfiguration ??= new FakeSystemConfiguration { Store = SettingsFile };
     private FakeSystemConfiguration? _systemConfiguration;
     public FakeOidcDiscovery Discovery { get; } = new();
+    public FakeFileProbe FileProbe { get; } = new();
     public FakeServerRestart Restart { get; } = new();
     public InMemoryInstanceState Instance { get; } = new();
     /// <summary>The setup: completed unless a test says it waits (<c>SetupStatus.Set(true)</c> and <c>SetupStore.Phase</c>); the code is <c>Code</c>.</summary>
@@ -1060,12 +1071,12 @@ internal sealed class World
     public InMemoryPhotoReadings Readings { get; } = new();
     public FakeRecognitionSignal Signal { get; } = new();
     public RecognitionAvailability Availability { get; }
-    public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, DraftAccess, Clock, Log.For<RecognitionService>());
+    public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Readings, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, DraftAccess, Clock, Log.For<RecognitionService>());
     public LogPhotoFiller Filler { get; }
     /// <summary>The app's own metrics of this world alone (a meter of its own: a test listens to it, never to another test's).</summary>
     public Tankstat.Application.Telemetry.AppMetrics Metrics { get; } = new();
 
-    public PhotoReadingProcessor Processor => new(Recognizer, Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, Images, ImageStore, Filler, Clock, Metrics, Log.For<PhotoReadingProcessor>());
+    public PhotoReadingProcessor Processor => new(Recognizer, Availability, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Readings, Images, ImageStore, Filler, Clock, Metrics, Log.For<PhotoReadingProcessor>());
     public NotificationService NotificationService => new(Access, Notifications, new RecurringNotificationSync(Access, Recurring, Vehicles, RecurringService, Notifier), new SyncNotificationSync(Access, SyncLedger, Vehicles, Users, Notifier), NotificationOptions.Create(), Clock, Log.For<NotificationService>()); // a new one per use, like one per request (it syncs once)
 
     public World(AuthMode mode = AuthMode.Standalone, bool smtp = false, Action<AuthOptions>? configure = null)
@@ -1091,12 +1102,12 @@ internal sealed class World
         Drafts = new PhotoDraftService(LogGuard, PhotoDrafts, DraftAccess, ImageService, Access, Clock, Log.For<PhotoDraftService>());
         Photos = new LogPhotoService(logPhotoAccess, LogPhotos, ImageService, Drafts, Access, Clock, Log.For<LogPhotoService>());
         VehicleService = new VehicleService(Vehicles, Refuelings, Tyres, Access, Odometer, ImageService, Clock, Log.For<VehicleService>());
-        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
+        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
         RefuelingService = new RefuelingService(Vehicles, LogGuard, Refuelings, Access, Odometer, Photos, Filler, Clock, Log.For<RefuelingService>());
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
         RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
         Imports = new ImportService([new FuelioCsvParser()], ImportSessions, Access, VehicleService, RefuelingService, ExpenseService, RecurringService, Refuelings, Expenses, Defaults.Create(), Log.For<ImportService>());
-        Stats = new StatsService(Vehicles, new InMemoryStats(Refuelings, Expenses), Access, Clock);
+        Stats = new StatsService(LogGuard, new InMemoryStats(Refuelings, Expenses), Clock);
         ChartService = new ChartService(Vehicles, Charts, Access, Clock, Log.For<ChartService>());
         UiSettings = new UiSettingsService(UiSettingsStore, Access, Defaults.Create(), Clock, Log.For<UiSettingsService>());
         VehicleOrder = new VehicleOrderService(VehicleOrders, Vehicles, Access, Log.For<VehicleOrderService>());
@@ -1111,7 +1122,7 @@ internal sealed class World
         Availability = new RecognitionAvailability(Recognizer, Clock, Log.For<RecognitionAvailability>());
         SetupStore = new InMemorySetupStore(Users, Vehicles) { Phase = SetupPhase.Completed };
         SetupGate = new SetupGate(SetupStatus, SetupStore, Code);
-        SystemSettings = new SystemSettingsService(Access, SetupGate, SystemConfiguration, SettingsFile, Users, Discovery, Restart, Log.For<SystemSettingsService>());
+        SystemSettings = new SystemSettingsService(Access, SetupGate, SystemConfiguration, SettingsFile, Users, Discovery, Restart, FileProbe, Log.For<SystemSettingsService>());
         InstanceStart = new InstanceStartService(Instance, Sessions, options, Clock, Log.For<InstanceStartService>());
     }
 
@@ -1189,4 +1200,20 @@ internal sealed class FixedMonitor<T>(T value) : IOptionsMonitor<T>
     public T CurrentValue { get; set; } = value;
     public T Get(string? name) => CurrentValue;
     public IDisposable? OnChange(Action<T, string?> listener) => null;
+}
+
+/// <summary>The operator's prompt file as a test gives it (#312: the real reader is Infrastructure's): a path's answer, else missing.</summary>
+internal sealed class FakePromptFiles : Tankstat.Application.Recognition.IPromptFileReader
+{
+    public Dictionary<string, Tankstat.Application.Recognition.PromptFileRead> Files { get; } = [];
+
+    public Tankstat.Application.Recognition.PromptFileRead Read(string path, int maxBytes) =>
+        Files.TryGetValue(path, out var read) ? read : Tankstat.Application.Recognition.PromptFileRead.Failed(Tankstat.Application.Recognition.PromptFileProblem.Missing);
+}
+
+/// <summary>The files the app can read, as a test gives them (#312: Application asks <see cref="Tankstat.Application.IFileProbe"/>, never the disk).</summary>
+internal sealed class FakeFileProbe : Tankstat.Application.IFileProbe
+{
+    public HashSet<string> Files { get; } = [];
+    public bool Exists(string path) => Files.Contains(path);
 }

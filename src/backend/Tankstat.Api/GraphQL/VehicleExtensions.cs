@@ -1,7 +1,4 @@
 using Tankstat.Api.Media;
-using Tankstat.Application.Access;
-using Tankstat.Application.Refuelings;
-using Tankstat.Application.Users;
 using Tankstat.Domain.Access;
 using Tankstat.Domain.Vehicles;
 
@@ -22,16 +19,17 @@ public sealed class VehicleType : ObjectType<Vehicle>
 public sealed class VehicleExtensions
 {
     /// <summary>Whether the current user may edit (and trash) this vehicle itself; the UI hides the actions otherwise.</summary>
-    public async Task<bool> GetCanEdit([Parent] Vehicle vehicle, [Service] AccessService access, CancellationToken ct) =>
-        await access.LevelAsync(vehicle.OwnerId, ct) >= AccessLevel.Edit;
+    /// <remarks>This field and the next ones are asked for every row of a list of vehicles, so each goes through a loader (#311).</remarks>
+    public async Task<bool> GetCanEdit([Parent] Vehicle vehicle, AccessLevelByOwnerLoader levels, CancellationToken ct) =>
+        await levels.LoadAsync(vehicle.OwnerId, ct) >= AccessLevel.Edit;
 
     /// <summary>What the current user may do with this vehicle's logs: view, add/change (Edit) or also delete permanently (Delete).</summary>
-    public Task<AccessLevel> GetLogAccess([Parent] Vehicle vehicle, [Service] RefuelingService refuelings, CancellationToken ct) =>
-        refuelings.LevelForVehicleAsync(vehicle.Id, ct);
+    public Task<AccessLevel> GetLogAccess([Parent] Vehicle vehicle, LogLevelByVehicleLoader levels, CancellationToken ct) =>
+        levels.LoadAsync(vehicle.Id, ct);
 
     /// <summary>Null when authentication is off or the owner no longer exists.</summary>
-    public async Task<UserRef?> GetOwner([Parent] Vehicle vehicle, [Service] IUserRepository users, CancellationToken ct) =>
-        await users.FindByIdAsync(vehicle.OwnerId, ct) is { } owner ? UserRef.From(owner) : null;
+    public Task<UserRef?> GetOwner([Parent] Vehicle vehicle, UserRefLoader users, CancellationToken ct) =>
+        users.LoadAsync(vehicle.OwnerId, ct);
 
     /// <summary>Who made its last change that counted (see <c>changedAt</c>, <c>lastChange</c>); null when nobody did (a photo) or no longer exists.</summary>
     public async Task<UserRef?> GetChangedBy([Parent] Vehicle vehicle, UserRefLoader users, CancellationToken ct) =>
@@ -40,6 +38,6 @@ public sealed class VehicleExtensions
     /// <summary>Address of the vehicle's picture, if it has one.</summary>
     public string? GetPictureUrl([Parent] Vehicle vehicle) => MediaUrls.Image(vehicle.PictureImageId);
 
-    public Task<int> GetRefuelingCount([Parent] Vehicle vehicle, [Service] RefuelingService refuelings, CancellationToken ct) =>
-        refuelings.CountAsync(vehicle.Id, ct);
+    public Task<int> GetRefuelingCount([Parent] Vehicle vehicle, RefuelingCountLoader counts, CancellationToken ct) =>
+        counts.LoadAsync(vehicle.Id, ct);
 }

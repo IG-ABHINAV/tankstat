@@ -39,7 +39,7 @@ public sealed record SystemSettingsView(SettingsFileStatus File, IReadOnlyList<S
 /// </summary>
 public sealed class SystemSettingsService(
     AccessService access, SetupGate setup, ISystemConfiguration configuration, ISettingsFileStore store, IUserRepository users, IOidcDiscovery discovery,
-    IServerRestart restart, ILogger<SystemSettingsService> logger)
+    IServerRestart restart, IFileProbe files, ILogger<SystemSettingsService> logger)
 {
     /// <summary>
     /// One save at a time in this process: a save reads the file, checks the result (an OIDC authority may take seconds to answer) and writes
@@ -160,7 +160,7 @@ public sealed class SystemSettingsService(
         return null;
     }
 
-    private static void Apply(SettingDefinition definition, SettingChange change, Dictionary<string, string?> values, List<string> problems)
+    private void Apply(SettingDefinition definition, SettingChange change, Dictionary<string, string?> values, List<string> problems)
     {
         var value = change.Value?.Trim();
         var blank = string.IsNullOrEmpty(value);
@@ -175,7 +175,7 @@ public sealed class SystemSettingsService(
         }
         values.Remove(definition.Key);
         if (change.Clear || blank) return;
-        if (SettingsCatalog.Validate(definition, value!) is { } problem) problems.Add(problem);
+        if (SettingsCatalog.Validate(definition, value!, files.Exists) is { } problem) problems.Add(problem);
         else values[definition.Key] = definition.IsSecret ? change.Value : value; // a secret as typed: a space at either end may be part of it
     }
 

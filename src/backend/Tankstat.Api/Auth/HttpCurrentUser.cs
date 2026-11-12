@@ -11,12 +11,51 @@ namespace Tankstat.Api.Auth;
 /// session the access cookie names: a device signed out (from itself, from another device, or because its refresh token came back)
 /// is out at once, not when its access cookie runs out.
 /// </summary>
+/// <remarks>
+/// Checked once per request, kept in the request's <see cref="HttpContext.Items"/> (#311): HotChocolate gives every query field its own
+/// service scope, so a cache of this instance alone read the user and the session again for every field that asks who is acting (a page
+/// of vehicles, two queries a row). Fields resolve in parallel, so the first to ask starts the check and the others await the same one.
+/// </remarks>
 internal sealed class HttpCurrentUser(
     IHttpContextAccessor accessor, IUserRepository users, IUserSessionRepository sessions, ILogger<HttpCurrentUser> logger) : ICurrentUser
 {
+    /// <summary>The key of the request's principal in <see cref="HttpContext.Items"/>.</summary>
+    private static readonly object PrincipalKey = new();
+
     private Task<Principal?>? _cached;
 
-    public Task<Principal?> GetPrincipalAsync(CancellationToken ct) => _cached ??= ResolveAsync(ct);
+    public Task<Principal?> GetPrincipalAsync(CancellationToken ct)
+    {
+        if (accessor.HttpContext is not { } context) return _cached ??= ResolveAsync(ct);
+        // Items is a plain dictionary: the lock makes the first resolver's check the only one. The check itself runs outside it: SQLite's
+        // "async" queries run synchronously, which would hold every other field's thread on the lock meanwhile.
+        TaskCompletionSource<Principal?> started;
+        lock (context.Items)
+        {
+            if (context.Items[PrincipalKey] is Task<Principal?> shared) return shared;
+            started = new TaskCompletionSource<Principal?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            context.Items[PrincipalKey] = started.Task;
+        }
+        _ = CheckAsync(started, ct);
+        return started.Task;
+    }
+
+    /// <summary>Runs the request's check and hands its outcome to every field awaiting it.</summary>
+    private async Task CheckAsync(TaskCompletionSource<Principal?> started, CancellationToken ct)
+    {
+        try
+        {
+            started.SetResult(await ResolveAsync(ct));
+        }
+        catch (OperationCanceledException e)
+        {
+            started.SetCanceled(e.CancellationToken);
+        }
+        catch (Exception e)
+        {
+            started.SetException(e);
+        }
+    }
 
     private async Task<Principal?> ResolveAsync(CancellationToken ct)
     {

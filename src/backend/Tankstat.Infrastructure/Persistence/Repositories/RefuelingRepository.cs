@@ -23,6 +23,19 @@ internal sealed class RefuelingRepository(IDbContextFactory<AppDbContext> dbFact
         return await db.Refuelings.CountAsync(r => r.VehicleId == vehicleId, ct);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, int>> CountForVehiclesAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        if (vehicleIds.Count == 0) return new Dictionary<Guid, int>();
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await CountsByVehicle(db, vehicleIds).ToDictionaryAsync(x => x.VehicleId, x => x.Count, ct);
+    }
+
+    /// <summary>The vehicles' live refuellings counted in the database, one row per vehicle with any (internal for its translation test).</summary>
+    internal static IQueryable<VehicleCount> CountsByVehicle(AppDbContext db, IReadOnlyCollection<Guid> vehicleIds) =>
+        db.Refuelings.Where(r => vehicleIds.Contains(r.VehicleId)).GroupBy(r => r.VehicleId).Select(g => new VehicleCount(g.Key, g.Count()));
+
+    internal sealed record VehicleCount(Guid VehicleId, int Count);
+
     public async Task<bool> AnyForVehicleAsync(Guid vehicleId, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

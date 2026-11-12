@@ -47,6 +47,17 @@ public sealed class RefuelingService(
     public async Task<int> CountAsync(Guid vehicleId, CancellationToken ct) =>
         await VisibleVehicleAsync(vehicleId, ct) is null ? 0 : await refuelings.CountForVehicleAsync(vehicleId, ct);
 
+    /// <summary>
+    /// <see cref="CountAsync"/> for many vehicles in a fixed number of queries (#311: a list of vehicles shows every row's count): 0 for a
+    /// vehicle that is gone, in the trash or not visible, as one by one.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, int>> CountsAsync(IReadOnlyCollection<Guid> vehicleIds, CancellationToken ct)
+    {
+        var visible = await guard.ForVehiclesAsync(vehicleIds, ct);
+        var counts = await refuelings.CountForVehiclesAsync([.. visible.Keys], ct);
+        return vehicleIds.Distinct().ToDictionary(id => id, id => counts.GetValueOrDefault(id));
+    }
+
     /// <summary>Suggestions for the add-log form; null when the vehicle is not visible.</summary>
     public async Task<RefuelingDefaults?> DefaultsAsync(Guid vehicleId, CancellationToken ct)
     {
