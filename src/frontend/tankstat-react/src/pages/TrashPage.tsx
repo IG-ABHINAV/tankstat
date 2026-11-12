@@ -24,6 +24,8 @@ import {
   EmptyTyreTrashDocument,
   RestoreTyreSetDocument,
   RestoreTyreEntryDocument,
+  RestoreTyreDocument,
+  RestoreTyrePlaceDocument,
   TyreTrashDocument,
   type TyreTrashQuery,
   type TyreTrashQueryVariables,
@@ -291,11 +293,17 @@ function TyreTrash({ run, setNotice }: Shared) {
   const tyreRefetch = { refetchQueries: ['TyreTrash', 'VehicleTyres'], awaitRefetchQueries: true }
   const [restoreSet] = useMutation(RestoreTyreSetDocument, tyreRefetch)
   const [restoreEntry] = useMutation(RestoreTyreEntryDocument, tyreRefetch)
+  const [restoreTyre] = useMutation(RestoreTyreDocument, tyreRefetch)
+  const [restorePlace] = useMutation(RestoreTyrePlaceDocument, tyreRefetch)
   const [emptyTrash] = useMutation(EmptyTyreTrashDocument, tyreRefetch)
   const what = useCallback(
     (r: TyreRow) =>
       r.kind === 'SET'
         ? t('trash.tyres.set', { name: r.setName })
+        : r.kind === 'TYRE'
+          ? t('tyres.single.tyreTitle', { label: r.label ?? '' })
+          : r.kind === 'PLACE'
+            ? t('tyres.single.trashRowPlace', { label: r.label ?? '', corner: t(`tyres.single.corners.${r.corner ?? 'none'}`) })
         : r.setName
           ? t('trash.tyres.entry', { kind: t(`tyres.entries.kinds.${r.entryKind ?? 'OTHER'}`), set: r.setName })
           : t('trash.tyres.entryNoSet', { kind: t(`tyres.entries.kinds.${r.entryKind ?? 'OTHER'}`) }),
@@ -312,6 +320,12 @@ function TyreTrash({ run, setNotice }: Shared) {
         cell: (r) =>
           r.kind === 'SET'
             ? t('trash.tyres.withInstallations', { count: r.installationCount })
+            : r.kind === 'TYRE'
+              ? t('tyres.single.trashRowTyre')
+              : r.kind === 'PLACE' && r.day
+                ? r.until
+                  ? t('trash.tyres.swapUntil', { day: format.date(r.day), until: format.date(r.until) })
+                  : t('trash.tyres.swapNow', { day: format.date(r.day) })
             : !r.day
               ? none
               : r.entryKind !== 'SWAP' && r.entryKind !== 'POSITIONS_CHANGED'
@@ -357,6 +371,8 @@ function TyreTrash({ run, setNotice }: Shared) {
           onClick={() =>
             void run(async () => {
               if (r.kind === 'SET') await restoreSet({ variables: { id: r.id } })
+              else if (r.kind === 'TYRE') await restoreTyre({ variables: { id: r.id } })
+              else if (r.kind === 'PLACE') await restorePlace({ variables: { id: r.id } })
               else {
                 await restoreEntry({ variables: { id: r.id } })
                 setNotice(t(r.withExpense ? 'trash.tyres.restoredWithExpense' : 'trash.tyres.restored'))

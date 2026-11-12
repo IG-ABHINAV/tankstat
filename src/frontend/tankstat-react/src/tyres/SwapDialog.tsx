@@ -15,13 +15,18 @@ import { Field } from '../forms/Field.tsx'
 import { FieldDate } from '../forms/FieldDate.tsx'
 import { FieldInput } from '../forms/FieldInput.tsx'
 import { Form } from '../forms/Form.tsx'
-import { ChangeTyrePositionsDocument, SwapTyresDocument, type DistanceUnit } from '../gql/generated.ts'
+import { ChangeTyrePositionsDocument, SwapTyresDocument, type DistanceUnit, type TyreCorner } from '../gql/generated.ts'
 import { ErrorMessage, WarningMessage } from '../messages.tsx'
 import { useFormat } from '../i18n/format.ts'
 import { OfflineNote } from '../components/OfflineNote.tsx'
 import { feeOf } from './entries.ts'
 import { FeeFields } from './FeeFields.tsx'
 import { keyedOf, type Tyres, type TyreSetInfo, useTyreMutation, useTyreToasts, useTyreWords, wholeInvalid, wholeOrNull } from './tyres.ts'
+import { CarPicture, TyreButton } from './CarPicture.tsx'
+import { CROSS, isExactCorner, liveTyresOf, useCornerWords, type ExactCorner } from './singleTyres.ts'
+
+type CornerMode = 'same' | 'cross' | 'unsure' | 'own'
+type CornerMap = Record<string, string | null>
 
 type Mode = 'same' | 'cross' | 'unsure'
 
@@ -72,6 +77,16 @@ export function SwapDialog({
   const [error, setError] = useState<unknown>()
   const [busy, setBusy] = useState(false)
   const [replace, setReplace] = useState<{ date: string; set: string } | null>(null)
+  // A set tracked tyre by tyre (#289): where each tyre goes, as the owner's decision 43 has it.
+  const broken = !!info?.set.brokenUpOn
+  const [cornerMode, setCornerMode] = useState<CornerMode>(rotate ? 'cross' : 'same')
+  const [own, setOwn] = useState<CornerMap>({})
+  const baseCorners: CornerMap = Object.fromEntries(liveTyresOf(info).map((x) => [x.tyre.id, x.corner ?? null]))
+  const cornersNow: CornerMap =
+    cornerMode === 'own' ? own
+      : cornerMode === 'unsure' ? Object.fromEntries(Object.keys(baseCorners).map((id) => [id, null]))
+      : cornerMode === 'cross' ? Object.fromEntries(Object.entries(baseCorners).map(([id, c]) => [id, isExactCorner(c) ? CROSS[c] : c]))
+      : baseCorners
 
   // Without pairs recorded before, the two choices name the pairs themselves: "same" is pair 1 at the front.
   const pairsNow = mode === 'unsure' ? null : mode === 'cross' ? (known ? !base : false) : known ? base : true
@@ -89,6 +104,8 @@ export function SwapDialog({
     setError(undefined)
     setReplace(null)
     setMode(rotate && pairsOf(tyres.sets.find((s) => s.set.id === (setId ?? choices[0]?.set.id)), rotate) !== null ? 'cross' : 'same')
+    setCornerMode(rotate ? 'cross' : 'same')
+    setOwn({})
   }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -102,7 +119,8 @@ export function SwapDialog({
         vehicleId,
         setId: chosen,
         day: text('day'),
-        pairOneFront: pairsNow,
+        pairOneFront: broken ? null : pairsNow,
+        ...(broken ? { corners: Object.entries(cornersNow).map(([tyreId, corner]) => ({ tyreId, corner: (corner ?? null) as TyreCorner | null })) } : {}),
         replace: replace !== null,
         odometer: wholeOrNull(text('odometer')),
         note: text('note') || null,
@@ -157,6 +175,8 @@ export function SwapDialog({
                   onChange={(value) => {
                     setChosen(value)
                     setMode('same')
+                    setCornerMode('same')
+                    setOwn({})
                     setReplace(null) // the replace note named the swap of the day as it was sent
                   }}
                 />
@@ -174,6 +194,23 @@ export function SwapDialog({
               <Field name="odometer" label={t('tyres.fields.odometer', { unit: words.unitShort })} hint={words.odometerText(tyres.readings, day)} invalid={wholeInvalid(t('forms.numberInvalid'))}>
                 <FieldInput inputMode="numeric" autoComplete="off" />
               </Field>
+              {broken && info ? (
+                <WhereEachTyre
+                  info={info}
+                  rotate={rotate}
+                  base={baseCorners}
+                  corners={cornersNow}
+                  mode={cornerMode}
+                  onMode={(next) => {
+                    if (next === 'own') setOwn(cornersNow)
+                    setCornerMode(next)
+                  }}
+                  onExchange={(a, b) => {
+                    setOwn({ ...cornersNow, [a]: cornersNow[b] ?? null, [b]: cornersNow[a] ?? null })
+                    setCornerMode('own')
+                  }}
+                />
+              ) : (
               <Stack component="fieldset" sx={{ gap: 1, border: 0, p: 0, m: 0 }}>
                 <Typography component="legend" variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
                   {t('tyres.fields.positions')}
@@ -185,6 +222,7 @@ export function SwapDialog({
                 <Segmented label={t('tyres.fields.positions')} value={mode} options={options} onChange={setMode} />
                 <PairPicture front={front} dim={mode === 'unsure'} />
               </Stack>
+              )}
               <FeeFields vehicleId={vehicleId} tyres={tyres} label={rotate ? t('tyres.fee.paid') : t('tyres.fee.paidForSwap')} />
               <Field name="note" label={t('tyres.fields.note')}>
                 <FieldInput maxLength={500} autoComplete="off" />
@@ -230,6 +268,80 @@ function PairPicture({ front, dim }: { front: 1 | 2; dim: boolean }) {
       {pair(front === 1 ? 2 : 1)}
       <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, color: 'text.secondary' }}>
         {t('tyres.fields.rear')}
+      </Typography>
+    </Stack>
+  )
+}
+
+/**
+ * *Where each tyre goes* (#289) for a set tracked tyre by tyre: the car picture with each tyre at its corner. The swap starts from *Same as
+ * last time*, a change of positions from *Front ↔ rear, same side*; *Not sure* dims the picture (saved without corners); tapping two tyres
+ * exchanges them (*Your own*), a status line saying what to tap next.
+ */
+function WhereEachTyre({
+  info, rotate, base, corners, mode, onMode, onExchange,
+}: {
+  info: TyreSetInfo
+  rotate: boolean
+  base: CornerMap
+  corners: CornerMap
+  mode: CornerMode
+  onMode: (mode: CornerMode) => void
+  onExchange: (a: string, b: string) => void
+}) {
+  const { t } = useTranslation()
+  const words = useCornerWords()
+  const [picked, setPicked] = useState<string | null>(null)
+  const tyres = liveTyresOf(info)
+  const labelOf = (id: string) => tyres.find((x) => x.tyre.id === id)?.tyre.label ?? ''
+  const options: { value: CornerMode; label: string }[] = [
+    ...(rotate ? [] : [{ value: 'same' as const, label: t('tyres.fields.sameAsLast') }]),
+    { value: 'cross', label: t('tyres.single.frontRearSameSide') },
+    ...(rotate ? [] : [{ value: 'unsure' as const, label: t('tyres.fields.notSure') }]),
+    ...(mode === 'own' ? [{ value: 'own' as const, label: t('tyres.single.ownMode') }] : []),
+  ]
+  const listed = tyres.map((x) => t('tyres.single.cornerList', { label: x.tyre.label, corner: words.of(base[x.tyre.id]) })).join(', ')
+  const cells = Object.fromEntries(
+    tyres.filter((x) => isExactCorner(corners[x.tyre.id])).map((x) => {
+      const corner = corners[x.tyre.id] as ExactCorner
+      return [corner, (
+        <TyreButton
+          key={x.tyre.id}
+          corner={corner}
+          label={x.tyre.label}
+          lines={[words.of(corner)]}
+          name={`${words.title(corner)}: ${t('tyres.single.tyreTitle', { label: x.tyre.label })}`}
+          pressed={picked === x.tyre.id}
+          onClick={() => {
+            if (mode === 'unsure') return
+            if (picked === null) return setPicked(x.tyre.id)
+            if (picked !== x.tyre.id) onExchange(picked, x.tyre.id)
+            setPicked(null)
+          }}
+        />
+      )]
+    }),
+  ) as Partial<Record<ExactCorner, ReactNode>>
+  return (
+    <Stack component="fieldset" sx={{ gap: 1, border: 0, p: 0, m: 0 }}>
+      <Typography component="legend" variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+        {t('tyres.single.whereEach')}
+      </Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        {rotate ? t('tyres.single.nowCorners', { corners: listed }) : t('tyres.single.lastCorners', { corners: listed })}
+      </Typography>
+      <Segmented
+        label={t('tyres.single.whereEach')}
+        value={mode}
+        options={options}
+        onChange={(next) => {
+          setPicked(null)
+          onMode(next)
+        }}
+      />
+      <CarPicture cells={cells} dim={mode === 'unsure'} />
+      <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>
+        {mode === 'unsure' ? t('tyres.single.unsureNote') : picked ? t('tyres.single.picked', { label: labelOf(picked) }) : t('tyres.single.tapTwo')}
       </Typography>
     </Stack>
   )

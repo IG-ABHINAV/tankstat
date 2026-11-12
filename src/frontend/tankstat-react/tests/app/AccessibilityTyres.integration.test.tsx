@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { check, setup, setupAccessibilityTests } from '../support/accessibility.tsx'
 import { server } from '../support/server.ts'
-import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
+import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 
 // A vehicle's tyres (#287): the tab, its dialogs and the tyre log's (#288).
 setupAccessibilityTests()
@@ -68,4 +68,31 @@ it('the tyre log’s entry dialogs and the remove dialog are labelled and free o
   const confirm = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
   expect(within(confirm).getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked() // #288: the box, labelled
   await check(document.body)
+})
+
+it('a broken-up set\'s card, a tyre\'s dialog, the break-up and the corners of a change of positions are labelled and free of violations (#289)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=tyres')
+  server.use(...fakeTyres([brokenUpSummer(['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', null]), tyreWinter]).handlers)
+  const card = await screen.findByRole('article', { name: 'Michelin Primacy 4' })
+  await check(document.body)
+
+  await ui.click(within(card).getByRole('button', { name: /^Front left: tyre S1,/ }))
+  const tyre = await screen.findByRole('dialog', { name: 'Tyre S1' })
+  expect(within(tyre).getByRole('img', { name: /^Front .* rear / })).toBeInTheDocument()
+  await check(tyre)
+  await ui.click(within(tyre).getByRole('button', { name: 'Add a time on the car' }))
+  await check(await screen.findByRole('dialog', { name: 'Add a time on the car' }))
+  await ui.click(within(screen.getByRole('dialog', { name: 'Add a time on the car' })).getByRole('button', { name: 'Cancel' }))
+  await ui.click(within(tyre).getByRole('button', { name: 'Close' }))
+
+  await ui.click(within(card).getByRole('button', { name: 'Change positions' }))
+  const positions = await screen.findByRole('dialog', { name: 'Change positions' })
+  expect(within(positions).getByRole('status')).toHaveTextContent('Tap two tyres to exchange them.')
+  await check(positions)
+  await ui.click(within(positions).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(within(screen.getByRole('article', { name: 'Continental WinterContact' })).getByRole('button', { name: 'History' }))
+  const history = await screen.findByRole('dialog', { name: 'Continental WinterContact' })
+  await ui.click(within(history).getByRole('button', { name: 'Track tyres one by one' }))
+  await check(await screen.findByRole('dialog', { name: 'Track tyres one by one' }))
 })

@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { IconAction } from '../components/IconAction.tsx'
-import { DialogFrame } from '../dialogs/DialogFrame.tsx'
+import { DialogButtons, DialogCancel, DialogFrame } from '../dialogs/DialogFrame.tsx'
 import { Field } from '../forms/Field.tsx'
 import { FieldInput } from '../forms/FieldInput.tsx'
 import {
@@ -240,6 +240,9 @@ export function TyreDialog({
               </ConfirmDialog>
             </Stack>
           )}
+          <DialogButtons>
+            <DialogCancel label={t('common.close')} />
+          </DialogButtons>
         </Stack>
       )}
     </DialogFrame>
