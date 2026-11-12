@@ -77,9 +77,15 @@ public class StatsRepositoryTests
             Assert.Equal(alone.Expenses, together[id].Expenses);
             Assert.Equal(alone.Readings.OrderBy(r => r.Value), together[id].Readings.OrderBy(r => r.Value));
         }
-        Assert.Equal(2, together[van.Id].Fuel.Count);
-        Assert.Equal(3, together[van.Id].Readings.Count);
+        // LoadAsync is LoadManyAsync for one id, so the equality above holds by construction: what each vehicle gets is spelt out here.
+        Assert.Equal([(40m, 1000L)], together[car.Id].Fuel.Select(f => (f.Volume, f.Odometer)));
+        Assert.Empty(together[car.Id].Expenses);
+        Assert.Equal([1000L], together[car.Id].Readings.Select(r => r.Value));
+        Assert.Equal([(50m, 2000L), (20m, 2300L)], together[van.Id].Fuel.OrderBy(f => f.Odometer).Select(f => (f.Volume, f.Odometer)));
+        Assert.Equal([(35m, "HUF")], together[van.Id].Expenses.Select(e => (e.Amount, e.Currency)));
+        Assert.Equal([2000L, 2100L, 2300L], together[van.Id].Readings.Select(r => r.Value).Order());
         Assert.Empty(together[empty.Id].Fuel);
+        Assert.Empty(together[empty.Id].Expenses);
         Assert.Empty(together[empty.Id].Readings);
     }
 

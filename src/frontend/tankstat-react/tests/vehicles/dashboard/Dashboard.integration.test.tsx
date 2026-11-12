@@ -955,6 +955,8 @@ it('dims what a measure or a grouping rules out, and sends a trend line and a ye
   const dialog = await addWidget(ui)
   await ui.type(within(dialog).getByLabelText('Title'), 'Where it goes')
   const runningTotal = () => extra('Running total')
+  await ui.click(extra('Compare with a year earlier')) // chosen before a grouping rules it out: the later click must turn it on again
+  expect(extra('Compare with a year earlier')).toBeChecked()
 
   await choose(ui, 'What to measure', 'Average consumption')
   expect(runningTotal()).toBeDisabled() // an average does not add up: dimmed, never hidden
