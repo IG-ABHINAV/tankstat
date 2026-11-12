@@ -49,6 +49,16 @@ public enum SyncChangeKind
     UpdateTyreEntry,
     DeleteTyreEntry,
     RestoreTyreEntry,
+
+    // Single tyres and their times on the car (#289).
+    BreakUpTyreSet,
+    UpdateTyre,
+    DeleteTyre,
+    RestoreTyre,
+    AddTyrePlace,
+    UpdateTyrePlace,
+    DeleteTyrePlace,
+    RestoreTyrePlace,
 }
 
 /// <summary>Applied: the server has it. Parked: the server could not apply it and keeps it (with why) for a person to decide.</summary>

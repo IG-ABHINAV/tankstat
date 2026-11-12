@@ -891,6 +891,8 @@ type SyncCurrent {
   tyreSet: TyreSet
   tyreInstallation: TyreInstallation
   tyreEntry: TyreEntry
+  tyre: Tyre
+  tyrePlace: TyrePlace
   changedBy: UserRef @cost(weight: "10")
 }
 
@@ -1458,6 +1460,14 @@ input ChangeInput {
   updateTyreEntry: UpdateTyreEntryInput
   deleteTyreEntry: DeleteTyreEntryInput
   restoreTyreEntry: UUID
+  breakUpTyreSet: BreakUpTyreSetInput
+  updateTyre: UpdateTyreInput
+  deleteTyre: UUID
+  restoreTyre: UUID
+  addTyrePlace: AddTyrePlaceInput
+  updateTyrePlace: UpdateTyrePlaceInput
+  deleteTyrePlace: UUID
+  restoreTyrePlace: UUID
   base: String
 }
 
@@ -2242,6 +2252,14 @@ enum SyncChangeKind {
   UPDATE_TYRE_ENTRY
   DELETE_TYRE_ENTRY
   RESTORE_TYRE_ENTRY
+  BREAK_UP_TYRE_SET
+  UPDATE_TYRE
+  DELETE_TYRE
+  RESTORE_TYRE
+  ADD_TYRE_PLACE
+  UPDATE_TYRE_PLACE
+  DELETE_TYRE_PLACE
+  RESTORE_TYRE_PLACE
 }
 
 enum SyncChangeStatus {

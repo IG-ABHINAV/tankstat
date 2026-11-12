@@ -127,7 +127,7 @@ public class ContractTests
     [InlineData("SyncReasonInfo", "key", "args")]
     [InlineData("SyncReasonArg", "name", "value")]
     [InlineData("SyncChangeInfo", "id", "kind", "status", "vehicleId", "targetId", "expectedVersion", "change", "receivedAt", "reason", "submittedBy", "canResolve", "base", "current")]
-    [InlineData("SyncCurrent", "state", "version", "changedAt", "changedBy", "lastChange", "vehicle", "refueling", "expense", "schedule", "tyreSet", "tyreInstallation", "tyreEntry")]
+    [InlineData("SyncCurrent", "state", "version", "changedAt", "changedBy", "lastChange", "vehicle", "refueling", "expense", "schedule", "tyreSet", "tyreInstallation", "tyreEntry", "tyre", "tyrePlace")]
     [InlineData("LogPhotoInfo", "id", "url", "reading")]
     [InlineData("RecognitionStatusInfo", "available")]
     [InlineData("PhotoDraftInfo", "id", "url", "reading")]
@@ -183,7 +183,8 @@ public class ContractTests
     [InlineData("UpdateUiSettingsInput", "navOpen", "language", "clearLanguage", "colorMode", "surface", "timeFormat", "clearTimeFormat", "dateFormat", "clearDateFormat")]
     [InlineData("ChangeInput", "id", "expectedVersion", "base", "setVehiclePicture", "removeVehiclePicture", "addTyreSet", "updateTyreSet", "setTyreRoughDistance",
         "retireTyreSet", "unretireTyreSet", "deleteTyreSet", "restoreTyreSet", "swapTyres", "changeTyrePositions", "addPastTyreSwaps", "addTyreInstallation",
-        "updateTyreInstallation", "deleteTyreInstallation", "restoreTyreInstallation", "addTyreEntry", "updateTyreEntry", "deleteTyreEntry", "restoreTyreEntry")]
+        "updateTyreInstallation", "deleteTyreInstallation", "restoreTyreInstallation", "addTyreEntry", "updateTyreEntry", "deleteTyreEntry", "restoreTyreEntry",
+        "breakUpTyreSet", "updateTyre", "deleteTyre", "restoreTyre", "addTyrePlace", "updateTyrePlace", "deleteTyrePlace", "restoreTyrePlace")]
     [InlineData("AddTyreSetInput", "vehicleId", "name", "season", "size", "since", "madeWeek", "madeYear", "fitted", "day", "roughDistance", "odometer", "pairOneFront", "replace", "id", "installationId", "price", "boughtOn", "boughtEntryId")]
     [InlineData("SwapTyresInput", "vehicleId", "setId", "day", "pairOneFront", "replace", "odometer", "note", "installationId", "fee", "corners")]
     [InlineData("TyreCornerInput", "tyreId", "corner")]
@@ -270,7 +271,7 @@ public class ContractTests
     [InlineData("NoticeSeverity", "INFO", "WARNING")]
     [InlineData("NotificationKind", "LOG_ACCESS_CHANGED", "VEHICLE_SHARED", "DATA_ACCESS_CHANGED", "DATA_SHARED", "DEFAULT_ACCESS_CHANGED", "RECURRING_DUE_SOON", "RECURRING_OVERDUE", "LOG_FILLED_FROM_PHOTO", "LOG_NOT_FILLED", "SYNC_CHANGE_PARKED", "MORE_ACTIVITY", "BACKUP_FAILED")]
     [InlineData("NotificationEntityType", "INSTANCE", "VEHICLE", "RECURRING_EXPENSE", "USER", "REFUELING", "EXPENSE", "SYNC_CHANGE")]
-    [InlineData("SyncChangeKind", "LOG_REFUELING", "UPDATE_REFUELING", "DELETE_REFUELING", "RESTORE_REFUELING", "ADD_EXPENSE", "UPDATE_EXPENSE", "DELETE_EXPENSE", "RESTORE_EXPENSE", "ADD_RECURRING_EXPENSE", "UPDATE_RECURRING_EXPENSE", "DELETE_RECURRING_EXPENSE", "MARK_RECURRING_EXPENSES_DONE", "ADD_VEHICLE", "UPDATE_VEHICLE", "DELETE_VEHICLE", "RESTORE_VEHICLE", "ADD_REFUELING_PHOTO", "REMOVE_REFUELING_PHOTO", "ADD_EXPENSE_PHOTO", "REMOVE_EXPENSE_PHOTO", "SET_VEHICLE_PICTURE", "REMOVE_VEHICLE_PICTURE", "ADD_TYRE_SET", "UPDATE_TYRE_SET", "SET_TYRE_ROUGH_DISTANCE", "RETIRE_TYRE_SET", "UNRETIRE_TYRE_SET", "DELETE_TYRE_SET", "RESTORE_TYRE_SET", "SWAP_TYRES", "CHANGE_TYRE_POSITIONS", "ADD_PAST_TYRE_SWAPS", "ADD_TYRE_INSTALLATION", "UPDATE_TYRE_INSTALLATION", "DELETE_TYRE_INSTALLATION", "RESTORE_TYRE_INSTALLATION", "ADD_TYRE_ENTRY", "UPDATE_TYRE_ENTRY", "DELETE_TYRE_ENTRY", "RESTORE_TYRE_ENTRY")]
+    [InlineData("SyncChangeKind", "LOG_REFUELING", "UPDATE_REFUELING", "DELETE_REFUELING", "RESTORE_REFUELING", "ADD_EXPENSE", "UPDATE_EXPENSE", "DELETE_EXPENSE", "RESTORE_EXPENSE", "ADD_RECURRING_EXPENSE", "UPDATE_RECURRING_EXPENSE", "DELETE_RECURRING_EXPENSE", "MARK_RECURRING_EXPENSES_DONE", "ADD_VEHICLE", "UPDATE_VEHICLE", "DELETE_VEHICLE", "RESTORE_VEHICLE", "ADD_REFUELING_PHOTO", "REMOVE_REFUELING_PHOTO", "ADD_EXPENSE_PHOTO", "REMOVE_EXPENSE_PHOTO", "SET_VEHICLE_PICTURE", "REMOVE_VEHICLE_PICTURE", "ADD_TYRE_SET", "UPDATE_TYRE_SET", "SET_TYRE_ROUGH_DISTANCE", "RETIRE_TYRE_SET", "UNRETIRE_TYRE_SET", "DELETE_TYRE_SET", "RESTORE_TYRE_SET", "SWAP_TYRES", "CHANGE_TYRE_POSITIONS", "ADD_PAST_TYRE_SWAPS", "ADD_TYRE_INSTALLATION", "UPDATE_TYRE_INSTALLATION", "DELETE_TYRE_INSTALLATION", "RESTORE_TYRE_INSTALLATION", "ADD_TYRE_ENTRY", "UPDATE_TYRE_ENTRY", "DELETE_TYRE_ENTRY", "RESTORE_TYRE_ENTRY", "BREAK_UP_TYRE_SET", "UPDATE_TYRE", "DELETE_TYRE", "RESTORE_TYRE", "ADD_TYRE_PLACE", "UPDATE_TYRE_PLACE", "DELETE_TYRE_PLACE", "RESTORE_TYRE_PLACE")]
     [InlineData("TyreSeason", "SUMMER", "WINTER", "ALL_SEASON")]
     [InlineData("InstallationMeasure", "MEASURED", "FROM_FIRST_READING", "NOT_MEASURED")]
     [InlineData("TyreTrashKind", "SET", "ENTRY", "TYRE", "PLACE")]

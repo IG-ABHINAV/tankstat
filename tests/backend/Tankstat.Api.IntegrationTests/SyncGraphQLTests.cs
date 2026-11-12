@@ -130,6 +130,50 @@ public class SyncGraphQLTests : IDisposable
     }
 
     [Fact]
+    public async Task EveryKindOfSingleTyreChange_IsApplied_ARepeatedBreakUpAndTrashToo()
+    {
+        var people = await _app.Users();
+        var (car, summer, winter, place, fitted) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        // A break-up's places take ids worked out from the tyre's and the installation's, as the device works them out.
+        var s4First = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[3], fitted);
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var breakUp = new { setId = summer, day = "2026-09-01", tyres = tyres.Select((id, n) => new { id, label = $"Ü{n + 1}ŐÁÉ", corner = corners[n] }) }; // six letters, accented
+        var batch = new List<object>
+        {
+            new { id = Guid.NewGuid(), addVehicle = new { id = car, name = "Octavia", fuelType = "PETROL" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = summer, installationId = fitted, vehicleId = car, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = true, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), addTyreSet = new { id = winter, vehicleId = car, name = "Continental", season = "WINTER", since = "2022-11-19", fitted = false, day = "2026-03-28" } },
+            new { id = Guid.NewGuid(), breakUpTyreSet = breakUp },
+            new { id = Guid.NewGuid(), breakUpTyreSet = breakUp }, // sent again: answered with what it made
+            new { id = Guid.NewGuid(), updateTyre = new { id = tyres[0], label = "S1" } },
+            new { id = Guid.NewGuid(), updateTyrePlace = new { id = s4First, from = "2026-03-28", until = "2026-06-01", corner = "REAR_RIGHT" } }, // S4 came off for a while
+            new { id = Guid.NewGuid(), addTyrePlace = new { id = place, tyreId = tyres[3], from = "2026-07-01", corner = "REAR_RIGHT" } },
+            new { id = Guid.NewGuid(), deleteTyrePlace = place },
+            new { id = Guid.NewGuid(), deleteTyrePlace = place }, // in the trash already: nothing left to do
+            new { id = Guid.NewGuid(), restoreTyrePlace = place },
+            new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = winter, day = "2026-09-20", installationId = Guid.NewGuid() } },
+            new { id = Guid.NewGuid(), swapTyres = new { vehicleId = car, setId = summer, day = "2026-09-25", installationId = Guid.NewGuid(),
+                corners = new object[] { new { tyreId = tyres[0], corner = "REAR_LEFT" }, new { tyreId = tyres[2], corner = "FRONT_LEFT" } } } },
+            new { id = Guid.NewGuid(), deleteTyre = tyres[1] },
+            new { id = Guid.NewGuid(), deleteTyre = tyres[1] },
+            new { id = Guid.NewGuid(), restoreTyre = tyres[1] },
+        };
+
+        var result = await Send(people.Alice, [.. batch]);
+
+        Assert.True(batch.Count == result.GetProperty("applied").GetInt32(), result.ToString());
+        Assert.Equal(0, result.GetProperty("parked").GetInt32());
+        var tyresNow = (await people.Alice.Gql("query($v: UUID!) { vehicleTyres(vehicleId: $v) { sets { set { name brokenUpOn } tyres { corner tyre { label } places { place { id } } } } } }", new { v = car }))
+            .Data().GetProperty("vehicleTyres");
+        var michelin = tyresNow.GetProperty("sets").EnumerateArray().Single(x => x.GetProperty("set").GetProperty("name").GetString() == "Michelin");
+        var labels = michelin.GetProperty("tyres").EnumerateArray().ToDictionary(t => t.GetProperty("tyre").GetProperty("label").GetString()!);
+        Assert.Equal(["S1", "Ü2ŐÁÉ", "Ü3ŐÁÉ", "Ü4ŐÁÉ"], labels.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(("REAR_LEFT", "FRONT_LEFT"), (labels["S1"].GetProperty("corner").GetString(), labels["Ü3ŐÁÉ"].GetProperty("corner").GetString()));
+        Assert.Equal(3, labels["Ü4ŐÁÉ"].GetProperty("places").GetArrayLength()); // the set's, its own from July (cut by the winter swap), the swap back
+    }
+
+    [Fact]
     public async Task ATyreSwapWithoutTheIdOfWhatItCreates_IsRefused_AsAnAddWithoutItsId()
     {
         var people = await _app.Users();

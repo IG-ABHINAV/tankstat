@@ -276,4 +276,28 @@ public class TyreSyncTests : IDisposable
 
         Assert.Equal(("APPLIED", null), Result(sent));
     }
+
+    [Fact]
+    public async Task ATyresRelabelFromAnOlderVersion_IsParkedWithTheTyreAsItIsNow_AndARestoreOntoATakenCornerWithItsReason()
+    {
+        var (people, car, summer, _, installation) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new
+        {
+            id = Guid.NewGuid(), breakUpTyreSet = new { setId = summer, day = "2026-09-01", tyres = tyres.Select((id, n) => new { id, label = $"S{n + 1}", corner = corners[n] }) },
+        })));
+
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Bob, new { id = Guid.NewGuid(), expectedVersion = 1, updateTyre = new { id = tyres[0], label = "S1b" } })));
+        Assert.Equal(("PARKED", "sync.versionMismatch"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), expectedVersion = 1, updateTyre = new { id = tyres[0], label = "S1a" } })));
+        var parked = (await people.Alice.Gql("{ parkedChanges { kind current { state tyre { label } } } }")).Data().GetProperty("parkedChanges")[0];
+        Assert.Equal(("UPDATE_TYRE", "S1b"), (parked.GetProperty("kind").GetString(), parked.GetProperty("current").GetProperty("tyre").GetProperty("label").GetString()));
+
+        // S2's time on the car goes to the trash; S1 takes its corner; S2's restore, sent from a device, is parked with the reason.
+        var s2Place = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[1], Guid.Parse(installation));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), deleteTyrePlace = s2Place })));
+        var s1Place = Tankstat.Domain.Tyres.TyreIds.PlaceOf(tyres[0], Guid.Parse(installation));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, new { id = Guid.NewGuid(), updateTyrePlace = new { id = s1Place, from = "2026-03-28", corner = "FRONT_RIGHT" } })));
+        Assert.Equal(("PARKED", "tyres.restoreConflict"), Result(await Send(people.Alice, new { id = Guid.NewGuid(), restoreTyrePlace = s2Place })));
+    }
 }

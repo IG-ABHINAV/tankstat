@@ -38,6 +38,9 @@ public sealed class SyncTargetService(
             or SyncChangeKind.DeleteTyreSet or SyncChangeKind.RestoreTyreSet => OfflineEntityType.TyreSet,
         SyncChangeKind.UpdateTyreInstallation or SyncChangeKind.DeleteTyreInstallation or SyncChangeKind.RestoreTyreInstallation => OfflineEntityType.TyreInstallation,
         SyncChangeKind.UpdateTyreEntry or SyncChangeKind.DeleteTyreEntry or SyncChangeKind.RestoreTyreEntry => OfflineEntityType.TyreEntry,
+        SyncChangeKind.BreakUpTyreSet => OfflineEntityType.TyreSet,
+        SyncChangeKind.UpdateTyre or SyncChangeKind.DeleteTyre or SyncChangeKind.RestoreTyre => OfflineEntityType.Tyre,
+        SyncChangeKind.UpdateTyrePlace or SyncChangeKind.DeleteTyrePlace or SyncChangeKind.RestoreTyrePlace => OfflineEntityType.TyrePlace,
         _ => null,
     };
 
@@ -62,10 +65,13 @@ public sealed class SyncTargetService(
         var sets = await tyres.ListSetsAsync(Ids(OfflineEntityType.TyreSet), ct);
         var installations = await tyres.ListInstallationsAsync(Ids(OfflineEntityType.TyreInstallation), ct);
         var entries = await tyres.ListEntriesAsync(Ids(OfflineEntityType.TyreEntry), ct);
+        // Single tyres and their places (#289): a place of a tyre in the trash, a tyre of a set in the trash, is in the trash with it.
+        var places = await tyres.ListPlacesAsync(Ids(OfflineEntityType.TyrePlace), ct);
+        var singleTyres = await tyres.ListTyresAsync([.. Ids(OfflineEntityType.Tyre).Concat(places.Select(p => p.TyreId)).Distinct()], ct);
         var setsOfInstallations = await tyres.ListSetsAsync(
-            [.. installations.Select(s => s.SetId).Concat(entries.Where(e => e.SetId is not null).Select(e => e.SetId!.Value)).Distinct()], ct);
+            [.. installations.Select(s => s.SetId).Concat(entries.Where(e => e.SetId is not null).Select(e => e.SetId!.Value)).Concat(singleTyres.Select(t => t.SetId)).Distinct()], ct);
         var tyreVehicles = await vehicles.ListByIdsAsync(
-            [.. sets.Select(s => s.VehicleId).Concat(installations.Select(s => s.VehicleId)).Concat(entries.Select(e => e.VehicleId)).Distinct()], ct);
+            [.. sets.Select(s => s.VehicleId).Concat(installations.Select(s => s.VehicleId)).Concat(entries.Select(e => e.VehicleId)).Concat(singleTyres.Select(t => t.VehicleId)).Distinct()], ct);
         var tyreLevels = await access.LogLevelsAsync(tyreVehicles, ct);
         bool MaySeeTyres(Guid vehicleId, bool trashed) => tyreLevels.GetValueOrDefault(vehicleId) >= (trashed ? AccessLevel.Edit : AccessLevel.View);
         foreach (var set in sets.Where(s => MaySeeTyres(s.VehicleId, s.IsDeleted)))
@@ -79,6 +85,14 @@ public sealed class SyncTargetService(
         {
             var trashed = entry.IsDeleted || setsOfInstallations.Any(s => s.Id == entry.SetId && s.IsDeleted);
             if (MaySeeTyres(entry.VehicleId, trashed)) result[new SyncTargetKey(OfflineEntityType.TyreEntry, entry.Id)] = new SyncTarget(entry, trashed);
+        }
+        bool TyreTrashed(Domain.Tyres.Tyre tyre) => tyre.IsDeleted || setsOfInstallations.Any(s => s.Id == tyre.SetId && s.IsDeleted);
+        foreach (var tyre in singleTyres.Where(t => Ids(OfflineEntityType.Tyre).Contains(t.Id)))
+            if (MaySeeTyres(tyre.VehicleId, TyreTrashed(tyre))) result[new SyncTargetKey(OfflineEntityType.Tyre, tyre.Id)] = new SyncTarget(tyre, TyreTrashed(tyre));
+        foreach (var place in places)
+        {
+            var trashed = place.IsDeleted || singleTyres.FirstOrDefault(t => t.Id == place.TyreId) is not { } of || TyreTrashed(of);
+            if (MaySeeTyres(place.VehicleId, trashed)) result[new SyncTargetKey(OfflineEntityType.TyrePlace, place.Id)] = new SyncTarget(place, trashed);
         }
 
         // Schedules (deleted for good, never in a trash): with their status, through the list that checks the vehicles' logs.

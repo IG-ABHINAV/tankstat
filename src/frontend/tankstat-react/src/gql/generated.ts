@@ -70,6 +70,14 @@ export type AddTyreInstallationInput = {
   until?: string | null | undefined;
 };
 
+export type AddTyrePlaceInput = {
+  corner?: TyreCorner | null | undefined;
+  from: string;
+  id?: string | null | undefined;
+  tyreId: string;
+  until?: string | null | undefined;
+};
+
 export type AddTyreSetInput = {
   boughtEntryId?: string | null | undefined;
   boughtOn?: string | null | undefined;
@@ -119,6 +127,12 @@ export type BackupSettingsState =
   | 'INCLUDED'
   | 'NONE';
 
+export type BreakUpTyreSetInput = {
+  day: string;
+  setId: string;
+  tyres: Array<NewTyreInput>;
+};
+
 export type ChangeInput = {
   addExpense?: AddExpenseInput | null | undefined;
   addExpensePhoto?: AddLogPhotoInput | null | undefined;
@@ -127,15 +141,19 @@ export type ChangeInput = {
   addRefuelingPhoto?: AddLogPhotoInput | null | undefined;
   addTyreEntry?: AddTyreEntryInput | null | undefined;
   addTyreInstallation?: AddTyreInstallationInput | null | undefined;
+  addTyrePlace?: AddTyrePlaceInput | null | undefined;
   addTyreSet?: AddTyreSetInput | null | undefined;
   addVehicle?: AddVehicleInput | null | undefined;
   base?: string | null | undefined;
+  breakUpTyreSet?: BreakUpTyreSetInput | null | undefined;
   changeTyrePositions?: SwapTyresInput | null | undefined;
   deleteExpense?: string | null | undefined;
   deleteRecurringExpense?: string | null | undefined;
   deleteRefueling?: string | null | undefined;
+  deleteTyre?: string | null | undefined;
   deleteTyreEntry?: DeleteTyreEntryInput | null | undefined;
   deleteTyreInstallation?: string | null | undefined;
+  deleteTyrePlace?: string | null | undefined;
   deleteTyreSet?: string | null | undefined;
   deleteVehicle?: string | null | undefined;
   expectedVersion?: number | null | undefined;
@@ -147,8 +165,10 @@ export type ChangeInput = {
   removeVehiclePicture?: string | null | undefined;
   restoreExpense?: string | null | undefined;
   restoreRefueling?: string | null | undefined;
+  restoreTyre?: string | null | undefined;
   restoreTyreEntry?: string | null | undefined;
   restoreTyreInstallation?: string | null | undefined;
+  restoreTyrePlace?: string | null | undefined;
   restoreTyreSet?: string | null | undefined;
   restoreVehicle?: string | null | undefined;
   retireTyreSet?: RetireTyreSetInput | null | undefined;
@@ -159,8 +179,10 @@ export type ChangeInput = {
   updateExpense?: UpdateExpenseInput | null | undefined;
   updateRecurringExpense?: UpdateRecurringExpenseInput | null | undefined;
   updateRefueling?: UpdateRefuelingInput | null | undefined;
+  updateTyre?: UpdateTyreInput | null | undefined;
   updateTyreEntry?: UpdateTyreEntryInput | null | undefined;
   updateTyreInstallation?: UpdateTyreInstallationInput | null | undefined;
+  updateTyrePlace?: UpdateTyrePlaceInput | null | undefined;
   updateTyreSet?: UpdateTyreSetInput | null | undefined;
   updateVehicle?: UpdateVehicleInput | null | undefined;
 };
@@ -409,6 +431,12 @@ export type MarkRecurringExpensesDoneInput = {
 export type MeasurementUnitsInput = {
   distance: DistanceUnit;
   volume: VolumeUnit;
+};
+
+export type NewTyreInput = {
+  corner?: TyreCorner | null | undefined;
+  id?: string | null | undefined;
+  label: string;
 };
 
 export type NewVehicleInput = {
@@ -681,14 +709,18 @@ export type SyncChangeKind =
   | 'ADD_REFUELING_PHOTO'
   | 'ADD_TYRE_ENTRY'
   | 'ADD_TYRE_INSTALLATION'
+  | 'ADD_TYRE_PLACE'
   | 'ADD_TYRE_SET'
   | 'ADD_VEHICLE'
+  | 'BREAK_UP_TYRE_SET'
   | 'CHANGE_TYRE_POSITIONS'
   | 'DELETE_EXPENSE'
   | 'DELETE_RECURRING_EXPENSE'
   | 'DELETE_REFUELING'
+  | 'DELETE_TYRE'
   | 'DELETE_TYRE_ENTRY'
   | 'DELETE_TYRE_INSTALLATION'
+  | 'DELETE_TYRE_PLACE'
   | 'DELETE_TYRE_SET'
   | 'DELETE_VEHICLE'
   | 'LOG_REFUELING'
@@ -698,8 +730,10 @@ export type SyncChangeKind =
   | 'REMOVE_VEHICLE_PICTURE'
   | 'RESTORE_EXPENSE'
   | 'RESTORE_REFUELING'
+  | 'RESTORE_TYRE'
   | 'RESTORE_TYRE_ENTRY'
   | 'RESTORE_TYRE_INSTALLATION'
+  | 'RESTORE_TYRE_PLACE'
   | 'RESTORE_TYRE_SET'
   | 'RESTORE_VEHICLE'
   | 'RETIRE_TYRE_SET'
@@ -710,8 +744,10 @@ export type SyncChangeKind =
   | 'UPDATE_EXPENSE'
   | 'UPDATE_RECURRING_EXPENSE'
   | 'UPDATE_REFUELING'
+  | 'UPDATE_TYRE'
   | 'UPDATE_TYRE_ENTRY'
   | 'UPDATE_TYRE_INSTALLATION'
+  | 'UPDATE_TYRE_PLACE'
   | 'UPDATE_TYRE_SET'
   | 'UPDATE_VEHICLE';
 
@@ -877,12 +913,24 @@ export type UpdateTyreEntryInput = {
   setId?: string | null | undefined;
 };
 
+export type UpdateTyreInput = {
+  id: string;
+  label: string;
+};
+
 export type UpdateTyreInstallationInput = {
   from: string;
   id: string;
   odometerFrom?: number | null | undefined;
   odometerUntil?: number | null | undefined;
   pairOneFront?: boolean | null | undefined;
+  until?: string | null | undefined;
+};
+
+export type UpdateTyrePlaceInput = {
+  corner?: TyreCorner | null | undefined;
+  from: string;
+  id: string;
   until?: string | null | undefined;
 };
 
