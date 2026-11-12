@@ -167,9 +167,9 @@ public sealed class RecognitionSetup
     {
         if (string.IsNullOrWhiteSpace(o.SystemPromptFile)) return string.IsNullOrWhiteSpace(o.SystemPrompt) ? null : o.SystemPrompt.Trim();
         var read = promptFiles.Read(o.SystemPromptFile, MaxPromptFileBytes);
-        if (read.Text is { } text) return text;
-        // Names the setting only: never the file's content, nor the system's words about it.
-        problems.Add(read.Problem switch
+        if (!string.IsNullOrWhiteSpace(read.Text)) return read.Text.Trim();
+        // Names the setting only: never the file's content, nor the system's words about it. A blank text with no problem is an empty file.
+        problems.Add((read.Problem ?? PromptFileProblem.Empty) switch
         {
             PromptFileProblem.Missing => "Recognition:OpenAiCompatible:SystemPromptFile does not exist (an absolute path, such as /data/prompt.txt, is safest).",
             PromptFileProblem.TooLarge => $"Recognition:OpenAiCompatible:SystemPromptFile is larger than {MaxPromptFileBytes / 1024} KB: that is not a prompt.",

@@ -424,6 +424,19 @@ public class RecognitionTests
         Assert.DoesNotContain("xxx", problem); // the setting only: never the path or the file's content
     }
 
+    [Fact]
+    public void APromptFileReadAsBlank_IsAnEmptyFile_NeverABlankPrompt()
+    {
+        const string path = "/data/prompt.txt";
+        var files = new FakePromptFiles { Files = { [path] = PromptFileRead.Of("  \n") } };
+
+        var setup = SetupOf(ModelServer(o => o.SystemPromptFile = path), files);
+
+        Assert.False(setup.Enabled);
+        Assert.Null(setup.SystemPrompt);
+        Assert.Contains("SystemPromptFile is empty", Assert.Single(setup.Problems));
+    }
+
     // ---- normalising ---------------------------------------------------------------------------------------
 
     [Theory]
