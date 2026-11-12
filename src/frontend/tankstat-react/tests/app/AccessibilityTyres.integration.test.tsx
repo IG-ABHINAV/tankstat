@@ -96,3 +96,30 @@ it('a broken-up set\'s card, a tyre\'s dialog, the break-up and the corners of a
   await ui.click(within(history).getByRole('button', { name: 'Track tyres one by one' }))
   await check(await screen.findByRole('dialog', { name: 'Track tyres one by one' }))
 })
+
+it('an entry for several tyres, the ask on save of a shared amount and a row’s bin are labelled and free of violations (#289)', async () => {
+  const { ui } = setup('/vehicles/v1?tab=tyres')
+  const line = (id: string, tyreId: string) => ({
+    id, kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-09-20', odometer: 148_200, note: null, expenseId: 'x1', amount: 13_000, currency: 'HUF', tyreId, groupId: 'l3',
+  })
+  server.use(...fakeTyres([brokenUpSummer(), { ...tyreWinter }], [line('l3', 't3'), line('l4', 't4')]).handlers)
+
+  await ui.click(await screen.findByRole('button', { name: 'Add entry' }))
+  const add = await screen.findByRole('dialog', { name: 'Add entry' })
+  await ui.click(within(add).getByRole('checkbox', { name: 'The whole set' }))
+  await ui.click(within(add).getByRole('button', { name: 'Tyre S3, rear left' }))
+  await check(add) // the car picture's toggles
+  await ui.click(within(add).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(await screen.findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ }))
+  const edit = await screen.findByRole('dialog', { name: 'Edit entry' })
+  await ui.click(within(edit).getByRole('checkbox', { name: 'Tyre S4' }))
+  await ui.clear(within(edit).getByRole('textbox', { name: 'Paid' }))
+  await ui.click(within(edit).getByRole('button', { name: 'Save' }))
+  await check(await screen.findByRole('dialog', { name: 'The amount is shared' }))
+  await ui.click(within(screen.getByRole('dialog', { name: 'The amount is shared' })).getByRole('button', { name: 'Cancel' }))
+  await ui.click(within(edit).getByRole('button', { name: 'Cancel' }))
+
+  await ui.click(screen.getByRole('button', { name: 'Move to the trash: Puncture repaired, Sep 20, 2026' }))
+  await check(await screen.findByRole('alertdialog', { name: 'Move to the trash?' }))
+})

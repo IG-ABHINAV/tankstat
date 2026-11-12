@@ -5,7 +5,7 @@ import App from '../../../src/App.tsx'
 import { server } from '../../support/server.ts'
 import { fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { UUID } from '../../support/ids.ts'
-import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreSet } from '../../support/tyres.ts'
+import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => {
@@ -15,13 +15,13 @@ afterEach(() => {
 afterAll(() => server.close())
 
 // Single tyres on the Tyres tab (#289): the break-up, a broken-up set's card, a tyre's dialog, and the corners of a swap.
-function setup(sets: FakeTyreSet[]) {
+function setup(sets: FakeTyreSet[], entries: FakeTyreEntry[] = [], route = '/vehicles/v1?tab=tyres') {
   stubViewport('desktop')
   const vehicle = fakeVehicle()
   const expenses = fakeExpenseBackend(vehicle, [])
-  const tyres = fakeTyres(sets)
+  const tyres = fakeTyres(sets, entries)
   server.use(sessionHandler('NONE', () => null), healthHandler, ...expenses.handlers, ...tyres.handlers)
-  renderWithApollo(<App />, '/vehicles/v1?tab=tyres')
+  renderWithApollo(<App />, route)
   return { ...tyres, ui: userEvent.setup() }
 }
 
@@ -177,4 +177,112 @@ it('says a refusal of a time on the car in words: the tyre at that corner, the s
   expect(await within(edit).findByText('Tyre S2 is at that corner then, from 2026-03-28.')).toBeInTheDocument()
   await ui.click(within(edit).getByRole('button', { name: 'Save' }))
   expect(await within(edit).findByText(/^The Michelin Primacy 4 was not on the car then: Continental WinterContact was on from 2025-11-15\./)).toBeInTheDocument()
+})
+
+// Entries for several tyres sharing one expense (#289 step 2).
+
+/** A flat on S3 and S4 of the broken-up summer set: two lines made together, one expense of 13,000. */
+const flat = (more: Partial<FakeTyreEntry> = {}): FakeTyreEntry[] => [
+  { id: 'l3', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-09-20', odometer: 148_200, note: 'Screws', expenseId: 'x1', amount: 13_000, currency: 'HUF', tyreId: 't3', groupId: 'l3', ...more },
+  { id: 'l4', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-09-20', odometer: 148_200, note: 'Screws', expenseId: 'x1', amount: 13_000, currency: 'HUF', tyreId: 't4', groupId: 'l3', ...more },
+]
+
+it('adds an entry for two tyres of a whole set: tapped on the car picture, the set broken up on save, a line each with one expense', async () => {
+  const { ui, state } = setup([tyreSummer, tyreWinter])
+
+  await ui.click(await screen.findByRole('button', { name: 'Add entry' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add entry' })
+  await ui.click(within(dialog).getByRole('checkbox', { name: 'The whole set' }))
+  expect(within(dialog).getAllByLabelText(/^Label, /).map((input) => (input as HTMLInputElement).value)).toEqual(['S1', 'S2', 'S3', 'S4'])
+  // Nothing tapped: said, nothing sent.
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(await within(dialog).findByText('Tap the tyres it is for.')).toBeInTheDocument()
+  expect(state.calls.AddTyreEntry).toBeUndefined()
+
+  await ui.click(within(dialog).getByRole('button', { name: 'The rear left tyre' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'The rear right tyre' }))
+  expect(within(dialog).getByRole('button', { name: 'The rear left tyre' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(dialog).getByText(/For several tyres it is one expense, counted once\./)).toBeInTheDocument()
+  await ui.type(within(dialog).getByRole('textbox', { name: 'Paid' }), '13000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.AddTyreEntry).toHaveLength(1))
+  const input = state.calls.AddTyreEntry[0].input as Record<string, unknown> & { tyres: { id: string; tyreId: string }[]; breakUp: { tyres: { id: string }[] } }
+  expect(input).toMatchObject({
+    kind: 'PUNCTURE_REPAIRED', setId: 's1',
+    tyres: [{ tyreId: UUID, id: UUID }, { tyreId: UUID, id: UUID }],
+    breakUp: { setId: 's1', tyres: [{ label: 'S1', corner: 'FRONT_LEFT' }, { label: 'S2', corner: 'FRONT_RIGHT' }, { label: 'S3', corner: 'REAR_LEFT' }, { label: 'S4', corner: 'REAR_RIGHT' }] },
+    fee: { amount: 13_000 },
+  })
+  expect(input.id).toBe(input.tyres[0].id) // the first line's id is the entry's
+  expect(input.tyres.map((x) => x.tyreId)).toEqual([input.breakUp.tyres[2].id, input.breakUp.tyres[3].id]) // the rear tyres of the break-up
+  expect(await screen.findByText('Saved for S3, S4, with one expense.')).toBeInTheDocument()
+})
+
+it('shows lines made together as one row, and its edit changes every tyre ticked under Also change it for', async () => {
+  const { ui, state } = setup([brokenUpSummer(), tyreWinter], flat())
+
+  const row = await screen.findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4, Sep 20, 2026, HUF/ })
+  expect(screen.getAllByRole('button', { name: /^Puncture repaired/ })).toHaveLength(1) // one row, the amount once
+  await ui.click(row)
+  const dialog = await screen.findByRole('dialog', { name: 'Edit entry' })
+  expect(within(dialog).getByRole('checkbox', { name: 'Tyre S4' })).toBeChecked()
+  expect(within(dialog).getByText(/Opened from the tyre log: every tyre of the line is ticked\./)).toBeInTheDocument()
+  expect(within(dialog).getByText(/One expense, shared with S4: a new amount changes it for all\./)).toBeInTheDocument()
+  const note = within(dialog).getByRole('textbox', { name: 'Note' })
+  await ui.clear(note)
+  await ui.type(note, 'Two screws')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.UpdateTyreEntry).toHaveLength(1))
+  expect(state.calls.UpdateTyreEntry[0].input).toMatchObject({ id: 'l3', note: 'Two screws', also: ['l4'] })
+  expect(await screen.findByText('Changed for S3, S4.')).toBeInTheDocument()
+})
+
+it('asks on save when a tyre’s shared amount is emptied, from its own dialog with the others unticked', async () => {
+  const { ui, state } = setup([{ ...brokenUpSummer(), tyres: brokenUpSummer().tyres!.map((x) => (x.id === 't3' ? { ...x, spent: [{ currency: 'HUF', amount: 6_500 }], repairs: 1 } : x)) }, tyreWinter], flat())
+
+  await ui.click(await screen.findByRole('button', { name: /^Rear left: tyre S3,/ }))
+  const tyre = await screen.findByRole('dialog', { name: 'Tyre S3' })
+  expect(within(tyre).getByText('An amount shared by several tyres counts here by its even share.')).toBeInTheDocument()
+  expect(within(tyre).getByText(/HUF\s?6,500/)).toBeInTheDocument()
+  expect(within(tyre).getByText(/shared with S4/)).toBeInTheDocument()
+  await ui.click(within(tyre).getByRole('button', { name: /^Edit entry: Puncture repaired, Sep 20, 2026/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit entry' })
+  expect(within(dialog).getByRole('checkbox', { name: 'Tyre S4' })).not.toBeChecked()
+  await ui.clear(within(dialog).getByRole('textbox', { name: 'Paid' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  const ask = await screen.findByRole('dialog', { name: 'The amount is shared' })
+  expect(within(ask).getByRole('radio', { name: /Only S3 lets go of it/ })).toBeChecked()
+  expect(within(ask).getByText('The expense stays with S4.')).toBeInTheDocument()
+  expect(state.calls.UpdateTyreEntry).toBeUndefined()
+  await ui.click(within(ask).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(state.calls.UpdateTyreEntry).toHaveLength(1))
+  expect(state.calls.UpdateTyreEntry[0].input).toMatchObject({ id: 'l3', fee: { amount: null }, sharedExpense: 'LET_GO' })
+  expect(state.calls.UpdateTyreEntry[0].input).not.toHaveProperty('also')
+})
+
+it('a row’s bin asks which tyres’ lines go: the expense box only while every tyre holding it goes', async () => {
+  const { ui, state } = setup([brokenUpSummer(), tyreWinter], flat())
+
+  await ui.click(await screen.findByRole('button', { name: 'Move to the trash: Puncture repaired, Sep 20, 2026' }))
+  const ask = await screen.findByRole('alertdialog', { name: 'Move to the trash?' })
+  expect(within(ask).getByRole('checkbox', { name: 'Tyre S3' })).toBeChecked()
+  expect(within(ask).getByRole('checkbox', { name: /^Also move its expense/ })).toBeChecked()
+  await ui.click(within(ask).getByRole('checkbox', { name: 'Tyre S4' }))
+  expect(within(ask).queryByRole('checkbox', { name: /^Also move its expense/ })).not.toBeInTheDocument()
+  expect(within(ask).getByText(/stays with S4\./)).toBeInTheDocument()
+  await ui.click(within(ask).getByRole('button', { name: 'Move to the trash' }))
+
+  await waitFor(() => expect(state.calls.DeleteTyreEntry).toHaveLength(1))
+  expect(state.calls.DeleteTyreEntry[0].input).toEqual({ id: 'l3', withExpense: false })
+})
+
+it('an expense’s Open in the tyre log naming any line of a group opens the group’s dialog, every tyre ticked', async () => {
+  setup([brokenUpSummer(), tyreWinter], flat(), '/vehicles/v1?tab=tyres&entry=l4')
+
+  const dialog = await screen.findByRole('dialog', { name: 'Edit entry' })
+  expect(within(dialog).getByRole('checkbox', { name: 'Tyre S4' })).toBeChecked()
 })

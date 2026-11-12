@@ -99,7 +99,8 @@ export function EntryDialog({
   const [labels, setLabels] = useState<string[]>([])
   // *Also change it for* (#289), and the ask on save of a shared amount emptied.
   const others = entry ? groupOf(tyres, entry).slice(1) : []
-  const [also, setAlso] = useState<string[]>([])
+  const alsoAtFirst = () => (group ? group.filter((l) => l.id !== entry?.id).map((l) => l.id) : [])
+  const [also, setAlso] = useState<string[]>(alsoAtFirst) // also when opened by something else, without the trigger's reset
   const [asking, setAsking] = useState<null | ((choice: 'LET_GO' | 'TRASH') => Promise<void>)>(null)
   const [choice, setChoice] = useState<'LET_GO' | 'TRASH'>('LET_GO')
   const [error, setError] = useState<unknown>()
@@ -117,7 +118,7 @@ export function EntryDialog({
     setSet(first)
     setDay(entry?.day ?? todayIso())
     startFor(first)
-    setAlso(group ? group.filter((l) => l.id !== entry?.id).map((l) => l.id) : [])
+    setAlso(alsoAtFirst())
     setAsking(null)
     setChoice('LET_GO')
     setError(undefined)
