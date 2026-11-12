@@ -119,6 +119,7 @@ public static class DependencyInjection
         services.AddSingleton(_ => new PasswordResetQueue(PasswordResetQueue.DefaultCapacity));
         services.AddSingleton<IPasswordResetQueue>(sp => sp.GetRequiredService<PasswordResetQueue>());
 
+        services.AddSingleton<IPromptFileReader, PromptFileReader>(); // the operator's prompt file, for RecognitionSetup (#312)
         // Photo reading (optional): the model provider the settings choose, or one that never reads (RecognitionSetup explains why).
         // No client-wide timeout (its default of 100 s would cut OpenAiCompatible:TimeoutSeconds short): every request brings its own.
         services.AddHttpClient(OpenAiCompatibleRecognitionProvider.ClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)

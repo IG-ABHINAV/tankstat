@@ -1059,12 +1059,12 @@ internal sealed class World
     public InMemoryPhotoReadings Readings { get; } = new();
     public FakeRecognitionSignal Signal { get; } = new();
     public RecognitionAvailability Availability { get; }
-    public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, PhotoDrafts, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, Clock, Log.For<RecognitionService>());
+    public RecognitionService Recognition => new(Availability, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Readings, PhotoDrafts, LogPhotos, Refuelings, Expenses, Odometer, RefuelingService, Defaults.Create(), Signal, Access, Clock, Log.For<RecognitionService>());
     public LogPhotoFiller Filler { get; }
     /// <summary>The app's own metrics of this world alone (a meter of its own: a test listens to it, never to another test's).</summary>
     public Tankstat.Application.Telemetry.AppMetrics Metrics { get; } = new();
 
-    public PhotoReadingProcessor Processor => new(Recognizer, Availability, new RecognitionSetup(RecognitionOptions.Create()), Readings, Images, ImageStore, Filler, Clock, Metrics, Log.For<PhotoReadingProcessor>());
+    public PhotoReadingProcessor Processor => new(Recognizer, Availability, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Readings, Images, ImageStore, Filler, Clock, Metrics, Log.For<PhotoReadingProcessor>());
     public NotificationService NotificationService => new(Access, Notifications, new RecurringNotificationSync(Access, Recurring, Vehicles, RecurringService, Notifier), new SyncNotificationSync(Access, SyncLedger, Vehicles, Users, Notifier), NotificationOptions.Create(), Clock, Log.For<NotificationService>()); // a new one per use, like one per request (it syncs once)
 
     public World(AuthMode mode = AuthMode.Standalone, bool smtp = false, Action<AuthOptions>? configure = null)
@@ -1089,7 +1089,7 @@ internal sealed class World
         Drafts = new PhotoDraftService(LogGuard, PhotoDrafts, ImageService, Access, Clock, Log.For<PhotoDraftService>());
         Photos = new LogPhotoService(logPhotoAccess, LogPhotos, ImageService, Drafts, Access, Clock, Log.For<LogPhotoService>());
         VehicleService = new VehicleService(Vehicles, Refuelings, Tyres, Access, Odometer, ImageService, Clock, Log.For<VehicleService>());
-        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
+        Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
         RefuelingService = new RefuelingService(Vehicles, LogGuard, Refuelings, Access, Odometer, Photos, Filler, Clock, Log.For<RefuelingService>());
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
         RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
@@ -1187,4 +1187,13 @@ internal sealed class FixedMonitor<T>(T value) : IOptionsMonitor<T>
     public T CurrentValue { get; set; } = value;
     public T Get(string? name) => CurrentValue;
     public IDisposable? OnChange(Action<T, string?> listener) => null;
+}
+
+/// <summary>The operator's prompt file as a test gives it (#312: the real reader is Infrastructure's): a path's answer, else missing.</summary>
+internal sealed class FakePromptFiles : Tankstat.Application.Recognition.IPromptFileReader
+{
+    public Dictionary<string, Tankstat.Application.Recognition.PromptFileRead> Files { get; } = [];
+
+    public Tankstat.Application.Recognition.PromptFileRead Read(string path, int maxBytes) =>
+        Files.TryGetValue(path, out var read) ? read : Tankstat.Application.Recognition.PromptFileRead.Failed(Tankstat.Application.Recognition.PromptFileProblem.Missing);
 }
