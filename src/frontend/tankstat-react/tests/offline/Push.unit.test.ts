@@ -27,6 +27,14 @@ describe('toChangeInput', () => {
     expect(toChangeInput(change({ id: 's', entity: 'recurring', action: 'trash', targetId: 's3' }))).toEqual({ id: 's', expectedVersion: null, deleteRecurringExpense: 's3' })
   })
 
+  it("an expense's tyre details reach the server with its add and its edit (#290)", () => {
+    const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's1', tyres: [{ tyreId: 't1', id: 'l1' }] }
+    expect(toChangeInput(change({ id: 'e', entity: 'expenses', action: 'add', targetId: 'e2', input: { id: 'e2', vehicleId: 'v1', date: '2026-10-02', title: 'Puncture', amount: 25, currency: 'EUR', photoIds: [], tyre } })))
+      .toEqual({ id: 'e', expectedVersion: null, addExpense: { id: 'e2', vehicleId: 'v1', date: '2026-10-02', title: 'Puncture', amount: 25, currency: 'EUR', photoIds: [], tyre } })
+    expect(toChangeInput(change({ id: 'u', entity: 'expenses', action: 'update', targetId: 'e2', expectedVersion: 2, input: { id: 'e2', date: '2026-10-02', title: 'Valve', amount: 25, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } } })))
+      .toEqual({ id: 'u', expectedVersion: 2, updateExpense: { id: 'e2', date: '2026-10-02', title: 'Valve', amount: 25, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } } })
+  })
+
   it('a visit that names no schedules marks none, and a photo change whose photo did not go up names no draft', () => {
     expect(toChangeInput(change({ id: 'd', entity: 'recurring', action: 'markDone', targetId: 'e1', input: { date: '2026-10-02' } })))
       .toEqual({ id: 'd', expectedVersion: null, markRecurringExpensesDone: { ids: [], date: '2026-10-02' } })

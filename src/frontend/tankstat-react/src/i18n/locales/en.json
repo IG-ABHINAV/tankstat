@@ -1286,7 +1286,27 @@
       "bannerTitle": "From the tyre log",
       "banner": "{{what}}. The date and the odometer are the same there: changing them here changes both.",
       "open": "Open in the tyre log",
-      "trashLine": "Its line stays in the tyre log, without the amount."
+      "trashLine": "Its line stays in the tyre log, without the amount.",
+      "bannerTrashed": "{{what}}. Its line is in the trash: restoring it there links them again.",
+      "remove": "Remove from the tyre log",
+      "removeTitle": "Remove it from the tyre log?",
+      "removeOne": "The tyre log's line goes to the trash. This expense stays here, with its odometer reading, and the line holds it again if it is restored.",
+      "removeMany": "The lines of {{tyres}} go to the trash. This expense stays here, with its odometer reading, and the lines hold it again if they are restored.",
+      "swapStays": "A swap's line stays: removing it would remove the swap. Move the swap to the trash in the tyre log.",
+      "removed": "Removed from the tyre log. Its line is in the trash."
+    },
+    "tyreDetails": {
+      "switch": "Tyre details",
+      "hintAdd": "Also logs it on the Tyres tab's tyre log: what was done and to which tyres. Opens by itself for the category {{list}}.",
+      "hintEdit": "Puts this expense on the tyre log too, with its date and odometer.",
+      "titleHint": "Follows what was done and the set until you type one.",
+      "lineNote": "The line takes this expense's date and odometer, and its amount is this expense, counted once.",
+      "linkedNote": "The date and the odometer are the line's too: changing them here changes both.",
+      "sharedHint": "Changes the lines of {{tyres}}: this amount is one expense, shared with them.",
+      "chooseKind": "Choose what was done.",
+      "choose": "Choose…",
+      "opened": "Tyre details opened.",
+      "closed": "Tyre details closed."
     }
   },
   "import": {

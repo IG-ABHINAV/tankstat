@@ -1286,7 +1286,27 @@
       "bannerTitle": "A gumi naplóból",
       "banner": "{{what}}. A dátum és a kilométeróra-állás ott is ugyanez: itt módosítva mindkettő változik.",
       "open": "Megnyitás a gumi naplóban",
-      "trashLine": "A sora a gumi naplóban marad, összeg nélkül."
+      "trashLine": "A sora a gumi naplóban marad, összeg nélkül.",
+      "bannerTrashed": "{{what}}. A sora a kukában van: ha ott visszaállítod, újra összetartoznak.",
+      "remove": "Eltávolítás a gumi naplóból",
+      "removeTitle": "Eltávolítod a gumi naplóból?",
+      "removeOne": "A gumi napló sora a kukába kerül. Ez a kiadás itt marad a kilométeróra-állásával, és a sor visszaállításakor újra hozzá tartozik.",
+      "removeMany": "A(z) {{tyres}} sorai a kukába kerülnek. Ez a kiadás itt marad a kilométeróra-állásával, és a sorok visszaállításakor újra hozzájuk tartozik.",
+      "swapStays": "A csere sora marad: az eltávolításával a csere is törlődne. A cserét a gumi naplóban teheted a kukába.",
+      "removed": "Eltávolítva a gumi naplóból. A sora a kukában van."
+    },
+    "tyreDetails": {
+      "switch": "Gumi adatok",
+      "hintAdd": "A Gumik lap gumi naplójába is bekerül: mi történt, és mely gumikkal. Ezeknél a kategóriáknál magától kinyílik: {{list}}.",
+      "hintEdit": "A kiadás a gumi naplóba is bekerül, a dátumával és a kilométeróra-állásával.",
+      "titleHint": "A mi történt és a szett alapján töltődik ki, amíg saját megnevezést nem írsz.",
+      "lineNote": "A sor ennek a kiadásnak a dátumát és kilométeróra-állását kapja, az összege pedig ez a kiadás, egyszer számolva.",
+      "linkedNote": "A dátum és a kilométeróra-állás a soré is: itt módosítva mindkettő változik.",
+      "sharedHint": "A(z) {{tyres}} sorai is módosulnak: ez az összeg egy közös kiadás.",
+      "chooseKind": "Válaszd ki, mi történt.",
+      "choose": "Válassz…",
+      "opened": "A gumi adatok kinyíltak.",
+      "closed": "A gumi adatok bezárultak."
     }
   },
   "import": {
