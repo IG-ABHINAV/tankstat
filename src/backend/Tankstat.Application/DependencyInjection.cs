@@ -22,7 +22,6 @@ using Tankstat.Application.Telemetry;
 using Tankstat.Application.Sharing;
 using Tankstat.Application.SystemSettings;
 using Tankstat.Application.Stats;
-using Tankstat.Application.Telemetry;
 using Tankstat.Application.Users;
 using Tankstat.Application.Vehicles;
 using Tankstat.Application.Tyres;
