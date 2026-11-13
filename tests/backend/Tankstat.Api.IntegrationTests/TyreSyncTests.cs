@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+using Tankstat.Domain.Vehicles;
 using System.Text.Json;
 
 namespace Tankstat.Api.IntegrationTests;
@@ -344,5 +346,44 @@ public class TyreSyncTests : IDisposable
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
         Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "BOUGHT"
             && e.TryGetProperty("tyreId", out var tyre) && tyre.ValueKind != JsonValueKind.Null));
+    }
+
+    [Fact]
+    public async Task TheLargestExpenseChange_TenPhotosAndTyreDetailsBreakingASetUp_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        // #290: an expense add with every text at its longest, accented, ten photos, and tyre details for the four tyres of a whole set.
+        var (people, car, summer, _, _) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var photos = new List<string>();
+        for (var n = 0; n < 10; n++) photos.Add(await UploadDraft(people.Alice, car));
+        var expense = Guid.NewGuid();
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            addExpense = new
+            {
+                id = expense, vehicleId = car, date = "2026-09-20", title = new string('ű', Expense.MaxTitleLength), category = new string('ő', Expense.MaxCategoryLength),
+                amount = 123_456.78m, discount = 1_234.56m, currency = "HUF", odometer = 148_200, note = new string('é', Expense.MaxNoteLength), photoIds = photos,
+                tyre = new
+                {
+                    kind = "PUNCTURE_REPAIRED", setId = summer,
+                    tyres = tyres.Select(t => new { tyreId = t, id = Guid.NewGuid() }).ToArray(), // once: the same ids on every send
+                    breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+                },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "PUNCTURE_REPAIRED"));
+    }
+
+    private static async Task<string> UploadDraft(HttpClient c, string vehicleId)
+    {
+        var content = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var response = await c.PutAsync($"/media/vehicles/{vehicleId}/photo-drafts", content);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
     }
 }

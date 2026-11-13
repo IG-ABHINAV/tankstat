@@ -577,12 +577,12 @@ public sealed class SyncMutations
         {
             var id = Required(ae.Id, c.Id);
             return Make(SyncChangeKind.AddExpense, id, ae.VehicleId, async ct => Of(await expenses.AddAsync(ae.VehicleId,
-                new ExpenseInput(ae.Date, ae.Title, ae.Category, ae.Amount, ae.Currency ?? defaults.Currency, ae.Odometer, ae.Note, ae.Discount), ct, ae.PhotoIds, id),
+                new ExpenseInput(ae.Date, ae.Title, ae.Category, ae.Amount, ae.Currency ?? defaults.Currency, ae.Odometer, ae.Note, ae.Discount), ct, ae.PhotoIds, id, ae.Tyre?.ToDetails()),
                 e => e.Id, e => e.Version, e => e.VehicleId));
         }
         if (c.UpdateExpense is { } ue)
             return Make(SyncChangeKind.UpdateExpense, ue.Id, null, async ct => Of(await expenses.UpdateAsync(ue.Id,
-                new ExpenseInput(ue.Date, ue.Title, ue.Category, ue.Amount, ue.Currency, ue.Odometer, ue.Note, ue.Discount), ct, version), e => e.Id, e => e.Version, e => e.VehicleId), find.Expense(ue.Id));
+                new ExpenseInput(ue.Date, ue.Title, ue.Category, ue.Amount, ue.Currency, ue.Odometer, ue.Note, ue.Discount), ct, version, ue.Tyre?.ToDetails()), e => e.Id, e => e.Version, e => e.VehicleId), find.Expense(ue.Id));
         if (c.DeleteExpense is { } de)
             return Make(SyncChangeKind.DeleteExpense, de, null, ct => TrashOnce(
                 async ct => Of(await expenses.DeleteAsync(de, ct, version), e => e.Id, e => e.Version, e => e.VehicleId),

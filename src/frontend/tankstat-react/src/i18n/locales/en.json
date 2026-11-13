@@ -1094,6 +1094,7 @@
       "setNotFound": "This tyre set does not exist any more.",
       "installationNotFound": "This installation does not exist any more.",
       "installationIdTwice": "Two of these swaps carry the same id. Enter each swap once.",
+      "expenseLineInTrash": "Its tyre log line is in the trash: restore it there to change what was done.",
       "entryKindNotAllowed": "A swap and a change of positions are logged as such, not as a line.",
       "entryKindUnknown": "This kind of tyre log line does not exist.",
       "swapLineLocked": "A swap keeps its set. For another set, move the swap to the trash and log it again.",

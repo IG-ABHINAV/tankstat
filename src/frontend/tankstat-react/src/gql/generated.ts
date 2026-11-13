@@ -20,6 +20,7 @@ export type AddExpenseInput = {
   odometer?: number | null | undefined;
   photoIds?: Array<string> | null | undefined;
   title: string;
+  tyre?: ExpenseTyreInput | null | undefined;
   vehicleId: string;
 };
 
@@ -350,6 +351,14 @@ export type ExpenseSortField =
   | 'ODOMETER'
   | 'TITLE'
   | 'VEHICLE';
+
+export type ExpenseTyreInput = {
+  breakUp?: BreakUpTyreSetInput | null | undefined;
+  kind: TyreEntryKind;
+  lineId?: string | null | undefined;
+  setId?: string | null | undefined;
+  tyres?: Array<TyreLineInput> | null | undefined;
+};
 
 export type FigureMeasure =
   | 'AVERAGE_CONSUMPTION'
@@ -908,6 +917,7 @@ export type UpdateExpenseInput = {
   note?: string | null | undefined;
   odometer?: number | null | undefined;
   title: string;
+  tyre?: ExpenseTyreInput | null | undefined;
 };
 
 export type UpdateOfflineSettingsInput = {

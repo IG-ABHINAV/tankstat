@@ -32,6 +32,23 @@ public sealed record TyreFeeInput(decimal? Amount, string? Currency = null, stri
     internal TyreFee ToFee() => new(Amount, Currency, Category, Title, ExpenseId);
 }
 
+/// <summary>
+/// The tyre details of an expense (#290): the tyre log line (a line per tyre) the Expense or Done dialog makes holding it, on its day, with its
+/// reading. On an edit of an expense the tyre log made, <c>kind</c> changes every live line holding it and <c>setId</c> a whole set's line
+/// (a tyre's line keeps its set: <c>tyres.tyreNotOfSet</c>; a swap's line both: <c>tyres.swapLineLocked</c>); <c>tyres</c> and <c>breakUp</c>
+/// count only when the lines are made. Refused while every line holding the expense is in the trash (<c>tyres.expenseLineInTrash</c>).
+/// </summary>
+/// <param name="Kind">What was done: a kind that takes an amount (not <c>NOTE</c>: <c>tyres.noteTakesNoAmount</c>; not the swap kinds).</param>
+/// <param name="SetId">The set it concerns; left out for none.</param>
+/// <param name="Tyres">Single tyres of the set, a line each with the client's id, sharing the expense; left out: the whole set's line.</param>
+/// <param name="BreakUp">For some tyres of a whole set: it is broken up first, and <c>tyres</c> name its new tyres' ids.</param>
+/// <param name="LineId">The client's id of the whole set's (or no set's) line.</param>
+public sealed record ExpenseTyreInput(TyreEntryKind Kind, Guid? SetId = null, IReadOnlyList<TyreLineInput>? Tyres = null, BreakUpTyreSetInput? BreakUp = null, Guid? LineId = null)
+{
+    internal ExpenseTyreDetails ToDetails() => new(Kind, SetId, Tyres?.Select(t => new TyreLine(t.TyreId, t.Id)).ToList(),
+        BreakUp is { } b ? new TyreBreakUpInput(b.SetId, b.Day, [.. b.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]) : null, LineId);
+}
+
 /// <param name="WithExpense">Its expense goes to the trash with it (the remove dialog's box, ticked at first), and comes back with it.</param>
 public sealed record DeleteTyreEntryInput(Guid Id, bool WithExpense = true);
 

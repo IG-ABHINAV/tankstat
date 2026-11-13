@@ -509,4 +509,57 @@ public class TyreGraphQLTests(ApiFixture api)
         Assert.Contains(("2026-09-20", 148_200L), readings);
         Assert.Contains(("2026-09-22", 148_400L), readings);
     }
+
+    [Fact]
+    public async Task AnExpenseWithTyreDetails_IsOnTheTyreLog_ItsKindChangedFromTheExpense_AndAPlainOneGetsItsLineInAnEdit()
+    {
+        // #290: addExpense and updateExpense take `tyre`.
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        async Task<JsonElement> Ok(string mutation, object variables)
+        {
+            var body = await Send(mutation, variables);
+            Assert.False(body.TryGetProperty("errors", out var errors), errors.ToString());
+            return body.GetProperty("data");
+        }
+        async Task<JsonElement> LineOf(string expenseId) =>
+            (await Ok("query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { id kind setId day odometer expenseId amount } } }", new { v = vehicle }))
+                .GetProperty("vehicleTyres").GetProperty("entries").EnumerateArray().Single(e => e.GetProperty("expenseId").GetString() == expenseId);
+        var (expense, line) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+
+        var added = (await Ok("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id tyreEntry { id kind setName } } }", new
+        {
+            i = new
+            {
+                vehicleId = vehicle, id = expense, date = "2026-09-20", title = "Puncture repaired: Michelin", category = "Tyres", amount = 25, currency = "EUR", odometer = 148_200,
+                tyre = new { kind = "PUNCTURE_REPAIRED", setId = summer, lineId = line },
+            },
+        })).GetProperty("addExpense");
+        Assert.Equal((line, "PUNCTURE_REPAIRED", "Michelin"), (added.GetProperty("tyreEntry").GetProperty("id").GetString(),
+            added.GetProperty("tyreEntry").GetProperty("kind").GetString(), added.GetProperty("tyreEntry").GetProperty("setName").GetString()));
+        var shown = await LineOf(expense);
+        Assert.Equal((line, "2026-09-20", 148_200L, 25m), (shown.GetProperty("id").GetString(), shown.GetProperty("day").GetString(), shown.GetProperty("odometer").GetInt64(), shown.GetProperty("amount").GetDecimal()));
+
+        await Ok("mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { id } }", new
+        {
+            i = new { id = expense, date = "2026-09-20", title = "Valve: Michelin", category = "Tyres", amount = 25, odometer = 148_200, tyre = new { kind = "VALVE_REPLACED" } },
+        });
+        Assert.Equal(("VALVE_REPLACED", JsonValueKind.Null), (( await LineOf(expense)).GetProperty("kind").GetString(), (await LineOf(expense)).GetProperty("setId").ValueKind)); // no set: a whole set's line may go to none
+
+        var plain = (await Ok("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }", new
+        {
+            i = new { vehicleId = vehicle, id = Guid.NewGuid(), date = "2026-09-01", title = "Tyre hotel", category = "Tyres", amount = 60, currency = "EUR" },
+        })).GetProperty("addExpense").GetProperty("id").GetString()!;
+        await Ok("mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { id } }", new
+        {
+            i = new { id = plain, date = "2026-09-01", title = "Tyre hotel", category = "Tyres", amount = 60, tyre = new { kind = "STORAGE_FEE", setId = summer, lineId = Guid.NewGuid() } },
+        });
+        Assert.Equal("STORAGE_FEE", (await LineOf(plain)).GetProperty("kind").GetString());
+
+        var note = await Send("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }", new
+        {
+            i = new { vehicleId = vehicle, id = Guid.NewGuid(), date = "2026-09-21", title = "Note", amount = 5, currency = "EUR", tyre = new { kind = "NOTE", setId = summer } },
+        });
+        Assert.Equal("tyres.noteTakesNoAmount", note.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
+    }
 }

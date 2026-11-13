@@ -1337,6 +1337,7 @@ input AddExpenseInput {
   photoIds: [UUID!]
   id: UUID
   discount: Decimal
+  tyre: ExpenseTyreInput
 }
 
 input AddLogPhotoInput {
@@ -1541,6 +1542,14 @@ input DeleteUserInput {
   userId: UUID!
   data: UserDataDisposition
   moveToUserId: UUID
+}
+
+input ExpenseTyreInput {
+  kind: TyreEntryKind!
+  setId: UUID
+  tyres: [TyreLineInput!]
+  breakUp: BreakUpTyreSetInput
+  lineId: UUID
 }
 
 input FigureRecipeInput {
@@ -1804,6 +1813,7 @@ input UpdateExpenseInput {
   odometer: Long
   note: String
   discount: Decimal
+  tyre: ExpenseTyreInput
 }
 
 input UpdateOfflineSettingsInput {

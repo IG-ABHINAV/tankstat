@@ -1094,6 +1094,7 @@
       "setNotFound": "Ez a gumiszett már nem létezik.",
       "installationNotFound": "Ez az időszak már nem létezik.",
       "installationIdTwice": "Két csere ugyanazzal az azonosítóval érkezett. Minden cserét egyszer adj meg.",
+      "expenseLineInTrash": "A gumi napló sora a kukában van: ott állítsd vissza, hogy módosíthasd, mi történt.",
       "entryKindNotAllowed": "A csere és a helycsere a saját párbeszédablakában rögzíthető, nem külön sorként.",
       "entryKindUnknown": "Ilyen gumi napló bejegyzés nincs.",
       "swapLineLocked": "A csere szettje nem módosítható. Másik szetthez tedd a cserét a kukába, és rögzítsd újra.",
