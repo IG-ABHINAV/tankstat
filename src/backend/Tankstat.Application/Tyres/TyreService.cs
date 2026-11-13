@@ -375,39 +375,53 @@ public sealed class TyreService(
         if (input.SetId is { } setId) LiveSet(book, setId);
         if (input.Odometer is { } value) await odometer.ValidateAsync(vehicle.Id, input.Day, value, exceptReadingId: null, ct);
         var save = new TyreSave { Book = book, By = by };
-        var (_, places) = Rules(vehicle, book);
-        if (input.BreakUp is { } breakUp)
-        {
-            // A repair of some tyres of a whole set breaks it up on save (the owner's decision 19).
-            var set = LiveSet(book, breakUp.SetId);
-            if (set.Id != input.SetId) throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
-            RequireNotFuture(breakUp.Day); // as a break-up of its own (BreakUpAsync)
-            save.Take(places.BreakUp(set, breakUp.Tyres, breakUp.Day, by));
-            save.ChangedSets.Add(set);
-        }
-        var lines = new List<TyreEntry>();
-        if (input.Tyres is { Count: > 0 } picked)
-        {
-            if (input.SetId is not { } of) throw new DomainException("tyres.tyreNeedsSet", "A line of a tyre is a line of its set.");
-            if (picked.Select(p => p.TyreId).Distinct().Count() != picked.Count) throw new DomainException("tyres.tyreTwice", "Each tyre once.");
-            foreach (var p in picked)
-                if (places.TyresOf(of).FirstOrDefault(t => t.Id == p.TyreId) is not { IsRetired: false })
-                    throw new NotFoundException("tyres.tyreNotFound", $"Tyre {p.TyreId} does not exist.", new { Id = p.TyreId });
-            // The group takes the first line's id (one chosen here when the client named none).
-            var firstLineId = picked.Count > 1 ? firstId ?? Guid.NewGuid() : firstId;
-            var first = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, of, input.Day, input.Odometer, input.Note, firstLineId, picked[0].TyreId,
-                groupId: picked.Count > 1 ? firstLineId : null);
-            lines.Add(first);
-            lines.AddRange(picked.Skip(1).Select(p => first.ForAnotherTyre(p.TyreId, by, p.Id)));
-        }
-        else lines.Add(TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, input.Kind, input.SetId, input.Day, input.Odometer, input.Note, id));
-        foreach (var line in lines) save.AddedEntries.Add(line);
+        var lines = NewLines(vehicle, book, save, input.Kind, input.SetId, input.Day, input.Odometer, input.Note, input.Tyres, input.BreakUp, firstId, id, by);
         if (lines[0].OdometerReading is { } reading) save.AddedReadings.Add(reading);
         await ApplyFeeAsync(vehicle, book, save, lines[0], input.Fee, by, ct);
         if (lines[0].ExpenseId is { } expenseId) foreach (var other in lines.Skip(1)) other.LinkExpense(expenseId); // one expense, counted once
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added {Count} tyre log lines from {EntryId} to vehicle {VehicleId}", by, lines.Count, lines[0].Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>
+    /// The lines an add makes (#288, #289), added to <paramref name="save"/>: the whole set's line (or one of no set), or a line each for the
+    /// tyres picked, made together (the first one's id their group's, the reading object theirs together); a whole set is broken up first
+    /// (the owner's decision 19). The first line makes the reading of <paramref name="odometer"/>; the caller adds it to the save.
+    /// </summary>
+    /// <param name="firstId">The first line's id: the first tyre's line's, else <paramref name="id"/>.</param>
+    private List<TyreEntry> NewLines(
+        Vehicle vehicle, TyreBook book, TyreSave save, TyreEntryKind kind, Guid? setId, DateOnly day, long? odometer, string? note,
+        IReadOnlyList<TyreLine>? tyresPicked, TyreBreakUpInput? breakUp, Guid? firstId, Guid? id, Guid by)
+    {
+        var (_, places) = Rules(vehicle, book);
+        if (breakUp is not null)
+        {
+            // A repair of some tyres of a whole set breaks it up on save (the owner's decision 19).
+            var set = LiveSet(book, breakUp.SetId);
+            if (set.Id != setId) throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
+            RequireNotFuture(breakUp.Day); // as a break-up of its own (BreakUpAsync)
+            save.Take(places.BreakUp(set, breakUp.Tyres, breakUp.Day, by));
+            save.ChangedSets.Add(set);
+        }
+        var lines = new List<TyreEntry>();
+        if (tyresPicked is { Count: > 0 } picked)
+        {
+            if (setId is not { } of) throw new DomainException("tyres.tyreNeedsSet", "A line of a tyre is a line of its set.");
+            if (picked.Select(p => p.TyreId).Distinct().Count() != picked.Count) throw new DomainException("tyres.tyreTwice", "Each tyre once.");
+            foreach (var p in picked)
+                if (places.TyresOf(of).FirstOrDefault(t => t.Id == p.TyreId) is not { IsRetired: false })
+                    throw new NotFoundException("tyres.tyreNotFound", $"Tyre {p.TyreId} does not exist.", new { Id = p.TyreId });
+            // The group takes the first line's id (one chosen here when the client named none).
+            var firstLineId = picked.Count > 1 ? firstId ?? Guid.NewGuid() : firstId;
+            var first = TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, kind, of, day, odometer, note, firstLineId, picked[0].TyreId,
+                groupId: picked.Count > 1 ? firstLineId : null);
+            lines.Add(first);
+            lines.AddRange(picked.Skip(1).Select(p => first.ForAnotherTyre(p.TyreId, by, p.Id)));
+        }
+        else lines.Add(TyreEntry.Create(vehicle.OwnerId, by, vehicle.Id, kind, setId, day, odometer, note, id));
+        foreach (var line in lines) save.AddedEntries.Add(line);
+        return lines;
     }
 
     /// <summary>
