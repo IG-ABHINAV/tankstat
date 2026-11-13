@@ -42,8 +42,9 @@ export interface PushDeps {
 const FIELDS = {
   logRefueling: ['id', 'vehicleId', 'date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note', 'photoIds'],
   updateRefueling: ['id', 'date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
-  addExpense: ['id', 'vehicleId', 'date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note', 'photoIds'],
-  updateExpense: ['id', 'date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
+  // `tyre`: an expense's tyre details (#290), the tyre log line(s) it is saved with; null on an edit leaves the lines as they are.
+  addExpense: ['id', 'vehicleId', 'date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note', 'photoIds', 'tyre'],
+  updateExpense: ['id', 'date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note', 'tyre'],
   addVehicle: ['id', 'name', 'licensePlate', 'fuelType', 'units'],
   updateVehicle: ['id', 'name', 'licensePlate', 'fuelType', 'units'],
   addRecurringExpense: ['id', 'vehicleId', 'title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],

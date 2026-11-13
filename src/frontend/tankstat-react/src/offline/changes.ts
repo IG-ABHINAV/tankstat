@@ -83,7 +83,8 @@ const isPicture = (c: Change) => c.action === 'setPicture' || c.action === 'remo
 /** The fields an update sets (and carries over onto an add that is still waiting: the add's own id and vehicle stay). */
 export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
   refuelings: ['date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
-  expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
+  // `tyre` (#290) is an input, not a value of the row: an edit's tyre details fold into a waiting add; the server's values never carry it.
+  expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note', 'tyre'],
   vehicles: ['name', 'licensePlate', 'fuelType', 'units'],
   recurring: ['title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
   tyres: [], // never folded

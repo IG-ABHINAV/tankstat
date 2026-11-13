@@ -22,7 +22,7 @@ import { FieldAutocomplete } from './forms/FieldAutocomplete.tsx'
 import { FieldDate } from './forms/FieldDate.tsx'
 import { FieldInput } from './forms/FieldInput.tsx'
 import { Form } from './forms/Form.tsx'
-import { ExpenseCategoriesDocument, ExpenseDetailsDocument, LogDefaultsDocument, type DistanceUnit, type LogValue, type ReadingFieldName, type ReviewState } from './gql/generated.ts'
+import { ExpenseCategoriesDocument, ExpenseDetailsDocument, LogDefaultsDocument, type DistanceUnit, type ExpenseTyreInput, type LogValue, type ReadingFieldName, type ReviewState } from './gql/generated.ts'
 import { parseDecimal } from './i18n/format.ts'
 import { ErrorMessage } from './messages.tsx'
 import { ReadNote } from './recognition/ReadNote.tsx'
@@ -57,6 +57,11 @@ export interface ExpenseValues {
   currency: string
   odometer: number | null
   note: string | null
+  /**
+   * Its tyre details (#290): the tyre log line(s) it is saved with, or, for one the tyre log made, what was done and a whole set's set.
+   * Left out when the section is not used; null (an edit on Waiting to sync with them switched off) leaves the lines as they are.
+   */
+  tyre?: ExpenseTyreInput | null
 }
 
 interface Initial {

@@ -23,6 +23,15 @@ describe('collapse', () => {
     expect(only).toMatchObject({ action: 'add', id: 'r1', input: { id: 'r1', vehicleId: 'v1', date: '2026-10-02', volume: 41, note: 'x', totalCost: 100 } })
   })
 
+  it("an expense's tyre details edited before it was sent fold into its add, and switched off they go (#290)", () => {
+    const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's1', lineId: 'l1' }
+    const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, currency: 'EUR', tyre } })
+    const edited = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Valve', tyre: { ...tyre, kind: 'VALVE_REPLACED' } } }))
+    expect(edited).toEqual([expect.objectContaining({ action: 'add', input: expect.objectContaining({ title: 'Valve', tyre: { ...tyre, kind: 'VALVE_REPLACED' } }) })])
+    const off = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: null } }))
+    expect(off[0].input).toMatchObject({ tyre: null })
+  })
+
   it('an add then a trash is nothing at all, whatever came in between', () => {
     expect(fold(add(), change('update', 'r1', { input: { volume: 2 } }), change('trash'))).toEqual([])
   })

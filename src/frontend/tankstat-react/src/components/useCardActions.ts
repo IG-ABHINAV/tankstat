@@ -1,6 +1,6 @@
 import { useApolloClient, useMutation } from '@apollo/client/react'
 import type { ExpenseValues } from '../ExpenseFormDialog.tsx'
-import { AddExpenseDocument, LogRefuelingDocument, MarkRecurringExpensesDoneDocument, VehicleCardDocument } from '../gql/generated.ts'
+import { AddExpenseDocument, LogRefuelingDocument, MarkRecurringExpensesDoneDocument, VehicleCardDocument, VehicleTyresDocument } from '../gql/generated.ts'
 import type { DoneValues } from '../RecurringDoneDialog.tsx'
 import type { RefuelingValues } from '../RefuelingFormDialog.tsx'
 import { useLogChange } from '../offline/useLogChange.ts'
@@ -23,6 +23,8 @@ export function useCardActions(vehicleId: string) {
   const expenses = useLogChange('expenses', vehicleId)
   const schedules = useLogChange('recurring', vehicleId)
   const refresh = () => client.query({ query: VehicleCardDocument, variables: { id: vehicleId }, fetchPolicy: 'network-only' }).then(() => undefined, () => undefined)
+  // An expense saved with tyre details (#290) is on the tyre log too: its answer asked again, so the device's copy has the line at once.
+  const refreshTyres = () => client.query({ query: VehicleTyresDocument, variables: { vehicleId }, fetchPolicy: 'network-only' }).then(() => undefined, () => undefined)
   return {
     // Kept on the device while the server is out of reach (`offline/submitChange.ts`); the card's figures are the server's, so a kept log
     // asks for nothing.
@@ -37,7 +39,7 @@ export function useCardActions(vehicleId: string) {
       const input = { ...values, id: values.id ?? uuidV4(), vehicleId, photoIds }
       const done = await expenses.add(input.id, input, () => addExpense({ variables: { input } }))
       if (done.queued) return { id: input.id, photoCount: photoIds.length, queued: true }
-      await refresh()
+      await Promise.all([refresh(), values.tyre ? refreshTyres() : undefined])
       return savedFrom(done.result.data?.addExpense)
     },
     done: async (values: DoneValues, photoIds: string[]): Promise<Saved> => {
