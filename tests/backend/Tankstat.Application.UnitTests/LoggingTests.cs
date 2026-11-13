@@ -387,6 +387,12 @@ public class LoggingTests
         await w.TyreService.UpdateEntryAsync(shared1, new TyreEntryInput(TyreEntryKind.PunctureRepaired, tyreSet, Day, null, "canary shared note",
             new TyreFee(null, null, null, null), SharedExpense: SharedExpenseChoice.LetGo), default);
         canaries.AddRange(["canary shared note", "Canary shared category", "Canary shared title", "4242.42"]);
+        // An expense with tyre details (#290): its lines carry none of its texts, and none reaches a line of the log.
+        var tyreExpense = await w.ExpenseService.AddAsync(car.Id, new ExpenseInput(Day, "Canary tyre expense title", "Canary tyre expense category", 3141.59m, "EUR", null, "canary tyre expense note"),
+            default, id: Guid.NewGuid(), tyre: new ExpenseTyreDetails(TyreEntryKind.WheelBalancing, tyreSet, [new(single2, Guid.NewGuid())]));
+        await w.ExpenseService.UpdateAsync(tyreExpense.Id, new ExpenseInput(Day, "Canary tyre expense title", "Canary tyre expense category", 3141.59m, "EUR", null, "canary tyre expense note"),
+            default, tyre: new ExpenseTyreDetails(TyreEntryKind.StorageFee, tyreSet));
+        canaries.AddRange(["Canary tyre expense title", "Canary tyre expense category", "canary tyre expense note", "3141.59"]);
         // A tyre replaced early: the new tyre's label and name, and the price.
         await w.TyreService.ReplaceTyresAsync(new TyreReplaceInput(tyreSet, Day, null, TyreRetiredWhy.Worn, [new(single1, Guid.NewGuid(), "CNRYE", "Canary new tyre name", null, null, Guid.NewGuid())],
             new TyreFee(5151.15m, "EUR", "Canary replace category", "Canary replace title", Guid.NewGuid())), default);

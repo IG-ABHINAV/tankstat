@@ -151,6 +151,41 @@ public class ExpenseTyreDetailsTests
     }
 
     [Fact]
+    public async Task TheSameAddSavedByAnotherRequestAtOnce_IsAnsweredWithItsExpense_AndOneLine()
+    {
+        var s = await Setup();
+        var (expenseId, lineId) = (Guid.NewGuid(), Guid.NewGuid());
+        // The other request passed the same id lookup a moment earlier and saved first.
+        s.W.Tyres.MeanwhileBeforeSave = save =>
+        {
+            s.W.Tyres.Entries.AddRange(save.AddedEntries);
+            s.W.Expenses.Items.AddRange(save.AddedExpenses);
+        };
+
+        var answer = await s.Expenses.AddAsync(s.Car.Id, Input(), default, id: expenseId, tyre: new ExpenseTyreDetails(TyreEntryKind.PunctureRepaired, s.Summer, LineId: lineId));
+
+        Assert.Equal(expenseId, answer.Id);
+        Assert.Single(s.W.Expenses.Items, e => e.Id == expenseId);
+        Assert.Equal(lineId, Assert.Single(s.LinesOf(expenseId)).Id);
+    }
+
+    [Fact]
+    public async Task ABreakUpsTyreIdInUse_IsSomeoneElses_AndSavesNothing()
+    {
+        var s = await Setup();
+        var tyres = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        await Puncture(s, new ExpenseTyreDetails(TyreEntryKind.PunctureRepaired, s.Summer, [new TyreLine(tyres[0], Guid.NewGuid())], BreakUp(s.Summer, tyres)));
+        var before = (s.W.Expenses.Items.Count, s.W.Tyres.Entries.Count);
+        var expenseId = Guid.NewGuid();
+
+        var refused = await Assert.ThrowsAsync<DomainException>(() => s.Expenses.AddAsync(s.Car.Id, Input(), default, id: expenseId,
+            tyre: new ExpenseTyreDetails(TyreEntryKind.ValveReplaced, s.Winter, [new TyreLine(tyres[0], Guid.NewGuid())], BreakUp(s.Winter, tyres))));
+
+        Assert.Equal("sync.idTaken", refused.Key);
+        Assert.Equal(before, (s.W.Expenses.Items.Count, s.W.Tyres.Entries.Count));
+    }
+
+    [Fact]
     public async Task AnAddWithoutTyreDetails_MakesNoLine()
     {
         var s = await Setup();

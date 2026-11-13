@@ -548,13 +548,20 @@ public class TyreGraphQLTests(ApiFixture api)
 
         var plain = (await Ok("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }", new
         {
-            i = new { vehicleId = vehicle, id = Guid.NewGuid(), date = "2026-09-01", title = "Tyre hotel", category = "Tyres", amount = 60, currency = "EUR" },
+            i = new { vehicleId = vehicle, id = Guid.NewGuid(), date = "2026-09-01", title = "Tyre hotel", category = "Tyres", amount = 60, currency = "EUR", odometer = 147_000 },
         })).GetProperty("addExpense").GetProperty("id").GetString()!;
         await Ok("mutation($i: UpdateExpenseInput!) { updateExpense(input: $i) { id } }", new
         {
-            i = new { id = plain, date = "2026-09-01", title = "Tyre hotel", category = "Tyres", amount = 60, tyre = new { kind = "STORAGE_FEE", setId = summer, lineId = Guid.NewGuid() } },
+            i = new { id = plain, date = "2026-09-02", title = "Tyre hotel", category = "Tyres", amount = 60, odometer = 147_100, tyre = new { kind = "STORAGE_FEE", setId = summer, lineId = Guid.NewGuid() } },
         });
-        Assert.Equal("STORAGE_FEE", (await LineOf(plain)).GetProperty("kind").GetString());
+        var given = await LineOf(plain);
+        Assert.Equal(("STORAGE_FEE", "2026-09-02", 147_100L), (given.GetProperty("kind").GetString(), given.GetProperty("day").GetString(), given.GetProperty("odometer").GetInt64()));
+        var saved = (await Ok("query($id: UUID!) { expense(id: $id) { date odometer } }", new { id = plain })).GetProperty("expense");
+        Assert.Equal(("2026-09-02", 147_100L), (saved.GetProperty("date").GetString(), saved.GetProperty("odometer").GetInt64()));
+        var readings = (await Ok("query($v: UUID!) { vehicleTyres(vehicleId: $v) { readings { date value } } }", new { v = vehicle })).GetProperty("vehicleTyres").GetProperty("readings")
+            .EnumerateArray().Select(r => (r.GetProperty("date").GetString(), r.GetProperty("value").GetInt64())).ToList();
+        Assert.Contains(("2026-09-02", 147_100L), readings);
+        Assert.DoesNotContain(("2026-09-01", 147_000L), readings); // one row, moved: not a second reading
 
         var note = await Send("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }", new
         {
