@@ -49,7 +49,9 @@ public sealed class ExpenseService(
 
     /// <param name="photoDraftIds">Photos the user uploaded for this expense before saving it (see <see cref="PhotoDraftService"/>).</param>
     /// <param name="id">The id the client chose; an expense it already created with this id is answered as it is (see <see cref="ClientIds"/>).</param>
-    public async Task<Expense> AddAsync(Guid vehicleId, ExpenseInput input, CancellationToken ct, IReadOnlyCollection<Guid>? photoDraftIds = null, Guid? id = null)
+    /// <param name="tyre">Its tyre details (#290): it is saved with the tyre log line or lines that hold it, all or nothing.</param>
+    public async Task<Expense> AddAsync(
+        Guid vehicleId, ExpenseInput input, CancellationToken ct, IReadOnlyCollection<Guid>? photoDraftIds = null, Guid? id = null, ExpenseTyreDetails? tyre = null)
     {
         var vehicle = await EditableVehicleAsync(vehicleId, ct);
         var creator = await access.RequirePrincipalAsync(ct);
@@ -61,7 +63,8 @@ public sealed class ExpenseService(
         var readingPhotos = (input.Amount is null || input.Odometer is null) && await filler.MayWaitForDraftsAsync([.. drafts.Select(d => d.Id)], ct);
 
         var expense = Build(vehicle, creator.Id, input, readingPhotos, id);
-        if (!await expenses.AddAsync(expense, ct)) // the same add, sent twice at once: the other one saved it
+        var saved = tyre is null ? await expenses.AddAsync(expense, ct) : await tyres.AttachLinesAsync(expense, tyre, ct);
+        if (!saved) // the same add, sent twice at once: the other one saved it
             return Repeated(await expenses.FindIncludingDeletedAsync(expense.Id, ct) ?? expense, vehicle.Id, creator.Id);
         await photos.AttachDraftsAsync(LogType.Expense, expense.Id, drafts, ct);
         logger.LogDebug("User {UserId} added expense {ExpenseId} for vehicle {VehicleId} with {Photos} photos", creator.Id, expense.Id, vehicle.Id, drafts.Count);
@@ -81,7 +84,9 @@ public sealed class ExpenseService(
     }
 
     /// <param name="expectedVersion">The version the change was made from; refused when the expense was saved since (see <see cref="VersionCheck"/>).</param>
-    public async Task<Expense> UpdateAsync(Guid id, ExpenseInput input, CancellationToken ct, int? expectedVersion = null)
+    /// <param name="tyre">Its tyre details (#290): on an expense no line holds, it is put on the tyre log in the same save (decision 54); on one
+    /// the tyre log made, what was done and a whole set's line's set change (decision 60). Null leaves it as it is.</param>
+    public async Task<Expense> UpdateAsync(Guid id, ExpenseInput input, CancellationToken ct, int? expectedVersion = null, ExpenseTyreDetails? tyre = null)
     {
         var expense = await EditableAsync(id, includeDeleted: false, ct);
         // An expense a tyre log line made (#288) shares the line's day and reading: the two change together.
@@ -89,7 +94,7 @@ public sealed class ExpenseService(
         {
             var before = expense.ReviewState;
             var waits = (input.Amount is null || input.Odometer is null) && await filler.MayWaitForLogPhotosAsync(LogType.Expense, id, ct);
-            var saved = await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion, waits);
+            var saved = await tyres.UpdateExpenseAsync(line, id, input, ct, expectedVersion, waits, tyre);
             // A person saved it: what they were told about its photos counts as read, as for any expense; one still waiting takes what was read.
             if (before != ReviewState.None && saved.ReviewState == ReviewState.None) await filler.ReviewedAsync(LogType.Expense, id, saved.CreatedById, ct);
             if (saved.ReviewState != ReviewState.AwaitingPhotos) return saved;
@@ -103,7 +108,8 @@ public sealed class ExpenseService(
 
         var changes = expense.Update(input.Date, input.Title, input.Category, input.Amount, input.Currency ?? expense.Currency, input.Odometer, input.Note, readingPhotos, (await access.RequirePrincipalAsync(ct)).Id,
             input.Discount ?? expense.Discount); // left out is kept (a build from before discounts knows none), 0 is none
-        await expenses.UpdateAsync(expense, changes, ct);
+        if (tyre is null) await expenses.UpdateAsync(expense, changes, ct);
+        else await tyres.AttachLinesAsync(expense, tyre, ct, changes); // the lines hold its reading as it is now, saved with its change
         if (waited != ReviewState.None && expense.ReviewState == ReviewState.None)
             await filler.ReviewedAsync(LogType.Expense, id, expense.CreatedById, ct);
         logger.LogDebug("Expense {ExpenseId} of vehicle {VehicleId} updated", id, expense.VehicleId);

@@ -436,6 +436,28 @@ public class LogPhotoFillerTests
     }
 
     [Fact]
+    public async Task AnExpenseWithTyreDetails_MayWaitForItsPhotosAmount_ItsLineHoldingIt_AndTheOdometerItGivesIsTheLinesToo()
+    {
+        var s = await Setup();
+        var set = Guid.NewGuid();
+        await s.W.TyreService.AddSetAsync(new NewTyreSet(s.Car.Id, new TyreSetInput("Michelin", TyreSeason.Summer, null, Day, null, null), true, Day, null, null), default, set, Guid.NewGuid());
+        var photo = await Queued(s, ReadingPurpose.Expense);
+        var (expenseId, line) = (Guid.NewGuid(), Guid.NewGuid());
+
+        var waiting = await s.W.ExpenseService.AddAsync(s.Car.Id, new ExpenseInput(Day, "Puncture repaired: Michelin", "Tyres", null, "EUR", null, null), default, [photo],
+            expenseId, new ExpenseTyreDetails(TyreEntryKind.PunctureRepaired, set, LineId: line));
+        Assert.Equal((ReviewState.AwaitingPhotos, (decimal?)null), (waiting.ReviewState, waiting.Amount));
+        Assert.Equal(expenseId, s.W.Tyres.Entries.Single(e => e.Id == line).ExpenseId); // the line holds it before it has an amount (#288)
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"));
+        await s.W.Processor.ProcessDueAsync(default);
+
+        var filled = s.W.Expenses.Items.Single(e => e.Id == expenseId);
+        Assert.Equal((25m, 45678L), (filled.Amount!.Value, filled.Odometer!.Value));
+        var held = s.W.Tyres.Entries.Single(e => e.Id == line);
+        Assert.Equal((TyreEntryKind.PunctureRepaired, filled.OdometerReadingId), (held.Kind, held.OdometerReadingId)); // what was done stays; one reading for the two
+    }
+
+    [Fact]
     public async Task ATyreLogLinesExpenseInTheTrash_IsFilledInWhenItIsRestored_LikeAnyOther()
     {
         var s = await Setup();

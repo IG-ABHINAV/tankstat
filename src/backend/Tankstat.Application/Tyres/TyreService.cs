@@ -101,6 +101,18 @@ public sealed record TyreEntryInput(
     TyreEntryKind Kind, Guid? SetId, DateOnly Day, long? Odometer, string? Note, TyreFee? Fee = null,
     IReadOnlyList<TyreLine>? Tyres = null, TyreBreakUpInput? BreakUp = null, IReadOnlyList<Guid>? Also = null, SharedExpenseChoice? SharedExpense = null);
 
+/// <summary>
+/// The tyre details of an expense (#290): the tyre log line (or lines, one per tyre) the Expense or Done dialog makes holding the expense, on
+/// its day, with its reading. On an edit of an expense the tyre log made, <paramref name="Kind"/> changes every live line holding it and
+/// <paramref name="SetId"/> a whole set's line; the tyres are what they are (changed in the tyre log).
+/// </summary>
+/// <param name="Kind">What was done: a kind that takes an amount (a note takes none, <c>tyres.noteTakesNoAmount</c>; a swap's come with the swap).</param>
+/// <param name="SetId">The set it concerns, or none.</param>
+/// <param name="Tyres">Single tyres of the set, a line each (the device's ids), sharing the expense; none: the whole set's line (or no set's).</param>
+/// <param name="BreakUp">Some tyres of a whole set: it is broken up first (the owner's decision 19).</param>
+/// <param name="LineId">The device's id of the whole set's (or no set's) line.</param>
+public sealed record ExpenseTyreDetails(TyreEntryKind Kind, Guid? SetId, IReadOnlyList<TyreLine>? Tyres = null, TyreBreakUpInput? BreakUp = null, Guid? LineId = null);
+
 /// <summary>An installation with its distance, worked out on read.</summary>
 public sealed record TyreInstallationView(TyreInstallation Installation, InstallationDistance Distance);
 
@@ -382,6 +394,67 @@ public sealed class TyreService(
         if (!await SaveOnceAsync(save, Repeat, ct)) return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
         logger.LogDebug("User {UserId} added {Count} tyre log lines from {EntryId} to vehicle {VehicleId}", by, lines.Count, lines[0].Id, vehicle.Id);
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
+    }
+
+    /// <summary>
+    /// Puts an expense on the tyre log (#290): the lines of its tyre details, on its day, holding its reading (the very object) and it, saved
+    /// in one with the expense, all or nothing. The expense is new (an add from the Expense or Done dialog, <paramref name="changes"/> null) or
+    /// one no line holds yet, changed by its own edit (<paramref name="changes"/>, which the save takes too). The caller validated the expense.
+    /// </summary>
+    /// <returns>False when the same add was saved meanwhile (the expense is there, its lines with it).</returns>
+    public async Task<bool> AttachLinesAsync(Expense expense, ExpenseTyreDetails details, CancellationToken ct, LinkedChanges? changes = null)
+    {
+        var vehicle = await EditableVehicleAsync(expense.VehicleId, ct);
+        var by = (await access.RequirePrincipalAsync(ct)).Id;
+        var book = await tyres.LoadAsync(vehicle.Id, ct);
+        RequireExpenseKind(details.Kind);
+        RequireNotFuture(expense.Date);
+        if (details.SetId is { } setId) LiveSet(book, setId);
+        // The expense's id is the add's: one already there was answered before (ExpenseService). The lines' and tyres' ids are new, so one
+        // already in use is someone else's, never a repeat of this add.
+        await RequireUnusedAsync(details, ct);
+        var save = new TyreSave { Book = book, By = by };
+        var firstId = details.Tyres is [{ Id: { } given }, ..] ? given : details.LineId;
+        var lines = NewLines(vehicle, book, save, details.Kind, details.SetId, expense.Date, odometer: null, note: null, details.Tyres, details.BreakUp, firstId, details.LineId, by);
+        foreach (var line in lines)
+        {
+            if (expense.OdometerReading is { } reading) line.HoldReading(reading); // one row: the expense's, held by its lines too
+            line.LinkExpense(expense.Id);
+        }
+        if (changes is null)
+        {
+            save.AddedExpenses.Add(expense);
+            if (expense.OdometerReading is { } reading) save.AddedReadings.Add(reading);
+        }
+        else
+        {
+            save.ExpenseChanges.Add(changes);
+            save.Change(expense);
+        }
+        // An add saved meanwhile by the same add sent again is its repeat; an edit has none (a lost race is the version check's).
+        Func<Task<bool>> repeat = changes is null ? async () => await expenses.FindIncludingDeletedAsync(expense.Id, ct) is not null : () => Task.FromResult(false);
+        if (!await SaveOnceAsync(save, repeat, ct)) return false;
+        logger.LogDebug("User {UserId} put expense {ExpenseId} on the tyre log of vehicle {VehicleId}: {Count} lines from {EntryId}", by, expense.Id, vehicle.Id, lines.Count, lines[0].Id);
+        return true;
+    }
+
+    /// <summary>A line holding an expense says what the amount was for: never a note, which takes none.</summary>
+    private static void RequireExpenseKind(TyreEntryKind kind)
+    {
+        if (kind == TyreEntryKind.Note) throw new DomainException("tyres.noteTakesNoAmount", "A note takes no amount; choose what was done.");
+    }
+
+    /// <summary>The ids a client chose for new lines and tyres must be unused: one in use is someone else's (<c>sync.idTaken</c>).</summary>
+    private async Task RequireUnusedAsync(ExpenseTyreDetails details, CancellationToken ct)
+    {
+        IEnumerable<Guid?> lineIds = [details.LineId, .. details.Tyres?.Select(t => t.Id) ?? []];
+        foreach (var id in lineIds.OfType<Guid>())
+        {
+            if (await tyres.FindEntryAsync(id, ct) is { } entry) ClientIds.Repeat(entry, false, id);
+            if (await tyres.FindInstallationAsync(id, ct) is { } installation) ClientIds.Repeat(installation, false, id);
+        }
+        var tyreIds = details.BreakUp?.Tyres.Select(t => t.Id).OfType<Guid>().ToList() ?? [];
+        if (tyreIds.Count > 0 && (await tyres.ListTyresAsync(tyreIds, ct)).FirstOrDefault() is { } tyre) ClientIds.Repeat(tyre, false, tyre.Id);
     }
 
     /// <summary>
@@ -1242,7 +1315,10 @@ public sealed class TyreService(
     /// day or odometer is then its own, and restoring the line parts the two (the owner's choice).
     /// </summary>
     /// <param name="readingPhotos">One of its photos is still being read (as <see cref="ExpenseService.UpdateAsync"/> finds): it may wait for it.</param>
-    public async Task<Expense> UpdateExpenseAsync(TyreEntry found, Guid expenseId, ExpenseInput input, CancellationToken ct, int? expectedVersion = null, bool readingPhotos = false)
+    /// <param name="details">Its tyre details from the Expense dialog (#290, the owner's decisions 53 and 60): what was done, for every live line
+    /// holding it, and a whole set's line's set; null leaves the lines' as they are. Refused while no line holding it is live (decision 69).</param>
+    public async Task<Expense> UpdateExpenseAsync(
+        TyreEntry found, Guid expenseId, ExpenseInput input, CancellationToken ct, int? expectedVersion = null, bool readingPhotos = false, ExpenseTyreDetails? details = null)
     {
         var vehicle = await EditableVehicleAsync(found.VehicleId, ct);
         var by = (await access.RequirePrincipalAsync(ct)).Id;
@@ -1254,6 +1330,8 @@ public sealed class TyreService(
         var expense = book.ExpenseOf(line) ?? throw new NotFoundException("expense.notFound", $"Expense {expenseId} does not exist.", new { Id = expenseId });
         VersionCheck.Require(expectedVersion, expense.Version);
         RequireNotFuture(input.Date);
+        if (details is not null && live.Count == 0)
+            throw new DomainException("tyres.expenseLineInTrash", "Its tyre log line is in the trash: restore it there to change what was done.");
         var (currency, discount) = (input.Currency ?? expense.Currency, input.Discount ?? expense.Discount);
         var sameDayAndReading = input.Date == line.Day && input.Odometer == line.Odometer && expense.OdometerReadingId == line.OdometerReadingId;
         if (live.Count == 0 && sameDayAndReading)
@@ -1288,7 +1366,8 @@ public sealed class TyreService(
             foreach (var holder in live)
             {
                 if (made is not null) holder.HoldReading(made); // the lines made together keep holding one row
-                var (added, removed, _) = holder.Update(holder.Kind, holder.SetId, input.Date, input.Odometer, holder.Note, by);
+                var (kind, setId) = details is null ? (holder.Kind, holder.SetId) : KindAndSetFor(holder, details, book);
+                var (added, removed, _) = holder.Update(kind, setId, input.Date, input.Odometer, holder.Note, by);
                 if (added is not null)
                 {
                     save.AddedReadings.Add(added);
@@ -1303,6 +1382,21 @@ public sealed class TyreService(
         await SaveAsync(save, ct);
         logger.LogDebug("Expense {ExpenseId} of tyre log line {EntryId} updated", expense.Id, line.Id);
         return await expenses.FindAsync(expense.Id, ct) ?? expense;
+    }
+
+    /// <summary>
+    /// What a line holding an expense says after the Expense dialog's tyre details (#290, decision 60): every line takes what was done; a whole
+    /// set's (or no set's) line takes the set too, a live one or none; a tyre's line keeps its set (its tyres are changed in the tyre log); a
+    /// swap's line keeps both, so what it says already passes (<see cref="TyreEntry.Update"/> refuses anything else: <c>tyres.swapLineLocked</c>).
+    /// </summary>
+    private static (TyreEntryKind Kind, Guid? SetId) KindAndSetFor(TyreEntry holder, ExpenseTyreDetails details, TyreBook book)
+    {
+        if (holder.IsSwapLine) return (details.Kind, details.SetId);
+        if (details.Kind != holder.Kind) RequireExpenseKind(details.Kind);
+        if (holder.TyreId is not null)
+            return details.SetId == holder.SetId ? (details.Kind, holder.SetId) : throw new DomainException("tyres.tyreNotOfSet", "A line of a tyre is a line of its set.");
+        if (details.SetId is { } setId && setId != holder.SetId) LiveSet(book, setId);
+        return (details.Kind, details.SetId);
     }
 
     /// <summary>An expense a line made, moved to the trash on its own (the Expenses tab): the line stays, with its reading.</summary>
