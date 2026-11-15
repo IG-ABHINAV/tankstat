@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useClientId } from '../dialogs/useClientId.ts'
 import type { ExpenseTyreInput, TyreEntryKind, VehicleTyresFieldsFragment } from '../gql/generated.ts'
 import { isTyreCategory, tyreCategories } from './tyreCategory.ts'
 
@@ -33,6 +34,24 @@ export interface TyreDetailsIds {
   line: string
   lines: readonly string[]
   newTyres: readonly string[]
+}
+
+/**
+ * The ids of the lines (and a whole set's new tyres) a dialog's tyre details make (#290): the same for every Save of one opening; a change
+ * edited on Waiting to sync keeps the ones its tyre details gave (later tyre changes may name them), fresh ones after them.
+ */
+export function useTyreDetailsIds(open: boolean, waitingTyre: ExpenseTyreInput | null): TyreDetailsIds {
+  const fresh = {
+    line: useClientId(open),
+    lines: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+    newTyres: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+  }
+  const waitingNew = EXACT_ORDER.map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
+  return {
+    line: waitingTyre?.lineId ?? fresh.line,
+    lines: fresh.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
+    newTyres: fresh.newTyres.map((id, n) => waitingNew[n] ?? id),
+  }
 }
 
 /**

@@ -52,7 +52,7 @@ import { outbox } from './offline/outbox.ts'
 import type { ChangeEdit } from './dialogs/changeEdit.ts'
 import { visuallyHidden } from './components/visuallyHidden.ts'
 import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
-import { useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+import { useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 /** One service visit: the schedules done, and (with an amount) the one expense logged for all of them. */
 export interface DoneValues {
@@ -127,20 +127,9 @@ export function RecurringDoneDialog({
   const { toast } = useToast()
   const [open, setOpen] = useDialogState({ open: openProp, onOpenChange })
   const clientId = useClientId(open)
-  // The ids of the lines (and a whole set's new tyres) its tyre details make (#290): the same for every Save of one opening; a visit
-  // edited on Waiting to sync keeps the ones its tyre details gave (later tyre changes may name them), fresh ones after them.
-  const fresh: TyreDetailsIds = {
-    line: useClientId(open),
-    lines: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
-    newTyres: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
-  }
+  // The ids of what its tyre details make (#290); a visit edited on Waiting to sync keeps the ones they gave.
   const waitingTyre = change?.initial.tyre ?? null
-  const waitingNew = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'].map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
-  const tyreIds: TyreDetailsIds = {
-    line: waitingTyre?.lineId ?? fresh.line,
-    lines: fresh.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
-    newTyres: fresh.newTyres.map((id, n) => waitingNew[n] ?? id),
-  }
+  const tyreIds = useTyreDetailsIds(open, waitingTyre)
   const { queue, leftOut, saving, submit, reset } = usePhotoSession(vehicle.id, 'expense', open && !change)
   const drafts = useDraftReadings(queue.uploaded, open && !change)
   // Photos kept on this device are read once the visit is synced (photo reading on, as last heard): the amount may be left to them.

@@ -55,7 +55,7 @@ import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
 import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
-import { EXACT_ORDER, useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+import { useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 // Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
 const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
@@ -144,19 +144,9 @@ export function ExpenseFormDialog({
   // The vehicle's tyres (#290): its sets for the tyre details, and the last tyre cost's category; kept on the device. Without them (an
   // answer that failed) there is no switch, never an error of the dialog.
   const tyres = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
-  const freshIds: TyreDetailsIds = {
-    line: useClientId(open),
-    lines: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
-    newTyres: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
-  }
   // A change edited on Waiting to sync keeps the ids its tyre details gave (later tyre changes may name them), fresh ones after them.
   const waitingTyre = change?.initial.tyre ?? null
-  const waitingNew = EXACT_ORDER.map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
-  const tyreIds: TyreDetailsIds = {
-    line: waitingTyre?.lineId ?? freshIds.line,
-    lines: freshIds.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
-    newTyres: freshIds.newTyres.map((id, n) => waitingNew[n] ?? id),
-  }
+  const tyreIds = useTyreDetailsIds(open, waitingTyre)
   const error = details.error ?? defaults.error
   const existing = details.data?.expense
   // An expense the tyre log made (#290): its first live line, as the tyre log has it now (lines this device made too, and on Waiting to
