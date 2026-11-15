@@ -46,7 +46,7 @@ export function useCardActions(vehicleId: string) {
       const input = { ...values, photoIds }
       const done = await schedules.markDone(input, () => markDone({ variables: { input } }))
       if (done.queued) return values.expenseId ? { id: values.expenseId, photoCount: photoIds.length, queued: true } : undefined
-      await refresh()
+      await Promise.all([refresh(), values.tyre ? refreshTyres() : undefined])
       return savedFrom(done.result.data?.markRecurringExpensesDone.expense)
     },
   }

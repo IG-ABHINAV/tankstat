@@ -1301,6 +1301,7 @@
       "hintEdit": "Puts this expense on the tyre log too, with its date and odometer.",
       "titleHint": "Follows what was done and the set until you type one.",
       "lineNote": "The line takes this expense's date and odometer, and its amount is this expense, counted once.",
+      "lineAloneNote": "Without an amount the line is logged on its own, with no expense.",
       "linkedNote": "The date and the odometer are the line's too: changing them here changes both.",
       "sharedHint": "Changes the lines of {{tyres}}: this amount is one expense, shared with them.",
       "chooseKind": "Choose what was done.",
@@ -1960,7 +1961,8 @@
     "deleteTitle": "Delete this recurring expense?",
     "deleteDescription": "{{title}} will no longer be tracked. Expenses already logged from it stay.",
     "deleteConfirm": "Delete",
-    "photosNotKept": "Without an amount no expense is logged, so the photos are not kept."
+    "photosNotKept": "Without an amount no expense is logged, so the photos are not kept.",
+    "doneTyreLineAlone": "Marked as done. Logged on the tyre log, without an amount."
   },
   "offline": {
     "pending": {
