@@ -438,6 +438,7 @@ export type MarkRecurringExpensesDoneInput = {
   odometer?: number | null | undefined;
   photoIds?: Array<string> | null | undefined;
   title?: string | null | undefined;
+  tyre?: ExpenseTyreInput | null | undefined;
 };
 
 export type MeasurementUnitsInput = {

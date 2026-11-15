@@ -179,7 +179,7 @@ public class ContractTests
     [InlineData("ExpenseTyreInput", "kind", "setId", "tyres", "breakUp", "lineId")]
     [InlineData("AddVehicleInput", "name", "licensePlate", "fuelType", "units", "id")]
     [InlineData("AddRecurringExpenseInput", "vehicleId", "title", "kind", "intervalMonths", "intervalDistance", "lastDoneDate", "lastDoneOdometer", "id")]
-    [InlineData("MarkRecurringExpensesDoneInput", "ids", "date", "odometer", "amount", "discount", "currency", "title", "category", "photoIds", "expenseId")]
+    [InlineData("MarkRecurringExpensesDoneInput", "ids", "date", "odometer", "amount", "discount", "currency", "title", "category", "photoIds", "expenseId", "tyre")]
     [InlineData("GridSettingsInput", "gridId", "order", "hidden", "pageSize", "sortColumn", "sortDirection")]
     [InlineData("UpdateUiSettingsInput", "navOpen", "language", "clearLanguage", "colorMode", "surface", "timeFormat", "clearTimeFormat", "dateFormat", "clearDateFormat")]
     [InlineData("ChangeInput", "id", "expectedVersion", "base", "setVehiclePicture", "removeVehiclePicture", "addTyreSet", "updateTyreSet", "setTyreRoughDistance",

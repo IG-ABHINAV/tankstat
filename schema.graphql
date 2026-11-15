@@ -1599,6 +1599,7 @@ input MarkRecurringExpensesDoneInput {
   photoIds: [UUID!]
   expenseId: UUID
   discount: Decimal
+  tyre: ExpenseTyreInput
 }
 
 input MeasurementUnitsInput {

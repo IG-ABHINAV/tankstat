@@ -611,7 +611,7 @@ public sealed class SyncMutations
             return Make(SyncChangeKind.MarkRecurringExpensesDone, md.ExpenseId, null, async ct =>
             {
                 var done = await recurring.MarkDoneAsync(md.Ids,
-                    new MarkDoneInput(md.Date, md.Odometer, md.Amount, md.Currency ?? defaults.Currency, md.Title, md.Category, md.PhotoIds, md.ExpenseId, md.Discount), ct);
+                    new MarkDoneInput(md.Date, md.Odometer, md.Amount, md.Currency ?? defaults.Currency, md.Title, md.Category, md.PhotoIds, md.ExpenseId, md.Discount, md.Tyre?.ToDetails()), ct);
                 return new AppliedChange(done.Expense?.Id, done.Expense?.Version, done.Schedules.FirstOrDefault()?.Item.VehicleId);
             }, md.Ids.Count > 0 ? find.Schedule(md.Ids[0]) : null);
 
