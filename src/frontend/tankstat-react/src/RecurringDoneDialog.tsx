@@ -477,6 +477,12 @@ function DoneFields({
               {tyre.announcement}
             </Typography>
           )}
+          {/* A photo's tyre work offered at the switch comes after a read: said here too (#290, decision 67). */}
+          {tyre.available && tyre.photo && !tyre.open && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {t('expenses.tyreDetails.photoShows', { kind: t(`tyres.entries.kinds.${tyre.photo.kind}`) })}
+            </Typography>
+          )}
           <ReadingProblems problems={fill.problems} />
         </div>
         {error !== undefined && <ErrorMessage error={error} />}

@@ -378,7 +378,21 @@ function ExpenseForm({
   const title = followsTyres ? tyre.title! : fill.values.title
   const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
   const amountOptional = mayWait
-  const note = (field: FillableField) => (
+  // A title read from a photo (a shop's name) while the title follows the tyre details (#290, the owner's choice on #329): the tyre title
+  // stays, as decision 52 has it, and the shop's name is only offered; Use it makes it the title, which then no longer follows.
+  const readTitle = followsTyres ? read.TITLE?.value?.trim() : undefined
+  const note = (field: FillableField) =>
+    field === 'title' && followsTyres ? (
+      <ReadNote
+        filled={false}
+        offered={readTitle && readTitle !== title ? readTitle : undefined}
+        field={labels.title}
+        onUse={() => {
+          setTitleTyped(true)
+          fill.use('title')
+        }}
+      />
+    ) : (
     <>
       <ReadNote
         filled={fill.isFilled(field) || fromPhoto.has(field)}
@@ -389,7 +403,7 @@ function ExpenseForm({
       />
       {merging.note(field, labels[field], (value) => fill.change(field, value == null ? '' : String(value)))}
     </>
-  )
+    )
   const [error, setError] = useState<unknown>()
   const [busy, setBusy] = useState(false)
 
@@ -498,6 +512,12 @@ function ExpenseForm({
           {tyre.announcement && (
             <Typography variant="body2" style={visuallyHidden}>
               {tyre.announcement}
+            </Typography>
+          )}
+          {/* A photo's tyre work offered at the switch comes after a read: said here too (#290, decision 67). */}
+          {tyre.available && tyre.photo && !tyre.open && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {t('expenses.tyreDetails.photoShows', { kind: t(`tyres.entries.kinds.${tyre.photo.kind}`) })}
             </Typography>
           )}
           <ReadingProblems problems={fill.problems} />

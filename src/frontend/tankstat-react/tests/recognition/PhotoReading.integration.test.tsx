@@ -659,20 +659,25 @@ it('a receipt that names tyre work offers it at the switch; Use it opens the tyr
 
   await ui.upload(camera(dialog), photo())
 
-  expect(await within(dialog).findByText('The photo shows tyre work: Wheel balancing', {}, READ_WAIT)).toBeInTheDocument()
+  expect(await within(dialog).findAllByText('The photo shows tyre work: Wheel balancing', {}, READ_WAIT)).toHaveLength(2) // under the switch, and said in the status region
   expect(within(dialog).queryByRole('group', { name: 'Tyre details' })).not.toBeInTheDocument() // only offered: nothing opens by itself
   await ui.click(within(dialog).getByRole('button', { name: 'Use Wheel balancing from the photo for What was done' }))
   const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
   expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Wheel balancing')
   expect(within(dialog).getByLabelText(/^Category/)).toHaveValue('Tyres') // an empty category takes the tyre one
   expect(within(dialog).queryByText('The photo shows tyre work: Wheel balancing')).not.toBeInTheDocument()
+  // The title follows the tyre details (decision 52); the shop's name the photo read is only offered, and Use it makes it the title.
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Wheel balancing: Michelin Primacy 4')
+  expect(within(dialog).getByText('The photo shows Gumiszerviz')).toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Use Gumiszerviz from the photo for Title' }))
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Gumiszerviz')
 
   await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
   await ui.click(await screen.findByRole('option', { name: 'Storage fee' }))
   expect(within(group).getByText('The photo shows Wheel balancing')).toBeInTheDocument() // the person chose another: only offered now
   await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
   await waitFor(() => expect(state.calls.AddExpense).toHaveLength(1))
-  expect(state.calls.AddExpense).toEqual([{ input: expect.objectContaining({ tyre: expect.objectContaining({ kind: 'STORAGE_FEE' }) }) }])
+  expect(state.calls.AddExpense).toEqual([{ input: expect.objectContaining({ title: 'Gumiszerviz', tyre: expect.objectContaining({ kind: 'STORAGE_FEE' }) }) }])
 })
 
 it('with the tyre details open and What was done untouched, the photo fills it in and says so', async () => {
@@ -700,7 +705,7 @@ it('marking a schedule done offers the tyre work a receipt names, as the Expense
 
   await ui.upload(camera(dialog), photo())
 
-  expect(await within(dialog).findByText('The photo shows tyre work: Storage fee', {}, READ_WAIT)).toBeInTheDocument()
+  expect(await within(dialog).findAllByText('The photo shows tyre work: Storage fee', {}, READ_WAIT)).toHaveLength(2) // under the switch, and said in the status region
   await ui.click(within(dialog).getByRole('button', { name: 'Use Storage fee from the photo for What was done' }))
   expect(within(await within(dialog).findByRole('group', { name: 'Tyre details' })).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Storage fee')
 })
