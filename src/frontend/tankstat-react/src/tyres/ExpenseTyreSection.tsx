@@ -5,11 +5,11 @@ import { useId, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LabeledSelect } from '../components/UnitSelect.tsx'
 import type { ExpenseTyreInput, TyreEntryKind } from '../gql/generated.ts'
-import { ENTRY_KINDS, useEntryWords } from './entries.ts'
+import { ENTRY_KINDS, isSwapLine, labelsOf as tyreLabelsOf, sharersOf, useEntryWords } from './entries.ts'
 import { ForTyres } from './ForTyres.tsx'
 import { EXACT, liveTyresOf, suggestLabels } from './singleTyres.ts'
 import { TyreRuleError } from './tyreHistory.ts'
-import type { Tyres } from './tyres.ts'
+import type { TyreEntry, Tyres } from './tyres.ts'
 import type { TyreDetailsIds, TyreDetailsState } from './useExpenseTyreDetails.tsx'
 
 /** What an expense's line may say: a kind that takes an amount (a note takes none; the swap kinds come with the swap). */
@@ -62,6 +62,7 @@ export default function ExpenseTyreSection({
   kindError,
   kindRef,
   note,
+  linked,
 }: {
   tyres: Tyres
   state: TyreDetailsState
@@ -71,12 +72,23 @@ export default function ExpenseTyreSection({
   kindRef?: Ref<{ focus: () => void }>
   /** What the line takes (the expense's date, odometer and amount). */
   note: string
+  /**
+   * An expense the tyre log made (decisions 53, 60): its first live line. What was done changes every live line holding the expense; a
+   * whole set's line may move to another set or none; a tyre's line keeps its set and says its tyres; a swap's line is locked whole.
+   */
+  linked?: TyreEntry | null
 }) {
   const { t } = useTranslation()
   const words = useEntryWords()
   const headingId = useId()
-  const sets = offered(tyres)
-  const info = sets.find((s) => s.set.id === state.setId)
+  const swap = !!linked && isSwapLine(linked)
+  const ofTyre = !!linked?.tyreId
+  const holders = linked ? [linked, ...sharersOf(tyres, linked)] : []
+  // A line's own set stays offered while it is retired: it is what the line says.
+  const sets = offered(tyres).concat(linked?.setId ? tyres.sets.filter((s) => s.set.id === linked.setId && s.set.isRetired) : [])
+  const info = linked ? undefined : sets.find((s) => s.set.id === state.setId)
+  const kinds = swap ? [linked.kind] : EXPENSE_KINDS
+  const lockedHint = swap ? t('tyres.entries.lockedHint') : undefined
   return (
     <Stack role="group" aria-labelledby={headingId} sx={{ gap: 1.5, p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
       <Typography id={headingId} component="h3" variant="subtitle2">
@@ -86,7 +98,9 @@ export default function ExpenseTyreSection({
         <LabeledSelect
           label={t('tyres.entries.kind')}
           value={state.kind}
-          options={[{ value: '', label: t('expenses.tyreDetails.choose') }, ...EXPENSE_KINDS.map((k) => ({ value: k, label: words.kind(k) }))]}
+          options={[...(linked ? [] : [{ value: '', label: t('expenses.tyreDetails.choose') }]), ...kinds.map((k) => ({ value: k, label: words.kind(k) }))]}
+          disabled={swap}
+          hint={lockedHint ?? (holders.length > 1 ? t('expenses.tyreDetails.sharedHint', { tyres: tyreLabelsOf(tyres, holders) }) : undefined)}
           error={kindError}
           selectRef={kindRef}
           onChange={(kind) => onChange({ ...state, kind: kind as TyreEntryKind | '' })}
@@ -95,9 +109,16 @@ export default function ExpenseTyreSection({
           label={t('tyres.entries.set')}
           value={state.setId}
           options={[...sets.map((s) => ({ value: s.set.id, label: `${t(`tyres.seasons.${s.set.season}`)}: ${s.set.name}` })), { value: '', label: t('tyres.entries.noSet') }]}
+          disabled={swap || ofTyre}
+          hint={lockedHint ?? (ofTyre ? t('tyres.entries.tyreSetHint') : undefined)}
           onChange={(setId) => onChange({ ...state, setId, whole: true, picked: [], labels: [] })}
         />
       </Box>
+      {ofTyre && (
+        <Typography variant="body2">
+          {t('tyres.entries.for')}: {tyreLabelsOf(tyres, holders)}
+        </Typography>
+      )}
       {info && (
         <ForTyres
           info={info}

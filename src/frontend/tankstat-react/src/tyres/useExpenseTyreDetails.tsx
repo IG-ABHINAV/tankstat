@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { LabeledSwitch } from '../components/LabeledSwitch.tsx'
 import { Loading } from '../components/Loading.tsx'
 import type { ExpenseTyreInput, TyreEntryKind, VehicleTyresFieldsFragment } from '../gql/generated.ts'
+
+type TyreLine = VehicleTyresFieldsFragment['entries'][number]
 import { isTyreCategory, tyreCategories } from './tyreCategory.ts'
 
 // The section, the car picture and the input's making are a chunk of their own (the dialogs are eager: the home cards open them).
@@ -36,15 +38,30 @@ export interface TyreDetailsIds {
  * being one unless the person switched it on; switched on, an empty category takes the last tyre cost's (else Tyres or Gumik). *What
  * was done* starts unchosen, *Set* at the set on the car. Opening and closing by the category are announced, never moving the focus.
  */
-export function useExpenseTyreDetails({ tyres, category, setCategory }: { tyres: VehicleTyresFieldsFragment | null | undefined; category: string; setCategory: (category: string) => void }) {
+export function useExpenseTyreDetails({
+  tyres,
+  category,
+  setCategory,
+  linked,
+}: {
+  tyres: VehicleTyresFieldsFragment | null | undefined
+  category: string
+  setCategory: (category: string) => void
+  /**
+   * An expense the tyre log made (#290, decisions 53 and 60): its first live line. The section is shown without the switch, from what
+   * that line says; a save sends what was done and the set only when they changed.
+   */
+  linked?: TyreLine | null
+}) {
   const { t } = useTranslation()
-  const available = !!tyres && tyres.sets.length > 0
+  const available = !!tyres && (tyres.sets.length > 0 || !!linked)
   const last = tyres?.expenseCategory ?? null
   const [state, setState] = useState<TyreDetailsState>(() => {
+    if (linked) return { on: true, kind: linked.kind, setId: linked.setId ?? '', whole: true, picked: [], labels: [] }
     const sets = tyres?.sets.filter((s) => !s.set.isRetired) ?? []
     return { on: null, kind: '', setId: (sets.find((s) => s.onTheCar) ?? sets[0])?.set.id ?? '', whole: true, picked: [], labels: [] }
   })
-  const open = available && (state.on === true || (state.on !== false && isTyreCategory(category, last)))
+  const open = available && (!!linked || state.on === true || (state.on !== false && isTyreCategory(category, last)))
   const [kindError, setKindError] = useState<string>()
   const kindRef = useRef<{ focus: () => void }>(null)
 
@@ -81,6 +98,11 @@ export function useExpenseTyreDetails({ tyres, category, setCategory }: { tyres:
    */
   async function inputOf(day: string, ids: TyreDetailsIds): Promise<{ tyre: ExpenseTyreInput; named: string } | 'invalid' | undefined> {
     if (!open || !tyres) return undefined
+    if (linked) {
+      // Its lines change only when what was done or the set did; the set always goes with it (left out, it would be no set).
+      const same = state.kind === linked.kind && state.setId === (linked.setId ?? '')
+      return same || !state.kind ? undefined : { tyre: { kind: state.kind, setId: state.setId || null }, named: '' }
+    }
     if (!state.kind) {
       setKindError(t('expenses.tyreDetails.chooseKind'))
       kindRef.current?.focus()
@@ -89,7 +111,7 @@ export function useExpenseTyreDetails({ tyres, category, setCategory }: { tyres:
     return (await loadSection()).tyreInputOf(state, tyres, ids, day)
   }
 
-  return { available, open, state, change, toggle, kindError, kindRef, title, announcement, inputOf, last }
+  return { available, open, state, change, toggle, kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null }
 }
 
 export type ExpenseTyreDetails = ReturnType<typeof useExpenseTyreDetails>
@@ -100,10 +122,18 @@ export function TyreDetailsFields({ details, tyres, hint, note }: { details: Exp
   if (!details.available) return null
   return (
     <>
-      <LabeledSwitch label={t('expenses.tyreDetails.switch')} hint={hint} checked={details.open} onChange={details.toggle} />
+      {!details.linked && <LabeledSwitch label={t('expenses.tyreDetails.switch')} hint={hint} checked={details.open} onChange={details.toggle} />}
       {details.open && (
         <Suspense fallback={<Loading />}>
-          <ExpenseTyreSection tyres={tyres} state={details.state} onChange={details.change} kindError={details.kindError} kindRef={details.kindRef} note={note} />
+          <ExpenseTyreSection
+            tyres={tyres}
+            state={details.state}
+            onChange={details.change}
+            kindError={details.kindError}
+            kindRef={details.kindRef}
+            note={details.linked ? t('expenses.tyreDetails.linkedNote') : note}
+            linked={details.linked}
+          />
         </Suspense>
       )}
     </>

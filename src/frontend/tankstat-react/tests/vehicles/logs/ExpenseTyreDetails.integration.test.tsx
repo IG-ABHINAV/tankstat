@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
 import { server } from '../../support/server.ts'
 import { fakeExpense, fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
-import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreSet } from '../../support/tyres.ts'
+import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
 import { UUID } from '../../support/ids.ts'
 
 // An expense's tyre details in the Expense dialog (#290, the owner's decisions 51, 52, 54, 58, 59, 62, 65 and 68).
@@ -16,13 +16,32 @@ afterEach(() => {
 })
 afterAll(() => server.close())
 
-function setup(sets: FakeTyreSet[] = [tyreSummer, tyreWinter], initial = [fakeExpense({ id: 'e1', date: '2026-08-01', title: 'Car wash', category: 'Wash', amount: 1500, odometer: null })]) {
+function setup(
+  sets: FakeTyreSet[] = [tyreSummer, tyreWinter],
+  initial = [fakeExpense({ id: 'e1', date: '2026-08-01', title: 'Car wash', category: 'Wash', amount: 1500, odometer: null })],
+  lines: FakeTyreEntry[] = [],
+) {
   stubViewport('desktop')
   const backend = fakeExpenseBackend(fakeVehicle(), initial)
-  const tyres = fakeTyres(sets)
+  const tyres = fakeTyres(sets, lines)
   server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...tyres.handlers)
   renderWithApollo(<App />, '/vehicles/v1?tab=expenses')
-  return { ...backend, ui: userEvent.setup() }
+  return { ...backend, tyres: tyres.state, ui: userEvent.setup() }
+}
+
+/** An expense the tyre log made (#288), and its line(s) on the tyre log. */
+const linked = (kind: string, setName: string | null, trashed = false) =>
+  fakeExpense({
+    id: 'e5', date: '2026-10-02', title: 'Puncture repaired: Michelin Primacy 4', category: 'Tyres', amount: 6500, odometer: 147_100,
+    tyreEntry: { __typename: 'TyreEntryRef', id: 'l1', kind, setName, trashed },
+  })
+const line = (over: Partial<FakeTyreEntry> = {}): FakeTyreEntry => ({
+  id: 'l1', kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-10-02', odometer: 147_100, note: null, expenseId: 'e5', amount: 6500, currency: 'HUF', ...over,
+})
+
+async function openEdit(ui: ReturnType<typeof userEvent.setup>, title: string) {
+  await ui.click(await screen.findByRole('button', { name: `Edit the expense ${title}` })) // after a save, once the list is back
+  return screen.findByRole('dialog', { name: 'Edit expense' })
 }
 
 async function openAdd(ui: ReturnType<typeof userEvent.setup>) {
@@ -149,3 +168,69 @@ it('has no tyre details for a vehicle without a tyre set, whatever the category'
   expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
   expect(section(dialog)).not.toBeInTheDocument()
 })
+
+// ---- an expense the tyre log made (the owner's decisions 53, 55, 60, 61 and 69) ------------------------------
+
+it('shows a linked expense its line without the switch, and sends what was done and the set only when they changed', async () => {
+  const { ui, state } = setup(undefined, [linked('PUNCTURE_REPAIRED', 'Michelin Primacy 4')], [line()])
+  const dialog = await openEdit(ui, 'Puncture repaired: Michelin Primacy 4')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  expect(within(group).getByText("The date and the odometer are the line's too: changing them here changes both.")).toBeInTheDocument()
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Puncture repaired')
+  await ui.clear(within(dialog).getByLabelText('Amount'))
+  await ui.type(within(dialog).getByLabelText('Amount'), '7000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+  await waitFor(() => expect(state.calls.UpdateExpense).toHaveLength(1))
+  expect(state.calls.UpdateExpense).toEqual([{ input: expect.not.objectContaining({ tyre: expect.anything() }) }]) // only the amount changed
+
+  const again = await openEdit(ui, 'Puncture repaired: Michelin Primacy 4')
+  const section = await within(again).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(section).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Storage fee' }))
+  await ui.click(within(section).getByRole('combobox', { name: 'Set' }))
+  await ui.click(await screen.findByRole('option', { name: 'Winter: Continental WinterContact' }))
+  await ui.click(within(again).getByRole('button', { name: 'Save changes' }))
+  await waitFor(() => expect(state.calls.UpdateExpense).toHaveLength(2))
+  expect(state.calls.UpdateExpense).toEqual([expect.anything(), { input: expect.objectContaining({ id: 'e5', tyre: { kind: 'STORAGE_FEE', setId: 's2' } }) }])
+})
+
+it("keeps a tyre's set, names its tyres, and removes every line holding the expense from the tyre log", async () => {
+  const lines = [line({ id: 'l1', tyreId: 't3', groupId: 'l1' }), line({ id: 'l2', tyreId: 't4', groupId: 'l1' })]
+  const { ui, tyres } = setup([brokenUpSummer(), tyreWinter], [linked('PUNCTURE_REPAIRED', 'Michelin Primacy 4')], lines)
+  const dialog = await openEdit(ui, 'Puncture repaired: Michelin Primacy 4')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(group).getByRole('combobox', { name: 'Set' })).toHaveAttribute('aria-disabled', 'true')
+  expect(within(group).getByRole('combobox', { name: 'Set' })).toHaveAccessibleDescription("A tyre's line stays with its set.")
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveAccessibleDescription('Changes the lines of S3, S4: this amount is one expense, shared with them.')
+  expect(within(group).getByText('For: S3, S4')).toBeInTheDocument()
+
+  await ui.click(await within(dialog).findByRole('button', { name: 'Remove from the tyre log' }))
+  const confirm = await screen.findByRole('alertdialog', { name: 'Remove it from the tyre log?' })
+  expect(confirm).toHaveAccessibleDescription(/^The lines of S3, S4 go to the trash\. This expense stays here/)
+  await ui.click(within(confirm).getByRole('button', { name: 'Remove from the tyre log' }))
+
+  expect(await screen.findByText('Removed from the tyre log. Its line is in the trash.')).toBeInTheDocument()
+  expect(tyres.calls.DeleteTyreEntry).toEqual([{ input: { id: 'l1', withExpense: false } }, { input: { id: 'l2', withExpense: false } }])
+  expect(screen.getByRole('dialog', { name: 'Edit expense' })).toBeInTheDocument() // the dialog stays open
+})
+
+it("locks a swap's line whole, and offers no removal: the swap is moved to the trash in the tyre log", async () => {
+  const { ui } = setup(undefined, [linked('SWAP', 'Michelin Primacy 4')], [line({ kind: 'SWAP' })])
+  const dialog = await openEdit(ui, 'Puncture repaired: Michelin Primacy 4')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveAttribute('aria-disabled', 'true')
+  expect(within(group).getByRole('combobox', { name: 'Set' })).toHaveAttribute('aria-disabled', 'true')
+  expect(within(dialog).queryByRole('button', { name: 'Remove from the tyre log' })).not.toBeInTheDocument()
+  expect(await within(dialog).findByText("A swap's line stays: removing it would remove the swap. Move the swap to the trash in the tyre log.")).toBeInTheDocument()
+})
+
+it('says when its line is in the trash, with no switch and no section', async () => {
+  const { ui } = setup(undefined, [linked('PUNCTURE_REPAIRED', 'Michelin Primacy 4', true)])
+  const dialog = await openEdit(ui, 'Puncture repaired: Michelin Primacy 4')
+  expect(await within(dialog).findByText(/Puncture repaired, Michelin Primacy 4\. Its line is in the trash: restoring it there links them again\./)).toBeInTheDocument()
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  expect(within(dialog).queryByRole('group', { name: 'Tyre details' })).not.toBeInTheDocument()
+  expect(within(dialog).queryByRole('link', { name: 'Open in the tyre log' })).not.toBeInTheDocument()
+})
+
