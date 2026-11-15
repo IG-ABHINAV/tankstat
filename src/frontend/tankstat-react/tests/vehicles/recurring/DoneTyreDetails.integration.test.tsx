@@ -2,11 +2,12 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
+import { RecurringDoneDialog, type DoneValues } from '../../../src/RecurringDoneDialog.tsx'
 import { answered, server } from '../../support/server.ts'
 import { connectivity } from '../../../src/offline/connectivity.ts'
 import { outbox } from '../../../src/offline/outbox.ts'
 import { fakeExpenseBackend, fakeRecurring, fakeRecurringBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
-import { fakeTyres, tyreSummer, tyreWinter } from '../../support/tyres.ts'
+import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter } from '../../support/tyres.ts'
 import { UUID } from '../../support/ids.ts'
 
 // A visit's tyre details in the Done dialog (#290, the owner's decisions 57, 63 and 64).
@@ -109,3 +110,49 @@ it('kept on the device, its line is on the tyre log at once; a refusal the devic
   const log = await screen.findByRole('region', { name: 'Tyre log' })
   expect(await within(log).findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S1,/ })).toBeInTheDocument()
 })
+
+it("a visit edited on Waiting to sync shows its tyre details, keeps its own line ids, and switched off sends them as none", async () => {
+  stubViewport('desktop')
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...fakeExpenseBackend(fakeVehicle(), []).handlers, ...fakeTyres([brokenUpSummer(), tyreWinter]).handlers)
+  const sent: DoneValues[] = []
+  const tyre = { kind: 'PUNCTURE_REPAIRED' as const, setId: 's1', tyres: [{ tyreId: 't3', id: 'L3' }, { tyreId: 't4', id: 'L4' }] }
+  const edit = (initialTyre: typeof tyre) => (
+    <RecurringDoneDialog
+      open
+      vehicle={{ id: 'v1', units: { distance: 'KILOMETERS' } }}
+      items={[balancing]}
+      selected={[]}
+      change={{
+        initial: { ids: ['rc1'], date: '2026-10-05', odometer: null, amount: 5000, discount: null, currency: 'HUF', title: 'Wheel balancing', category: 'Tyres', expenseId: 'e5', tyre: initialTyre },
+        title: 'Edit the change',
+        submitLabel: 'Save the change',
+      }}
+      onSubmit={async (values) => {
+        sent.push(values)
+        return undefined
+      }}
+    />
+  )
+  const view = renderWithApollo(edit(tyre))
+  const ui = userEvent.setup()
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  expect(within(dialog).getByRole('checkbox', { name: 'Wheel balancing' })).toBeChecked()
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(group).getByRole('button', { name: /^Tyre S3/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(dialog).queryByRole('group', { name: 'Photos' })).not.toBeInTheDocument()
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Valve replaced' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({ ids: ['rc1'], amount: 5000, expenseId: 'e5', tyre: { ...tyre, kind: 'VALVE_REPLACED' } }) // its own line ids
+  view.unmount()
+
+  renderWithApollo(edit(tyre))
+  const again = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(again).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(again).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(again).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent[1].tyre).toBeNull()
+})
+

@@ -45,7 +45,7 @@ it('Edit, on an expense waiting here, opens the expense dialog with what it carr
   await downloaded()
   await outbox.enqueue({
     id: 'x1', entity: 'expenses', action: 'add', vehicleId: 'v1', targetId: 'x1',
-    input: { id: 'x1', vehicleId: 'v1', date: '2026-10-05', title: 'Car wash', category: null, amount: 4000, currency: 'EUR', odometer: null, note: null },
+    input: { id: 'x1', vehicleId: 'v1', date: '2026-10-05', title: 'Car wash', category: null, amount: 4000, currency: 'EUR', odometer: null, note: null, tyre: { kind: 'OTHER', setId: null, lineId: 'l1' } },
   })
 
   const { ui, dialog } = await editOnSyncPage(/^Edit the change: New expense/)
@@ -60,6 +60,7 @@ it('Edit, on an expense waiting here, opens the expense dialog with what it carr
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(outbox.changes).toHaveLength(1)
   expect(outbox.changes[0]).toMatchObject({ id: 'x1', action: 'add', input: { id: 'x1', title: 'Car wash', amount: 4500 } }) // still one add
+  expect(outbox.changes[0].input?.tyre).toEqual({ kind: 'OTHER', setId: null, lineId: 'l1' }) // no tyres known here: its tyre details stay (#290)
 })
 
 it('Edit, on a schedule waiting here, opens the schedule dialog with what it carries, and saving keeps the change, edited', async () => {
@@ -89,7 +90,10 @@ it('Edit, on a visit waiting here (#290, decision 71), opens the Done dialog wit
   await downloaded()
   await outbox.enqueue({
     id: 'm1', entity: 'recurring', action: 'markDone', vehicleId: 'v1', targetId: 'e7', targetIds: ['s-v1'],
-    input: { ids: ['s-v1'], date: '2026-10-05', odometer: null, amount: 250, discount: null, currency: 'EUR', title: 'Insurance', category: 'Fees', expenseId: 'e7', photoIds: [] },
+    input: {
+      ids: ['s-v1'], date: '2026-10-05', odometer: null, amount: 250, discount: null, currency: 'EUR', title: 'Insurance', category: 'Fees', expenseId: 'e7', photoIds: [],
+      tyre: { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l7' },
+    },
   })
 
   const { ui, dialog } = await editOnSyncPage(/^Edit the change: Marked as done/)
@@ -105,4 +109,6 @@ it('Edit, on a visit waiting here (#290, decision 71), opens the Done dialog wit
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(outbox.changes).toHaveLength(1) // still one visit: visits never fold, the edit takes its place
   expect(outbox.changes[0]).toMatchObject({ id: 'm1', action: 'markDone', targetId: 'e7', targetIds: ['s-v1'], input: { ids: ['s-v1'], amount: 275, expenseId: 'e7', photoIds: [] } })
+  // The device knows no tyres for it (none downloaded): its tyre details cannot be shown, so they stay as the visit has them.
+  expect(outbox.changes[0].input?.tyre).toEqual({ kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l7' })
 })
