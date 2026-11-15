@@ -169,6 +169,27 @@ public class ExpenseTyreDetailsTests
         Assert.Equal(lineId, Assert.Single(s.LinesOf(expenseId)).Id);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheSameAddSavedByAnotherRequestBeforeItsIdsAreChecked_IsAnsweredAsTheRepeat(bool breakUp)
+    {
+        var s = await Setup();
+        var tyres = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        var (expenseId, lineId) = (Guid.NewGuid(), Guid.NewGuid());
+        var details = breakUp
+            ? new ExpenseTyreDetails(TyreEntryKind.PunctureRepaired, s.Summer, [new TyreLine(tyres[0])], BreakUp(s.Summer, tyres)) // found by its tyre's id
+            : new ExpenseTyreDetails(TyreEntryKind.PunctureRepaired, s.Summer, LineId: lineId); // found by its line's id
+        // The other request passed the expense's id lookup at once with this one and saved everything before this one checks the lines' ids.
+        await s.Expenses.AddAsync(s.Car.Id, Input(), default, id: expenseId, tyre: details);
+        var sameAdd = ExpenseService.Build(s.Car, s.W.Current.Principal!.Id, Input(), id: expenseId);
+
+        Assert.False(await s.Tyres.AttachLinesAsync(sameAdd, details, default));
+        Assert.Single(s.W.Expenses.Items, e => e.Id == expenseId);
+        var line = Assert.Single(s.LinesOf(expenseId));
+        if (!breakUp) Assert.Equal(lineId, line.Id);
+    }
+
     [Fact]
     public async Task ABreakUpsTyreIdInUse_IsSomeoneElses_AndSavesNothing()
     {
