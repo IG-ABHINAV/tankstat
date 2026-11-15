@@ -548,3 +548,54 @@ describe('tyres replaced early on the device (#289 step 3)', () => {
     expect(() => applyTyreChange(base, replacing({ tyres: [] }))).toThrow(TyreRuleError)
   })
 })
+
+describe("an expense's tyre details waiting on the device (#290)", () => {
+  const expenseChange = (action: Change['action'], targetId: string, input: Record<string, unknown>): Change => ({
+    id: `c${++seq}`, seq, createdAt: seq, entity: 'expenses', action, vehicleId: 'v1', targetId, input,
+  })
+
+  it('an expense added with them makes its line on its day, holding it, with its amount', () => {
+    const add = expenseChange('add', 'x9', { id: 'x9', date: '2026-10-02', title: 'Puncture', category: 'Tyres', amount: 6500, currency: 'HUF', odometer: 147_100, tyre: { kind: 'PUNCTURE_REPAIRED', setId: 's1', lineId: 'l9' } })
+
+    const { tyres, skipped, costs } = replayTyres(base, [add])
+
+    expect(skipped).toEqual([])
+    expect(tyres.entries.find((e) => e.id === 'l9')).toMatchObject({
+      kind: 'PUNCTURE_REPAIRED', setId: 's1', day: '2026-10-02', odometer: 147_100, note: null, version: 0, expenseId: 'x9', amount: 6500, currency: 'HUF', category: 'Tyres',
+    })
+    expect(costs.has('s1')).toBe(true) // the set's costs are the server's to work out once synced
+  })
+
+  it('a plain expense given them in an edit gets its line; a linked one changes what was done and a whole set\'s set', () => {
+    const plain = expenseChange('update', 'x8', { id: 'x8', date: '2026-09-12', title: 'Tyre hotel', amount: 6000, odometer: null, tyre: { kind: 'STORAGE_FEE', setId: 's2', lineId: 'l8' } })
+    const linked = { ...line('l7', 's1', '2026-08-20', 'PUNCTURE_REPAIRED', 144_800), expenseId: 'x7', amount: 4000, currency: 'HUF' }
+    const edit = expenseChange('update', 'x7', { id: 'x7', date: '2026-08-20', title: 'Valve', amount: 4000, odometer: 144_800, tyre: { kind: 'VALVE_REPLACED', setId: null } })
+
+    const { tyres, skipped } = replayTyres({ ...base, entries: [...base.entries, linked] }, [plain, edit])
+
+    expect(skipped).toEqual([])
+    expect(tyres.entries.find((e) => e.id === 'l8')).toMatchObject({ kind: 'STORAGE_FEE', setId: 's2', day: '2026-09-12', expenseId: 'x8', amount: 6000 })
+    expect(tyres.entries.find((e) => e.id === 'l7')).toMatchObject({ kind: 'VALVE_REPLACED', setId: null, expenseId: 'x7' })
+  })
+
+  it("refuses what the server would: a note, a swap's line changed, a tyre's line to another set", () => {
+    const tyreLine = { ...line('l6', 's1', '2026-08-20', 'PUNCTURE_REPAIRED'), expenseId: 'x6', tyreId: 't1' }
+    const swapLine = { ...line('r1', 's1', '2026-03-28'), expenseId: 'x5' }
+    const given = { ...base, entries: [line('r2', 's2', '2025-11-15'), swapLine, tyreLine] }
+    const refusal = (c: Change) => {
+      try {
+        applyTyreChange(given, c)
+      } catch (e) {
+        return e instanceof TyreRuleError ? e.key : String(e)
+      }
+      return null
+    }
+
+    expect(refusal(expenseChange('add', 'x4', { id: 'x4', date: '2026-10-02', amount: 5, tyre: { kind: 'NOTE', setId: 's1' } }))).toBe('tyres.noteTakesNoAmount')
+    expect(refusal(expenseChange('update', 'x5', { id: 'x5', date: '2026-03-28', amount: 8000, tyre: { kind: 'WHEEL_BALANCING', setId: 's1' } }))).toBe('tyres.swapLineLocked')
+    expect(refusal(expenseChange('update', 'x5', { id: 'x5', date: '2026-03-28', amount: 8000, tyre: { kind: 'SWAP', setId: 's1' } }))).toBeNull() // what it says already
+    expect(refusal(expenseChange('update', 'x6', { id: 'x6', date: '2026-08-20', amount: 10, tyre: { kind: 'PUNCTURE_REPAIRED', setId: 's2' } }))).toBe('tyres.tyreNotOfSet')
+    expect(refusal(expenseChange('add', 'x3', { id: 'x3', date: '2026-10-02', amount: 5, tyre: { kind: 'OTHER', setId: 'nope' } }))).toBe('tyres.setNotFound')
+  })
+})
+

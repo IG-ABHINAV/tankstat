@@ -8,6 +8,8 @@ import type { ExpenseTyreInput, TyreEntryKind } from '../gql/generated.ts'
 import { ENTRY_KINDS, isSwapLine, labelsOf as tyreLabelsOf, sharersOf, useEntryWords } from './entries.ts'
 import { ForTyres } from './ForTyres.tsx'
 import { EXACT, liveTyresOf, suggestLabels } from './singleTyres.ts'
+import { willKeep } from '../offline/submitChange.ts'
+import { applyTyreChange } from './replay.ts'
 import { TyreRuleError } from './tyreHistory.ts'
 import type { TyreEntry, Tyres } from './tyres.ts'
 import type { TyreDetailsIds, TyreDetailsState } from './useExpenseTyreDetails.tsx'
@@ -23,6 +25,16 @@ function labelsOf(state: TyreDetailsState, tyres: Tyres): string[] {
   const info = offered(tyres).find((s) => s.set.id === state.setId)
   if (state.labels.length > 0 || !info || info.set.brokenUpOn) return state.labels
   return suggestLabels(tyres, info.set.season)
+}
+
+/**
+ * An expense change with tyre details that will wait on the device (#290, the owner's decision 70): its tyre part replayed over the tyres
+ * shown first, so a refusal the device can foresee is said in the dialog (thrown as the server's key), not parked later. Sent at once, the
+ * server judges it.
+ */
+export function checkKept(vehicleId: string, tyres: Tyres, action: 'add' | 'update', expenseId: string, input: Record<string, unknown>) {
+  if (!willKeep(vehicleId)) return
+  applyTyreChange(tyres, { id: 'check', seq: 0, createdAt: 0, entity: 'expenses', action, vehicleId, targetId: expenseId, input })
 }
 
 /**

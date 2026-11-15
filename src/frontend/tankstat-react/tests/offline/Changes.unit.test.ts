@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collapse, discard, keptPhotosOf, markOf, type Change } from '../../src/offline/changes.ts'
+import { collapse, createdBy, discard, keptPhotosOf, markOf, tyreNeedsOf, type Change } from '../../src/offline/changes.ts'
 
 let seq = 0
 const change = (action: Change['action'], targetId = 'r1', over: Partial<Change> = {}): Change => ({
@@ -259,3 +259,22 @@ describe('photos of a log', () => {
     expect(list.map((c) => [c.action, c.targetId])).toEqual([['update', 'r1'], ['addPhoto', 'r1'], ['addPhoto', 'r2']])
   })
 })
+
+describe("an expense's tyre details (#290)", () => {
+  const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's9', tyres: [{ tyreId: 'nt1', id: 'l1' }, { tyreId: 'old2', id: 'l2' }], breakUp: { setId: 's9', day: '2026-10-01', tyres: [{ id: 'nt1' }, { id: 'nt2' }] } }
+  const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, tyre } })
+
+  it('make their lines and a break-up\'s tyres, and need the set and the tyres not made by it', () => {
+    expect(createdBy(expenseAdd)).toEqual(['e1', 'l1', 'l2', 'nt1', 'nt2'])
+    expect(tyreNeedsOf(expenseAdd)).toEqual(['s9', 'old2'])
+    expect(createdBy(change('update', 'e2', { entity: 'expenses', input: { id: 'e2', tyre: { kind: 'OTHER', setId: null, lineId: 'l3' } } }))).toEqual(['l3'])
+    expect(createdBy(change('update', 'e2', { entity: 'expenses', input: { id: 'e2', amount: 3 } }))).toEqual([])
+  })
+
+  it('taken back, take along what was made on their lines', () => {
+    const onLine = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l1', kind: 'VALVE_REPLACED' } })
+    const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
+    expect(discard([expenseAdd, onLine, other], expenseAdd.id)).toEqual([other])
+  })
+})
+
