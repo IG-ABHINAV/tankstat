@@ -1,4 +1,4 @@
-import type { Change } from '../offline/changes.ts'
+import { expenseTyreOf as tyreDetailsOf, type Change } from '../offline/changes.ts'
 import { isTyreAction } from '../offline/tyreChanges.ts'
 import { checked, moveSwap, TyreRuleError, type SetState, type InstallationState } from './tyreHistory.ts'
 import { follow, type Joined, type LineState } from './tyreLog.ts'
@@ -186,10 +186,6 @@ function swapped(
   history(m, [...placed.installations], joined, c.id, placed.places)
 }
 
-/** An expense change's tyre details (#290): the lines an add (or a plain expense's edit) makes, or what a linked one's lines say. */
-const tyreDetailsOf = (c: Change): Record<string, unknown> | null =>
-  c.entity === 'expenses' && (c.action === 'add' || c.action === 'update') && c.input?.tyre && typeof c.input.tyre === 'object' ? (c.input.tyre as Record<string, unknown>) : null
-
 /**
  * A change the tyres follow: a tyre change, an edit of an expense (#288: one a line made shares its day and reading with the line), or an
  * expense saved with tyre details (#290).
@@ -226,7 +222,7 @@ function expenseEdited(m: Model, c: Change) {
  */
 function kindAndSetFor(m: Model, line: Entry, details: Record<string, unknown>): { kind: Entry['kind']; setId: string | null } {
   const kind = str(details.kind) as Entry['kind']
-  const setId = day(details.setId) || null
+  const setId = str(details.setId) || null
   if (LINE_KINDS.has(line.kind)) {
     if (kind !== line.kind || setId !== (line.setId ?? null)) throw new TyreRuleError('tyres.swapLineLocked')
     return { kind, setId }
@@ -245,6 +241,8 @@ function kindAndSetFor(m: Model, line: Entry, details: Record<string, unknown>):
 function expenseLines(m: Model, c: Change, details: Record<string, unknown>) {
   const input = c.input ?? {}
   if (str(details.kind) === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
+  // A linked expense's edit names what was done and the set alone (no line of its own): with no live line holding it, the server refuses it.
+  if (c.action === 'update' && !details.lineId && listOf(details.tyres).length === 0) throw new TyreRuleError('tyres.expenseLineInTrash')
   addLines(m, c, { ...details, id: details.lineId, day: input.date, odometer: input.odometer, note: null }, () => ({
     expenseId: c.targetId, amount: num(input.amount), currency: str(input.currency) || null, category: text(input.category), expenseTrashed: false,
   }))
