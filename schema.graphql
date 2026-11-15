@@ -2153,6 +2153,7 @@ enum ReadingFieldName {
   DATE
   TITLE
   DISCOUNT
+  TYRE_WORK
 }
 
 enum ReadingIssueCode {

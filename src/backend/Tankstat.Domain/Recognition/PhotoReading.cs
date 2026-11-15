@@ -39,6 +39,13 @@ public enum ReadingFieldName
 
     /// <summary>What a fuel receipt says was taken off the fuel (a positive amount; the total is what was paid after it).</summary>
     Discount,
+
+    /// <summary>
+    /// The tyre work a receipt is for (#290, the owner's decisions 56 and 66): one of the tyre log's kinds a receipt can tell, by its name
+    /// (<c>PunctureRepaired</c>, <c>ValveReplaced</c>, <c>WheelBalancing</c>, <c>StorageFee</c>, <c>Bought</c>). It only suggests what was
+    /// done in the dialogs: nothing fills it in on its own, and no line is ever made or changed by it.
+    /// </summary>
+    TyreWork,
 }
 
 /// <summary>Where a value came from: read on the photo, worked out from other values, or the hint it was given coming back (readings made by the former photo reader hold some; they are never filled in).</summary>

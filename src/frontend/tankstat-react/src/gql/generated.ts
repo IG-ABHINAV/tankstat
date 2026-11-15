@@ -524,6 +524,7 @@ export type ReadingFieldName =
   | 'ODOMETER'
   | 'TITLE'
   | 'TOTAL'
+  | 'TYRE_WORK'
   | 'UNIT_PRICE'
   | 'VOLUME';
 

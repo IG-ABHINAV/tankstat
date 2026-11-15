@@ -448,7 +448,9 @@ public class LogPhotoFillerTests
             expenseId, new ExpenseTyreDetails(TyreEntryKind.PunctureRepaired, set, LineId: line));
         Assert.Equal((ReviewState.AwaitingPhotos, (decimal?)null), (waiting.ReviewState, waiting.Amount));
         Assert.Equal(expenseId, s.W.Tyres.Entries.Single(e => e.Id == line).ExpenseId); // the line holds it before it has an amount (#288)
-        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"));
+        // The photo also names tyre work (#290): it only ever suggests what was done in a dialog, never changes a line.
+        Answer(s, DocumentKind.ExpenseReceipt, Read(ReadingFieldName.Odometer, "45678"), Read(ReadingFieldName.Total, "25.00"), Read(ReadingFieldName.Currency, "EUR"),
+            Read(ReadingFieldName.TyreWork, "WheelBalancing"));
         await s.W.Processor.ProcessDueAsync(default);
 
         var filled = s.W.Expenses.Items.Single(e => e.Id == expenseId);
