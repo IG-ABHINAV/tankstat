@@ -1,3 +1,4 @@
+using Tankstat.Application.Refuelings;
 using Tankstat.Application.Recurring;
 using Tankstat.Application.Tyres;
 using Tankstat.Domain;
@@ -104,6 +105,24 @@ public class VisitTyreDetailsTests
         var line = Assert.Single(s.Lines);
         Assert.Equal((false, (Guid?)expenseId), (line.IsDeleted, line.ExpenseId));
         Assert.Single(s.W.Recurring.Completions);
+    }
+
+    [Fact]
+    public async Task ATryAgainWhoseReadingNoLongerFits_IsRefused_LeavingTheExpenseAndItsLineInTheTrash()
+    {
+        var s = await Setup();
+        var (lineId, expenseId) = (Guid.NewGuid(), Guid.NewGuid());
+        s.W.Recurring.FailUpdateWith = new InvalidOperationException("database down");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => s.Recurring.MarkDoneAsync([s.Schedule], Visit(s.Summer, lineId, expenseId: expenseId), default));
+        s.W.Recurring.FailUpdateWith = null;
+        // Meanwhile a refuelling after the visit's day reads lower than the visit's odometer: their one reading cannot come back.
+        await s.W.RefuelingService.LogAsync(s.Car.Id, new RefuelingInput(D(2026, 9, 25), 40, 20000, "HUF", 140_000, true, null), default);
+
+        await Assert.ThrowsAnyAsync<KeyedException>(() => s.Recurring.MarkDoneAsync([s.Schedule], Visit(s.Summer, lineId, expenseId: expenseId), default));
+
+        Assert.True(Assert.Single(s.W.Expenses.Items).IsDeleted); // all or nothing: nothing of the visit comes back
+        Assert.True(Assert.Single(s.Lines).IsDeleted);
+        Assert.Empty(s.W.Recurring.Completions); // no schedule saved as done (the fakes keep a failed save's in-memory change, so its date says nothing)
     }
 
     [Fact]
