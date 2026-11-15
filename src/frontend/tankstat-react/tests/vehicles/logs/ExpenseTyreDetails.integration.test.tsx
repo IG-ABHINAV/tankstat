@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
 import { ExpenseFormDialog, type ExpenseValues } from '../../../src/ExpenseFormDialog.tsx'
+import { HttpResponse } from 'msw'
+import { graphql } from '../../support/graphql.ts'
 import { answered, server } from '../../support/server.ts'
 import { fakeExpense, fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
@@ -287,10 +289,12 @@ it('says in the dialog what the server would refuse of a change kept on the devi
 
 // ---- a change edited on Waiting to sync (decision 70) ---------------------------------------------------------
 
-function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId }: { lines?: FakeTyreEntry[]; targetId?: string } = {}) {
+function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId, noAnswer = false }: { lines?: FakeTyreEntry[]; targetId?: string; noAnswer?: boolean } = {}) {
   stubViewport('desktop')
   const backend = fakeExpenseBackend(fakeVehicle(), [])
   server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeTyres(sets, lines).handlers)
+  // The vehicle's tyres not answered (a failure, or offline with none kept).
+  if (noAnswer) server.use(graphql.query('VehicleTyres', () => HttpResponse.json({ errors: [{ message: 'Unexpected Execution Error' }] })))
   const sent: ExpenseValues[] = []
   renderWithApollo(
     <ExpenseFormDialog
@@ -357,14 +361,24 @@ it("shows what a linked expense's waiting edit says was done, and keeps sending 
   expect(sent[0].tyre).toEqual({ kind: 'STORAGE_FEE', setId: 's1' })
 })
 
-it("leaves a change's tyre details as they are when its edit has no section (the vehicle has no tyre set now)", async () => {
-  const { sent, ui } = editChange([], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' })
+it("leaves a change's tyre details as they are when its edit has no section (the vehicle's tyres not answered)", async () => {
+  const { sent, ui } = editChange([tyreSummer], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' }, { noAnswer: true })
   const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
   await within(dialog).findByLabelText('Amount')
   expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
   await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).not.toHaveProperty('tyre') // the change keeps its own, never switched off unseen
+})
+
+it("shows a change's tyre details when the vehicle has no tyre set left, so they can be switched off", async () => {
+  const { sent, ui } = editChange([], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toBeNull() // its only set gone (refused for it): it can be applied without them
 })
 
 it("starts a change whose set is gone at the whole set on the car, none of the gone set's tyres picked", async () => {

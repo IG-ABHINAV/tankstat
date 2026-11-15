@@ -63,7 +63,9 @@ export function useExpenseTyreDetails({
   initial?: ExpenseTyreInput | null
 }) {
   const { t } = useTranslation()
-  const available = !!tyres && (tyres.sets.length > 0 || !!linked)
+  // A change that carries tyre details shows them while the vehicle's tyres answered, also with no set left (its set may be what the server
+  // refused): it can be switched off or moved to another set. Without an answer nothing is shown, and the change keeps its own.
+  const available = !!tyres && (tyres.sets.length > 0 || !!linked || !!initial)
   const last = tyres?.expenseCategory ?? null
   const [state, setState] = useState<TyreDetailsState>(() => {
     if (linked) return { on: true, kind: linked.kind, setId: linked.setId ?? '', whole: true, picked: [], labels: [] }
