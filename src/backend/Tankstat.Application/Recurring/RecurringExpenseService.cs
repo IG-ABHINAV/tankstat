@@ -188,11 +188,12 @@ public sealed class RecurringExpenseService(
         // completed, its expense is linked and the request returned above, so an expense a person trashed after the visit is never restored.
         // (The expense with this id is the same creator's on this vehicle: ExpenseService refuses anyone else's with sync.idTaken.)
         if (logged is { IsDeleted: true }) logged = await expenses.RestoreAsync(logged.Id, ct);
-        // Its lines, which that failure moved to the trash too, come back with it (after it, so they hold it again).
-        if (lineIds.Count > 0) await tyres.RestoreTakenBackAsync(lineIds, ct);
         var savedVersions = found.ToDictionary(i => i.Id, i => i.SavedVersion);
         try
         {
+            // Its lines, which that failure moved to the trash too, come back with it (after it, so they hold it again). Inside the try: a
+            // restore refused here takes the expense and the lines back as a failed save does, so the visit stays all or nothing.
+            if (lineIds.Count > 0) await tyres.RestoreTakenBackAsync(lineIds, ct);
             foreach (var item in found) item.MarkDone(input.Date, input.Odometer, creator.Id);
             var links = logged is null ? [] : found.Select(i => RecurringCompletion.Create(logged.Id, i.Id)).ToList();
             await items.CompleteAsync(found, links, ct);
@@ -208,7 +209,11 @@ public sealed class RecurringExpenseService(
                 return await CurrentAsync([.. wanted.Select(id => current[id])], vehicleId, await expenses.FindAsync(logged.Id, ct), ct);
             }
             // A twin of a visit without an expense moved the schedules to this very visit meanwhile: done, its lines stay.
-            if (logged is null && lineIds.Count > 0 && await DoneMeanwhileAsync(savedVersions, input, ct)) return await CurrentAsync([.. found], vehicleId, null, ct);
+            if (logged is null && lineIds.Count > 0 && await DoneMeanwhileAsync(savedVersions, input, ct) is { } twin)
+            {
+                logger.LogDebug("Recurring expenses {RecurringIds} of vehicle {VehicleId} were marked done by a twin of this request", wanted, vehicleId);
+                return await CurrentAsync([.. wanted.Select(id => twin[id])], vehicleId, null, ct);
+            }
             // The expense and the schedules are saved separately, so undo the expense (to the trash) when the schedules could not move on:
             // they are then still due, and a second try does not log the cost twice. Its tyre lines go too, or the lines made without one.
             if (logged is not null) await TryTrashAsync(logged.Id, wanted);
@@ -261,22 +266,23 @@ public sealed class RecurringExpenseService(
         tyre.Tyres is { Count: > 0 } picked ? [.. picked.Select(t => t.Id!.Value)] : [tyre.LineId!.Value];
 
     /// <summary>
-    /// Whether every schedule was saved at this visit since it was read (a twin request recorded it), as read afresh: a newer saved version
-    /// standing at the visit's date and odometer.
+    /// The schedules as read afresh when every one was saved at this visit since it was read (a twin request recorded it): a newer saved
+    /// version standing at the visit's date and odometer; null otherwise, or when that cannot be told (the original failure stands).
     /// </summary>
-    private async Task<bool> DoneMeanwhileAsync(IReadOnlyDictionary<Guid, int> savedVersions, MarkDoneInput input, CancellationToken ct)
+    private async Task<IReadOnlyDictionary<Guid, RecurringExpense>?> DoneMeanwhileAsync(IReadOnlyDictionary<Guid, int> savedVersions, MarkDoneInput input, CancellationToken ct)
     {
         try
         {
             var now = await items.FindManyAsync([.. savedVersions.Keys], ct);
-            return now.Count == savedVersions.Count
+            var done = now.Count == savedVersions.Count
                 // A visit without an odometer keeps the schedule's (RecurringExpense.MarkDone): only one it gave is compared.
                 && now.All(i => i.SavedVersion > savedVersions[i.Id] && i.LastDoneDate == input.Date && (input.Odometer is null || i.LastDoneOdometer == input.Odometer));
+            return done ? now.ToDictionary(i => i.Id) : null;
         }
         catch (Exception e)
         {
             logger.LogWarning(e, "Could not tell whether recurring expenses {RecurringIds} were marked done meanwhile", savedVersions.Keys);
-            return false;
+            return null;
         }
     }
 
