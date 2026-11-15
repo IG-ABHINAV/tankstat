@@ -4,6 +4,7 @@ import { HttpResponse } from 'msw'
 import { expect, it, vi } from 'vitest'
 import App from '../../src/App.tsx'
 import { check, setup, setupAccessibilityTests } from '../support/accessibility.tsx'
+import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 import { server } from '../support/server.ts'
 import { graphql } from '../support/graphql.ts'
 import { fakeExpense, fakeLogBackend, fakePhotoStore, fakeRecognition, fakeRefueling, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../support/mocks.tsx'
@@ -71,6 +72,22 @@ it('the add expense dialog is labelled, described and free of violations', async
   await within(dialog).findByText(/Used before/)
 
   expect(dialog).toHaveAccessibleDescription(/Money spent on the vehicle/)
+  await check(document.body)
+})
+
+it("the expense dialog's tyre details, a whole set's car picture with its labels, are labelled and free of violations (#290)", async () => {
+  const { ui } = setup('/vehicles/v1?tab=expenses')
+  server.use(...fakeTyres([tyreSummer, tyreWinter]).handlers)
+  await screen.findByText('Oil change')
+
+  await ui.click(screen.getByRole('button', { name: 'Add expense' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
+  await ui.click(await within(dialog).findByRole('switch', { name: 'Tyre details' }))
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('checkbox', { name: 'The whole set' }))
+  await within(group).findByLabelText(/^Label, front left/)
+
+  expect(within(dialog).getByRole('switch', { name: 'Tyre details' })).toHaveAccessibleDescription(/Opens by itself for the category Tyres, Gumik\./)
   await check(document.body)
 })
 

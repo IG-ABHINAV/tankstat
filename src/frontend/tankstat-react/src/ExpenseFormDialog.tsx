@@ -3,7 +3,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { lazy, Suspense, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { OdometerField } from './components/OdometerField.tsx'
 import { PhotoGallery } from './components/PhotoGallery.tsx'
@@ -55,6 +55,11 @@ import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
 import { TyreDetailsFields, useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.tsx'
+
+// Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
+const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
+
+type TyreLine = VehicleTyresFieldsFragment['entries'][number]
 
 /** The amount is null only when it was left for a photo that is still being read. */
 export interface ExpenseValues {
@@ -145,6 +150,10 @@ export function ExpenseFormDialog({
   }
   const error = details.error ?? defaults.error
   const existing = details.data?.expense
+  // An expense the tyre log made (#290): its first live line, as the tyre log has it now; while it is in the trash, none (decision 69).
+  const allTyres = tyres.data?.vehicleTyres ?? null
+  const tyreLine = existing?.tyreEntry && !existing.tyreEntry.trashed && allTyres ? (allTyres.entries.find((e) => e.expenseId === existing.id) ?? null) : null
+  const [removeError, setRemoveError] = useState<unknown>()
   // Photos kept on this device are read once the expense is synced (photo reading on, as last heard): its amount may be left empty.
   const readLater = !editing && queue.kept > 0 && drafts.available
   const ready = defaults.data && (!expenseId || change || existing) && (tyres.data || tyres.error)
@@ -155,6 +164,7 @@ export function ExpenseFormDialog({
     setOpen(false)
     reset()
     setAdded([])
+    setRemoveError(undefined)
   }
 
   return (
@@ -170,7 +180,31 @@ export function ExpenseFormDialog({
       >
         {error && <ErrorMessage error={error} />}
         {!change && <OfflineNote />}
-        {existing?.tyreEntry && <TyreLogBanner vehicleId={vehicle.id} line={existing.tyreEntry} />}
+        {existing?.tyreEntry && (
+          <TyreLogBanner
+            vehicleId={vehicle.id}
+            line={existing.tyreEntry}
+            actions={
+              tyreLine && allTyres && !change && (
+                <Suspense fallback={null}>
+                  <RemoveFromTyreLog
+                    vehicleId={vehicle.id}
+                    tyres={allTyres}
+                    line={tyreLine}
+                    onDone={(err) => {
+                      // Lines that went before a refusal stay in the trash: the dialog shows the expense as it is now either way.
+                      setRemoveError(err)
+                      if (err === undefined) toast(t('expenses.tyreLog.removed'))
+                      void details.refetch()
+                      void tyres.refetch()
+                    }}
+                  />
+                </Suspense>
+              )
+            }
+          />
+        )}
+        {removeError !== undefined && <ErrorMessage error={removeError} />}
         {readLater && <ReadLaterNote />}
         {!error && !ready && (
           <Loading />
@@ -187,7 +221,8 @@ export function ExpenseFormDialog({
             read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
             // An expense the tyre log made shows its line in the banner (#288); the others may be given tyre details here (#290).
-            tyres={existing?.tyreEntry ? null : (tyres.data?.vehicleTyres ?? null)}
+            tyres={existing?.tyreEntry && !tyreLine ? null : allTyres}
+            tyreLine={tyreLine}
             tyreIds={tyreIds}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.
@@ -241,6 +276,7 @@ function ExpenseForm({
   readingDone,
   explanation,
   tyres,
+  tyreLine,
   tyreIds,
   mayWait,
   readingNow,
@@ -267,6 +303,8 @@ function ExpenseForm({
   explanation: ReadingExplanation
   /** The vehicle's tyres, for its tyre details (#290); none: no switch (an expense the tyre log made, or no answer). */
   tyres: VehicleTyresFieldsFragment | null
+  /** An expense the tyre log made: its first live line (decisions 53, 60). */
+  tyreLine: TyreLine | null
   tyreIds: TyreDetailsIds
   /** A photo is still being read: the amount may be left empty. */
   mayWait: boolean
@@ -308,7 +346,7 @@ function ExpenseForm({
   const merging = useMergeFields(merge)
   // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
   const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
-  const tyre = useExpenseTyreDetails({ tyres, category, setCategory })
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine })
   const switchHint = useSwitchHint(tyre, editing)
   // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
   const [titleTyped, setTitleTyped] = useState(false)
