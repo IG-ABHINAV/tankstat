@@ -22,7 +22,18 @@ import { FieldAutocomplete } from './forms/FieldAutocomplete.tsx'
 import { FieldDate } from './forms/FieldDate.tsx'
 import { FieldInput } from './forms/FieldInput.tsx'
 import { Form } from './forms/Form.tsx'
-import { ExpenseCategoriesDocument, ExpenseDetailsDocument, LogDefaultsDocument, type DistanceUnit, type ExpenseTyreInput, type LogValue, type ReadingFieldName, type ReviewState } from './gql/generated.ts'
+import {
+  ExpenseCategoriesDocument,
+  ExpenseDetailsDocument,
+  LogDefaultsDocument,
+  VehicleTyresDocument,
+  type DistanceUnit,
+  type ExpenseTyreInput,
+  type LogValue,
+  type ReadingFieldName,
+  type ReviewState,
+  type VehicleTyresFieldsFragment,
+} from './gql/generated.ts'
 import { parseDecimal } from './i18n/format.ts'
 import { ErrorMessage } from './messages.tsx'
 import { ReadNote } from './recognition/ReadNote.tsx'
@@ -37,11 +48,13 @@ import { useDraftReadings } from './recognition/useDraftReadings.ts'
 import { useReadFill } from './recognition/useReadFill.ts'
 import { Loading } from './components/Loading.tsx'
 import { useToast } from './toast/toastContext.ts'
+import { visuallyHidden } from './components/visuallyHidden.ts'
 import { OfflineNote, ReadLaterNote } from './components/OfflineNote.tsx'
 import type { ChangeEdit, MergeInfo } from './dialogs/changeEdit.ts'
 import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
+import { TyreDetailsFields, useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.tsx'
 
 /** The amount is null only when it was left for a photo that is still being read. */
 export interface ExpenseValues {
@@ -122,11 +135,19 @@ export function ExpenseFormDialog({
   const details = useQuery(ExpenseDetailsDocument, { variables: { id: expenseId ?? '' }, skip: !expenseId || !!change || !open, fetchPolicy: 'network-only' })
   const defaults = useQuery(LogDefaultsDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
   const categories = useQuery(ExpenseCategoriesDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
+  // The vehicle's tyres (#290): its sets for the tyre details, and the last tyre cost's category; kept on the device. Without them (an
+  // answer that failed) there is no switch, never an error of the dialog.
+  const tyres = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
+  const tyreIds: TyreDetailsIds = {
+    line: useClientId(open),
+    lines: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+    newTyres: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+  }
   const error = details.error ?? defaults.error
   const existing = details.data?.expense
   // Photos kept on this device are read once the expense is synced (photo reading on, as last heard): its amount may be left empty.
   const readLater = !editing && queue.kept > 0 && drafts.available
-  const ready = defaults.data && (!expenseId || change || existing)
+  const ready = defaults.data && (!expenseId || change || existing) && (tyres.data || tyres.error)
   const currency = defaults.data?.logDefaults?.currency ?? ''
   const fresh: Initial = { date: todayIso(), title: '', category: null, currency, note: null }
   const initial: Initial = change ? { ...fresh, ...change.initial } : existing ? { ...existing, currency: existing.currency ?? currency } : fresh
@@ -165,6 +186,9 @@ export function ExpenseFormDialog({
             photosBusy={queue.busy || queue.failed > 0 || adding}
             read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
+            // An expense the tyre log made shows its line in the banner (#288); the others may be given tyre details here (#290).
+            tyres={existing?.tyreEntry ? null : (tyres.data?.vehicleTyres ?? null)}
+            tyreIds={tyreIds}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.
             mayWait={drafts.pending.length > 0 || readLater || (editing && existing?.reviewState === 'AWAITING_PHOTOS') || !!change?.mayWait}
@@ -187,7 +211,7 @@ export function ExpenseFormDialog({
                 onChanged={() => details.refetch()}
               />
             }
-            onSubmit={async (values) => {
+            onSubmit={async (values, named) => {
               if (change) {
                 await onSubmit(values, []) // the caller tells what came of it
                 close()
@@ -195,8 +219,8 @@ export function ExpenseFormDialog({
               }
               if (await submit((photoIds) => onSubmit(editing ? values : { ...values, id: clientId }, photoIds), editing)) {
                 close()
-                // Kept on the device for the server (the server was out of reach): the toast says so.
-                toast(outbox.markOf('expenses', editing ? expenseId! : clientId) ? t('toast.savedOnDevice') : t('toast.saved'))
+                // Kept on the device for the server (the server was out of reach): the toast says so. Lines for tyres name them (#290).
+                toast(outbox.markOf('expenses', editing ? expenseId! : clientId) ? t('toast.savedOnDevice') : named ? t('tyres.entries.savedFor', { tyres: named }) : t('toast.saved'))
               }
             }}
           />
@@ -216,6 +240,8 @@ function ExpenseForm({
   read,
   readingDone,
   explanation,
+  tyres,
+  tyreIds,
   mayWait,
   readingNow,
   wait,
@@ -239,13 +265,17 @@ function ExpenseForm({
   readingDone: boolean
   /** Why the photos gave less than they might have. */
   explanation: ReadingExplanation
+  /** The vehicle's tyres, for its tyre details (#290); none: no switch (an expense the tyre log made, or no answer). */
+  tyres: VehicleTyresFieldsFragment | null
+  tyreIds: TyreDetailsIds
   /** A photo is still being read: the amount may be left empty. */
   mayWait: boolean
   /** A photo is being read right now (the dialog says so near Save). */
   readingNow: boolean
   /** The window the dialog waits in for the photos being read (the bar near Save). */
   wait: { since: number | null; until: number | null }
-  onSubmit: (values: ExpenseValues) => Promise<unknown>
+  /** `named`: the tyres lines were made for (the toast names them). */
+  onSubmit: (values: ExpenseValues, named?: string) => Promise<unknown>
 }) {
   const { t } = useTranslation()
   const odometerLabel = useOdometerLabel(unit, true)
@@ -276,6 +306,14 @@ function ExpenseForm({
     { discount: 'amount' }, // a photo's discount was taken off its own total: next to an amount the user entered, it is only offered
   )
   const merging = useMergeFields(merge)
+  // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
+  const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory })
+  const switchHint = useSwitchHint(tyre, editing)
+  // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
+  const [titleTyped, setTitleTyped] = useState(false)
+  const followsTyres = !editing && !titleTyped && tyre.title !== null
+  const title = followsTyres ? tyre.title! : fill.values.title
   const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
   const amountOptional = mayWait
   const note = (field: FillableField) => (
@@ -300,6 +338,8 @@ function ExpenseForm({
     setBusy(true)
     setError(undefined)
     try {
+      const tyreInput = await tyre.inputOf(text('date'), tyreIds)
+      if (tyreInput === 'invalid') return // said at What was done, which has the focus
       await onSubmit({
         date: text('date'),
         title: text('title'),
@@ -311,7 +351,8 @@ function ExpenseForm({
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
-      })
+        ...(tyreInput ? { tyre: tyreInput.tyre } : {}),
+      }, tyreInput?.named || undefined)
     } catch (err) {
       setError(err)
     } finally {
@@ -326,16 +367,24 @@ function ExpenseForm({
         <Field name="date" label={labels.date} required extra={note('date')}>
           <FieldDate disableFuture value={fill.values.date} onChange={(v) => fill.change('date', v)} />
         </Field>
-        <Field name="title" label={labels.title} required extra={note('title')}>
-          <FieldInput maxLength={120} autoComplete="off" value={fill.values.title} onChange={(e) => fill.change('title', e.target.value)} />
+        <Field name="title" label={labels.title} required hint={followsTyres ? t('expenses.tyreDetails.titleHint') : undefined} extra={note('title')}>
+          <FieldInput
+            maxLength={120}
+            autoComplete="off"
+            value={title}
+            onChange={(e) => {
+              setTitleTyped(true)
+              fill.change('title', e.target.value)
+            }}
+          />
         </Field>
         <Field
           name="category"
           label={t('expenses.fields.category')}
           hint={categories.length > 0 ? t('expenses.hints.categories', { list: categories.join(', ') }) : undefined}
-          extra={merging.note('category', t('expenses.fields.category'))}
+          extra={merging.note('category', t('expenses.fields.category'), (value) => setCategory(value == null ? '' : String(value)))}
         >
-          <FieldAutocomplete key={merging.key('category')} options={categories} defaultValue={merging.value('category', initial.category) ?? ''} maxLength={60} openOnFocus />
+          <FieldAutocomplete options={categories} value={category} onChange={setCategory} maxLength={60} openOnFocus />
         </Field>
         <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
           <Box sx={{ flex: '2 1 8rem', minWidth: 0 }}>
@@ -375,10 +424,16 @@ function ExpenseForm({
         <Field name="note" label={t('expenses.fields.note')} extra={merging.note('note', t('expenses.fields.note'))}>
           <FieldInput key={merging.key('note')} multiline minRows={2} maxLength={500} defaultValue={merging.value('note', initial.note) ?? ''} />
         </Field>
+        {tyres && <TyreDetailsFields details={tyre} tyres={tyres} hint={switchHint} note={t('expenses.tyreDetails.lineNote')} />}
         {gallery}
         <div role="status" aria-label={t('a11y.readingStatus')}>
           <ReadingProgress active={readingNow} canSave={mayWait} since={wait.since} until={wait.until} />
           {fill.announcement && <Typography variant="body2">{fill.announcement}</Typography>}
+          {tyre.announcement && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {tyre.announcement}
+            </Typography>
+          )}
           <ReadingProblems problems={fill.problems} />
         </div>
         {error !== undefined && <ErrorMessage error={error} />}
