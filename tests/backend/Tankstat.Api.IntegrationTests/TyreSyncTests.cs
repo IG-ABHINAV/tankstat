@@ -420,6 +420,33 @@ public class TyreSyncTests : IDisposable
         Assert.Single(made.Select(l => l.GetProperty("expenseId").GetString()).Distinct()); // one expense, held by every line
     }
 
+    [Theory]
+    [InlineData(8000)]
+    [InlineData(null)]
+    public async Task AVisitWhoseTyreDetailsTheServerRefuses_IsParkedWithTheTyreKey_AndNothingMoves(int? amount)
+    {
+        var (people, car, _, _, _) = await Car(_app);
+        var schedule = await Schedule(people.Alice, car);
+        var (line, expense) = (Guid.NewGuid(), Guid.NewGuid());
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            markRecurringExpensesDone = new
+            {
+                ids = new[] { schedule }, date = "2026-09-20", odometer = 148_300, amount, currency = amount is null ? null : "HUF", expenseId = amount is null ? (Guid?)null : expense,
+                tyre = new { kind = "WHEEL_BALANCING", setId = Guid.NewGuid(), lineId = line }, // a set that is not there
+            },
+        };
+
+        Assert.Equal(("PARKED", "tyres.setNotFound"), Result(await Send(people.Alice, change)));
+
+        var scheduleNow = (await people.Alice.Gql("query($v: UUID!) { vehicle(id: $v) { recurring { lastDoneDate } } }", new { v = car })).Data().GetProperty("vehicle").GetProperty("recurring")[0];
+        Assert.Equal("2025-09-01", scheduleNow.GetProperty("lastDoneDate").GetString());
+        Assert.DoesNotContain(await LinesOf(people.Alice, car), e => e.GetProperty("id").GetString() == line.ToString());
+        var expenses = (await people.Alice.Gql("query($v: UUID!) { expenses(vehicleId: $v) { id } }", new { v = car })).Data().GetProperty("expenses");
+        Assert.DoesNotContain(expenses.EnumerateArray(), e => e.GetProperty("id").GetString() == expense.ToString());
+    }
+
     [Fact]
     public async Task AVisitWithoutAnAmount_WithTyreDetails_MakesTheLineAlone_FromTheQueueToo()
     {

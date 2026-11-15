@@ -139,4 +139,17 @@ public class VisitTyreDetailsTests
         Assert.Equal([l3, l4], lines.Select(l => l.Id));
         Assert.All(lines, l => Assert.Equal(done.Expense!.Id, l.ExpenseId));
     }
+
+    [Fact]
+    public async Task AFailureWithoutAnAmount_WhereATwinRecordedTheVisit_KeepsItsLine()
+    {
+        var s = await Setup();
+        var lineId = Guid.NewGuid();
+        s.W.Recurring.TwinSavesSchedulesNext = true;
+
+        var done = await s.Recurring.MarkDoneAsync([s.Schedule], Visit(s.Summer, lineId, amount: null, odometer: null), default);
+
+        Assert.Equal(D(2026, 9, 20), Assert.Single(done.Schedules).Item.LastDoneDate);
+        Assert.False(Assert.Single(s.Lines).IsDeleted); // the visit is done: its line stays
+    }
 }

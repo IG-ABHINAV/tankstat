@@ -569,4 +569,59 @@ public class TyreGraphQLTests(ApiFixture api)
         });
         Assert.Equal("tyres.noteTakesNoAmount", note.GetProperty("errors")[0].GetProperty("extensions").GetProperty("key").GetString());
     }
+
+    private async Task<string> Schedule(string vehicle) =>
+        (await Send("mutation($i: AddRecurringExpenseInput!) { addRecurringExpense(input: $i) { id } }", new
+        {
+            i = new { vehicleId = vehicle, title = "Wheel balancing", category = "Tyres", kind = "TIME", intervalMonths = 12, lastDoneDate = "2025-09-01" },
+        })).GetProperty("data").GetProperty("addRecurringExpense").GetProperty("id").GetString()!;
+
+    private const string Visit = "mutation($i: MarkRecurringExpensesDoneInput!) { markRecurringExpensesDone(input: $i) { schedules { lastDoneDate } expense { id deletedAt tyreEntry { id } } } }";
+
+    private async Task<List<JsonElement>> Lines(string vehicle) =>
+        [.. (await Send("query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { id odometer expenseId } readings { date value } } }", new { v = vehicle }))
+            .GetProperty("data").GetProperty("vehicleTyres").GetProperty("entries").EnumerateArray()];
+
+    [Fact]
+    public async Task AVisitsTryAgain_AfterItsTakeBack_BringsTheExpenseAndItsLineBack_Linked_OnTheDatabase()
+    {
+        // #290: the state a failed first try leaves (the expense and its line in the trash), rebuilt here, then the visit sent again.
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var schedule = await Schedule(vehicle);
+        var (expense, line) = (Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
+        var tyre = new { kind = "WHEEL_BALANCING", setId = summer, lineId = line };
+        Assert.False((await Send("mutation($i: AddExpenseInput!) { addExpense(input: $i) { id } }", new
+        {
+            i = new { vehicleId = vehicle, id = expense, date = "2026-09-20", title = "Wheel balancing", category = "Tyres", amount = 8000, currency = "HUF", odometer = 148_200, tyre },
+        })).TryGetProperty("errors", out _));
+        Assert.False((await Send("mutation($id: UUID!) { deleteExpense(id: $id) { id } }", new { id = expense })).TryGetProperty("errors", out _));
+        Assert.False((await Send("mutation($i: DeleteTyreEntryInput!) { deleteTyreEntry(input: $i) { vehicleId } }", new { i = new { id = line, withExpense = false } })).TryGetProperty("errors", out _));
+
+        var body = await Send(Visit, new { i = new { ids = new[] { schedule }, date = "2026-09-20", odometer = 148_200, amount = 8000, currency = "HUF", expenseId = expense, tyre } });
+
+        Assert.False(body.TryGetProperty("errors", out var errors), errors.ToString());
+        var done = body.GetProperty("data").GetProperty("markRecurringExpensesDone");
+        Assert.Equal(("2026-09-20", JsonValueKind.Null, line), (done.GetProperty("schedules")[0].GetProperty("lastDoneDate").GetString(),
+            done.GetProperty("expense").GetProperty("deletedAt").ValueKind, done.GetProperty("expense").GetProperty("tyreEntry").GetProperty("id").GetString()));
+        var made = Assert.Single(await Lines(vehicle), e => e.GetProperty("id").GetString() == line);
+        Assert.Equal(expense, made.GetProperty("expenseId").GetString());
+    }
+
+    [Fact]
+    public async Task AVisitWithoutAnAmount_TriedAgainAfterItsTakeBack_BringsItsLineBack_OnTheDatabase()
+    {
+        var vehicle = await AddVehicle();
+        var summer = SetNamed(await AddSet(vehicle, "Michelin", fitted: true), "Michelin").GetProperty("set").GetProperty("id").GetString()!;
+        var schedule = await Schedule(vehicle);
+        var line = Guid.NewGuid().ToString();
+        await Mutate("addTyreEntry", "AddTyreEntryInput", new { vehicleId = vehicle, id = line, kind = "STORAGE_FEE", day = "2026-09-20", setId = summer, odometer = 148_300 }, "vehicleId");
+        Assert.False((await Send("mutation($i: DeleteTyreEntryInput!) { deleteTyreEntry(input: $i) { vehicleId } }", new { i = new { id = line, withExpense = false } })).TryGetProperty("errors", out _));
+
+        var body = await Send(Visit, new { i = new { ids = new[] { schedule }, date = "2026-09-20", odometer = 148_300, tyre = new { kind = "STORAGE_FEE", setId = summer, lineId = line } } });
+
+        Assert.False(body.TryGetProperty("errors", out var errors), errors.ToString());
+        var made = Assert.Single(await Lines(vehicle), e => e.GetProperty("id").GetString() == line);
+        Assert.Equal((148_300L, JsonValueKind.Null), (made.GetProperty("odometer").GetInt64(), made.GetProperty("expenseId").ValueKind));
+    }
 }

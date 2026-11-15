@@ -270,7 +270,8 @@ public sealed class RecurringExpenseService(
         {
             var now = await items.FindManyAsync([.. savedVersions.Keys], ct);
             return now.Count == savedVersions.Count
-                && now.All(i => i.SavedVersion > savedVersions[i.Id] && i.LastDoneDate == input.Date && i.LastDoneOdometer == input.Odometer);
+                // A visit without an odometer keeps the schedule's (RecurringExpense.MarkDone): only one it gave is compared.
+                && now.All(i => i.SavedVersion > savedVersions[i.Id] && i.LastDoneDate == input.Date && (input.Odometer is null || i.LastDoneOdometer == input.Odometer));
         }
         catch (Exception e)
         {
