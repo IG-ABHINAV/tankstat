@@ -143,10 +143,18 @@ export function ExpenseFormDialog({
   // The vehicle's tyres (#290): its sets for the tyre details, and the last tyre cost's category; kept on the device. Without them (an
   // answer that failed) there is no switch, never an error of the dialog.
   const tyres = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
-  const tyreIds: TyreDetailsIds = {
+  const freshIds: TyreDetailsIds = {
     line: useClientId(open),
     lines: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
     newTyres: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+  }
+  // A change edited on Waiting to sync keeps the ids its tyre details gave (later tyre changes may name them), fresh ones after them.
+  const waitingTyre = change?.initial.tyre ?? null
+  const waitingNew = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'].map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
+  const tyreIds: TyreDetailsIds = {
+    line: waitingTyre?.lineId ?? freshIds.line,
+    lines: freshIds.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
+    newTyres: freshIds.newTyres.map((id, n) => waitingNew[n] ?? id),
   }
   const error = details.error ?? defaults.error
   const existing = details.data?.expense
@@ -223,6 +231,7 @@ export function ExpenseFormDialog({
             // An expense the tyre log made shows its line in the banner (#288); the others may be given tyre details here (#290).
             tyres={existing?.tyreEntry && !tyreLine ? null : allTyres}
             tyreLine={tyreLine}
+            waitingTyre={waitingTyre}
             tyreIds={tyreIds}
             checkTyres={async (values) => {
               if (!values.tyre || !allTyres || change) return // a change on Waiting to sync is checked when it is applied
@@ -282,6 +291,7 @@ function ExpenseForm({
   explanation,
   tyres,
   tyreLine,
+  waitingTyre,
   tyreIds,
   checkTyres,
   mayWait,
@@ -311,6 +321,8 @@ function ExpenseForm({
   tyres: VehicleTyresFieldsFragment | null
   /** An expense the tyre log made: its first live line (decisions 53, 60). */
   tyreLine: TyreLine | null
+  /** A change edited on Waiting to sync: the tyre details it carries (decision 70). */
+  waitingTyre: ExpenseTyreInput | null
   tyreIds: TyreDetailsIds
   /** A change kept on the device with tyre details: what the server would refuse of its tyre part, thrown here first (decision 70). */
   checkTyres: (values: ExpenseValues) => Promise<void>
@@ -354,7 +366,7 @@ function ExpenseForm({
   const merging = useMergeFields(merge)
   // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
   const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
-  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine })
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre })
   const switchHint = useSwitchHint(tyre, editing)
   // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
   const [titleTyped, setTitleTyped] = useState(false)
@@ -397,7 +409,8 @@ function ExpenseForm({
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
-        ...(tyreInput ? { tyre: tyreInput.tyre } : {}),
+        // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values).
+        ...(tyreInput ? { tyre: tyreInput.tyre } : waitingTyre ? { tyre: null } : {}),
       }
       await checkTyres(values)
       await onSubmit(values, tyreInput?.named || undefined)

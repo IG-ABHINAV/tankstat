@@ -41,11 +41,29 @@ export function checkKept(vehicleId: string, tyres: Tyres, action: 'add' | 'upda
  * The tyre details as the server takes them (#290), and the tyres they name for the toast. *The whole set* (or no set) is one line; tyres
  * tapped are a line each, a whole set broken up on save first (the owner's decision 19) on the expense's day, each tyre at its corner.
  */
-export function tyreInputOf(state: TyreDetailsState, tyres: Tyres, ids: TyreDetailsIds, day: string): { tyre: ExpenseTyreInput; named: string } {
+export function tyreInputOf(
+  state: TyreDetailsState,
+  tyres: Tyres,
+  ids: TyreDetailsIds,
+  day: string,
+  /**
+   * The break-up a change edited on Waiting to sync carries (decision 70): on the device its set shows broken up already (the change is
+   * replayed), its tyres the ones that break-up makes, so a line for them still needs it sent along.
+   */
+  waitingBreakUp?: ExpenseTyreInput['breakUp'],
+): { tyre: ExpenseTyreInput; named: string } {
   if (!state.kind) throw new Error('A kind is chosen before the input is made.')
   const info = offered(tyres).find((s) => s.set.id === state.setId)
   if (!info || state.whole) return { tyre: { kind: state.kind, setId: info?.set.id ?? null, lineId: ids.line }, named: '' }
   if (state.picked.length === 0) throw new TyreRuleError('tyres.tapTyres')
+  if (info.set.brokenUpOn && waitingBreakUp?.tyres.some((t) => state.picked.includes(t.id ?? ''))) {
+    // Its own break-up's tyres, picked by their ids: the break-up goes along, in the car's order.
+    const ordered = EXACT.flatMap((c) => waitingBreakUp.tyres.filter((t) => t.corner === c && state.picked.includes(t.id ?? '')))
+    return {
+      tyre: { kind: state.kind, setId: info.set.id, breakUp: waitingBreakUp, tyres: ordered.map((t, n) => ({ tyreId: t.id!, id: ids.lines[n] })) },
+      named: ordered.map((t) => t.label).join(', '),
+    }
+  }
   if (info.set.brokenUpOn) {
     const ordered = liveTyresOf(info).filter((x) => state.picked.includes(x.tyre.id))
     return {
