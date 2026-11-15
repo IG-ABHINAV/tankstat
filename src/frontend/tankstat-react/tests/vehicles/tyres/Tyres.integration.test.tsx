@@ -493,7 +493,7 @@ it('edits a line offline naming the version it was made from, and a line a waiti
   await ui.click(within(swap).getByRole('button', { name: 'Swap tyres' }))
   await waitFor(() => expect(outbox.changes).toHaveLength(2))
   const log = screen.getByRole('region', { name: 'Tyre log' })
-  await ui.click(await within(log).findByRole('button', { name: /^Tyre swap, Continental WinterContact, (?!Nov 15)/ })) // today's, from the waiting swap
+  await ui.click(await within(log).findByRole('button', { name: /^Tyre swap, Continental WinterContact, (?!Nov 15, 2025)/ })) // today's, from the waiting swap (not the set's first, on 15 Nov 2025: today may be 15 Nov too)
   const today = within(await screen.findByRole('dialog', { name: 'Edit entry' })).getByLabelText(/^Odometer/)
   expect(today).toHaveValue('150000')
   await ui.clear(today)
