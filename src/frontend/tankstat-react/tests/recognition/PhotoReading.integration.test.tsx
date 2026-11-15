@@ -639,10 +639,10 @@ it('saving waits while a photo is still uploading, and says why', async () => {
 
 // ---- a receipt that names tyre work (#290, the owner's decisions 56, 66 and 67) --------------------------------------------------
 
-async function openAddExpenseWithTyres(results: FakeReadValue[][]) {
+async function openAddExpenseWithTyres(results: FakeReadValue[][], queuedPolls = 1) {
   stubViewport('desktop')
   const photos = fakePhotoStore()
-  const recognition = fakeRecognition({ results })
+  const recognition = fakeRecognition({ results, queuedPolls })
   const backend = fakeExpenseBackend(fakeVehicle(), [fakeExpense({ id: 'e1', title: 'Oil change' })], photos)
   server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...recognition.handlers, ...fakeTyres([tyreSummer, tyreWinter]).handlers)
   renderWithApollo(<App />, '/vehicles/v1?tab=expenses')
@@ -651,7 +651,7 @@ async function openAddExpenseWithTyres(results: FakeReadValue[][]) {
   await ui.click(screen.getByRole('button', { name: 'Add expense' }))
   const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
   await within(dialog).findByRole('switch', { name: 'Tyre details' })
-  return { ui, dialog, state: backend.state }
+  return { ui, dialog, state: backend.state, recognition }
 }
 
 it('a receipt that names tyre work offers it at the switch; Use it opens the tyre details with that kind and the tyre category', async () => {
@@ -691,6 +691,36 @@ it('with the tyre details open and What was done untouched, the photo fills it i
   await waitFor(() => expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Puncture repaired'), READ_WAIT)
   expect(within(group).getByText(/^Read from the photo/)).toBeInTheDocument()
   expect(within(dialog).getByLabelText('Title')).toHaveValue('Puncture repaired: Michelin Primacy 4') // the title follows it, as it follows a choice
+})
+
+it('a kind the photo fills in after a Save refused for it no longer says to choose one', async () => {
+  const { ui, dialog, recognition } = await openAddExpenseWithTyres([[{ name: 'TOTAL', value: '6500' }, { name: 'TYRE_WORK', value: 'PunctureRepaired' }]], 1000)
+  await ui.type(within(dialog).getByLabelText(/^Category/), 'Tyres')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.type(within(dialog).getByLabelText('Title'), 'Gumi')
+  await ui.upload(camera(dialog), photo())
+  await within(dialog).findByText('Reading…')
+
+  await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
+  expect(await within(group).findByText('Choose what was done.')).toBeInTheDocument()
+  recognition.state.queuedPolls = 0 // the photo is read now
+
+  await waitFor(() => expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Puncture repaired'), READ_WAIT)
+  expect(within(group).queryByText('Choose what was done.')).not.toBeInTheDocument()
+})
+
+it('the kind a photo filled in is never stored: picking another set keeps it the photo\'s, so removing the photo leaves it unchosen', async () => {
+  const { ui, dialog } = await openAddExpenseWithTyres([[{ name: 'TOTAL', value: '6500' }, { name: 'TYRE_WORK', value: 'PunctureRepaired' }]])
+  await ui.type(within(dialog).getByLabelText(/^Category/), 'Tyres')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.upload(camera(dialog), photo())
+  await waitFor(() => expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Puncture repaired'), READ_WAIT)
+
+  await ui.click(within(group).getByRole('combobox', { name: 'Set' }))
+  await ui.click(await screen.findByRole('option', { name: 'Winter: Continental WinterContact' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Remove photo 1' }))
+
+  await waitFor(() => expect(within(group).getByRole('combobox', { name: 'What was done' })).not.toHaveTextContent('Puncture repaired'))
 })
 
 it('marking a schedule done offers the tyre work a receipt names, as the Expense dialog does', async () => {

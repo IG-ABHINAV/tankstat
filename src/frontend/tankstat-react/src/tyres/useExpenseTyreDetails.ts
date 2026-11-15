@@ -143,8 +143,10 @@ export function useExpenseTyreDetails({
   const photoKind = !linked && suggested ? suggested : null
   const state: TyreDetailsState = open && photoKind && !kindTouched && own.kind !== photoKind ? { ...own, kind: photoKind } : own
   const change = (next: TyreDetailsState) => {
-    if (next.kind !== state.kind) setKindTouched(true)
-    setState(next)
+    const kindChanged = next.kind !== state.kind
+    if (kindChanged) setKindTouched(true)
+    // A change of the set or the tyres carries the photo's kind along: keep it unstored, so a removed photo leaves What was done unchosen.
+    setState(kindChanged || kindTouched ? next : { ...next, kind: own.kind })
     if (next.kind) setKindError(undefined)
   }
   /** The photo's suggestion: `filled` while *What was done* is the photo's, `offered` once the person chose another; `use` takes it (and opens the section). */
@@ -184,7 +186,8 @@ export function useExpenseTyreDetails({
     return (await import('./expenseTyreInput.ts')).tyreInputOf(state, tyres, ids, day, initial?.setId === state.setId ? initial.breakUp : null)
   }
 
-  return { available, open, state, change, toggle, kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null, photo }
+  // A kind the photo filled in after a refused Save answers "Choose what was done." too.
+  return { available, open, state, change, toggle, kindError: state.kind ? undefined : kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null, photo }
 }
 
 export type ExpenseTyreDetails = ReturnType<typeof useExpenseTyreDetails>
