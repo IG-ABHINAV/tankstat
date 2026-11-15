@@ -42,7 +42,7 @@ import { ReadingProblems } from './recognition/ReadingProblems.tsx'
 import { ReadingProgress } from './recognition/ReadingProgress.tsx'
 import { SaveWait } from './components/SaveWait.tsx'
 import type { ReadingExplanation } from './recognition/readingIssues.ts'
-import { mergeReadings, type ReadValues } from './recognition/readValues.ts'
+import { mergeReadings, withoutFields, type ReadValues } from './recognition/readValues.ts'
 import { useDraftReadings } from './recognition/useDraftReadings.ts'
 import { useReadFill } from './recognition/useReadFill.ts'
 import { defaultCategory, defaultTitle, MAX_EXPENSE_TITLE, usesDistance, type DoneItem } from './recurringDone.ts'
@@ -286,6 +286,13 @@ function DoneFields({
     discount: t('recurring.discount'),
     currency: t('recurring.currency'),
   }
+  // The title stays the schedules' with tyre details on (the owner's decision 64); the category opens them as in the Expense dialog.
+  const titleValue = title ?? defaultTitle(done)
+  const categoryValue = category ?? defaultCategory(done)
+  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
+  const switchHint = useSwitchHint(tyre, false)
+  // No tyre work where the dialog shows none (no set, no tyres known), so nothing unsaid counts as read.
+  const readForFill = tyre.available ? read : withoutFields(read, 'TYRE_WORK')
   const fill = useReadFill(
     initial
       ? {
@@ -297,7 +304,7 @@ function DoneFields({
         }
       : { date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', discount: '', currency: d.currency ?? '' },
     READ_INTO,
-    read,
+    readForFill,
     labels,
     readingDone,
     { ...explanation, last: last ? formatDistance(last.value, vehicle.units.distance) : undefined },
@@ -309,11 +316,6 @@ function DoneFields({
   // The amount is optional here: a discount without it would stop the whole visit on the server, so it is said at the field first.
   const discountWithoutAmount = !hasAmount && fill.values.discount.trim() !== '' && parseDecimal(fill.values.discount) !== undefined
   const logsExpense = hasAmount || reading || readLater
-  // The title stays the schedules' with tyre details on (the owner's decision 64); the category opens them as in the Expense dialog.
-  const titleValue = title ?? defaultTitle(done)
-  const categoryValue = category ?? defaultCategory(done)
-  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
-  const switchHint = useSwitchHint(tyre, false)
   const note = (field: FillableField) => (
     <ReadNote
       filled={fill.isFilled(field)}

@@ -41,7 +41,7 @@ import { ReadingProblems } from './recognition/ReadingProblems.tsx'
 import { ReadingProgress } from './recognition/ReadingProgress.tsx'
 import { SaveWait } from './components/SaveWait.tsx'
 import type { ReadingExplanation } from './recognition/readingIssues.ts'
-import { mergeReadings, type ReadValues } from './recognition/readValues.ts'
+import { mergeReadings, withoutFields, type ReadValues } from './recognition/readValues.ts'
 import { filledFields } from './recognition/review.ts'
 import { ReviewCallout } from './recognition/ReviewState.tsx'
 import { useDraftReadings } from './recognition/useDraftReadings.ts'
@@ -349,6 +349,17 @@ function ExpenseForm({
     currency: t('expenses.fields.currency'),
     odometer: odometerLabel,
   }
+  const merging = useMergeFields(merge)
+  // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
+  const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
+  const switchHint = useSwitchHint(tyre, editing)
+  // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
+  const [titleTyped, setTitleTyped] = useState(false)
+  const followsTyres = !editing && !titleTyped && tyre.title !== null
+  // What the fill takes of the photos: not a title while it follows the tyre details (it is only offered then, the owner's choice on #329),
+  // and no tyre work where the dialog shows none (no set, no tyres known, an expense the tyre log made), so nothing unsaid counts as read.
+  const readForFill = withoutFields(read, ...(followsTyres ? (['TITLE'] as const) : []), ...(tyre.available && !tyre.linked ? [] : (['TYRE_WORK'] as const)))
   const fill = useReadFill(
     {
       date: initial.date,
@@ -359,7 +370,7 @@ function ExpenseForm({
       odometer: initial.odometer?.toString() ?? '',
     },
     READ_INTO,
-    read,
+    readForFill,
     labels,
     readingDone,
     explanation,
@@ -367,14 +378,6 @@ function ExpenseForm({
     editing,
     { discount: 'amount' }, // a photo's discount was taken off its own total: next to an amount the user entered, it is only offered
   )
-  const merging = useMergeFields(merge)
-  // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
-  const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
-  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
-  const switchHint = useSwitchHint(tyre, editing)
-  // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
-  const [titleTyped, setTitleTyped] = useState(false)
-  const followsTyres = !editing && !titleTyped && tyre.title !== null
   const title = followsTyres ? tyre.title! : fill.values.title
   const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
   const amountOptional = mayWait
@@ -387,10 +390,8 @@ function ExpenseForm({
         filled={false}
         offered={readTitle && readTitle !== title ? readTitle : undefined}
         field={labels.title}
-        onUse={() => {
-          setTitleTyped(true)
-          fill.use('title')
-        }}
+        // The title no longer follows: the fill then takes the photo's title, and says so.
+        onUse={() => setTitleTyped(true)}
       />
     ) : (
     <>

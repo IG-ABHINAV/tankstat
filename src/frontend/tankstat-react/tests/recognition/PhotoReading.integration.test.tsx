@@ -639,18 +639,19 @@ it('saving waits while a photo is still uploading, and says why', async () => {
 
 // ---- a receipt that names tyre work (#290, the owner's decisions 56, 66 and 67) --------------------------------------------------
 
-async function openAddExpenseWithTyres(results: FakeReadValue[][], queuedPolls = 1) {
+async function openAddExpenseWithTyres(results: FakeReadValue[][], queuedPolls = 1, sets = [tyreSummer, tyreWinter]) {
   stubViewport('desktop')
   const photos = fakePhotoStore()
   const recognition = fakeRecognition({ results, queuedPolls })
   const backend = fakeExpenseBackend(fakeVehicle(), [fakeExpense({ id: 'e1', title: 'Oil change' })], photos)
-  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...recognition.handlers, ...fakeTyres([tyreSummer, tyreWinter]).handlers)
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...recognition.handlers, ...fakeTyres(sets).handlers)
   renderWithApollo(<App />, '/vehicles/v1?tab=expenses')
   const ui = userEvent.setup()
   await screen.findByText('Oil change')
   await ui.click(screen.getByRole('button', { name: 'Add expense' }))
   const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
-  await within(dialog).findByRole('switch', { name: 'Tyre details' })
+  if (sets.length > 0) await within(dialog).findByRole('switch', { name: 'Tyre details' })
+  else await within(dialog).findByLabelText('Amount')
   return { ui, dialog, state: backend.state, recognition }
 }
 
@@ -740,3 +741,36 @@ it('marking a schedule done offers the tyre work a receipt names, as the Expense
   expect(within(await within(dialog).findByRole('group', { name: 'Tyre details' })).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Storage fee')
 })
 
+
+it("says only what it filled: a shop's name is offered, not announced, while the title follows the tyre details", async () => {
+  const { ui, dialog } = await openAddExpenseWithTyres([[{ name: 'TITLE', value: 'Gumiszerviz' }, { name: 'TOTAL', value: '8000' }]])
+  await ui.type(within(dialog).getByLabelText(/^Category/), 'Tyres')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Wheel balancing' }))
+  await ui.upload(camera(dialog), photo())
+
+  const status = within(dialog).getByRole('status', { name: 'Photo reading status' })
+  await waitFor(() => expect(status).toHaveTextContent('Filled in from the photo: Amount.'), READ_WAIT)
+  expect(status).not.toHaveTextContent(/Title/) // it was not filled: the title still follows the tyre details
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Wheel balancing: Michelin Primacy 4')
+  await ui.click(within(dialog).getByRole('button', { name: 'Use Gumiszerviz from the photo for Title' }))
+  expect(within(dialog).getByLabelText('Title')).toHaveValue('Gumiszerviz')
+})
+
+it('says so when a photo fills What was done in the open tyre details', async () => {
+  const { ui, dialog } = await openAddExpenseWithTyres([[{ name: 'TOTAL', value: '6500' }, { name: 'TYRE_WORK', value: 'PunctureRepaired' }]])
+  await ui.type(within(dialog).getByLabelText(/^Category/), 'Tyres')
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.upload(camera(dialog), photo())
+
+  const status = within(dialog).getByRole('status', { name: 'Photo reading status' })
+  await waitFor(() => expect(status).toHaveTextContent(/What was done/), READ_WAIT)
+})
+
+it('says nothing could be read when a photo names only tyre work on a vehicle without tyre sets', async () => {
+  const { ui, dialog } = await openAddExpenseWithTyres([[{ name: 'TYRE_WORK', value: 'PunctureRepaired' }]], 0, [])
+  await ui.upload(camera(dialog), photo())
+
+  expect(await within(dialog).findByText('Nothing could be read from the photos.', {}, READ_WAIT)).toBeInTheDocument()
+})

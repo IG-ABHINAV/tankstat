@@ -142,6 +142,13 @@ export function useExpenseTyreDetails({
   const [kindTouched, setKindTouched] = useState(false)
   const photoKind = !linked && suggested ? suggested : null
   const state: TyreDetailsState = open && photoKind && !kindTouched && own.kind !== photoKind ? { ...own, kind: photoKind } : own
+  // A photo filling What was done in the open section is said like the dialog's other fields (the owner's decision 67), once per kind.
+  const filledByPhoto = state !== own ? photoKind : null
+  const saidFill = useRef<string | null>(null)
+  useEffect(() => {
+    if (filledByPhoto && saidFill.current !== filledByPhoto) setAnnouncement(t('reading.announce', { fields: t('tyres.entries.kind') }))
+    saidFill.current = filledByPhoto
+  }, [filledByPhoto, t])
   const change = (next: TyreDetailsState) => {
     const kindChanged = next.kind !== state.kind
     if (kindChanged) setKindTouched(true)
