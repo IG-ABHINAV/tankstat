@@ -4,6 +4,7 @@ import { outbox } from '../../../src/offline/outbox.ts'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
+import { ExpenseFormDialog, type ExpenseValues } from '../../../src/ExpenseFormDialog.tsx'
 import { answered, server } from '../../support/server.ts'
 import { fakeExpense, fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
@@ -281,5 +282,49 @@ it('says in the dialog what the server would refuse of a change kept on the devi
   expect(await within(dialog).findByText('Each tyre needs its own label.')).toBeInTheDocument()
   expect(outbox.changes).toEqual([])
   expect(state.calls.AddExpense).toBeUndefined()
+})
+
+// ---- a change edited on Waiting to sync (decision 70) ---------------------------------------------------------
+
+function editChange(sets: FakeTyreSet[], tyre: Record<string, unknown>) {
+  stubViewport('desktop')
+  const backend = fakeExpenseBackend(fakeVehicle(), [])
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeTyres(sets).handlers)
+  const sent: ExpenseValues[] = []
+  renderWithApollo(
+    <ExpenseFormDialog
+      open
+      vehicle={{ id: 'v1', units: { distance: 'KILOMETERS' } }}
+      change={{ initial: { date: '2026-10-05', title: 'Puncture', category: 'Tyres', amount: 5000, currency: 'HUF', odometer: null, note: null, tyre: tyre as never }, title: 'Edit the change', submitLabel: 'Save the change' }}
+      onSubmit={async (values) => {
+        sent.push(values)
+        return undefined
+      }}
+    />,
+  )
+  return { sent, ui: userEvent.setup() }
+}
+
+it("shows a waiting change's tyre details to fix, keeping its own ids, and switched off sends them as none", async () => {
+  const { sent, ui } = editChange([brokenUpSummer(), tyreWinter], { kind: 'PUNCTURE_REPAIRED', setId: 's1', tyres: [{ tyreId: 't3', id: 'L3' }, { tyreId: 't4', id: 'L4' }] })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Puncture repaired')
+  expect(within(group).getByRole('button', { name: /^Tyre S3/ })).toHaveAttribute('aria-pressed', 'true')
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Valve replaced' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toEqual({ kind: 'VALVE_REPLACED', setId: 's1', tyres: [{ tyreId: 't3', id: 'L3' }, { tyreId: 't4', id: 'L4' }] }) // its own line ids
+})
+
+it('switched off in a change\'s edit, its tyre details go as none', async () => {
+  const { sent, ui } = editChange([tyreSummer, tyreWinter], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toBeNull()
 })
 
