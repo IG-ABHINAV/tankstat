@@ -224,6 +224,11 @@ export function ExpenseFormDialog({
             tyres={existing?.tyreEntry && !tyreLine ? null : allTyres}
             tyreLine={tyreLine}
             tyreIds={tyreIds}
+            checkTyres={async (values) => {
+              if (!values.tyre || !allTyres || change) return // a change on Waiting to sync is checked when it is applied
+              const { checkKept } = await import('./tyres/ExpenseTyreSection.tsx')
+              checkKept(vehicle.id, allTyres, editing ? 'update' : 'add', editing ? expenseId! : clientId, { ...values })
+            }}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.
             mayWait={drafts.pending.length > 0 || readLater || (editing && existing?.reviewState === 'AWAITING_PHOTOS') || !!change?.mayWait}
@@ -278,6 +283,7 @@ function ExpenseForm({
   tyres,
   tyreLine,
   tyreIds,
+  checkTyres,
   mayWait,
   readingNow,
   wait,
@@ -306,6 +312,8 @@ function ExpenseForm({
   /** An expense the tyre log made: its first live line (decisions 53, 60). */
   tyreLine: TyreLine | null
   tyreIds: TyreDetailsIds
+  /** A change kept on the device with tyre details: what the server would refuse of its tyre part, thrown here first (decision 70). */
+  checkTyres: (values: ExpenseValues) => Promise<void>
   /** A photo is still being read: the amount may be left empty. */
   mayWait: boolean
   /** A photo is being read right now (the dialog says so near Save). */
@@ -378,7 +386,7 @@ function ExpenseForm({
     try {
       const tyreInput = await tyre.inputOf(text('date'), tyreIds)
       if (tyreInput === 'invalid') return // said at What was done, which has the focus
-      await onSubmit({
+      const values: ExpenseValues = {
         date: text('date'),
         title: text('title'),
         category: text('category') || null,
@@ -390,7 +398,9 @@ function ExpenseForm({
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
         ...(tyreInput ? { tyre: tyreInput.tyre } : {}),
-      }, tyreInput?.named || undefined)
+      }
+      await checkTyres(values)
+      await onSubmit(values, tyreInput?.named || undefined)
     } catch (err) {
       setError(err)
     } finally {

@@ -90,11 +90,39 @@ export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
   tyres: [], // never folded
 }
 
-/** The ids a change creates: an add's own, a tyre change's sets and installations (what is made on them must reach the server after it). */
-export const createdBy = (c: Change): string[] => (isTyreAction(c.action) ? tyreCreates(c.action, c.input) : c.action === 'add' ? [c.targetId] : [])
+/** An expense change's tyre details (#290), when it carries some: the lines it makes, or what a linked expense's lines say. */
+const expenseTyreOf = (c: Change): Record<string, unknown> | null =>
+  c.entity === 'expenses' && (c.action === 'add' || c.action === 'update') && c.input?.tyre && typeof c.input.tyre === 'object' ? (c.input.tyre as Record<string, unknown>) : null
 
-/** The ids of what a tyre change is made on (its set, its installation), any of which may have been created here. */
-export const tyreNeedsOf = (c: Change): string[] => (isTyreAction(c.action) ? tyreNeeds(c.action, c.input) : [])
+const ids = (value: unknown): string[] => (typeof value === 'string' && value !== '' ? [value] : [])
+const rows = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? (value as Record<string, unknown>[]) : [])
+
+/** The tyre log lines and the tyres an expense's tyre details make (#290): its lines' ids, a whole set's new tyres. */
+const expenseTyreCreates = (tyre: Record<string, unknown>): string[] => [
+  ...ids(tyre.lineId), ...rows(tyre.tyres).flatMap((t) => ids(t.id)), ...rows((tyre.breakUp as Record<string, unknown> | null)?.tyres).flatMap((t) => ids(t.id)),
+]
+
+/**
+ * The ids a change creates: an add's own, a tyre change's sets and installations, an expense's tyre log lines (#290) (what is made on them
+ * must reach the server after it).
+ */
+export function createdBy(c: Change): string[] {
+  if (isTyreAction(c.action)) return tyreCreates(c.action, c.input)
+  const tyre = expenseTyreOf(c)
+  return [...(c.action === 'add' ? [c.targetId] : []), ...(tyre ? expenseTyreCreates(tyre) : [])]
+}
+
+/**
+ * The ids of what a tyre change is made on (its set, its installation), any of which may have been created here; for an expense with tyre
+ * details (#290) its set and the tyres its lines are for, unless its own break-up makes them.
+ */
+export function tyreNeedsOf(c: Change): string[] {
+  if (isTyreAction(c.action)) return tyreNeeds(c.action, c.input)
+  const tyre = expenseTyreOf(c)
+  if (!tyre) return []
+  const made = new Set(expenseTyreCreates(tyre))
+  return [...ids(tyre.setId), ...rows(tyre.tyres).flatMap((t) => ids(t.tyreId))].filter((id) => !made.has(id))
+}
 
 /**
  * The changes waiting after `incoming` joins them. Changes of one log fold into one:
@@ -199,7 +227,9 @@ export function discard(existing: readonly Change[], id: string): Change[] {
   if (removed && isVisitOf(removed, removed.targetId)) return existing.filter((c) => c.id !== id && !(c.entity === 'expenses' && c.targetId === removed.targetId))
   const rest = existing.filter((c) => c.id !== id)
   if (removed?.entity === 'tyres') return withoutTyreDependents(rest, createdBy(removed))
-  return removed?.action === 'add' ? withoutDependents(rest, removed) : rest
+  // An expense taken back that made tyre log lines (#290): what was made on its lines goes with it.
+  const withLines = removed && expenseTyreOf(removed) ? withoutTyreDependents(rest, createdBy(removed).filter((made) => made !== removed.targetId || removed.action === 'add')) : rest
+  return removed?.action === 'add' ? withoutDependents(withLines, removed) : withLines
 }
 
 /** A visit that logs the expense `expenseId` (one with an amount; its expense id is its target). */

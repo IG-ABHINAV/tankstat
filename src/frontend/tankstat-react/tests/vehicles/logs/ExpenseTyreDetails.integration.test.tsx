@@ -1,8 +1,10 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import { connectivity } from '../../../src/offline/connectivity.ts'
+import { outbox } from '../../../src/offline/outbox.ts'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
-import { server } from '../../support/server.ts'
+import { answered, server } from '../../support/server.ts'
 import { fakeExpense, fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
 import { UUID } from '../../support/ids.ts'
@@ -232,5 +234,52 @@ it('says when its line is in the trash, with no switch and no section', async ()
   expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
   expect(within(dialog).queryByRole('group', { name: 'Tyre details' })).not.toBeInTheDocument()
   expect(within(dialog).queryByRole('link', { name: 'Open in the tyre log' })).not.toBeInTheDocument()
+})
+
+// ---- offline (O1, the owner's decision 70) --------------------------------------------------------------------
+
+it('keeps an expense with tyre details on the device, its line shown on the tyre log, marked', async () => {
+  const { ui, state } = setup()
+  const dialog = await openAdd(ui)
+  await within(dialog).findByRole('switch', { name: 'Tyre details' }) // the tyres are on the device now
+  await answered()
+  act(() => connectivity.failed())
+
+  await ui.type(within(dialog).getByLabelText(/^Category/), 'Tyres')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Wheel balancing' }))
+  await ui.type(within(dialog).getByLabelText('Amount'), '12000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
+
+  expect(await screen.findByText('Saved on this device · syncs when online.')).toBeInTheDocument()
+  expect(state.calls.AddExpense).toBeUndefined()
+  expect(outbox.changes).toMatchObject([{ entity: 'expenses', action: 'add', input: { title: 'Wheel balancing: Michelin Primacy 4', tyre: { kind: 'WHEEL_BALANCING', setId: 's1' } } }])
+  await ui.click(screen.getByRole('tab', { name: 'Tyres' }))
+  const log = await screen.findByRole('region', { name: 'Tyre log' })
+  expect(await within(log).findByRole('button', { name: /^Wheel balancing, Michelin Primacy 4, .*, HUF\s?12,000/ })).toBeInTheDocument()
+  expect(within(screen.getByRole('article', { name: 'Michelin Primacy 4' })).getAllByText('updated once synced').length).toBeGreaterThan(0) // what it cost: the server's to work out
+})
+
+it('says in the dialog what the server would refuse of a change kept on the device', async () => {
+  const { ui, state } = setup()
+  const dialog = await openAdd(ui)
+  await within(dialog).findByRole('switch', { name: 'Tyre details' })
+  await answered()
+  act(() => connectivity.failed())
+  await ui.click(tyreSwitch(dialog))
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Puncture repaired' }))
+  await ui.click(within(group).getByRole('checkbox', { name: 'The whole set' }))
+  await ui.click(within(group).getByRole('button', { name: /front left/ }))
+  await ui.clear(within(group).getByLabelText(/^Label, front right/))
+  await ui.type(within(group).getByLabelText(/^Label, front right/), 'S1') // the same label twice: the break-up is refused
+  await ui.type(within(dialog).getByLabelText('Amount'), '5000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
+
+  expect(await within(dialog).findByText('Each tyre needs its own label.')).toBeInTheDocument()
+  expect(outbox.changes).toEqual([])
+  expect(state.calls.AddExpense).toBeUndefined()
 })
 
