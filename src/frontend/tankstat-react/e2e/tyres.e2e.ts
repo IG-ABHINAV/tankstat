@@ -1,6 +1,6 @@
 import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { addDueRecurring, addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
 // A vehicle's tyres (#287): sets added, swapped with their pairs, a past swap from papers, a swap moved to the trash and back from the Trash
@@ -575,5 +575,37 @@ test('a plain expense given tyre details in Edit expense is put on the tyre log 
   await expect(edit).toBeHidden()
   await page.getByRole('tab', { name: 'Tyres' }).click()
   await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Storage fee, Michelin Primacy 4,/ })).toContainText('6,000')
+})
+
+test('a visit with tyre details: with an amount its expense is the line\'s, without one the line is logged alone (#290)', async ({ page }) => {
+  const { vehicle } = await summerOnTheCar(page)
+  await addDueRecurring(page, vehicle.id, 'Wheel balancing', 'Tyres')
+  await addDueRecurring(page, vehicle.id, 'Tyre hotel', 'Storage')
+  await openVehicle(page, vehicle.id, 'recurring')
+
+  await page.getByRole('button', { name: 'Mark Wheel balancing as done' }).click()
+  const paid = page.getByRole('dialog', { name: 'Mark as done: Wheel balancing' })
+  await chooseKind(page, paid, 'Wheel balancing') // the schedule's category Tyres opened the section
+  await paid.getByLabel('Amount (optional)').fill('8000')
+  await expect(paid.getByLabel('Expense title')).toHaveValue('Wheel balancing') // the schedule's title stays
+  await expectSoundLayout(page)
+  await paid.getByRole('button', { name: 'Mark as done' }).click()
+  await expect(paid).toBeHidden()
+
+  await page.getByRole('button', { name: 'Mark Tyre hotel as done' }).click()
+  const alone = page.getByRole('dialog', { name: 'Mark as done: Tyre hotel' })
+  await alone.getByRole('switch', { name: 'Tyre details' }).click()
+  await chooseKind(page, alone, 'Storage fee')
+  await expect(alone.getByText('Without an amount the line is logged on its own, with no expense.')).toBeVisible()
+  await alone.getByRole('button', { name: 'Mark as done' }).click()
+  await expect(alone).toBeHidden()
+  await expect(page.getByText('Marked as done. Logged on the tyre log, without an amount.')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await expect(log.getByRole('button', { name: /^Wheel balancing, Michelin Primacy 4,/ })).toContainText('8,000')
+  await expect(log.getByRole('button', { name: /^Storage fee, Michelin Primacy 4,/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Wheel balancing' })).toContainText('Tyre log')
 })
 
