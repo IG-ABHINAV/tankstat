@@ -643,7 +643,7 @@ export function fakePhotoStore(initial: Record<string, FakePhoto[]> = {}) {
 }
 
 export interface FakeReadValue {
-  name: 'ODOMETER' | 'TOTAL' | 'VOLUME' | 'UNIT_PRICE' | 'DISCOUNT' | 'CURRENCY' | 'DATE' | 'TITLE'
+  name: 'ODOMETER' | 'TOTAL' | 'VOLUME' | 'UNIT_PRICE' | 'DISCOUNT' | 'CURRENCY' | 'DATE' | 'TITLE' | 'TYRE_WORK'
   value: string
   confidence?: number
 }
