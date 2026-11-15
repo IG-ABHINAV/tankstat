@@ -331,3 +331,49 @@ test('replaces a tyre offline from its own dialog: shown done at once, sent when
     .toEqual([['S3', true, 'REAR_LEFT'], ['S5', false, 'REAR_LEFT']])
   expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
 })
+
+test('an expense with tyre details saved offline: shown on the Expenses tab and the tyre log, sent with its line when the server is back (#290)', async ({ page, context }) => {
+  test.setTimeout(120_000)
+  await signInAsNewUser(page)
+  const vehicle = await addVehicle(page)
+  const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
+  await logRefueling(page, vehicle.id, { date: day(60), volume: 35, odometer: 1000 })
+  await graphql(page, 'mutation($i: AddTyreSetInput!) { addTyreSet(input: $i) { vehicleId } }', {
+    i: { vehicleId: vehicle.id, size: null, madeWeek: null, madeYear: null, roughDistance: 0, replace: false, name: 'Michelin Primacy 4', season: 'SUMMER', since: day(400), fitted: true, day: day(60) },
+  })
+  await page.goto('/account')
+  await pageLoaded(page)
+  await page.getByRole('button', { name: 'Download now' }).click()
+  await expect(page.getByText('Downloaded.')).toBeVisible({ timeout: 30_000 })
+  await openVehicle(page, vehicle.id, 'expenses')
+
+  await context.setOffline(true)
+  await page.getByRole('button', { name: 'Add expense' }).click()
+  const add = page.getByRole('dialog', { name: 'Add expense' })
+  await expect(add.getByText(/^You are offline\./)).toBeVisible()
+  await add.getByLabel(/^Category/).fill('Tyres')
+  const group = add.getByRole('group', { name: 'Tyre details' })
+  await group.getByRole('combobox', { name: 'What was done' }).click()
+  await page.getByRole('option', { name: 'Wheel balancing' }).click()
+  await add.getByLabel('Amount').fill('12000')
+  await add.getByRole('button', { name: 'Add expense' }).click()
+  await expect(add).toBeHidden()
+  await expect(page.getByRole('row').filter({ hasText: 'Wheel balancing: Michelin Primacy 4' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Wheel balancing, Michelin Primacy 4,/ })).toContainText('12,000')
+  await expectSoundLayout(page)
+
+  await context.setOffline(false)
+  type Tyres = { vehicleTyres: { entries: { kind: string; amount: number | null; expenseId: string | null }[] } }
+  await expect
+    .poll(
+      async () => {
+        const { vehicleTyres } = await graphql<Tyres>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { kind amount expenseId } } }', { v: vehicle.id })
+        return vehicleTyres.entries.filter((e) => e.kind === 'WHEEL_BALANCING').map((e) => [e.amount, !!e.expenseId])
+      },
+      { timeout: 60_000 },
+    )
+    .toEqual([[12_000, true]])
+  expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
+})
+
