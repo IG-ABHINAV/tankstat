@@ -260,6 +260,7 @@ it('keeps an expense with tyre details on the device, its line shown on the tyre
   const log = await screen.findByRole('region', { name: 'Tyre log' })
   expect(await within(log).findByRole('button', { name: /^Wheel balancing, Michelin Primacy 4, .*, HUF\s?12,000/ })).toBeInTheDocument()
   expect(within(screen.getByRole('article', { name: 'Michelin Primacy 4' })).getAllByText('updated once synced').length).toBeGreaterThan(0) // what it cost: the server's to work out
+
 })
 
 it('says in the dialog what the server would refuse of a change kept on the device', async () => {
@@ -286,16 +287,21 @@ it('says in the dialog what the server would refuse of a change kept on the devi
 
 // ---- a change edited on Waiting to sync (decision 70) ---------------------------------------------------------
 
-function editChange(sets: FakeTyreSet[], tyre: Record<string, unknown>) {
+function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId }: { lines?: FakeTyreEntry[]; targetId?: string } = {}) {
   stubViewport('desktop')
   const backend = fakeExpenseBackend(fakeVehicle(), [])
-  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeTyres(sets).handlers)
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeTyres(sets, lines).handlers)
   const sent: ExpenseValues[] = []
   renderWithApollo(
     <ExpenseFormDialog
       open
       vehicle={{ id: 'v1', units: { distance: 'KILOMETERS' } }}
-      change={{ initial: { date: '2026-10-05', title: 'Puncture', category: 'Tyres', amount: 5000, currency: 'HUF', odometer: null, note: null, tyre: tyre as never }, title: 'Edit the change', submitLabel: 'Save the change' }}
+      change={{
+        initial: { date: '2026-10-05', title: 'Puncture', category: 'Tyres', amount: 5000, currency: 'HUF', odometer: null, note: null, ...(tyre ? { tyre: tyre as never } : {}) },
+        title: 'Edit the change',
+        submitLabel: 'Save the change',
+        targetId,
+      }}
       onSubmit={async (values) => {
         sent.push(values)
         return undefined
@@ -328,3 +334,25 @@ it('switched off in a change\'s edit, its tyre details go as none', async () => 
   expect(sent[0].tyre).toBeNull()
 })
 
+it("opens an edit of an expense the tyre log made as linked: no switch, and an amount changed sends no tyre details", async () => {
+  const { sent, ui } = editChange([tyreSummer, tyreWinter], undefined, { lines: [line()], targetId: 'e5' })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Puncture repaired')
+  await ui.clear(within(dialog).getByLabelText('Amount'))
+  await ui.type(within(dialog).getByLabelText('Amount'), '7000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).not.toHaveProperty('tyre')
+})
+
+it("shows what a linked expense's waiting edit says was done, and keeps sending it", async () => {
+  const { sent, ui } = editChange([tyreSummer, tyreWinter], { kind: 'STORAGE_FEE', setId: 's1' }, { lines: [line()], targetId: 'e5' })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Storage fee') // the change's, not the line's as it is
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toEqual({ kind: 'STORAGE_FEE', setId: 's1' })
+})

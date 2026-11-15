@@ -358,9 +358,19 @@ test('an expense with tyre details saved offline: shown on the Expenses tab and 
   await add.getByLabel('Amount').fill('12000')
   await add.getByRole('button', { name: 'Add expense' }).click()
   await expect(add).toBeHidden()
-  await expect(page.getByRole('row').filter({ hasText: 'Wheel balancing: Michelin Primacy 4' })).toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: 'Wheel balancing: Michelin Primacy 4' })
+  await expect(row).toContainText('Tyre log')
+  // Edited before it is sent: it opens as an expense the tyre log made, and its line follows the new amount.
+  await expect(page.getByText('Saved on this device · syncs when online.')).toBeHidden({ timeout: 15_000 })
+  await row.getByRole('button', { name: /^Edit the expense/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await expect(edit.getByRole('group', { name: 'Tyre details' }).getByRole('combobox', { name: 'What was done' })).toContainText('Wheel balancing')
+  await expect(edit.getByRole('switch', { name: 'Tyre details' })).toHaveCount(0)
+  await edit.getByLabel('Amount').fill('12500')
+  await edit.getByRole('button', { name: /^Save/ }).click()
+  await expect(edit).toBeHidden()
   await page.getByRole('tab', { name: 'Tyres' }).click()
-  await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Wheel balancing, Michelin Primacy 4,/ })).toContainText('12,000')
+  await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Wheel balancing, Michelin Primacy 4,/ })).toContainText('12,500')
   await expectSoundLayout(page)
 
   await context.setOffline(false)
@@ -373,7 +383,7 @@ test('an expense with tyre details saved offline: shown on the Expenses tab and 
       },
       { timeout: 60_000 },
     )
-    .toEqual([[12_000, true]])
+    .toEqual([[12_500, true]])
   expect((await graphql<{ parkedChanges: unknown[] }>(page, '{ parkedChanges { id } }')).parkedChanges).toEqual([])
 })
 

@@ -159,9 +159,14 @@ export function ExpenseFormDialog({
   }
   const error = details.error ?? defaults.error
   const existing = details.data?.expense
-  // An expense the tyre log made (#290): its first live line, as the tyre log has it now; while it is in the trash, none (decision 69).
+  // An expense the tyre log made (#290): its first live line, as the tyre log has it now (lines this device made too, and on Waiting to
+  // sync for a change of it); while it is in the trash, none (decision 69). The lines a change being edited makes itself are its own tyre
+  // details, not a line that made it. A linked expense's edit waiting here shows what it says was done, and keeps saying it.
   const allTyres = tyres.data?.vehicleTyres ?? null
-  const tyreLine = existing?.tyreEntry && !existing.tyreEntry.trashed && allTyres ? (allTyres.entries.find((e) => e.expenseId === existing.id) ?? null) : null
+  const subjectId = expenseId ?? change?.targetId
+  const ownLines = new Set([waitingTyre?.lineId, ...(waitingTyre?.tyres ?? []).map((l) => l.id)].filter(Boolean))
+  const holder = existing?.tyreEntry?.trashed || !allTyres || !subjectId ? null : (allTyres.entries.find((e) => e.expenseId === subjectId && !ownLines.has(e.id)) ?? null)
+  const tyreLine = holder && change && waitingTyre ? { ...holder, kind: waitingTyre.kind, setId: waitingTyre.setId ?? null } : holder
   const [removeError, setRemoveError] = useState<unknown>()
   // Photos kept on this device are read once the expense is synced (photo reading on, as last heard): its amount may be left empty.
   const readLater = !editing && queue.kept > 0 && drafts.available
@@ -232,7 +237,8 @@ export function ExpenseFormDialog({
             // An expense the tyre log made shows its line in the banner (#288); the others may be given tyre details here (#290).
             tyres={existing?.tyreEntry && !tyreLine ? null : allTyres}
             tyreLine={tyreLine}
-            waitingTyre={waitingTyre}
+            waitingTyre={tyreLine ? null : waitingTyre}
+            keptTyre={tyreLine ? waitingTyre : null}
             tyreIds={tyreIds}
             checkTyres={async (values) => {
               if (!values.tyre || !allTyres || change) return // a change on Waiting to sync is checked when it is applied
@@ -293,6 +299,7 @@ function ExpenseForm({
   tyres,
   tyreLine,
   waitingTyre,
+  keptTyre,
   tyreIds,
   checkTyres,
   mayWait,
@@ -324,6 +331,8 @@ function ExpenseForm({
   tyreLine: TyreLine | null
   /** A change edited on Waiting to sync: the tyre details it carries (decision 70). */
   waitingTyre: ExpenseTyreInput | null
+  /** A linked expense's edit waiting on this device (`tyre` naming what was done and the set): sent again unless changed here. */
+  keptTyre: ExpenseTyreInput | null
   tyreIds: TyreDetailsIds
   /** A change kept on the device with tyre details: what the server would refuse of its tyre part, thrown here first (decision 70). */
   checkTyres: (values: ExpenseValues) => Promise<void>
@@ -411,7 +420,7 @@ function ExpenseForm({
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
         // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values).
-        ...(tyreInput ? { tyre: tyreInput.tyre } : waitingTyre ? { tyre: null } : {}),
+        ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre ? { tyre: null } : {}),
       }
       await checkTyres(values)
       await onSubmit(values, tyreInput?.named || undefined)
