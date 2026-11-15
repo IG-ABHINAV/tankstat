@@ -4,6 +4,7 @@ import { deviceData } from './deviceData.ts'
 import type { RowStore } from './deviceStorage.ts'
 import { isTyreAction, tyreFeeExpense } from './tyreChanges.ts'
 import { keptPhotos } from './keptPhotos.ts'
+import { ApiError } from '../pictures/ApiError.ts'
 
 /**
  * The changes this device keeps until the server can take them, in the open user's database (`deviceStorage.ts`), so they survive a
@@ -129,7 +130,8 @@ export const outbox = {
   replaceInput(id: string, input: Record<string, unknown>, targetIds?: string[]): Promise<void> {
     return exclusive(async () => {
       const found = changes.find((c) => c.id === id)
-      if (!found || found.sent) throw new Error(`The change ${id} is no longer waiting on this device.`)
+      // Sent meanwhile (a sync took it while its Edit was open) or gone: said in the person's language (`errors.sync.notFound`).
+      if (!found || found.sent) throw new ApiError('sync.notFound', {}, `The change ${id} is no longer waiting on this device.`, 409)
       const next = changes.map((c) => (c.id === id ? { ...c, input, ...(targetIds ? { targetIds } : {}) } : c))
       await persist(changes, next)
       changes = next

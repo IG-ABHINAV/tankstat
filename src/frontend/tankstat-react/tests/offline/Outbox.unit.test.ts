@@ -128,3 +128,10 @@ describe('changes an older build kept', () => {
     expect(outbox.changes.map((c) => c.id)).toEqual(['r1'])
   })
 })
+
+it('refuses to edit in place a visit no longer waiting here, keyed so the dialog says it in the person\'s language', async () => {
+  await outbox.enqueue(visit('m1', 'e1', ['s1'], { amount: 10 }))
+  await outbox.markSent(['m1'])
+  await expect(outbox.replaceInput('m1', { amount: 20 }, ['s1'])).rejects.toMatchObject({ key: 'sync.notFound' })
+  await expect(outbox.replaceInput('gone', { amount: 20 })).rejects.toMatchObject({ key: 'sync.notFound' })
+})
