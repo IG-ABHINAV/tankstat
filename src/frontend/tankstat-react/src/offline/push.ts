@@ -49,7 +49,7 @@ const FIELDS = {
   updateVehicle: ['id', 'name', 'licensePlate', 'fuelType', 'units'],
   addRecurringExpense: ['id', 'vehicleId', 'title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
   updateRecurringExpense: ['id', 'title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
-  markRecurringExpensesDone: ['ids', 'date', 'odometer', 'amount', 'discount', 'currency', 'title', 'category', 'photoIds', 'expenseId'],
+  markRecurringExpensesDone: ['ids', 'date', 'odometer', 'amount', 'discount', 'currency', 'title', 'category', 'photoIds', 'expenseId', 'tyre'],
 } as const
 
 const pick = (input: Record<string, unknown> | undefined, keys: readonly string[], extra: Record<string, unknown> = {}) =>

@@ -33,6 +33,8 @@ describe('toChangeInput', () => {
       .toEqual({ id: 'e', expectedVersion: null, addExpense: { id: 'e2', vehicleId: 'v1', date: '2026-10-02', title: 'Puncture', amount: 25, currency: 'EUR', photoIds: [], tyre } })
     expect(toChangeInput(change({ id: 'u', entity: 'expenses', action: 'update', targetId: 'e2', expectedVersion: 2, input: { id: 'e2', date: '2026-10-02', title: 'Valve', amount: 25, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } } })))
       .toEqual({ id: 'u', expectedVersion: 2, updateExpense: { id: 'e2', date: '2026-10-02', title: 'Valve', amount: 25, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } } })
+    expect(toChangeInput(change({ id: 'd', entity: 'recurring', action: 'markDone', targetId: 'v', targetIds: ['s1'], input: { ids: ['s1'], date: '2026-10-02', amount: null, tyre: { kind: 'STORAGE_FEE', setId: 's1', lineId: 'l2' } } })))
+      .toEqual({ id: 'd', expectedVersion: null, markRecurringExpensesDone: { ids: ['s1'], date: '2026-10-02', amount: null, tyre: { kind: 'STORAGE_FEE', setId: 's1', lineId: 'l2' } } }) // a visit's too
   })
 
   it('a visit that names no schedules marks none, and a photo change whose photo did not go up names no draft', () => {
