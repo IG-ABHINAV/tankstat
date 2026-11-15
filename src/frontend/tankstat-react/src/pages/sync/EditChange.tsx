@@ -71,13 +71,14 @@ export function EditChange({
   // other side has.
   const merging = parked && situationOf(change, parked.current, parked.reason?.key) === 'edited' ? mergeInfo(change, parked.current, fields) : null
   const edit: ChangeEdit<never> = merging
-    ? { initial: { ...change.input, ...merging.values } as never, title: t('sync.merge.title'), submitLabel: t('sync.merge.apply'), merge: merging.info, targetId: change.targetId }
+    ? { initial: { ...change.input, ...merging.values } as never, title: t('sync.merge.title'), submitLabel: t('sync.merge.apply'), merge: merging.info, targetId: change.targetId, parked: true }
     : {
         initial: change.input as never,
         title: parked ? t('sync.editApplyTitle') : t('sync.editTitle'),
         submitLabel: parked ? t('sync.applyEdited') : t('sync.saveChange'),
         mayWait: !parked && change.action === 'add' && keptPhotosOf(change).length > 0,
         targetId: change.targetId,
+        parked: !!parked,
       }
   const trigger = merging ? (
     <Button variant="soft" size="large" disabled={disabled} aria-label={t('sync.merge.openAria', { change: label })}>

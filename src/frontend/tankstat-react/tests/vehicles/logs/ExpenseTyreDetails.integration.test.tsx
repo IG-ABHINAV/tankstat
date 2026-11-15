@@ -289,7 +289,7 @@ it('says in the dialog what the server would refuse of a change kept on the devi
 
 // ---- a change edited on Waiting to sync (decision 70) ---------------------------------------------------------
 
-function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId, noAnswer = false }: { lines?: FakeTyreEntry[]; targetId?: string; noAnswer?: boolean } = {}) {
+function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId, noAnswer = false, parked = false }: { lines?: FakeTyreEntry[]; targetId?: string; noAnswer?: boolean; parked?: boolean } = {}) {
   stubViewport('desktop')
   const backend = fakeExpenseBackend(fakeVehicle(), [])
   server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeTyres(sets, lines).handlers)
@@ -305,6 +305,7 @@ function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines
         title: 'Edit the change',
         submitLabel: 'Save the change',
         targetId,
+        parked,
       }}
       onSubmit={async (values) => {
         sent.push(values)
@@ -371,8 +372,18 @@ it("leaves a change's tyre details as they are when its edit has no section (the
   expect(sent[0]).not.toHaveProperty('tyre') // the change keeps its own, never switched off unseen
 })
 
-it("shows a change's tyre details when the vehicle has no tyre set left, so they can be switched off", async () => {
+it("keeps a waiting change's tyre details unseen when the vehicle has no tyre set to offer (the device may know none)", async () => {
   const { sent, ui } = editChange([], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByLabelText('Amount')
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).not.toHaveProperty('tyre') // an edit of its amount never moves its line to no set
+})
+
+it("shows a parked change's tyre details when the vehicle has no tyre set left, so they can be switched off", async () => {
+  const { sent, ui } = editChange([], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' }, { parked: true })
   const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
   await within(dialog).findByRole('group', { name: 'Tyre details' })
   await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))

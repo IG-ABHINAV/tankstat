@@ -47,6 +47,7 @@ export function useExpenseTyreDetails({
   setCategory,
   linked,
   initial,
+  parked = false,
 }: {
   tyres: VehicleTyresFieldsFragment | null | undefined
   category: string
@@ -61,11 +62,14 @@ export function useExpenseTyreDetails({
    * offered (else the usual start: one the server refused may be gone), its tyres, a whole set's labels and the break-up it carries.
    */
   initial?: ExpenseTyreInput | null
+  /** `initial` is a parked change's (decision 70): the server refused it, so with no set left to offer its set is gone. */
+  parked?: boolean
 }) {
   const { t } = useTranslation()
-  // A change that carries tyre details shows them while the vehicle's tyres answered, also with no set left (its set may be what the server
-  // refused): it can be switched off or moved to another set. Without an answer nothing is shown, and the change keeps its own.
-  const available = !!tyres && (tyres.sets.length > 0 || !!linked || !!initial)
+  // A parked change that carries tyre details shows them also with no set left: the server refused it, so its set is gone, and it can be
+  // switched off. A waiting one with no set to offer keeps them unseen: the device may simply know none (its data removed, the change
+  // kept), and an edit of its amount must never move its line to no set.
+  const available = !!tyres && (tyres.sets.length > 0 || !!linked || (!!initial && parked))
   const last = tyres?.expenseCategory ?? null
   const [state, setState] = useState<TyreDetailsState>(() => {
     if (linked) return { on: true, kind: linked.kind, setId: linked.setId ?? '', whole: true, picked: [], labels: [] }
