@@ -54,7 +54,8 @@ import type { ChangeEdit, MergeInfo } from './dialogs/changeEdit.ts'
 import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
-import { TyreDetailsFields, useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.tsx'
+import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
+import { useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 // Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
 const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
@@ -235,7 +236,7 @@ export function ExpenseFormDialog({
             tyreIds={tyreIds}
             checkTyres={async (values) => {
               if (!values.tyre || !allTyres || change) return // a change on Waiting to sync is checked when it is applied
-              const { checkKept } = await import('./tyres/ExpenseTyreSection.tsx')
+              const { checkKept } = await import('./tyres/expenseTyreInput.ts')
               checkKept(vehicle.id, allTyres, editing ? 'update' : 'add', editing ? expenseId! : clientId, { ...values })
             }}
             explanation={drafts.explanation}

@@ -1,15 +1,15 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { LabeledSwitch } from '../components/LabeledSwitch.tsx'
-import { Loading } from '../components/Loading.tsx'
 import type { ExpenseTyreInput, TyreEntryKind, VehicleTyresFieldsFragment } from '../gql/generated.ts'
-
-type TyreLine = VehicleTyresFieldsFragment['entries'][number]
 import { isTyreCategory, tyreCategories } from './tyreCategory.ts'
 
-// The section, the car picture and the input's making are a chunk of their own (the dialogs are eager: the home cards open them).
-const loadSection = () => import('./ExpenseTyreSection.tsx')
-const ExpenseTyreSection = lazy(loadSection)
+type TyreLine = VehicleTyresFieldsFragment['entries'][number]
+
+/**
+ * The section and the car picture (`TyreDetailsFields`), and the input's making (`expenseTyreInput.ts`), are chunks of their own (the dialogs
+ * are eager: the home cards open them); the section is loaded ahead once a vehicle has tyre sets.
+ */
+export const loadSection = () => import('./ExpenseTyreSection.tsx')
 
 /** The tyre details as picked in a dialog (#290); kept while the section is closed, so they come back if it opens again (decision 59). */
 export interface TyreDetailsState {
@@ -128,37 +128,13 @@ export function useExpenseTyreDetails({
       kindRef.current?.focus()
       return 'invalid'
     }
-    return (await loadSection()).tyreInputOf(state, tyres, ids, day, initial?.setId === state.setId ? initial.breakUp : null)
+    return (await import('./expenseTyreInput.ts')).tyreInputOf(state, tyres, ids, day, initial?.setId === state.setId ? initial.breakUp : null)
   }
 
   return { available, open, state, change, toggle, kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null }
 }
 
 export type ExpenseTyreDetails = ReturnType<typeof useExpenseTyreDetails>
-
-/** The switch and, while it is on, the section (a lazy chunk with a boundary of its own, so the fields above it stay as they are). */
-export function TyreDetailsFields({ details, tyres, hint, note }: { details: ExpenseTyreDetails; tyres: VehicleTyresFieldsFragment; hint: string; note: string }) {
-  const { t } = useTranslation()
-  if (!details.available) return null
-  return (
-    <>
-      {!details.linked && <LabeledSwitch label={t('expenses.tyreDetails.switch')} hint={hint} checked={details.open} onChange={details.toggle} />}
-      {details.open && (
-        <Suspense fallback={<Loading />}>
-          <ExpenseTyreSection
-            tyres={tyres}
-            state={details.state}
-            onChange={details.change}
-            kindError={details.kindError}
-            kindRef={details.kindRef}
-            note={details.linked ? t('expenses.tyreDetails.linkedNote') : note}
-            linked={details.linked}
-          />
-        </Suspense>
-      )}
-    </>
-  )
-}
 
 /** The switch's hint in *Add expense* and *Edit expense* (decisions 51, 54): it names the tyre categories that open it by itself. */
 export function useSwitchHint(details: ExpenseTyreDetails, editing: boolean) {
