@@ -73,6 +73,15 @@ public static partial class ReadingNormaliser
             && Math.Round(value, 2, MidpointRounding.AwayFromZero) == 0;
     }
 
+    /// <summary>
+    /// No tyre work (#290): what a model answers for a receipt that is not for any ("none", "other", "unknown", "no"), so it is left out
+    /// without a reason to tell, as a discount of none is. Only a word of the five is tyre work; <c>other</c> never is (decision 66).
+    /// </summary>
+    public static bool IsNoTyreWork(ReadingFieldName name, string? raw) =>
+        name == ReadingFieldName.TyreWork && raw is not null && (NoneWords.Contains(raw.Trim()) || NoTyreWords.Contains(raw.Trim()));
+
+    private static readonly HashSet<string> NoTyreWords = new(StringComparer.OrdinalIgnoreCase) { "other", "unknown", "no", "false", "" };
+
     private static readonly HashSet<string> NoneWords = new(StringComparer.OrdinalIgnoreCase) { "none", "n/a", "na", "null", "nil", "-", "–", "−", "—" };
 
     /// <summary>

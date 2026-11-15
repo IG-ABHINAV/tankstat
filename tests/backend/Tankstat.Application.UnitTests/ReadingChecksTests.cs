@@ -261,9 +261,9 @@ public class ReadingChecksTests
     [InlineData("STORAGE_FEE", "StorageFee")]
     [InlineData("PunctureRepaired", "PunctureRepaired")]
     [InlineData("bought", "Bought")]
-    [InlineData("other", null)] // never Other: a receipt cannot tell it apart (#290, decision 66)
     [InlineData("swap", null)]
     [InlineData("note", null)]
+    [InlineData("tyres fitted", null)]
     public void TheTyreWork_IsOneOfTheFiveAReceiptCanTell_WhateverItsSpelling_AnythingElseDropped(string read, string? kept)
     {
         var values = Apply(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.TyreWork, read)], Hints());
@@ -271,6 +271,17 @@ public class ReadingChecksTests
         Assert.Equal(kept, values.SingleOrDefault()?.Value);
         if (kept is null) Assert.Equal("TyreWork:NotUnderstood", Why(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.TyreWork, read)], Hints()));
         Assert.Empty(Apply(DocumentKind.FuelReceipt, [Read(ReadingFieldName.TyreWork, "wheel-balancing")], Hints())); // a fuel receipt is no tyre work
+    }
+
+    [Theory]
+    [InlineData("other")] // never Other: a receipt cannot tell it apart (#290, decision 66)
+    [InlineData("none")]
+    [InlineData("N/A")]
+    [InlineData("unknown")]
+    public void NoTyreWork_AsAModelSaysIt_IsLeftOutWithoutAReason(string read)
+    {
+        Assert.Empty(Apply(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.TyreWork, read)], Hints()));
+        Assert.Equal("", Why(DocumentKind.ExpenseReceipt, [Read(ReadingFieldName.TyreWork, read)], Hints())); // a car wash's receipt says nothing of tyres
     }
 }
 

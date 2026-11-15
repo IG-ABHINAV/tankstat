@@ -47,6 +47,7 @@ public static class ReadingChecks
         {
             if (!allowed.Contains(value.Name)) continue;
             if (ReadingNormaliser.IsNoDiscount(value.Name, value.Value)) continue; // "none", said as 0: nothing to keep, nothing to explain
+            if (ReadingNormaliser.IsNoTyreWork(value.Name, value.Value)) continue; // "none" or "other": no tyre work, nothing to explain (#290)
             if (ReadingNormaliser.Normalise(value.Name, value.Value) is not { } text)
             {
                 issues.Add(new ReadingIssue(value.Name, ReadingIssueCode.NotUnderstood));
