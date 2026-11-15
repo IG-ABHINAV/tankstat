@@ -181,8 +181,11 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
       return [...existing, incoming]
     case 'update':
       if (trash) return [...existing] // on its way to the trash: nothing to edit
-      if (add) return replace(existing, add, { ...add, input: { ...add.input, ...pick(incoming.input, UPDATABLE[incoming.entity]) } })
-      if (update) return replace(existing, update, { ...from(update, incoming), id: update.id, seq: update.seq, createdAt: update.createdAt })
+      if (add) return replace(existing, add, { ...add, input: { ...add.input, ...pick(incoming.input, UPDATABLE[incoming.entity]), ...foldedTyre(add.input, incoming.input) } })
+      if (update) {
+        const folded = from(update, incoming)
+        return replace(existing, update, { ...folded, input: { ...folded.input, ...foldedTyre(update.input, incoming.input) }, id: update.id, seq: update.seq, createdAt: update.createdAt })
+      }
       return [...existing, next]
     case 'trash': {
       if (trash) return [...existing] // already waiting to go
@@ -203,6 +206,19 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
 }
 
 /** `incoming` as made from where `first` started: its version and the values it had then (none known: none). */
+/**
+ * An expense's tyre details (#290) when an edit folds into the change waiting before it: the edit of an expense the tyre log made names only
+ * what was done and the set, so the lines, tyres and break-up the earlier change makes stay with it, and an edit that says nothing of them
+ * keeps them whole. `null` (switched off) and an earlier change without any take the edit's as it is (`{}`).
+ */
+function foldedTyre(earlier: Change['input'], incoming: Change['input']): Record<string, unknown> {
+  const before = earlier?.tyre
+  if (!before || typeof before !== 'object') return {}
+  if (!incoming || !('tyre' in incoming)) return { tyre: before }
+  const after = incoming.tyre
+  return after && typeof after === 'object' ? { tyre: { ...before, ...after } } : {}
+}
+
 const from = (first: Change, incoming: Change): Change => {
   const made: Change = { ...incoming, expectedVersion: first.expectedVersion }
   if (first.base) made.base = first.base

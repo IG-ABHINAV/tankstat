@@ -30,6 +30,23 @@ describe('collapse', () => {
     expect(edited).toEqual([expect.objectContaining({ action: 'add', input: expect.objectContaining({ title: 'Valve', tyre: { ...tyre, kind: 'VALVE_REPLACED' } }) })])
     const off = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: null } }))
     expect(off[0].input).toMatchObject({ tyre: null })
+    // The expense the add put on the tyre log, edited as a linked one: only what was done and the set, the line's id stays; an edit that
+    // says nothing of its tyre details keeps them whole.
+    const linkedEdit = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: { kind: 'STORAGE_FEE', setId: null } } }))
+    expect(linkedEdit[0].input).toMatchObject({ tyre: { kind: 'STORAGE_FEE', setId: null, lineId: 'l1' } })
+    const amountOnly = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', amount: 30 } }))
+    expect(amountOnly[0].input).toMatchObject({ amount: 30, tyre })
+  })
+
+  it("an expense's tyre details given in a waiting edit stay with it when it is edited again (#290)", () => {
+    const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's1', tyres: [{ tyreId: 't3', id: 'l3' }] }
+    const attach = change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 25, tyre } })
+    const again = fold(attach, change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 30 } }))
+    expect(again).toEqual([expect.objectContaining({ action: 'update', expectedVersion: 2, input: expect.objectContaining({ amount: 30, tyre }) })])
+    const kind = fold(attach, change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 25, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } } }))
+    expect(kind[0].input).toMatchObject({ tyre: { ...tyre, kind: 'VALVE_REPLACED' } })
+    const off = fold(attach, change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 25, tyre: null } }))
+    expect(off[0].input).toMatchObject({ tyre: null })
   })
 
   it('an add then a trash is nothing at all, whatever came in between', () => {
