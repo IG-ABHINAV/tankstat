@@ -1,20 +1,21 @@
-import { useApolloClient, useMutation } from '@apollo/client/react'
+import { useApolloClient, useMutation, useQuery } from '@apollo/client/react'
 import Button from '@mui/material/Button'
 import { useTranslation } from 'react-i18next'
 import type { ChangeEdit, MergeInfo } from '../../dialogs/changeEdit.ts'
 import { ExpenseFormDialog, type ExpenseValues } from '../../ExpenseFormDialog.tsx'
-import { ResolveSyncChangeDocument, type DistanceUnit, type ParkedChangeFieldsFragment, type VolumeUnit } from '../../gql/generated.ts'
+import { RecurringExpensesDocument, ResolveSyncChangeDocument, type DistanceUnit, type ParkedChangeFieldsFragment, type VolumeUnit } from '../../gql/generated.ts'
 import { keptPhotosOf, type Change } from '../../offline/changes.ts'
 import { currentValues, merge, situationOf, type Current } from '../../offline/conflicts.ts'
 import { outbox } from '../../offline/outbox.ts'
 import { toChangeInput } from '../../offline/push.ts'
 import { uuidV4 } from '../../offline/uuid.ts'
+import { RecurringDoneDialog, type DoneValues } from '../../RecurringDoneDialog.tsx'
 import { RecurringFormDialog, type RecurringValues } from '../../RecurringFormDialog.tsx'
 import { RefuelingFormDialog, type RefuelingValues } from '../../RefuelingFormDialog.tsx'
 import { VehicleFormDialog, type VehicleValues } from '../../VehicleFormDialog.tsx'
 import { useFieldText } from './useFieldText.ts'
 
-type Values = RefuelingValues | ExpenseValues | VehicleValues | RecurringValues
+type Values = RefuelingValues | ExpenseValues | VehicleValues | RecurringValues | DoneValues
 
 /**
  * Edit, on Waiting to sync, in the dialog of the entry the change concerns, starting from the values the change carries:
@@ -43,9 +44,20 @@ export function EditChange({
   const [resolve] = useMutation(ResolveSyncChangeDocument)
   const fields = useFieldText(units)
 
+  const visit = change.action === 'markDone'
   const save = async (values: Values) => {
-    // The values replace the change's own (the add's id and vehicle stay); photos are never part of an edit.
-    const input = { ...change.input, ...values, id: change.targetId, photoIds: undefined }
+    // The values replace the change's own (the add's id and vehicle stay); photos are never part of an edit. A visit (#290, decision 71)
+    // has no id of its own to keep, and a waiting one keeps its kept photos; a parked one has none (the server keeps none of a change).
+    const input = visit
+      ? { ...change.input, ...values, photoIds: parked ? undefined : change.input?.photoIds }
+      : { ...change.input, ...values, id: change.targetId, photoIds: undefined }
+    if (!parked && visit) {
+      // Visits never fold: the edit takes the waiting visit's place (its id, order and kept photos stay).
+      await outbox.replaceInput(change.id, input, (values as DoneValues).ids)
+      void client.refetchQueries({ include: 'active' }).catch(() => undefined)
+      onDone(t('sync.edited'))
+      return
+    }
     if (!parked) {
       await outbox.enqueue({ id: uuidV4(), entity: change.entity, action: 'update', vehicleId: change.vehicleId, targetId: change.targetId, input, expectedVersion: change.expectedVersion ?? null })
       void client.refetchQueries({ include: 'active' }).catch(() => undefined)
@@ -69,7 +81,8 @@ export function EditChange({
 
   // A parked edit of what was changed meanwhile is merged: the dialog starts from the merged values and says, under each field, what the
   // other side has.
-  const merging = parked && situationOf(change, parked.current, parked.reason?.key) === 'edited' ? mergeInfo(change, parked.current, fields) : null
+  // A visit is no edit of what is there: it has nothing to merge with.
+  const merging = parked && !visit && situationOf(change, parked.current, parked.reason?.key) === 'edited' ? mergeInfo(change, parked.current, fields) : null
   const edit: ChangeEdit<never> = merging
     ? { initial: { ...change.input, ...merging.values } as never, title: t('sync.merge.title'), submitLabel: t('sync.merge.apply'), merge: merging.info, targetId: change.targetId }
     : {
@@ -98,8 +111,40 @@ export function EditChange({
     case 'vehicles':
       return <VehicleFormDialog trigger={trigger} change={edit} onSubmit={save} />
     case 'recurring':
-      return <RecurringFormDialog trigger={trigger} vehicleId={change.vehicleId} unit={units.distance} change={edit} onSubmit={save} />
+      return visit ? (
+        <VisitEdit trigger={trigger} vehicle={vehicle} edit={edit} onSubmit={save} />
+      ) : (
+        <RecurringFormDialog trigger={trigger} vehicleId={change.vehicleId} unit={units.distance} change={edit} onSubmit={save} />
+      )
   }
+}
+
+/** A visit's edit (#290, decision 71): the Done dialog over the vehicle's schedules (kept on the device), the visit's ticked. */
+function VisitEdit({
+  trigger,
+  vehicle,
+  edit,
+  onSubmit,
+}: {
+  trigger: React.ReactElement
+  vehicle: { id: string; units: { distance: DistanceUnit } }
+  edit: ChangeEdit<never>
+  onSubmit: (values: DoneValues) => Promise<void>
+}) {
+  const schedules = useQuery(RecurringExpensesDocument, { variables: { vehicleId: vehicle.id } })
+  return (
+    <RecurringDoneDialog
+      trigger={trigger}
+      vehicle={vehicle}
+      items={schedules.data?.vehicle?.recurring ?? []}
+      selected={[]}
+      change={edit as ChangeEdit<DoneValues>}
+      onSubmit={async (values) => {
+        await onSubmit(values)
+        return undefined
+      }}
+    />
+  )
 }
 
 /** The merged values of a parked edit and what the dialog says under each field: both sides of a field changed on both, in words. */

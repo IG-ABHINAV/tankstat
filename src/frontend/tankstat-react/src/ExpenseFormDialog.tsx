@@ -420,7 +420,8 @@ function ExpenseForm({
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
         // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values).
-        ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre ? { tyre: null } : {}),
+        // Switched off, a change's tyre details go as none; without the tyres to show them (no answer) they stay as the change has them.
+        ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre && tyre.available ? { tyre: null } : {}),
       }
       await checkTyres(values)
       await onSubmit(values, tyreInput?.named || undefined)

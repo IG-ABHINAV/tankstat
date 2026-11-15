@@ -75,7 +75,8 @@ export function keptPhotosOf(change: Change): string[] {
  * The changes that can be edited before they are sent or applied (Waiting to sync): adds and edits of logs, vehicles and schedules. A
  * trash, a restore, a visit or a photo is only kept, removed, applied or discarded.
  */
-export const canEdit = (change: Change) => change.action === 'add' || change.action === 'update'
+/** Changes Waiting to sync can open in their dialog: an add or an edit, and a visit (#290, the owner's decision 71). */
+export const canEdit = (change: Change) => change.action === 'add' || change.action === 'update' || change.action === 'markDone'
 
 const isPhoto = (c: Change) => c.action === 'addPhoto' || c.action === 'removePhoto'
 const isPicture = (c: Change) => c.action === 'setPicture' || c.action === 'removePicture'

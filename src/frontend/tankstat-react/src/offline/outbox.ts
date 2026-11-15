@@ -122,6 +122,21 @@ export const outbox = {
     })
   },
 
+  /**
+   * A waiting visit edited on Waiting to sync (#290, decision 71): visits never fold, so the edit takes the change's place, keeping its
+   * id, `seq` and kept photos. One already on its way may have reached the server: it is not changed (an error).
+   */
+  replaceInput(id: string, input: Record<string, unknown>, targetIds?: string[]): Promise<void> {
+    return exclusive(async () => {
+      const found = changes.find((c) => c.id === id)
+      if (!found || found.sent) throw new Error(`The change ${id} is no longer waiting on this device.`)
+      const next = changes.map((c) => (c.id === id ? { ...c, input, ...(targetIds ? { targetIds } : {}) } : c))
+      await persist(changes, next)
+      changes = next
+      changed()
+    })
+  },
+
   /** Takes back one waiting change. */
   discard(id: string): Promise<void> {
     return exclusive(async () => {

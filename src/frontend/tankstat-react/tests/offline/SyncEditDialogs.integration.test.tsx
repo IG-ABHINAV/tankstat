@@ -84,3 +84,25 @@ it('Edit, on a schedule waiting here, opens the schedule dialog with what it car
   expect(outbox.changes).toHaveLength(1)
   expect(outbox.changes[0]).toMatchObject({ id: 's1', action: 'add', input: { id: 's1', title: 'Oil change', intervalMonths: 6, warnDays: 30 } })
 })
+
+it('Edit, on a visit waiting here (#290, decision 71), opens the Done dialog with what it carries, and saving edits that visit in place', async () => {
+  await downloaded()
+  await outbox.enqueue({
+    id: 'm1', entity: 'recurring', action: 'markDone', vehicleId: 'v1', targetId: 'e7', targetIds: ['s-v1'],
+    input: { ids: ['s-v1'], date: '2026-10-05', odometer: null, amount: 250, discount: null, currency: 'EUR', title: 'Insurance', category: 'Fees', expenseId: 'e7', photoIds: [] },
+  })
+
+  const { ui, dialog } = await editOnSyncPage(/^Edit the change: Marked as done/)
+  await waitFor(() => expect(within(dialog).getByRole('checkbox', { name: 'Insurance' })).toBeChecked())
+  expect(within(dialog).getByLabelText('Amount (optional)')).toHaveValue('250')
+  expect(within(dialog).getByLabelText('Expense title')).toHaveValue('Insurance')
+  expect(within(dialog).queryByRole('group', { name: 'Photos' })).not.toBeInTheDocument()
+  await ui.clear(within(dialog).getByLabelText('Amount (optional)'))
+  await ui.type(within(dialog).getByLabelText('Amount (optional)'), '275')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+
+  expect(await screen.findByText(saved)).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(outbox.changes).toHaveLength(1) // still one visit: visits never fold, the edit takes its place
+  expect(outbox.changes[0]).toMatchObject({ id: 'm1', action: 'markDone', targetId: 'e7', targetIds: ['s-v1'], input: { ids: ['s-v1'], amount: 275, expenseId: 'e7', photoIds: [] } })
+})
