@@ -66,6 +66,7 @@ export function useExpenseTyreDetails({
   setCategory,
   linked,
   initial,
+  suggested,
   parked = false,
 }: {
   tyres: VehicleTyresFieldsFragment | null | undefined
@@ -81,6 +82,11 @@ export function useExpenseTyreDetails({
    * offered (else the usual start: one the server refused may be gone), its tyres, a whole set's labels and the break-up it carries.
    */
   initial?: ExpenseTyreInput | null
+  /**
+   * What the photos say was done (#290, the owner's decisions 56 and 67: one of the five a receipt can tell, `suggestedKind`): offered at the
+   * switch while the section is closed, and once it is open filled into *What was done* while the person has not changed it, offered after.
+   */
+  suggested?: TyreEntryKind | null
   /** `initial` is a parked change's (decision 70): the server refused it, so with no set left to offer its set is gone. */
   parked?: boolean
 }) {
@@ -90,7 +96,7 @@ export function useExpenseTyreDetails({
   // kept), and an edit of its amount must never move its line to no set.
   const available = !!tyres && (tyres.sets.length > 0 || !!linked || (!!initial && parked))
   const last = tyres?.expenseCategory ?? null
-  const [state, setState] = useState<TyreDetailsState>(() => {
+  const [own, setState] = useState<TyreDetailsState>(() => {
     if (linked) return { on: true, kind: linked.kind, setId: linked.setId ?? '', whole: true, picked: [], labels: [] }
     const sets = tyres?.sets.filter((s) => !s.set.isRetired) ?? []
     const start = (sets.find((s) => s.onTheCar) ?? sets[0])?.set.id ?? ''
@@ -108,7 +114,7 @@ export function useExpenseTyreDetails({
     const labels = byCorner ? EXACT_ORDER.map((corner) => made.find((t) => t.corner === corner)?.label ?? '') : []
     return { on: true, kind: initial.kind, setId: initial.setId ?? '', whole: lines.length === 0, picked, labels }
   })
-  const open = available && (!!linked || state.on === true || (state.on !== false && isTyreCategory(category, last)))
+  const open = available && (!!linked || own.on === true || (own.on !== false && isTyreCategory(category, last)))
   const [kindError, setKindError] = useState<string>()
   const kindRef = useRef<{ focus: () => void }>(null)
 
@@ -131,10 +137,30 @@ export function useExpenseTyreDetails({
     setState((s) => ({ ...s, on }))
     if (on && !category.trim()) setCategory(last?.trim() || t('tyres.fee.defaultCategory'))
   }
+  // What was done as the photos say (#290, decision 67): while the section is open and the person has not changed it, it is the photo's
+  // (worked out here, never stored, so a later photo still counts); once they chose a kind, the photo's is only offered.
+  const [kindTouched, setKindTouched] = useState(false)
+  const photoKind = !linked && suggested ? suggested : null
+  const state: TyreDetailsState = open && photoKind && !kindTouched && own.kind !== photoKind ? { ...own, kind: photoKind } : own
   const change = (next: TyreDetailsState) => {
+    if (next.kind !== state.kind) setKindTouched(true)
     setState(next)
     if (next.kind) setKindError(undefined)
   }
+  /** The photo's suggestion: `filled` while *What was done* is the photo's, `offered` once the person chose another; `use` takes it (and opens the section). */
+  const photo = photoKind
+    ? {
+        kind: photoKind,
+        filled: open && !kindTouched && state.kind === photoKind,
+        offered: (!open || kindTouched) && state.kind !== photoKind,
+        use: () => {
+          if (!open) toggle(true)
+          setKindTouched(false)
+          setState((s) => ({ ...s, on: true, kind: photoKind }))
+          setKindError(undefined)
+        },
+      }
+    : null
   const setName = tyres?.sets.find((s) => s.set.id === state.setId)?.set.name ?? null
   /** The expense's title while the person has not typed one (decision 52): "{kind}: {set}", as *Add entry*'s fee. */
   const title = open && state.kind ? (setName ? `${t(`tyres.entries.kinds.${state.kind}`)}: ${setName}` : t(`tyres.entries.kinds.${state.kind}`)) : null
@@ -158,10 +184,20 @@ export function useExpenseTyreDetails({
     return (await import('./expenseTyreInput.ts')).tyreInputOf(state, tyres, ids, day, initial?.setId === state.setId ? initial.breakUp : null)
   }
 
-  return { available, open, state, change, toggle, kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null }
+  return { available, open, state, change, toggle, kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null, photo }
 }
 
 export type ExpenseTyreDetails = ReturnType<typeof useExpenseTyreDetails>
+
+/** The kinds a receipt can tell (#290, the owner's decision 66): never *Other*, a note or a swap. */
+const PHOTO_KINDS: readonly TyreEntryKind[] = ['PUNCTURE_REPAIRED', 'VALVE_REPLACED', 'WHEEL_BALANCING', 'STORAGE_FEE', 'BOUGHT']
+
+/** The kind a photo's `TYRE_WORK` names (the server keeps the kind's own name, `WheelBalancing`), or none. */
+export function suggestedKind(value: string | undefined): TyreEntryKind | null {
+  if (!value) return null
+  const kind = value.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() as TyreEntryKind
+  return PHOTO_KINDS.includes(kind) ? kind : null
+}
 
 /** The switch's hint in *Add expense* and *Edit expense* (decisions 51, 54): it names the tyre categories that open it by itself. */
 export function useSwitchHint(details: ExpenseTyreDetails, editing: boolean) {

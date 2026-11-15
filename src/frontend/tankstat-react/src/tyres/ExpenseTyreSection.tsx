@@ -1,7 +1,7 @@
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useId, type Ref } from 'react'
+import { useId, type ReactNode, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LabeledSelect } from '../components/UnitSelect.tsx'
 import type { TyreEntryKind } from '../gql/generated.ts'
@@ -23,6 +23,7 @@ export default function ExpenseTyreSection({
   kindRef,
   note,
   linked,
+  kindNote,
 }: {
   tyres: Tyres
   state: TyreDetailsState
@@ -37,6 +38,8 @@ export default function ExpenseTyreSection({
    * whole set's line may move to another set or none; a tyre's line keeps its set and says its tyres; a swap's line is locked whole.
    */
   linked?: TyreEntry | null
+  /** Under *What was done*: what a photo says was done (#290, decision 67), "Read from the photo" or offered. */
+  kindNote?: ReactNode
 }) {
   const { t } = useTranslation()
   const words = useEntryWords()
@@ -63,6 +66,7 @@ export default function ExpenseTyreSection({
           hint={lockedHint ?? (holders.length > 1 ? t('expenses.tyreDetails.sharedHint', { tyres: tyreLabelsOf(tyres, holders) }) : undefined)}
           error={kindError}
           selectRef={kindRef}
+          extra={kindNote}
           onChange={(kind) => onChange({ ...state, kind: kind as TyreEntryKind | '' })}
         />
         <LabeledSelect

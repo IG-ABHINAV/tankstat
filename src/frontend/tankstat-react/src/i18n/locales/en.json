@@ -1307,7 +1307,8 @@
       "chooseKind": "Choose what was done.",
       "choose": "Choose…",
       "opened": "Tyre details opened.",
-      "closed": "Tyre details closed."
+      "closed": "Tyre details closed.",
+      "photoShows": "The photo shows tyre work: {{kind}}"
     }
   },
   "import": {

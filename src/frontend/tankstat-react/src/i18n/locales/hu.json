@@ -1307,7 +1307,8 @@
       "chooseKind": "Válaszd ki, mi történt.",
       "choose": "Válassz…",
       "opened": "A gumi adatok kinyíltak.",
-      "closed": "A gumi adatok bezárultak."
+      "closed": "A gumi adatok bezárultak.",
+      "photoShows": "A fotón gumis munka látszik: {{kind}}"
     }
   },
   "import": {

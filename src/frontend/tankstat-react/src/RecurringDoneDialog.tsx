@@ -52,7 +52,7 @@ import { outbox } from './offline/outbox.ts'
 import type { ChangeEdit } from './dialogs/changeEdit.ts'
 import { visuallyHidden } from './components/visuallyHidden.ts'
 import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
-import { useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+import { suggestedKind, useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 /** One service visit: the schedules done, and (with an amount) the one expense logged for all of them. */
 export interface DoneValues {
@@ -312,7 +312,7 @@ function DoneFields({
   // The title stays the schedules' with tyre details on (the owner's decision 64); the category opens them as in the Expense dialog.
   const titleValue = title ?? defaultTitle(done)
   const categoryValue = category ?? defaultCategory(done)
-  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre, parked: waitingParked })
+  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
   const switchHint = useSwitchHint(tyre, false)
   const note = (field: FillableField) => (
     <ReadNote

@@ -30,6 +30,7 @@ export function LabeledSelect<T extends string>({
   badges,
   error,
   selectRef,
+  extra,
 }: {
   label: string
   value: T
@@ -38,6 +39,8 @@ export function LabeledSelect<T extends string>({
   disabled?: boolean
   placeholder?: string
   hint?: string
+  /** Under the hint, linked to the select like it (a photo's `ReadNote`). */
+  extra?: ReactNode
   /** Short words beside the label (where a value comes from); read as the start of the select's description. */
   badges?: readonly LabelBadge[]
   error?: string
@@ -47,8 +50,9 @@ export function LabeledSelect<T extends string>({
   const hintId = `${labelId}-hint`
   const errorId = `${labelId}-error`
   const badgesId = `${labelId}-badges`
+  const extraId = `${labelId}-extra`
   const hasBadges = (badges?.length ?? 0) > 0
-  const describedBy = [hasBadges && badgesId, hint && hintId, error && errorId].filter(Boolean).join(' ') || undefined
+  const describedBy = [hasBadges && badgesId, hint && hintId, extra && extraId, error && errorId].filter(Boolean).join(' ') || undefined
   return (
     <Stack sx={{ gap: 0.5, minWidth: 0 }}>
       <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -71,6 +75,7 @@ export function LabeledSelect<T extends string>({
           {hint}
         </Typography>
       )}
+      {extra && <div id={extraId}>{extra}</div>}
       {error && (
         <Typography id={errorId} variant="caption" sx={{ color: 'error.main' }}>
           {error}

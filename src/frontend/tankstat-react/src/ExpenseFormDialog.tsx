@@ -55,7 +55,7 @@ import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
 import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
-import { useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+import { suggestedKind, useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 // Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
 const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
@@ -370,7 +370,7 @@ function ExpenseForm({
   const merging = useMergeFields(merge)
   // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
   const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
-  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre, parked: waitingParked })
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
   const switchHint = useSwitchHint(tyre, editing)
   // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
   const [titleTyped, setTitleTyped] = useState(false)

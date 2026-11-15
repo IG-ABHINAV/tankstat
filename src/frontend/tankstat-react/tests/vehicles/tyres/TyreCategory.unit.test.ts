@@ -20,3 +20,16 @@ describe('the tyre category (#290, the owner decision 58)', () => {
     expect(foldCategory(' Gumík ')).toBe('gumik')
   })
 })
+
+describe("a photo's tyre work (#290, decision 66)", () => {
+  it('is one of the five kinds a receipt can tell, from the name the server keeps; anything else is none', async () => {
+    const { suggestedKind } = await import('../../../src/tyres/useExpenseTyreDetails.ts')
+    expect(suggestedKind('WheelBalancing')).toBe('WHEEL_BALANCING')
+    expect(suggestedKind('PunctureRepaired')).toBe('PUNCTURE_REPAIRED')
+    expect(suggestedKind('Bought')).toBe('BOUGHT')
+    expect(suggestedKind('Other')).toBeNull()
+    expect(suggestedKind('Swap')).toBeNull()
+    expect(suggestedKind('')).toBeNull()
+    expect(suggestedKind(undefined)).toBeNull()
+  })
+})
