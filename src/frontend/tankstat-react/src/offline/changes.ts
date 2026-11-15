@@ -91,7 +91,7 @@ export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
 }
 
 /** An expense change's tyre details (#290), when it carries some: the lines it makes, or what a linked expense's lines say. */
-const expenseTyreOf = (c: Change): Record<string, unknown> | null =>
+export const expenseTyreOf = (c: Change): Record<string, unknown> | null =>
   c.entity === 'expenses' && (c.action === 'add' || c.action === 'update') && c.input?.tyre && typeof c.input.tyre === 'object' ? (c.input.tyre as Record<string, unknown>) : null
 
 const ids = (value: unknown): string[] => (typeof value === 'string' && value !== '' ? [value] : [])
@@ -189,7 +189,11 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
       return [...existing, next]
     case 'trash': {
       if (trash) return [...existing] // already waiting to go
-      if (add) return withoutDependents(others, incoming).filter((c) => !photosOfLog(c)) // never sent: nothing to take back, nor anything made to it
+      if (add) {
+        // Never sent: nothing to take back, nor anything made to it (an expense's tyre log lines and tyres too, #290).
+        const left = withoutDependents(others, incoming).filter((c) => !photosOfLog(c))
+        return expenseTyreOf(add) ? withoutTyreDependents(left, createdBy(add)) : left
+      }
       // Photos of a log in the trash can be neither added nor removed: those changes go (a restore does not bring them back).
       const kept = existing.filter((c) => !photosOfLog(c))
       if (restore) return kept.filter((c) => c !== restore)
@@ -205,20 +209,24 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
   }
 }
 
-/** `incoming` as made from where `first` started: its version and the values it had then (none known: none). */
 /**
  * An expense's tyre details (#290) when an edit folds into the change waiting before it: the edit of an expense the tyre log made names only
  * what was done and the set, so the lines, tyres and break-up the earlier change makes stay with it, and an edit that says nothing of them
- * keeps them whole. `null` (switched off) and an earlier change without any take the edit's as it is (`{}`).
+ * keeps them whole. Tyre details of their own (a line's id or the tyres', from the section with its switch: Waiting to sync's Edit) take
+ * the earlier ones' place whole, so none of their lines, tyres or break-up is left over. `null` (switched off) and an earlier change
+ * without any take the edit's as it is (`{}`).
  */
 function foldedTyre(earlier: Change['input'], incoming: Change['input']): Record<string, unknown> {
   const before = earlier?.tyre
   if (!before || typeof before !== 'object') return {}
   if (!incoming || !('tyre' in incoming)) return { tyre: before }
   const after = incoming.tyre
-  return after && typeof after === 'object' ? { tyre: { ...before, ...after } } : {}
+  if (!after || typeof after !== 'object') return {}
+  const own = 'lineId' in after || 'tyres' in after
+  return { tyre: own ? after : { ...before, ...after } }
 }
 
+/** `incoming` as made from where `first` started: its version and the values it had then (none known: none). */
 const from = (first: Change, incoming: Change): Change => {
   const made: Change = { ...incoming, expectedVersion: first.expectedVersion }
   if (first.base) made.base = first.base
@@ -244,7 +252,7 @@ export function discard(existing: readonly Change[], id: string): Change[] {
   const rest = existing.filter((c) => c.id !== id)
   if (removed?.entity === 'tyres') return withoutTyreDependents(rest, createdBy(removed))
   // An expense taken back that made tyre log lines (#290): what was made on its lines goes with it.
-  const withLines = removed && expenseTyreOf(removed) ? withoutTyreDependents(rest, createdBy(removed).filter((made) => made !== removed.targetId || removed.action === 'add')) : rest
+  const withLines = removed && expenseTyreOf(removed) ? withoutTyreDependents(rest, createdBy(removed)) : rest
   return removed?.action === 'add' ? withoutDependents(withLines, removed) : withLines
 }
 
