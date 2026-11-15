@@ -72,10 +72,9 @@ export function keptPhotosOf(change: Change): string[] {
 }
 
 /**
- * The changes that can be edited before they are sent or applied (Waiting to sync): adds and edits of logs, vehicles and schedules. A
- * trash, a restore, a visit or a photo is only kept, removed, applied or discarded.
+ * The changes that can be edited before they are sent or applied (Waiting to sync): adds and edits of logs, vehicles and schedules, and a
+ * visit (#290, the owner's decision 71). A trash, a restore or a photo is only kept, removed, applied or discarded.
  */
-/** Changes Waiting to sync can open in their dialog: an add or an edit, and a visit (#290, the owner's decision 71). */
 export const canEdit = (change: Change) => change.action === 'add' || change.action === 'update' || change.action === 'markDone'
 
 const isPhoto = (c: Change) => c.action === 'addPhoto' || c.action === 'removePhoto'
@@ -254,7 +253,11 @@ export function discard(existing: readonly Change[], id: string): Change[] {
   const removed = existing.find((c) => c.id === id)
   if (removed?.action === 'trash' && removed.input) return replace(existing, removed, asEdit(removed))
   // A visit taken back logs no expense: what was made to that expense here goes with it.
-  if (removed && isVisitOf(removed, removed.targetId)) return existing.filter((c) => c.id !== id && !(c.entity === 'expenses' && c.targetId === removed.targetId))
+  if (removed && isVisitOf(removed, removed.targetId)) {
+    const rest = existing.filter((c) => c.id !== id && !(c.entity === 'expenses' && c.targetId === removed.targetId))
+    // Its tyre details' lines (#290) go too, and what was made on them, as an expense add's.
+    return expenseTyreOf(removed) ? withoutTyreDependents(rest, createdBy(removed)) : rest
+  }
   const rest = existing.filter((c) => c.id !== id)
   if (removed?.entity === 'tyres') return withoutTyreDependents(rest, createdBy(removed))
   // An expense taken back that made tyre log lines (#290): what was made on its lines goes with it.

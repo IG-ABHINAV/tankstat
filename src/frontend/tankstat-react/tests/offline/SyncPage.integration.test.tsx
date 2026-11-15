@@ -326,7 +326,7 @@ it('Edit and apply sends the change as edited; a refusal stays in the dialog wit
   expect(sent[1]).toMatchObject({ id: 'c1', action: 'APPLY', change: { id: 'c1', expectedVersion: 3, updateRefueling: { id: 'b', volume: 44, odometer: 1500 } } })
 })
 
-it('Edit and apply, on a visit the server parked for its tyre details (#290, decision 71), opens the Done dialog: switched off, they go as none', async () => {
+it('Edit and apply, on a visit the server parked for its tyre details (#290, decision 71), opens the Done dialog: switched off, they go as none, with the schedules ticked', async () => {
   await downloaded()
   connectivity.reset()
   const row = parkedRow('c9', 'MARK_RECURRING_EXPENSES_DONE', {
@@ -339,7 +339,7 @@ it('Edit and apply, on a visit the server parked for its tyre details (#290, dec
   const sent: { change: Record<string, unknown> }[] = []
   server.use(
     ...fakeTyres([tyreSummer, tyreWinter]).handlers,
-    ...fakeRecurringBackend([fakeRecurring({ id: 's-v1', title: 'Insurance', category: 'Fees' })]).handlers,
+    ...fakeRecurringBackend([fakeRecurring({ id: 's-v1', title: 'Insurance', category: 'Fees' }), fakeRecurring({ id: 's-v2', title: 'Vignette', category: 'Fees' })]).handlers,
     graphql.query('LogDefaults', () => HttpResponse.json({ data: { logDefaults: { __typename: 'LogDefaults', lastOdometer: 1500, lastDate: '2026-09-20', currency: 'EUR' } } })),
     graphql.query('ExpenseCategories', () => HttpResponse.json({ data: { expenseCategories: ['Fees'] } })),
     graphql.query('ParkedChanges', () => HttpResponse.json({ data: { parkedChanges: parked } })),
@@ -358,11 +358,12 @@ it('Edit and apply, on a visit the server parked for its tyre details (#290, dec
   expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Wheel balancing')
   expect(within(dialog).getByLabelText('Amount (optional)')).toHaveValue('250')
   await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(dialog).getByRole('checkbox', { name: 'Vignette' })) // the visit's schedules are edited too
   await ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
 
   expect(await screen.findByText('Applied.')).toBeInTheDocument()
   expect(sent).toEqual([expect.objectContaining({ id: 'c9', action: 'APPLY' })])
-  expect(sent[0].change.markRecurringExpensesDone).toMatchObject({ ids: ['s-v1'], amount: 250, expenseId: 'e9', tyre: null })
+  expect(sent[0].change.markRecurringExpensesDone).toMatchObject({ ids: ['s-v1', 's-v2'], amount: 250, expenseId: 'e9', tyre: null })
   expect(sent[0].change.markRecurringExpensesDone).not.toHaveProperty('photoIds')
 })
 

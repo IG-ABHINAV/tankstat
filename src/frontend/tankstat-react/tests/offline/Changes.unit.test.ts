@@ -299,6 +299,14 @@ describe("an expense's tyre details (#290)", () => {
     const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
     expect(discard([expenseAdd, onLine, other], expenseAdd.id)).toEqual([other])
   })
+
+  it('a visit with an amount, taken back, takes along what was made on its lines and on its expense', () => {
+    const visit = change('markDone', 'e5', { entity: 'recurring', targetIds: ['rc1'], input: { ids: ['rc1'], date: '2026-10-01', amount: 30, expenseId: 'e5', tyre } })
+    const onLine = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l2', kind: 'VALVE_REPLACED' } })
+    const onExpense = change('update', 'e5', { entity: 'expenses', input: { id: 'e5', note: 'x' } })
+    const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
+    expect(discard([visit, onLine, onExpense, other], visit.id)).toEqual([other])
+  })
 })
 
 

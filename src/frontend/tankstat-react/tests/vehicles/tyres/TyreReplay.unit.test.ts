@@ -614,5 +614,19 @@ describe("an expense's tyre details waiting on the device (#290)", () => {
     expect(tyres.entries.find((e) => e.id === 'l8')).toMatchObject({ kind: 'STORAGE_FEE', setId: 's2', day: '2026-10-03', odometer: 147_200, expenseId: null, amount: null })
     expect(() => applyTyreChange(base, visit('x7', { date: '2026-10-02', amount: 5, expenseId: 'x7', tyre: { kind: 'NOTE', setId: 's1' } }))).toThrow(TyreRuleError)
   })
+
+  it("a visit's expense is judged as the server does: its amount or photos, never the expense id an edit or a trash left behind", () => {
+    const visit = (targetId: string, input: Record<string, unknown>): Change => ({
+      id: `c${++seq}`, seq, createdAt: seq, entity: 'recurring', action: 'markDone', vehicleId: 'v1', targetId, targetIds: ['rc1'], input: { ids: ['rc1'], ...input },
+    })
+    const emptied = visit('x5', { date: '2026-10-02', amount: null, photoIds: null, expenseId: 'x5', tyre: { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l5' } })
+    const toPhotos = visit('x6', { date: '2026-10-03', amount: null, photoIds: ['local:a'], expenseId: 'x6', tyre: { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l6' } })
+
+    const { tyres, skipped } = replayTyres(base, [emptied, toPhotos])
+
+    expect(skipped).toEqual([])
+    expect(tyres.entries.find((e) => e.id === 'l5')).toMatchObject({ expenseId: null, amount: null })
+    expect(tyres.entries.find((e) => e.id === 'l6')).toMatchObject({ expenseId: 'x6', amount: null })
+  })
 })
 

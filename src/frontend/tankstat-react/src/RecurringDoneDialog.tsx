@@ -371,10 +371,10 @@ function DoneFields({
         ...(tyreInput ? { tyre: tyreInput.tyre } : waitingTyre && tyre.available ? { tyre: null } : {}),
       }
       // A visit with tyre details that will wait on this device (#290, decision 70): its tyre part replayed first, so a refusal the device
-      // can foresee is said here. The expense's id only tells the replay that the visit logs one.
+      // can foresee is said here. A visit whose amount is left to its photos logs an expense: a stand-in photo tells the replay so.
       if (tyreInput && tyres && !initial) {
         const { checkKept } = await import('./tyres/expenseTyreInput.ts')
-        checkKept(vehicle.id, tyres, { entity: 'recurring', action: 'markDone', targetId: 'visit' }, { ...values, ...(logsExpense ? { expenseId: 'visit' } : {}) })
+        checkKept(vehicle.id, tyres, { entity: 'recurring', action: 'markDone', targetId: 'visit' }, { ...values, ...(logsExpense ? { expenseId: 'visit', photoIds: ['visit'] } : {}) })
       }
       await onSubmit(values, logsExpense)
     } catch (err) {

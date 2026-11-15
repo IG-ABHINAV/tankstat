@@ -67,7 +67,14 @@ export function EditChange({
     try {
       await resolve({
         // Applied over what the person sees now: changed once more meanwhile, it stays parked (none seen: over whatever is there).
-        variables: { input: { id: parked.id, action: 'APPLY', change: toChangeInput({ ...change, input, expectedVersion: parked.current?.version ?? null, base: undefined }) } },
+        // A visit's schedules are its `targetIds` (`toChangeInput` sends those): the ones ticked in the dialog.
+        variables: {
+          input: {
+            id: parked.id,
+            action: 'APPLY',
+            change: toChangeInput({ ...change, input, ...(visit ? { targetIds: (values as DoneValues).ids } : {}), expectedVersion: parked.current?.version ?? null, base: undefined }),
+          },
+        },
         refetchQueries: ['ParkedChanges'],
         awaitRefetchQueries: true,
       })
@@ -89,7 +96,7 @@ export function EditChange({
         initial: change.input as never,
         title: parked ? t('sync.editApplyTitle') : t('sync.editTitle'),
         submitLabel: parked ? t('sync.applyEdited') : t('sync.saveChange'),
-        mayWait: !parked && change.action === 'add' && keptPhotosOf(change).length > 0,
+        mayWait: !parked && (change.action === 'add' || visit) && keptPhotosOf(change).length > 0,
         targetId: change.targetId,
         parked: !!parked,
       }

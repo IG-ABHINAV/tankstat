@@ -255,8 +255,9 @@ function expenseLines(m: Model, c: Change, details: Record<string, unknown>) {
  */
 function visitLines(m: Model, c: Change, details: Record<string, unknown>) {
   const input = c.input ?? {}
-  // The dialog names the visit's expense only when it logs one (an amount, or photos the amount is left to): its id tells.
-  const withExpense = num(input.amount) !== null || !!str(input.expenseId)
+  // As the server decides: an amount, or photos (the amount left to them). Its expense id alone says nothing: an edit that emptied the
+  // amount, or a trash of its expense, leaves it in the input.
+  const withExpense = num(input.amount) !== null || (Array.isArray(input.photoIds) && input.photoIds.length > 0)
   if (withExpense && str(details.kind) === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
   addLines(m, c, { ...details, id: details.lineId, day: input.date, odometer: input.odometer, note: null }, () =>
     withExpense
