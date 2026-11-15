@@ -55,7 +55,7 @@ import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
 import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
-import { useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+import { EXACT_ORDER, useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 // Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
 const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
@@ -151,7 +151,7 @@ export function ExpenseFormDialog({
   }
   // A change edited on Waiting to sync keeps the ids its tyre details gave (later tyre changes may name them), fresh ones after them.
   const waitingTyre = change?.initial.tyre ?? null
-  const waitingNew = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'].map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
+  const waitingNew = EXACT_ORDER.map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
   const tyreIds: TyreDetailsIds = {
     line: waitingTyre?.lineId ?? freshIds.line,
     lines: freshIds.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
@@ -205,10 +205,10 @@ export function ExpenseFormDialog({
                     vehicleId={vehicle.id}
                     tyres={allTyres}
                     line={tyreLine}
-                    onDone={(err) => {
+                    onDone={(err, kept) => {
                       // Lines that went before a refusal stay in the trash: the dialog shows the expense as it is now either way.
                       setRemoveError(err)
-                      if (err === undefined) toast(t('expenses.tyreLog.removed'))
+                      if (err === undefined) toast(kept ? t('toast.savedOnDevice') : t('expenses.tyreLog.removed'))
                       void details.refetch()
                       void tyres.refetch()
                     }}
@@ -419,8 +419,9 @@ function ExpenseForm({
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
-        // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values).
-        ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre ? { tyre: null } : {}),
+        // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values). Without the
+        // section (no answer of the vehicle's tyres, or no set left) nothing is said of them: the change keeps its own.
+        ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre && tyre.available ? { tyre: null } : {}),
       }
       await checkTyres(values)
       await onSubmit(values, tyreInput?.named || undefined)
