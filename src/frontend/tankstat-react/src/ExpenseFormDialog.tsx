@@ -243,7 +243,7 @@ export function ExpenseFormDialog({
             checkTyres={async (values) => {
               if (!values.tyre || !allTyres || change) return // a change on Waiting to sync is checked when it is applied
               const { checkKept } = await import('./tyres/expenseTyreInput.ts')
-              checkKept(vehicle.id, allTyres, editing ? 'update' : 'add', editing ? expenseId! : clientId, { ...values })
+              checkKept(vehicle.id, allTyres, { entity: 'expenses', action: editing ? 'update' : 'add', targetId: editing ? expenseId! : clientId }, { ...values })
             }}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.

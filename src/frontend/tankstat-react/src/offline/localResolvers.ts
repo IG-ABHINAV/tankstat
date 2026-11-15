@@ -175,8 +175,11 @@ export function withChanges(kind: LogKind, rows: readonly LogRow[], vehicleId?: 
   if (kind === 'expenses') {
     // A visit with an amount logs an expense: it is a row of its own until the server has it (its id is the visit's expense id).
     for (const visit of outbox.changes.filter((c) => c.action === 'markDone' && c.input?.amount != null && (vehicleId === undefined || c.vehicleId === vehicleId)))
+    {
       // Version 1, as the server will create it: an edit or trash of it made here goes after the visit, from that version.
       byId.set(visit.targetId, { ...added('expenses', { ...visit, input: { ...visit.input, category: visit.input?.category || null, note: null } }), version: 1 })
+      withTyreEntry(kind, byId, visit) // its tyre details' first line (#290)
+    }
     // A tyre log line's amount (#288) makes an expense with the line's day and reading, titled and filed as the dialog said; it carries its
     // line, so the list shows its chip. An edit of a line it was on changes the row the device holds: only what follows the line (the
     // server's `Expense.FollowLine`), so its title, its note and what was read from its photos stay as they are.

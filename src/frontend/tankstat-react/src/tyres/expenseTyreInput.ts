@@ -28,9 +28,14 @@ export function labelsOf(state: TyreDetailsState, tyres: Tyres): string[] {
  * shown first, so a refusal the device can foresee is said in the dialog (thrown as the server's key), not parked later. Sent at once, the
  * server judges it.
  */
-export function checkKept(vehicleId: string, tyres: Tyres, action: 'add' | 'update', expenseId: string, input: Record<string, unknown>) {
+export function checkKept(
+  vehicleId: string,
+  tyres: Tyres,
+  change: { entity: 'expenses'; action: 'add' | 'update'; targetId: string } | { entity: 'recurring'; action: 'markDone'; targetId: string },
+  input: Record<string, unknown>,
+) {
   if (!willKeep(vehicleId)) return
-  applyTyreChange(tyres, { id: 'check', seq: 0, createdAt: 0, entity: 'expenses', action, vehicleId, targetId: expenseId, input })
+  applyTyreChange(tyres, { id: 'check', seq: 0, createdAt: 0, ...change, vehicleId, input })
 }
 
 /**

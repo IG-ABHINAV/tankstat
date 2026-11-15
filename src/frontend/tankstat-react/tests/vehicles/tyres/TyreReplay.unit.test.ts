@@ -597,5 +597,20 @@ describe("an expense's tyre details waiting on the device (#290)", () => {
     expect(refusal(expenseChange('update', 'x6', { id: 'x6', date: '2026-08-20', amount: 10, tyre: { kind: 'PUNCTURE_REPAIRED', setId: 's2' } }))).toBe('tyres.tyreNotOfSet')
     expect(refusal(expenseChange('add', 'x3', { id: 'x3', date: '2026-10-02', amount: 5, tyre: { kind: 'OTHER', setId: 'nope' } }))).toBe('tyres.setNotFound')
   })
+
+  it("a visit with them: with an amount the lines hold its expense, without one they are logged alone, on the visit's day", () => {
+    const visit = (targetId: string, input: Record<string, unknown>): Change => ({
+      id: `c${++seq}`, seq, createdAt: seq, entity: 'recurring', action: 'markDone', vehicleId: 'v1', targetId, targetIds: ['rc1'], input: { ids: ['rc1'], ...input },
+    })
+    const paid = visit('x9', { date: '2026-10-02', odometer: 147_100, amount: 8000, currency: 'HUF', category: 'Tyres', expenseId: 'x9', tyre: { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l9' } })
+    const alone = visit('v2', { date: '2026-10-03', odometer: 147_200, amount: null, tyre: { kind: 'STORAGE_FEE', setId: 's2', lineId: 'l8' } })
+
+    const { tyres, skipped } = replayTyres(base, [paid, alone])
+
+    expect(skipped).toEqual([])
+    expect(tyres.entries.find((e) => e.id === 'l9')).toMatchObject({ kind: 'WHEEL_BALANCING', day: '2026-10-02', odometer: 147_100, version: 0, expenseId: 'x9', amount: 8000 })
+    expect(tyres.entries.find((e) => e.id === 'l8')).toMatchObject({ kind: 'STORAGE_FEE', setId: 's2', day: '2026-10-03', odometer: 147_200, expenseId: null, amount: null })
+    expect(() => applyTyreChange(base, visit('x7', { date: '2026-10-02', amount: 5, expenseId: 'x7', tyre: { kind: 'NOTE', setId: 's1' } }))).toThrow(TyreRuleError)
+  })
 })
 

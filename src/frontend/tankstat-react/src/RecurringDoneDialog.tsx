@@ -314,20 +314,24 @@ function DoneFields({
     try {
       const tyreInput = await tyre.inputOf(text('date'), tyreIds)
       if (tyreInput === 'invalid') return // said at What was done, which has the focus
-      await onSubmit(
-        {
-          ids: done.map((i) => i.id),
-          date: text('date'),
-          odometer: text('odometer') === '' ? null : Number(text('odometer')),
-          amount: hasAmount ? (parseDecimal(text('amount')) ?? null) : null,
-          discount: hasAmount && text('discount') !== '' ? (parseDecimal(text('discount')) ?? null) : null, // without an amount the field says so before this
-          currency: hasAmount ? text('currency').toUpperCase() : null,
-          title: titleValue.trim(),
-          category: categoryValue.trim(), // empty: no category (null would mean "the schedules' one" to the server)
-          ...(tyreInput ? { tyre: tyreInput.tyre } : {}),
-        },
-        logsExpense,
-      )
+      const values: DoneValues = {
+        ids: done.map((i) => i.id),
+        date: text('date'),
+        odometer: text('odometer') === '' ? null : Number(text('odometer')),
+        amount: hasAmount ? (parseDecimal(text('amount')) ?? null) : null,
+        discount: hasAmount && text('discount') !== '' ? (parseDecimal(text('discount')) ?? null) : null, // without an amount the field says so before this
+        currency: hasAmount ? text('currency').toUpperCase() : null,
+        title: titleValue.trim(),
+        category: categoryValue.trim(), // empty: no category (null would mean "the schedules' one" to the server)
+        ...(tyreInput ? { tyre: tyreInput.tyre } : {}),
+      }
+      // A visit with tyre details that will wait on this device (#290, decision 70): its tyre part replayed first, so a refusal the device
+      // can foresee is said here. The expense's id only tells the replay that the visit logs one.
+      if (tyreInput && tyres) {
+        const { checkKept } = await import('./tyres/expenseTyreInput.ts')
+        checkKept(vehicle.id, tyres, { entity: 'recurring', action: 'markDone', targetId: 'visit' }, { ...values, ...(logsExpense ? { expenseId: 'visit' } : {}) })
+      }
+      await onSubmit(values, logsExpense)
     } catch (err) {
       setError(err)
     } finally {

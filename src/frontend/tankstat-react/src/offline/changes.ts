@@ -90,9 +90,14 @@ export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
   tyres: [], // never folded
 }
 
-/** An expense change's tyre details (#290), when it carries some: the lines it makes, or what a linked expense's lines say. */
+/**
+ * An expense change's or a visit's tyre details (#290), when it carries some: the lines it makes, or what a linked expense's lines say.
+ */
 const expenseTyreOf = (c: Change): Record<string, unknown> | null =>
-  c.entity === 'expenses' && (c.action === 'add' || c.action === 'update') && c.input?.tyre && typeof c.input.tyre === 'object' ? (c.input.tyre as Record<string, unknown>) : null
+  ((c.entity === 'expenses' && (c.action === 'add' || c.action === 'update')) || (c.entity === 'recurring' && c.action === 'markDone')) &&
+  c.input?.tyre && typeof c.input.tyre === 'object'
+    ? (c.input.tyre as Record<string, unknown>)
+    : null
 
 const ids = (value: unknown): string[] => (typeof value === 'string' && value !== '' ? [value] : [])
 const rows = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? (value as Record<string, unknown>[]) : [])

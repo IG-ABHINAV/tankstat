@@ -188,13 +188,17 @@ function swapped(
 
 /** An expense change's tyre details (#290): the lines an add (or a plain expense's edit) makes, or what a linked one's lines say. */
 const tyreDetailsOf = (c: Change): Record<string, unknown> | null =>
-  c.entity === 'expenses' && (c.action === 'add' || c.action === 'update') && c.input?.tyre && typeof c.input.tyre === 'object' ? (c.input.tyre as Record<string, unknown>) : null
+  ((c.entity === 'expenses' && (c.action === 'add' || c.action === 'update')) || (c.entity === 'recurring' && c.action === 'markDone')) &&
+  c.input?.tyre && typeof c.input.tyre === 'object'
+    ? (c.input.tyre as Record<string, unknown>)
+    : null
 
 /**
  * A change the tyres follow: a tyre change, an edit of an expense (#288: one a line made shares its day and reading with the line), or an
- * expense saved with tyre details (#290).
+ * expense or a visit saved with tyre details (#290).
  */
-export const touchesTyres = (c: Change) => c.entity === 'tyres' || (c.entity === 'expenses' && (c.action === 'update' || tyreDetailsOf(c) !== null))
+export const touchesTyres = (c: Change) =>
+  c.entity === 'tyres' || (c.entity === 'expenses' && c.action === 'update') || tyreDetailsOf(c) !== null
 
 /**
  * A waiting edit of a line's expense (#288), as the server's `UpdateExpenseAsync`: its date and odometer are the line's (a swap's day moving
@@ -251,6 +255,22 @@ function expenseLines(m: Model, c: Change, details: Record<string, unknown>) {
 }
 
 /**
+ * A visit's tyre details (#290, the owner's decisions 57 and 63), as the server's `MarkDoneAsync`: with an amount (or photos) the lines hold
+ * the visit's expense, as an expense add's; without one they are logged alone, on the visit's day with its odometer.
+ */
+function visitLines(m: Model, c: Change, details: Record<string, unknown>) {
+  const input = c.input ?? {}
+  // The dialog names the visit's expense only when it logs one (an amount, or photos the amount is left to): its id tells.
+  const withExpense = num(input.amount) !== null || !!str(input.expenseId)
+  if (withExpense && str(details.kind) === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
+  addLines(m, c, { ...details, id: details.lineId, day: input.date, odometer: input.odometer, note: null }, () =>
+    withExpense
+      ? { expenseId: str(input.expenseId) || null, amount: num(input.amount), currency: str(input.currency) || null, category: text(input.category), expenseTrashed: false }
+      : NO_MONEY,
+  )
+}
+
+/**
  * The lines an add makes (#288, #289): the whole set's (or no set's) line, or a line each for the tyres picked, the first one's id the
  * group's, a whole set broken up first; their money from `moneyFor` (the first line's), one expense for all of them, counted once.
  */
@@ -284,6 +304,10 @@ function addLines(m: Model, c: Change, input: Record<string, unknown>, moneyFor:
 /** Applies one tyre change to the model; a rule it breaks is thrown (`TyreRuleError`), as the server would refuse it. */
 function apply(m: Model, c: Change, vehicleId: string) {
   if (c.entity === 'expenses') return expenseEdited(m, c)
+  if (c.entity === 'recurring') {
+    const details = tyreDetailsOf(c)
+    return details ? visitLines(m, c, details) : undefined
+  }
   if (!isTyreAction(c.action)) return
   const input = c.input ?? {}
   switch (c.action) {

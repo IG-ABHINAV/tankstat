@@ -278,6 +278,12 @@ describe('photos of a log', () => {
 })
 
 describe("an expense's tyre details (#290)", () => {
+  it("a visit's make their lines and need the set, as an expense add's", () => {
+    const visit = change('markDone', 'x1', { entity: 'recurring', targetIds: ['rc1'], input: { ids: ['rc1'], date: '2026-10-01', tyre: { kind: 'STORAGE_FEE', setId: 's9', lineId: 'l5' } } })
+    expect(createdBy(visit)).toEqual(['l5'])
+    expect(tyreNeedsOf(visit)).toEqual(['s9'])
+  })
+
   const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's9', tyres: [{ tyreId: 'nt1', id: 'l1' }, { tyreId: 'old2', id: 'l2' }], breakUp: { setId: 's9', day: '2026-10-01', tyres: [{ id: 'nt1' }, { id: 'nt2' }] } }
   const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, tyre } })
 

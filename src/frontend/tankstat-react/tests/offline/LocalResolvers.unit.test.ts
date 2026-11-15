@@ -248,6 +248,8 @@ describe('a visit waiting on this device', () => {
     await outbox.enqueue({ id: 'a', entity: 'expenses', action: 'add', vehicleId: 'v1', targetId: 'e1', input: { ...base, id: 'e1', tyre: { kind: 'PUNCTURE_REPAIRED', setId: 's1', lineId: 'l1' } } })
     await outbox.enqueue({ id: 'b', entity: 'expenses', action: 'add', vehicleId: 'v1', targetId: 'e2', input: { ...base, id: 'e2', tyre: { kind: 'VALVE_REPLACED', setId: 's1', tyres: [{ tyreId: 't3', id: 'l3' }, { tyreId: 't4', id: 'l4' }] } } })
     await outbox.enqueue({ id: 'c', entity: 'expenses', action: 'update', vehicleId: 'v1', targetId: 'e3', expectedVersion: 2, input: { ...base, id: 'e3', tyre: { kind: 'STORAGE_FEE', setId: null } } })
+    await outbox.enqueue({ id: 'd', entity: 'recurring', action: 'markDone', vehicleId: 'v1', targetId: 'e4', targetIds: ['rc1'],
+      input: { ids: ['rc1'], date: '2026-10-05', amount: 80, currency: 'EUR', title: 'Wheel balancing', expenseId: 'e4', tyre: { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l4' } } })
     const linked = { ...base, __typename: 'Expense', id: 'e3', version: 2, deletedAt: null, pulledAt: 1, tyreEntry: { __typename: 'TyreEntryRef', id: 'l9', kind: 'OTHER', setName: 'Winter', trashed: false } }
 
     const rows = withChanges('expenses', [linked as never], 'v1')
@@ -256,6 +258,7 @@ describe('a visit waiting on this device', () => {
     expect(byId.e1.tyreEntry).toEqual({ __typename: 'TyreEntryRef', id: 'l1', kind: 'PUNCTURE_REPAIRED', setName: null, trashed: false })
     expect(byId.e2.tyreEntry).toMatchObject({ id: 'l3', kind: 'VALVE_REPLACED' })
     expect(byId.e3.tyreEntry).toEqual({ __typename: 'TyreEntryRef', id: 'l9', kind: 'STORAGE_FEE', setName: 'Winter', trashed: false })
+    expect(byId.e4.tyreEntry).toMatchObject({ id: 'l4', kind: 'WHEEL_BALANCING' }) // a visit's expense too
   })
 
   it('a waiting edit of a line with an expense (#288) changes that expense\'s row and adds none', async () => {

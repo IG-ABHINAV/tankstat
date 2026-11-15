@@ -1,8 +1,10 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
-import { server } from '../../support/server.ts'
+import { answered, server } from '../../support/server.ts'
+import { connectivity } from '../../../src/offline/connectivity.ts'
+import { outbox } from '../../../src/offline/outbox.ts'
 import { fakeExpenseBackend, fakeRecurring, fakeRecurringBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { fakeTyres, tyreSummer, tyreWinter } from '../../support/tyres.ts'
 import { UUID } from '../../support/ids.ts'
@@ -80,4 +82,30 @@ it('another category opens nothing until switched on, and then stops at What was
 
   expect(await within(dialog).findByText('Choose what was done.')).toBeInTheDocument()
   expect(state.calls.MarkRecurringExpensesDone).toBeUndefined()
+})
+
+it('kept on the device, its line is on the tyre log at once; a refusal the device can foresee is said in the dialog', async () => {
+  const { ui, state } = setup()
+  const dialog = await doneDialog(ui, 'Wheel balancing')
+  await chooseKind(ui, dialog, 'Puncture repaired')
+  await answered()
+  act(() => connectivity.failed())
+  const group = within(dialog).getByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('checkbox', { name: 'The whole set' }))
+  await ui.click(within(group).getByRole('button', { name: /front left/ }))
+  await ui.clear(within(group).getByLabelText(/^Label, front right/))
+  await ui.type(within(group).getByLabelText(/^Label, front right/), 'S1') // the same label twice: the break-up is refused
+  await ui.click(within(dialog).getByRole('button', { name: 'Mark as done' }))
+  expect(await within(dialog).findByText('Each tyre needs its own label.')).toBeInTheDocument()
+  expect(outbox.changes).toEqual([])
+
+  await ui.clear(within(group).getByLabelText(/^Label, front right/))
+  await ui.type(within(group).getByLabelText(/^Label, front right/), 'S2')
+  await ui.click(within(dialog).getByRole('button', { name: 'Mark as done' }))
+  expect(await screen.findByText('Saved on this device · syncs when online.')).toBeInTheDocument()
+  expect(state.calls.MarkRecurringExpensesDone).toBeUndefined()
+  expect(outbox.changes).toMatchObject([{ entity: 'recurring', action: 'markDone', input: { tyre: { kind: 'PUNCTURE_REPAIRED', setId: 's1' } } }])
+  await ui.click(screen.getByRole('tab', { name: 'Tyres' }))
+  const log = await screen.findByRole('region', { name: 'Tyre log' })
+  expect(await within(log).findByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S1,/ })).toBeInTheDocument()
 })
