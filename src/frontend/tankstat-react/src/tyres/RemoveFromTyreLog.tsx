@@ -23,8 +23,8 @@ export default function RemoveFromTyreLog({
   vehicleId: string
   tyres: Tyres
   line: TyreEntry
-  /** After the lines went (`error` undefined), or one of them was refused. */
-  onDone: (error?: unknown) => void
+  /** After the lines went (`error` undefined; `kept`: one or more kept on this device for the server), or one of them was refused. */
+  onDone: (error?: unknown, kept?: boolean) => void
 }) {
   const { t } = useTranslation()
   const run = useTyreMutation(vehicleId)
@@ -38,8 +38,9 @@ export default function RemoveFromTyreLog({
   const holders = [line, ...sharersOf(tyres, line)]
   const remove = async () => {
     try {
-      for (const holder of holders) await run(DeleteTyreEntryDocument, { input: { id: holder.id, withExpense: false } })
-      onDone()
+      let kept = false
+      for (const holder of holders) kept = (await run(DeleteTyreEntryDocument, { input: { id: holder.id, withExpense: false } })).queued || kept
+      onDone(undefined, kept)
     } catch (err) {
       onDone(err)
     }

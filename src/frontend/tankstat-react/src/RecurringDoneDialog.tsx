@@ -173,6 +173,7 @@ export function RecurringDoneDialog({
             tyreIds={tyreIds}
             initial={change?.initial}
             waitingTyre={waitingTyre}
+            waitingParked={!!change?.parked}
             submitLabel={change?.submitLabel}
             photosBusy={queue.busy || queue.failed > 0}
             photosPicked={queue.items.length > 0}
@@ -221,6 +222,8 @@ interface FormProps {
   initial?: Partial<DoneValues>
   /** Its tyre details, shown to fix or switch off (decision 71); switched off they are sent as none. */
   waitingTyre?: ExpenseTyreInput | null
+  /** `waitingTyre` is a parked visit's: shown also with no set left. */
+  waitingParked?: boolean
   submitLabel?: string
   photosBusy: boolean
   photosPicked: boolean
@@ -257,6 +260,7 @@ function DoneFields({
   tyreIds,
   initial,
   waitingTyre = null,
+  waitingParked = false,
   submitLabel,
   tyres,
   photosBusy,
@@ -319,7 +323,7 @@ function DoneFields({
   // The title stays the schedules' with tyre details on (the owner's decision 64); the category opens them as in the Expense dialog.
   const titleValue = title ?? defaultTitle(done)
   const categoryValue = category ?? defaultCategory(done)
-  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre })
+  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre, parked: waitingParked })
   const switchHint = useSwitchHint(tyre, false)
   const note = (field: FillableField) => (
     <ReadNote

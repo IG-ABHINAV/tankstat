@@ -596,6 +596,8 @@ describe("an expense's tyre details waiting on the device (#290)", () => {
     expect(refusal(expenseChange('update', 'x5', { id: 'x5', date: '2026-03-28', amount: 8000, tyre: { kind: 'SWAP', setId: 's1' } }))).toBeNull() // what it says already
     expect(refusal(expenseChange('update', 'x6', { id: 'x6', date: '2026-08-20', amount: 10, tyre: { kind: 'PUNCTURE_REPAIRED', setId: 's2' } }))).toBe('tyres.tyreNotOfSet')
     expect(refusal(expenseChange('add', 'x3', { id: 'x3', date: '2026-10-02', amount: 5, tyre: { kind: 'OTHER', setId: 'nope' } }))).toBe('tyres.setNotFound')
+    // A linked expense's edit (what was done and the set alone) while no live line holds it: refused, never a line of its own.
+    expect(refusal(expenseChange('update', 'x2', { id: 'x2', date: '2026-08-20', amount: 10, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } }))).toBe('tyres.expenseLineInTrash')
   })
 
   it("a visit with them: with an amount the lines hold its expense, without one they are logged alone, on the visit's day", () => {

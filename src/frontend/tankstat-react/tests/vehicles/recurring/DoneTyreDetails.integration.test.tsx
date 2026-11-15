@@ -156,3 +156,62 @@ it("a visit edited on Waiting to sync shows its tyre details, keeps its own line
   expect(sent[1].tyre).toBeNull()
 })
 
+
+/** A visit edited on Waiting to sync (decision 71), the vehicle's tyres `sets`; `parked`: one the server refused (Edit and apply). */
+function visitEdit(sets: Parameters<typeof fakeTyres>[0], tyre: Record<string, unknown>, parked = false) {
+  stubViewport('desktop')
+  server.use(sessionHandler('NONE', () => null), healthHandler, ...fakeExpenseBackend(fakeVehicle(), []).handlers, ...fakeTyres(sets).handlers)
+  const sent: DoneValues[] = []
+  renderWithApollo(
+    <RecurringDoneDialog
+      open
+      vehicle={{ id: 'v1', units: { distance: 'KILOMETERS' } }}
+      items={[balancing]}
+      selected={[]}
+      change={{
+        initial: { ids: ['rc1'], date: '2026-10-05', odometer: null, amount: 5000, discount: null, currency: 'HUF', title: 'Wheel balancing', category: 'Tyres', expenseId: 'e5', tyre: tyre as never },
+        title: 'Edit the change',
+        submitLabel: 'Save the change',
+        parked,
+      }}
+      onSubmit={async (values) => {
+        sent.push(values)
+        return undefined
+      }}
+    />,
+  )
+  return { sent, ui: userEvent.setup() }
+}
+
+it("an edit of a visit's amount alone sends its tyre details as they were, its set kept", async () => {
+  const tyre = { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'L7' }
+  const { sent, ui } = visitEdit([tyreSummer, tyreWinter], tyre)
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.clear(within(dialog).getByLabelText('Amount (optional)'))
+  await ui.type(within(dialog).getByLabelText('Amount (optional)'), '6000')
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toEqual(tyre)
+})
+
+it('a waiting visit with no tyre set to offer keeps its tyre details unseen; a parked one shows them, to switch off', async () => {
+  const tyre = { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'L7' }
+  const waiting = visitEdit([], tyre)
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByLabelText('Amount (optional)')
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  await waiting.ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(waiting.sent).toHaveLength(1))
+  expect(waiting.sent[0]).not.toHaveProperty('tyre') // the device may know no sets at all: the visit keeps its own
+})
+
+it('a parked visit whose set is gone shows its tyre details with no set left, and switched off sends them as none', async () => {
+  const { sent, ui } = visitEdit([], { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'L7' }, true)
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toBeNull()
+})

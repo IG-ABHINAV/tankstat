@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../../src/App.tsx'
 import { ExpenseFormDialog, type ExpenseValues } from '../../../src/ExpenseFormDialog.tsx'
+import { HttpResponse } from 'msw'
+import { graphql } from '../../support/graphql.ts'
 import { answered, server } from '../../support/server.ts'
 import { fakeExpense, fakeExpenseBackend, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../../support/mocks.tsx'
 import { brokenUpSummer, fakeTyres, tyreSummer, tyreWinter, type FakeTyreEntry, type FakeTyreSet } from '../../support/tyres.ts'
@@ -287,10 +289,12 @@ it('says in the dialog what the server would refuse of a change kept on the devi
 
 // ---- a change edited on Waiting to sync (decision 70) ---------------------------------------------------------
 
-function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId }: { lines?: FakeTyreEntry[]; targetId?: string } = {}) {
+function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines = [], targetId, noAnswer = false, parked = false }: { lines?: FakeTyreEntry[]; targetId?: string; noAnswer?: boolean; parked?: boolean } = {}) {
   stubViewport('desktop')
   const backend = fakeExpenseBackend(fakeVehicle(), [])
   server.use(sessionHandler('NONE', () => null), healthHandler, ...backend.handlers, ...fakeTyres(sets, lines).handlers)
+  // The vehicle's tyres not answered (a failure, or offline with none kept).
+  if (noAnswer) server.use(graphql.query('VehicleTyres', () => HttpResponse.json({ errors: [{ message: 'Unexpected Execution Error' }] })))
   const sent: ExpenseValues[] = []
   renderWithApollo(
     <ExpenseFormDialog
@@ -301,6 +305,7 @@ function editChange(sets: FakeTyreSet[], tyre?: Record<string, unknown>, { lines
         title: 'Edit the change',
         submitLabel: 'Save the change',
         targetId,
+        parked,
       }}
       onSubmit={async (values) => {
         sent.push(values)
@@ -355,4 +360,61 @@ it("shows what a linked expense's waiting edit says was done, and keeps sending 
   await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].tyre).toEqual({ kind: 'STORAGE_FEE', setId: 's1' })
+})
+
+it("leaves a change's tyre details as they are when its edit has no section (the vehicle's tyres not answered)", async () => {
+  const { sent, ui } = editChange([tyreSummer], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' }, { noAnswer: true })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByLabelText('Amount')
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).not.toHaveProperty('tyre') // the change keeps its own, never switched off unseen
+})
+
+it("keeps a waiting change's tyre details unseen when the vehicle has no tyre set to offer (the device may know none)", async () => {
+  const { sent, ui } = editChange([], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByLabelText('Amount')
+  expect(within(dialog).queryByRole('switch', { name: 'Tyre details' })).not.toBeInTheDocument()
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).not.toHaveProperty('tyre') // an edit of its amount never moves its line to no set
+})
+
+it("shows a parked change's tyre details when the vehicle has no tyre set left, so they can be switched off", async () => {
+  const { sent, ui } = editChange([], { kind: 'STORAGE_FEE', setId: 's2', lineId: 'L1' }, { parked: true })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toBeNull() // its only set gone (refused for it): it can be applied without them
+})
+
+it("starts a change whose set is gone at the whole set on the car, none of the gone set's tyres picked", async () => {
+  const { sent, ui } = editChange([tyreSummer, tyreWinter], {
+    kind: 'PUNCTURE_REPAIRED', setId: 'gone', tyres: [{ tyreId: 'n1', id: 'L1' }],
+    breakUp: { setId: 'gone', day: '2026-10-05', tyres: [{ id: 'n1', label: 'G1', corner: 'FRONT_LEFT' }] },
+  })
+  const dialog = await screen.findByRole('dialog', { name: 'Edit the change' })
+  await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(dialog).getByRole('button', { name: 'Save the change' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].tyre).toEqual({ kind: 'PUNCTURE_REPAIRED', setId: expect.any(String), lineId: expect.any(String) })
+})
+
+it('removed from the tyre log while the server is out of reach, says it is saved on the device', async () => {
+  const { ui, tyres } = setup(undefined, [linked('PUNCTURE_REPAIRED', 'Michelin Primacy 4')], [line()])
+  const dialog = await openEdit(ui, 'Puncture repaired: Michelin Primacy 4')
+  await ui.click(await within(dialog).findByRole('button', { name: 'Remove from the tyre log' }))
+  const confirm = await screen.findByRole('alertdialog', { name: 'Remove it from the tyre log?' })
+  await answered()
+  act(() => connectivity.failed())
+  await ui.click(within(confirm).getByRole('button', { name: 'Remove from the tyre log' }))
+
+  expect(await screen.findByText('Saved on this device · syncs when online.')).toBeInTheDocument()
+  expect(screen.queryByText('Removed from the tyre log. Its line is in the trash.')).not.toBeInTheDocument()
+  expect(tyres.calls.DeleteTyreEntry).toBeUndefined()
+  expect(outbox.changes).toMatchObject([{ entity: 'tyres', action: 'deleteTyreEntry', input: { id: 'l1', withExpense: false } }])
 })

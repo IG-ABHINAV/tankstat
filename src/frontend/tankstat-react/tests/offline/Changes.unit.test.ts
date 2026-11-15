@@ -301,3 +301,20 @@ describe("an expense's tyre details (#290)", () => {
   })
 })
 
+
+describe("an expense's tyre details replaced or taken back (#290)", () => {
+  const picked = { kind: 'PUNCTURE_REPAIRED', setId: 's9', tyres: [{ tyreId: 'nt1', id: 'l1' }], breakUp: { setId: 's9', day: '2026-10-01', tyres: [{ id: 'nt1' }, { id: 'nt2' }] } }
+  const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, tyre: picked } })
+
+  it('a whole set chosen in the edit of a waiting change replaces the tyres and break-up it carried', () => {
+    const whole = { kind: 'PUNCTURE_REPAIRED', setId: 's9', lineId: 'L0' }
+    const [only] = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: whole } }))
+    expect(only.input?.tyre).toEqual(whole)
+  })
+
+  it('an add trashed before it was sent takes along what was made on its lines and tyres', () => {
+    const onLine = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l1', kind: 'VALVE_REPLACED' } })
+    const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
+    expect(fold(expenseAdd, onLine, other, change('trash', 'e1', { entity: 'expenses' }))).toEqual([other])
+  })
+})

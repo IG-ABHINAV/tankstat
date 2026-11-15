@@ -26,7 +26,7 @@ export interface TyreDetailsState {
 }
 
 /** A whole set's corners in the order its labels are kept (as `singleTyres.ts` `EXACT`, which this eager module does not import). */
-const EXACT_ORDER = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'] as const
+export const EXACT_ORDER = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'] as const
 
 /** The device's ids of what a save makes (see `ExpenseTyreSection`). */
 export interface TyreDetailsIds {
@@ -47,6 +47,7 @@ export function useExpenseTyreDetails({
   setCategory,
   linked,
   initial,
+  parked = false,
 }: {
   tyres: VehicleTyresFieldsFragment | null | undefined
   category: string
@@ -61,9 +62,14 @@ export function useExpenseTyreDetails({
    * offered (else the usual start: one the server refused may be gone), its tyres, a whole set's labels and the break-up it carries.
    */
   initial?: ExpenseTyreInput | null
+  /** `initial` is a parked change's (decision 70): the server refused it, so with no set left to offer its set is gone. */
+  parked?: boolean
 }) {
   const { t } = useTranslation()
-  const available = !!tyres && (tyres.sets.length > 0 || !!linked)
+  // A parked change that carries tyre details shows them also with no set left: the server refused it, so its set is gone, and it can be
+  // switched off. A waiting one with no set to offer keeps them unseen: the device may simply know none (its data removed, the change
+  // kept), and an edit of its amount must never move its line to no set.
+  const available = !!tyres && (tyres.sets.length > 0 || !!linked || (!!initial && parked))
   const last = tyres?.expenseCategory ?? null
   const [state, setState] = useState<TyreDetailsState>(() => {
     if (linked) return { on: true, kind: linked.kind, setId: linked.setId ?? '', whole: true, picked: [], labels: [] }
@@ -71,6 +77,8 @@ export function useExpenseTyreDetails({
     const start = (sets.find((s) => s.onTheCar) ?? sets[0])?.set.id ?? ''
     if (!initial) return { on: null, kind: '', setId: start, whole: true, picked: [], labels: [] }
     const offered = !initial.setId || sets.some((s) => s.set.id === initial.setId)
+    // Its set no longer offered: the usual start, the whole set (its tyres were the gone set's, never the start's).
+    if (!offered) return { on: true, kind: initial.kind, setId: start, whole: true, picked: [], labels: [] }
     const lines = initial.tyres ?? []
     // A whole set it breaks up, shown whole (a parked change is not replayed here): its tyres picked by their corners, its labels as typed.
     // Shown broken up (a waiting change is replayed, its break-up made), or a broken-up set: by their ids.
@@ -79,7 +87,7 @@ export function useExpenseTyreDetails({
     const byCorner = made.length > 0 && shownWhole
     const picked = byCorner ? made.filter((t) => lines.some((l) => l.tyreId === t.id)).map((t) => t.corner ?? '').filter(Boolean) : lines.map((l) => l.tyreId)
     const labels = byCorner ? EXACT_ORDER.map((corner) => made.find((t) => t.corner === corner)?.label ?? '') : []
-    return { on: true, kind: initial.kind, setId: offered ? (initial.setId ?? '') : start, whole: lines.length === 0, picked, labels }
+    return { on: true, kind: initial.kind, setId: initial.setId ?? '', whole: lines.length === 0, picked, labels }
   })
   const open = available && (!!linked || state.on === true || (state.on !== false && isTyreCategory(category, last)))
   const [kindError, setKindError] = useState<string>()

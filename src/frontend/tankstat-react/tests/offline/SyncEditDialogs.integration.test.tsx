@@ -110,5 +110,6 @@ it('Edit, on a visit waiting here (#290, decision 71), opens the Done dialog wit
   expect(outbox.changes).toHaveLength(1) // still one visit: visits never fold, the edit takes its place
   expect(outbox.changes[0]).toMatchObject({ id: 'm1', action: 'markDone', targetId: 'e7', targetIds: ['s-v1'], input: { ids: ['s-v1'], amount: 275, expenseId: 'e7', photoIds: [] } })
   // The device knows no tyres for it (none downloaded): its tyre details cannot be shown, so they stay as the visit has them.
+  expect(within(dialog).queryByRole('group', { name: 'Tyre details' })).not.toBeInTheDocument()
   expect(outbox.changes[0].input?.tyre).toEqual({ kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l7' })
 })

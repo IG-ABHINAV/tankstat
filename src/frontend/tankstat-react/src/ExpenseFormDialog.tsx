@@ -55,7 +55,7 @@ import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
 import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
-import { useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+import { EXACT_ORDER, useExpenseTyreDetails, useSwitchHint, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 // Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
 const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
@@ -151,7 +151,7 @@ export function ExpenseFormDialog({
   }
   // A change edited on Waiting to sync keeps the ids its tyre details gave (later tyre changes may name them), fresh ones after them.
   const waitingTyre = change?.initial.tyre ?? null
-  const waitingNew = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'].map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
+  const waitingNew = EXACT_ORDER.map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
   const tyreIds: TyreDetailsIds = {
     line: waitingTyre?.lineId ?? freshIds.line,
     lines: freshIds.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
@@ -205,10 +205,10 @@ export function ExpenseFormDialog({
                     vehicleId={vehicle.id}
                     tyres={allTyres}
                     line={tyreLine}
-                    onDone={(err) => {
+                    onDone={(err, kept) => {
                       // Lines that went before a refusal stay in the trash: the dialog shows the expense as it is now either way.
                       setRemoveError(err)
-                      if (err === undefined) toast(t('expenses.tyreLog.removed'))
+                      if (err === undefined) toast(kept ? t('toast.savedOnDevice') : t('expenses.tyreLog.removed'))
                       void details.refetch()
                       void tyres.refetch()
                     }}
@@ -238,6 +238,7 @@ export function ExpenseFormDialog({
             tyres={existing?.tyreEntry && !tyreLine ? null : allTyres}
             tyreLine={tyreLine}
             waitingTyre={tyreLine ? null : waitingTyre}
+            waitingParked={!!change?.parked}
             keptTyre={tyreLine ? waitingTyre : null}
             tyreIds={tyreIds}
             checkTyres={async (values) => {
@@ -299,6 +300,7 @@ function ExpenseForm({
   tyres,
   tyreLine,
   waitingTyre,
+  waitingParked = false,
   keptTyre,
   tyreIds,
   checkTyres,
@@ -331,6 +333,8 @@ function ExpenseForm({
   tyreLine: TyreLine | null
   /** A change edited on Waiting to sync: the tyre details it carries (decision 70). */
   waitingTyre: ExpenseTyreInput | null
+  /** `waitingTyre` is a parked change's: shown also with no set left. */
+  waitingParked?: boolean
   /** A linked expense's edit waiting on this device (`tyre` naming what was done and the set): sent again unless changed here. */
   keptTyre: ExpenseTyreInput | null
   tyreIds: TyreDetailsIds
@@ -376,7 +380,7 @@ function ExpenseForm({
   const merging = useMergeFields(merge)
   // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
   const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
-  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre })
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre, parked: waitingParked })
   const switchHint = useSwitchHint(tyre, editing)
   // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
   const [titleTyped, setTitleTyped] = useState(false)
@@ -419,8 +423,8 @@ function ExpenseForm({
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
-        // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values).
-        // Switched off, a change's tyre details go as none; without the tyres to show them (no answer) they stay as the change has them.
+        // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values). Without the
+        // section (no answer of the vehicle's tyres, or no set left for a waiting change) nothing is said of them: the change keeps its own.
         ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre && tyre.available ? { tyre: null } : {}),
       }
       await checkTyres(values)
