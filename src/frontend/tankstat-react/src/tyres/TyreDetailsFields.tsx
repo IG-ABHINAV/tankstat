@@ -30,7 +30,7 @@ export function TyreDetailsFields({ details, tyres, hint, note }: { details: Exp
             {t('expenses.tyreDetails.photoShows', { kind: kindName })}
           </FieldMessage>
           <Button type="button" variant="soft" sx={{ minHeight: 44 }} aria-label={t('reading.useAria', { value: kindName, field })} onClick={photo.use}>
-            {t('reading.use')}
+            {t('expenses.tyreDetails.photoUse')}
           </Button>
         </Stack>
       )}

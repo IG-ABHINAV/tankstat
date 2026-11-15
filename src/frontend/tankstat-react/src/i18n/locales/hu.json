@@ -1308,7 +1308,8 @@
       "choose": "Válassz…",
       "opened": "A gumi adatok kinyíltak.",
       "closed": "A gumi adatok bezárultak.",
-      "photoShows": "A fotón gumis munka látszik: {{kind}}"
+      "photoShows": "A fotón gumis munka látszik: {{kind}}",
+      "photoUse": "Használd"
     }
   },
   "import": {

@@ -1308,7 +1308,8 @@
       "choose": "Choose…",
       "opened": "Tyre details opened.",
       "closed": "Tyre details closed.",
-      "photoShows": "The photo shows tyre work: {{kind}}"
+      "photoShows": "The photo shows tyre work: {{kind}}",
+      "photoUse": "Use it"
     }
   },
   "import": {
