@@ -673,6 +673,23 @@ public sealed class TyreService(
         return Overview(vehicle.Id, await tyres.LoadAsync(vehicle.Id, ct));
     }
 
+    /// <summary>
+    /// A failed visit's lines (#290) to the trash, without their expense (the visit trashes that itself): the schedules did not move on, so
+    /// a try again makes them anew from <see cref="RestoreTakenBackAsync"/>. Lines already in the trash, or gone, are left as they are.
+    /// </summary>
+    public async Task TakeBackAsync(IReadOnlyList<Guid> lineIds, CancellationToken ct)
+    {
+        foreach (var id in lineIds)
+            if (await tyres.FindEntryAsync(id, ct) is { IsDeleted: false }) await TrashEntryAsync(id, ct, withExpense: false);
+    }
+
+    /// <summary>The lines a failed visit took back (#290), brought back by its try again; live ones and unknown ids are left alone.</summary>
+    public async Task RestoreTakenBackAsync(IReadOnlyList<Guid> lineIds, CancellationToken ct)
+    {
+        foreach (var id in lineIds)
+            if (await tyres.FindEntryAsync(id, ct) is { IsDeleted: true }) await RestoreEntryAsync(id, ct);
+    }
+
     /// <summary>Brings a line back; a swap's line brings its installation back, or is refused with the history's reason.</summary>
     public async Task<TyreOverview> RestoreEntryAsync(Guid id, CancellationToken ct, int? expectedVersion = null)
     {

@@ -1105,7 +1105,7 @@ internal sealed class World
         Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
         RefuelingService = new RefuelingService(Vehicles, LogGuard, Refuelings, Access, Odometer, Photos, Filler, Clock, Log.For<RefuelingService>());
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
-        RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
+        RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>(), TyreService);
         Imports = new ImportService([new FuelioCsvParser()], ImportSessions, Access, VehicleService, RefuelingService, ExpenseService, RecurringService, Refuelings, Expenses, Defaults.Create(), Log.For<ImportService>());
         Stats = new StatsService(LogGuard, new InMemoryStats(Refuelings, Expenses), Clock);
         ChartService = new ChartService(Vehicles, Charts, Access, Clock, Log.For<ChartService>());

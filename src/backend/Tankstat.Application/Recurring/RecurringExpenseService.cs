@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Tankstat.Application.Access;
 using Tankstat.Application.Auth;
 using Tankstat.Application.Expenses;
+using Tankstat.Application.Tyres;
 using Tankstat.Application.Odometers;
 using Tankstat.Application.Sync;
 using Tankstat.Application.Vehicles;
@@ -34,9 +35,11 @@ public sealed record RecurringExpenseInput(
 /// finds the visit already recorded and changes nothing.
 /// </param>
 /// <param name="Discount">What was taken off <c>Amount</c> (what was paid), kept with the logged expense; needs the amount.</param>
+/// <param name="Tyre">Its tyre details (#290, the owner's decisions 57 and 63): the visit's expense is the lines', or without an amount the
+/// line (or lines) alone, on the visit's day with its odometer.</param>
 public sealed record MarkDoneInput(
     DateOnly Date, long? Odometer, decimal? Amount, string? Currency, string? Title = null, string? Category = null, IReadOnlyCollection<Guid>? PhotoIds = null,
-    Guid? ExpenseId = null, decimal? Discount = null);
+    Guid? ExpenseId = null, decimal? Discount = null, ExpenseTyreDetails? Tyre = null);
 
 /// <summary>The schedules as they stand after being marked done (in the order asked for), and the expense logged for them, if any.</summary>
 public sealed record MarkedDone(IReadOnlyList<RecurringItem> Schedules, Expense? Expense);
@@ -51,7 +54,7 @@ public sealed record RecurringItem(RecurringExpense Item, RecurrenceStatus Statu
 /// </summary>
 public sealed class RecurringExpenseService(
     LogAccessGuard guard, IRecurringExpenseRepository items, AccessService access, OdometerService odometer, ExpenseService expenses, IOptionsSnapshot<VehicleDefaultsOptions> defaults, TimeProvider clock,
-    ILogger<RecurringExpenseService> logger)
+    ILogger<RecurringExpenseService> logger, TyreService tyres)
 {
     private DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
     private DateOnly LatestAllowedDate => Today.AddDays(1); // a day ahead covers every time zone, like the expenses
@@ -168,15 +171,26 @@ public sealed class RecurringExpenseService(
         Cost.RequireAmountForDiscount(input.Amount, input.Discount); // before anything moves: a discount without the amount it was taken off
         foreach (var item in found) item.CheckDone(input.Date, input.Odometer); // every schedule's own rules first: nothing is logged for a day one would refuse
 
-        var logged = input.Amount is not null || input.PhotoIds is { Count: > 0 }
+        // Tyre details (#290) name their lines here, so a failure below can take them back and a try again finds them.
+        var tyre = input.Tyre is { } given ? WithLineIds(given) : null;
+        var lineIds = tyre is null ? [] : LineIdsOf(tyre);
+        var withExpense = input.Amount is not null || input.PhotoIds is { Count: > 0 };
+        var logged = withExpense
             ? await expenses.AddAsync(vehicleId, new ExpenseInput(
                 input.Date, input.Title ?? RecurringDoneDefaults.Title(found), input.Category ?? RecurringDoneDefaults.Category(found),
-                input.Amount, input.Currency, input.Odometer, RecurringDoneDefaults.Note(found), input.Discount), ct, photoDraftIds: input.PhotoIds, id: input.ExpenseId)
+                input.Amount, input.Currency, input.Odometer, RecurringDoneDefaults.Note(found), input.Discount), ct, photoDraftIds: input.PhotoIds, id: input.ExpenseId, tyre: tyre)
             : null;
+        // Without an amount the tyre details are the line (or lines) alone (decision 63), its odometer one of the car's readings: checked
+        // (and refused) here, before any schedule moves. A try again of the same visit is answered by the lines already there.
+        if (tyre is not null && !withExpense)
+            await tyres.AddEntryAsync(vehicleId, new TyreEntryInput(tyre.Kind, tyre.SetId, input.Date, input.Odometer, Note: null, Tyres: tyre.Tyres, BreakUp: tyre.BreakUp), ct, id: tyre.LineId);
         // A first try that failed moved its expense to the trash (below); this try takes it back. Only that case gets here: once a visit
         // completed, its expense is linked and the request returned above, so an expense a person trashed after the visit is never restored.
         // (The expense with this id is the same creator's on this vehicle: ExpenseService refuses anyone else's with sync.idTaken.)
         if (logged is { IsDeleted: true }) logged = await expenses.RestoreAsync(logged.Id, ct);
+        // Its lines, which that failure moved to the trash too, come back with it (after it, so they hold it again).
+        if (lineIds.Count > 0) await tyres.RestoreTakenBackAsync(lineIds, ct);
+        var savedVersions = found.ToDictionary(i => i.Id, i => i.SavedVersion);
         try
         {
             foreach (var item in found) item.MarkDone(input.Date, input.Odometer, creator.Id);
@@ -193,9 +207,12 @@ public sealed class RecurringExpenseService(
                 var current = (await items.FindManyAsync(wanted, ct)).ToDictionary(i => i.Id);
                 return await CurrentAsync([.. wanted.Select(id => current[id])], vehicleId, await expenses.FindAsync(logged.Id, ct), ct);
             }
+            // A twin of a visit without an expense moved the schedules to this very visit meanwhile: done, its lines stay.
+            if (logged is null && lineIds.Count > 0 && await DoneMeanwhileAsync(savedVersions, input, ct)) return await CurrentAsync([.. found], vehicleId, null, ct);
             // The expense and the schedules are saved separately, so undo the expense (to the trash) when the schedules could not move on:
-            // they are then still due, and a second try does not log the cost twice.
+            // they are then still due, and a second try does not log the cost twice. Its tyre lines go too, or the lines made without one.
             if (logged is not null) await TryTrashAsync(logged.Id, wanted);
+            if (lineIds.Count > 0) await TryTakeBackLinesAsync(lineIds, wanted);
             throw;
         }
         logger.LogDebug("User {UserId} marked recurring expenses {RecurringIds} of vehicle {VehicleId} done (expense logged: {ExpenseId})", creator.Id, wanted, vehicleId, logged?.Id);
@@ -233,6 +250,47 @@ public sealed class RecurringExpenseService(
             logger.LogWarning(e, "Could not tell whether the expense {ExpenseId} was recorded for recurring expenses {RecurringIds} meanwhile", expenseId, recurringIds);
             return false;
         }
+    }
+
+    /// <summary>Tyre details with every line's id given: the client's, else new ones (the first line's is the group's, as the client's are).</summary>
+    private static ExpenseTyreDetails WithLineIds(ExpenseTyreDetails tyre) => tyre.Tyres is { Count: > 0 } picked
+        ? tyre with { Tyres = [.. picked.Select(t => t with { Id = t.Id ?? Guid.NewGuid() })] }
+        : tyre with { LineId = tyre.LineId ?? Guid.NewGuid() };
+
+    private static IReadOnlyList<Guid> LineIdsOf(ExpenseTyreDetails tyre) =>
+        tyre.Tyres is { Count: > 0 } picked ? [.. picked.Select(t => t.Id!.Value)] : [tyre.LineId!.Value];
+
+    /// <summary>
+    /// Whether every schedule was saved at this visit since it was read (a twin request recorded it), as read afresh: a newer saved version
+    /// standing at the visit's date and odometer.
+    /// </summary>
+    private async Task<bool> DoneMeanwhileAsync(IReadOnlyDictionary<Guid, int> savedVersions, MarkDoneInput input, CancellationToken ct)
+    {
+        try
+        {
+            var now = await items.FindManyAsync([.. savedVersions.Keys], ct);
+            return now.Count == savedVersions.Count
+                && now.All(i => i.SavedVersion > savedVersions[i.Id] && i.LastDoneDate == input.Date && i.LastDoneOdometer == input.Odometer);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "Could not tell whether recurring expenses {RecurringIds} were marked done meanwhile", savedVersions.Keys);
+            return false;
+        }
+    }
+
+    private async Task TryTakeBackLinesAsync(IReadOnlyList<Guid> lineIds, IReadOnlyCollection<Guid> recurringIds)
+    {
+        try
+        {
+            await tyres.TakeBackAsync(lineIds, CancellationToken.None);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "The tyre log lines {EntryIds} made for recurring expenses {RecurringIds} could not be moved to the trash after they failed to move on", lineIds, recurringIds);
+            return;
+        }
+        logger.LogWarning("Recurring expenses {RecurringIds} could not move on; the tyre log lines {EntryIds} made for them were moved to the trash", recurringIds, lineIds);
     }
 
     private async Task TryTrashAsync(Guid expenseId, IReadOnlyCollection<Guid> recurringIds)
