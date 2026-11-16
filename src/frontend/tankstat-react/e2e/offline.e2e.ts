@@ -1,6 +1,20 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signIn, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
+
+/**
+ * Takes the browser offline once the app is stored for it: offline, the dialogs' chunks come only from the service worker's cache, which
+ * the worker fills while it installs, in the background after the first visit. A test that went offline before it was done met "This page
+ * is not available offline yet." in a dialog it opened (#290's CI). The worker claims the page once it is active (`clientsClaim`), and it
+ * activates only after its install stored every file, so an active worker controlling the page means everything is there.
+ */
+async function goOffline(page: Page, context: BrowserContext) {
+  await page.waitForFunction(async () => {
+    const registration = await navigator.serviceWorker?.ready
+    return !!registration?.active && !!navigator.serviceWorker.controller
+  }, undefined, { timeout: 60_000 })
+  await context.setOffline(true)
+}
 
 // Working without the server: the device downloads a vehicle, the browser goes offline, a refuelling is kept on the device, and it
 // reaches the server once the browser is back online. Only in-app navigation while offline (the address bar would need the server).
@@ -22,7 +36,7 @@ test('keeps a refuelling made offline and sends it when the server is back', asy
   await openVehicle(page, vehicle.id, 'refuelings')
   await expect(page.getByRole('row').filter({ hasText: '35 L' })).toBeVisible()
 
-  await context.setOffline(true)
+  await goOffline(page, context)
   await page.getByRole('button', { name: 'Add refuelling' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add refuelling' })
   await dialog.getByLabel(/^Volume/).fill('22.5')
@@ -64,7 +78,7 @@ test('signs out while offline: warns of the change not sent, deletes it, and the
   await openVehicle(page, vehicle.id, 'refuelings')
 
   // A change only this device holds.
-  await context.setOffline(true)
+  await goOffline(page, context)
   await page.getByRole('button', { name: 'Add refuelling' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add refuelling' })
   await dialog.getByLabel(/^Volume/).fill('18')
@@ -118,7 +132,7 @@ test('keeps tyre changes made offline (a swap, a trash, a retire, a reading, an 
   const winter = page.getByRole('article', { name: 'Continental WinterContact' })
   await expect(winter).toBeVisible()
 
-  await context.setOffline(true)
+  await goOffline(page, context)
   // A swap today with the day's reading: the winter set goes on, shown done and marked.
   await summer.getByRole('button', { name: 'Swap tyres' }).click()
   const swap = page.getByRole('dialog', { name: 'Swap tyres' })
@@ -203,7 +217,7 @@ test('breaks a set up offline and relabels a tyre: shown done at once, sent in o
   const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
   await expect(summer).toBeVisible()
 
-  await context.setOffline(true)
+  await goOffline(page, context)
   await summer.getByRole('button', { name: 'History' }).click()
   const history = page.getByRole('dialog', { name: 'Michelin Primacy 4' })
   await history.getByRole('button', { name: 'Track tyres one by one' }).click()
@@ -253,7 +267,7 @@ test('a flat on two tyres of a whole set offline: the set tracked tyre by tyre o
   const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
   await expect(summer).toBeVisible()
 
-  await context.setOffline(true)
+  await goOffline(page, context)
   await page.getByRole('button', { name: 'Add entry' }).click()
   const add = page.getByRole('dialog', { name: 'Add entry' })
   await expect(add.getByText(/^You are offline\./)).toBeVisible()
@@ -305,7 +319,7 @@ test('replaces a tyre offline from its own dialog: shown done at once, sent when
   const summer = page.getByRole('article', { name: 'Michelin Primacy 4' })
   await expect(summer).toBeVisible()
 
-  await context.setOffline(true)
+  await goOffline(page, context)
   await summer.getByRole('button', { name: /^Rear left: tyre S3,/ }).click()
   const tyre = page.getByRole('dialog', { name: 'Tyre S3' })
   await tyre.getByRole('button', { name: 'Replace this tyre' }).click()
@@ -347,7 +361,7 @@ test('an expense with tyre details saved offline: shown on the Expenses tab and 
   await expect(page.getByText('Downloaded.')).toBeVisible({ timeout: 30_000 })
   await openVehicle(page, vehicle.id, 'expenses')
 
-  await context.setOffline(true)
+  await goOffline(page, context)
   await page.getByRole('button', { name: 'Add expense' }).click()
   const add = page.getByRole('dialog', { name: 'Add expense' })
   await expect(add.getByText(/^You are offline\./)).toBeVisible()
