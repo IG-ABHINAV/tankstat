@@ -9,6 +9,14 @@ export interface ReadValue {
 /** What the photos of the open dialog showed: the surest value of each name. */
 export type ReadValues = Partial<Record<ReadingFieldName, ReadValue>>
 
+/** `read` without the values of `names` (a value a dialog does not fill, or not now, so it is neither filled, announced nor counted). */
+export function withoutFields(read: ReadValues, ...names: ReadingFieldName[]): ReadValues {
+  if (!names.some((n) => n in read)) return read
+  const kept = { ...read }
+  for (const name of names) delete kept[name]
+  return kept
+}
+
 interface ReadingLike {
   status: string
   values: readonly { name: ReadingFieldName; value: string; confidence: number }[]

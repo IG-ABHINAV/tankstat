@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { check, setup, setupAccessibilityTests } from '../support/accessibility.tsx'
+import { server } from '../support/server.ts'
+import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 
 // The recurring expenses (table, dialogs, selection) and the home cards with their quick actions.
 setupAccessibilityTests()
@@ -21,6 +23,7 @@ it('the recurring expenses table and its add dialog are labelled and free of vio
 // Their own test: each scan of the whole page takes a while on CI.
 it('the edit and Mark as done dialogs of a recurring expense are labelled and free of violations', async () => {
   const { ui } = setup('/vehicles/v1?tab=recurring')
+  server.use(...fakeTyres([tyreSummer, tyreWinter]).handlers) // the Done dialog's tyre details (#290)
   await screen.findByRole('table', { name: 'Recurring expenses' })
 
   await ui.click(screen.getByRole('button', { name: 'Edit the recurring expense Tyres' }))
@@ -34,7 +37,9 @@ it('the edit and Mark as done dialogs of a recurring expense are labelled and fr
   const done = await screen.findByRole('dialog', { name: 'Mark as done: Tyres' })
   await within(done).findByLabelText('Currency')
   expect(within(done).getByRole('group', { name: 'Done at this visit' })).toBeInTheDocument() // the schedules to tick, as labelled checkboxes
-  await check(document.body)
+  await ui.click(await within(done).findByRole('switch', { name: 'Tyre details' }))
+  await within(done).findByRole('group', { name: 'Tyre details' })
+  await check(document.body) // with its tyre details open
 })
 
 it('the selection column of the recurring expenses and its Mark selected as done dialog are free of violations', async () => {

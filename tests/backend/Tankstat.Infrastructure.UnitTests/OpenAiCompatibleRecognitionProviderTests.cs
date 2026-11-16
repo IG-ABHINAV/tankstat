@@ -121,6 +121,7 @@ public class OpenAiCompatibleRecognitionProviderTests
     [InlineData("chat.odometer.json", DocumentKind.FuelReceipt, DocumentKind.Odometer, "Odometer=123789")]
     [InlineData("chat.fuel-receipt.json", DocumentKind.FuelReceipt, DocumentKind.FuelReceipt, "Total=24687 Volume=38.52 UnitPrice=640.9 Currency=HUF Date=2026-09-17")]
     [InlineData("chat.expense-receipt.json", DocumentKind.ExpenseReceipt, DocumentKind.ExpenseReceipt, "Total=12.5 Currency=EUR Date=2026-09-30 Title=Shell")]
+    [InlineData("chat.tyre-receipt.json", DocumentKind.ExpenseReceipt, DocumentKind.ExpenseReceipt, "Total=8000 Currency=HUF Date=2026-09-30 Title=Gumiszerviz TyreWork=WheelBalancing")]
     [InlineData("chat.unknown.json", DocumentKind.FuelReceipt, DocumentKind.Unknown, "")]
     [InlineData("chat.fenced.json", DocumentKind.FuelReceipt, DocumentKind.Odometer, "Odometer=123789")] // a reasoning block, code fences, a number for the value
     [InlineData("chat.text-parts.json", DocumentKind.FuelReceipt, DocumentKind.Odometer, "Odometer=123789")]

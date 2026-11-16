@@ -46,7 +46,8 @@ import { uuidV4 } from '../../offline/uuid.ts'
 type Item = NonNullable<RecurringExpensesQuery['vehicle']>['recurring'][number]
 
 // The home page shows the same schedules, and marking some done may log an expense: all of them are refreshed.
-const refetch = { refetchQueries: ['RecurringExpenses', 'Expenses', 'VehicleDetails', 'LogDefaults', 'ExpenseCategories'], awaitRefetchQueries: true } // never Welcome: the home page asks afresh when it mounts
+// VehicleTyres (#290): a visit with tyre details is on the tyre log too, so the device's kept answer has its line at once.
+const refetch = { refetchQueries: ['RecurringExpenses', 'Expenses', 'VehicleDetails', 'LogDefaults', 'ExpenseCategories', 'VehicleTyres'], awaitRefetchQueries: true } // never Welcome: the home page asks afresh when it mounts
 
 /**
  * A vehicle's recurring expenses: what repeats, when it was last done, when it is due next, and whether it already is (in words, and as a

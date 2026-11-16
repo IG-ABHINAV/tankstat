@@ -175,8 +175,11 @@ export function withChanges(kind: LogKind, rows: readonly LogRow[], vehicleId?: 
   if (kind === 'expenses') {
     // A visit with an amount logs an expense: it is a row of its own until the server has it (its id is the visit's expense id).
     for (const visit of outbox.changes.filter((c) => c.action === 'markDone' && c.input?.amount != null && (vehicleId === undefined || c.vehicleId === vehicleId)))
+    {
       // Version 1, as the server will create it: an edit or trash of it made here goes after the visit, from that version.
       byId.set(visit.targetId, { ...added('expenses', { ...visit, input: { ...visit.input, category: visit.input?.category || null, note: null } }), version: 1 })
+      withTyreEntry(kind, byId, visit) // its tyre details' first line (#290)
+    }
     // A tyre log line's amount (#288) makes an expense with the line's day and reading, titled and filed as the dialog said; it carries its
     // line, so the list shows its chip. An edit of a line it was on changes the row the device holds: only what follows the line (the
     // server's `Expense.FollowLine`), so its title, its note and what was read from its photos stay as they are.
@@ -197,7 +200,26 @@ export function withChanges(kind: LogKind, rows: readonly LogRow[], vehicleId?: 
     // Restoring counts as a save on the server: an edit made after it is made from the version the restore leaves.
     else if (row && change.action === 'restore') byId.set(row.id, { ...row, deletedAt: null, version: Number(row.version ?? 0) + 1 })
   }
+  for (const change of waiting) withTyreEntry(kind, byId, change)
   return [...byId.values()]
+}
+
+/**
+ * An expense change's tyre details (#290) on its row: lines it makes give a row without a line its `tyreEntry` (the first of them, as the
+ * server's), so the list shows its chip and its edit opens it as an expense the tyre log made; what was done follows an edit of it.
+ */
+function withTyreEntry(kind: LogKind, byId: Map<string, LogRow>, change: Change) {
+  const tyre = change.input?.tyre as Record<string, unknown> | null | undefined
+  const row = byId.get(change.targetId)
+  if (kind !== 'expenses' || !row || !tyre || typeof tyre !== 'object' || typeof tyre.kind !== 'string') return
+  const known = row.tyreEntry as Record<string, unknown> | null | undefined
+  if (known) {
+    if (!known.trashed) byId.set(row.id, { ...row, tyreEntry: { ...known, kind: tyre.kind } })
+    return
+  }
+  const first = Array.isArray(tyre.tyres) ? (tyre.tyres[0] as Record<string, unknown> | undefined)?.id : undefined
+  const id = typeof tyre.lineId === 'string' ? tyre.lineId : typeof first === 'string' ? first : null
+  if (id) byId.set(row.id, { ...row, tyreEntry: { __typename: 'TyreEntryRef', id, kind: tyre.kind, setName: null, trashed: false } })
 }
 
 const page = <T>(rows: readonly T[], variables: Variables) => {

@@ -219,12 +219,20 @@ internal sealed class InMemoryRecurring(InMemoryVehicles vehicles) : IRecurringE
     public List<RecurringCompletion> Completions { get; } = [];
     /// <summary>When set, a twin of the next visit saves it first: its links are in, and this save then fails on them (a duplicate key).</summary>
     public bool TwinCompletesNext { get; set; }
+    /// <summary>The next <see cref="CompleteAsync"/> finds the schedules saved by a twin (their versions moved on) and fails.</summary>
+    public bool TwinSavesSchedulesNext { get; set; }
     public Task CompleteAsync(IReadOnlyCollection<RecurringExpense> items, IReadOnlyCollection<RecurringCompletion> links, CancellationToken ct)
     {
         if (TwinCompletesNext && !(TwinCompletesNext = false))
         {
             Completions.AddRange(links);
             return Task.FromException(new InvalidOperationException("duplicate key"));
+        }
+        // A twin of a visit without an expense saved the schedules at this visit first: they are saved, this save fails on its version.
+        if (TwinSavesSchedulesNext && !(TwinSavesSchedulesNext = false))
+        {
+            foreach (var item in items) ((Tankstat.Domain.Sync.ISynced)item).Saved();
+            return Task.FromException(new InvalidOperationException("version changed"));
         }
         if (FailUpdateWith is { } e) return Task.FromException(e); // the schedules share references: their baselines moved anyway, the links did not
         Completions.AddRange(links);
@@ -1105,7 +1113,7 @@ internal sealed class World
         Filler = new LogPhotoFiller(LogPhotos, Readings, Refuelings, Expenses, Vehicles, new RecognitionSetup(RecognitionOptions.Create(), new FakePromptFiles()), Notifier, Notifications, new TyreExpenseReadings(Tyres), Clock, Log.For<LogPhotoFiller>());
         RefuelingService = new RefuelingService(Vehicles, LogGuard, Refuelings, Access, Odometer, Photos, Filler, Clock, Log.For<RefuelingService>());
         ExpenseService = new ExpenseService(LogGuard, Expenses, Access, Odometer, Photos, Filler, TyreService, Clock, Log.For<ExpenseService>());
-        RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>());
+        RecurringService = new RecurringExpenseService(LogGuard, Recurring, Access, Odometer, ExpenseService, Defaults.Create(), Clock, Log.For<RecurringExpenseService>(), TyreService);
         Imports = new ImportService([new FuelioCsvParser()], ImportSessions, Access, VehicleService, RefuelingService, ExpenseService, RecurringService, Refuelings, Expenses, Defaults.Create(), Log.For<ImportService>());
         Stats = new StatsService(LogGuard, new InMemoryStats(Refuelings, Expenses), Clock);
         ChartService = new ChartService(Vehicles, Charts, Access, Clock, Log.For<ChartService>());

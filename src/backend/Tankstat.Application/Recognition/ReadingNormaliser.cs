@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Tankstat.Domain.Recognition;
+using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Vehicles;
 
 namespace Tankstat.Application.Recognition;
@@ -33,8 +34,31 @@ public static partial class ReadingNormaliser
                 ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
             ReadingFieldName.Title => Title(text),
             ReadingFieldName.Discount => Amount(Unsigned(text), decimals: 2, max: 999_999_999_999.99m),
+            ReadingFieldName.TyreWork => TyreWork(text),
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// The tyre work a receipt can tell (#290, the owner's decision 66), as the model is asked to spell it: never <c>Other</c>, a note or a
+    /// swap, which a receipt cannot tell apart. The kind's name, so the client takes it as the tyre log's kind.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, TyreEntryKind> TyreWorks = new Dictionary<string, TyreEntryKind>
+    {
+        ["puncture-repaired"] = TyreEntryKind.PunctureRepaired,
+        ["valve-replaced"] = TyreEntryKind.ValveReplaced,
+        ["wheel-balancing"] = TyreEntryKind.WheelBalancing,
+        ["storage-fee"] = TyreEntryKind.StorageFee,
+        ["bought"] = TyreEntryKind.Bought,
+    };
+
+    /// <summary>One of <see cref="TyreWorks"/>, whatever its case or separators (a model may write <c>Wheel balancing</c>); anything else is none.</summary>
+    private static string? TyreWork(string text)
+    {
+        var key = string.Join('-', text.ToLowerInvariant().Split([' ', '_', '-'], StringSplitOptions.RemoveEmptyEntries));
+        if (TyreWorks.TryGetValue(key, out var kind)) return kind.ToString();
+        var bare = key.Replace("-", "", StringComparison.Ordinal); // the kind's own name, PunctureRepaired
+        return TyreWorks.Values.Select(k => k.ToString()).FirstOrDefault(k => k.Equals(bare, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -48,6 +72,15 @@ public static partial class ReadingNormaliser
         return decimal.TryParse(Unsigned(raw).Replace(',', '.'), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
             && Math.Round(value, 2, MidpointRounding.AwayFromZero) == 0;
     }
+
+    /// <summary>
+    /// No tyre work (#290): what a model answers for a receipt that is not for any ("none", "other", "unknown", "no"), so it is left out
+    /// without a reason to tell, as a discount of none is. Only a word of the five is tyre work; <c>other</c> never is (decision 66).
+    /// </summary>
+    public static bool IsNoTyreWork(ReadingFieldName name, string? raw) =>
+        name == ReadingFieldName.TyreWork && raw is not null && (NoneWords.Contains(raw.Trim()) || NoTyreWords.Contains(raw.Trim()));
+
+    private static readonly HashSet<string> NoTyreWords = new(StringComparer.OrdinalIgnoreCase) { "other", "unknown", "no", "false", "" };
 
     private static readonly HashSet<string> NoneWords = new(StringComparer.OrdinalIgnoreCase) { "none", "n/a", "na", "null", "nil", "-", "–", "−", "—" };
 

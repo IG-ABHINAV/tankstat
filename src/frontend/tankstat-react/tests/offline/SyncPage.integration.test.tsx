@@ -14,9 +14,10 @@ import { snapshotKey } from '../../src/offline/snapshotPolicy.ts'
 import { createPullEngine } from '../../src/offline/pull.ts'
 import { createPushEngine } from '../../src/offline/push.ts'
 import { provideOfflineSync } from '../../src/offline/runtime.ts'
-import { fakeInstance, fakeVehicle, fakeVehicleBackend, healthHandler, renderWithApollo, sessionHandler, stubViewport, user } from '../support/mocks.tsx'
+import { fakeInstance, fakeRecurring, fakeRecurringBackend, fakeVehicle, fakeVehicleBackend, healthHandler, renderWithApollo, sessionHandler, stubViewport, user } from '../support/mocks.tsx'
 import { fakeFeed, now } from '../support/offlineFeed.ts'
 import { answered, server } from '../support/server.ts'
+import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => {
@@ -323,6 +324,47 @@ it('Edit and apply sends the change as edited; a refusal stays in the dialog wit
   expect(sent).toHaveLength(2)
   // Against what the person saw on the server, not the version the device made it from.
   expect(sent[1]).toMatchObject({ id: 'c1', action: 'APPLY', change: { id: 'c1', expectedVersion: 3, updateRefueling: { id: 'b', volume: 44, odometer: 1500 } } })
+})
+
+it('Edit and apply, on a visit the server parked for its tyre details (#290, decision 71), opens the Done dialog: switched off, they go as none, with the schedules ticked', async () => {
+  await downloaded()
+  connectivity.reset()
+  const row = parkedRow('c9', 'MARK_RECURRING_EXPENSES_DONE', {
+    id: 'c9', markRecurringExpensesDone: {
+      ids: ['s-v1'], date: '2026-09-25', odometer: 1500, amount: 250, currency: 'EUR', title: 'Insurance', category: 'Fees', expenseId: 'e9',
+      tyre: { kind: 'WHEEL_BALANCING', setId: 's1', lineId: 'l9' },
+    },
+  }, 'tyres.setNotFound', { targetId: 'e9' })
+  let parked = [row]
+  const sent: { change: Record<string, unknown> }[] = []
+  server.use(
+    ...fakeTyres([tyreSummer, tyreWinter]).handlers,
+    ...fakeRecurringBackend([fakeRecurring({ id: 's-v1', title: 'Insurance', category: 'Fees' }), fakeRecurring({ id: 's-v2', title: 'Vignette', category: 'Fees' })]).handlers,
+    graphql.query('LogDefaults', () => HttpResponse.json({ data: { logDefaults: { __typename: 'LogDefaults', lastOdometer: 1500, lastDate: '2026-09-20', currency: 'EUR' } } })),
+    graphql.query('ExpenseCategories', () => HttpResponse.json({ data: { expenseCategories: ['Fees'] } })),
+    graphql.query('ParkedChanges', () => HttpResponse.json({ data: { parkedChanges: parked } })),
+    graphql.mutation('ResolveSyncChange', ({ variables }) => {
+      sent.push(variables.input as { change: Record<string, unknown> })
+      parked = []
+      return HttpResponse.json({ data: { resolveSyncChange: { ...row, status: 'APPLIED' } } })
+    }),
+  )
+  renderWithApollo(<App />, '/sync')
+  const ui = userEvent.setup()
+
+  await ui.click(await screen.findByRole('button', { name: /^Edit and apply: Marked as done/ }, { timeout: 10_000 }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit and apply the change' })
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveTextContent('Wheel balancing')
+  expect(within(dialog).getByLabelText('Amount (optional)')).toHaveValue('250')
+  await ui.click(within(dialog).getByRole('switch', { name: 'Tyre details' }))
+  await ui.click(within(dialog).getByRole('checkbox', { name: 'Vignette' })) // the visit's schedules are edited too
+  await ui.click(within(dialog).getByRole('button', { name: 'Apply' }))
+
+  expect(await screen.findByText('Applied.')).toBeInTheDocument()
+  expect(sent).toEqual([expect.objectContaining({ id: 'c9', action: 'APPLY' })])
+  expect(sent[0].change.markRecurringExpensesDone).toMatchObject({ ids: ['s-v1', 's-v2'], amount: 250, expenseId: 'e9', tyre: null })
+  expect(sent[0].change.markRecurringExpensesDone).not.toHaveProperty('photoIds')
 })
 
 it('Edit, on an add whose amounts wait for its kept photos, saves without them', async () => {

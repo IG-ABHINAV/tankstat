@@ -20,6 +20,7 @@ export type AddExpenseInput = {
   odometer?: number | null | undefined;
   photoIds?: Array<string> | null | undefined;
   title: string;
+  tyre?: ExpenseTyreInput | null | undefined;
   vehicleId: string;
 };
 
@@ -351,6 +352,14 @@ export type ExpenseSortField =
   | 'TITLE'
   | 'VEHICLE';
 
+export type ExpenseTyreInput = {
+  breakUp?: BreakUpTyreSetInput | null | undefined;
+  kind: TyreEntryKind;
+  lineId?: string | null | undefined;
+  setId?: string | null | undefined;
+  tyres?: Array<TyreLineInput> | null | undefined;
+};
+
 export type FigureMeasure =
   | 'AVERAGE_CONSUMPTION'
   | 'AVERAGE_PRICE_PER_UNIT'
@@ -429,6 +438,7 @@ export type MarkRecurringExpensesDoneInput = {
   odometer?: number | null | undefined;
   photoIds?: Array<string> | null | undefined;
   title?: string | null | undefined;
+  tyre?: ExpenseTyreInput | null | undefined;
 };
 
 export type MeasurementUnitsInput = {
@@ -514,6 +524,7 @@ export type ReadingFieldName =
   | 'ODOMETER'
   | 'TITLE'
   | 'TOTAL'
+  | 'TYRE_WORK'
   | 'UNIT_PRICE'
   | 'VOLUME';
 
@@ -908,6 +919,7 @@ export type UpdateExpenseInput = {
   note?: string | null | undefined;
   odometer?: number | null | undefined;
   title: string;
+  tyre?: ExpenseTyreInput | null | undefined;
 };
 
 export type UpdateOfflineSettingsInput = {

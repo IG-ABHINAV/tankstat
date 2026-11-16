@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collapse, discard, keptPhotosOf, markOf, type Change } from '../../src/offline/changes.ts'
+import { collapse, createdBy, discard, keptPhotosOf, markOf, tyreNeedsOf, type Change } from '../../src/offline/changes.ts'
 
 let seq = 0
 const change = (action: Change['action'], targetId = 'r1', over: Partial<Change> = {}): Change => ({
@@ -21,6 +21,32 @@ describe('collapse', () => {
     const [only, ...rest] = fold(add(), change('update', 'r1', { input: { id: 'r1', date: '2026-10-02', volume: 41, note: 'x' } }))
     expect(rest).toEqual([])
     expect(only).toMatchObject({ action: 'add', id: 'r1', input: { id: 'r1', vehicleId: 'v1', date: '2026-10-02', volume: 41, note: 'x', totalCost: 100 } })
+  })
+
+  it("an expense's tyre details edited before it was sent fold into its add, and switched off they go (#290)", () => {
+    const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's1', lineId: 'l1' }
+    const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, currency: 'EUR', tyre } })
+    const edited = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Valve', tyre: { ...tyre, kind: 'VALVE_REPLACED' } } }))
+    expect(edited).toEqual([expect.objectContaining({ action: 'add', input: expect.objectContaining({ title: 'Valve', tyre: { ...tyre, kind: 'VALVE_REPLACED' } }) })])
+    const off = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: null } }))
+    expect(off[0].input).toMatchObject({ tyre: null })
+    // The expense the add put on the tyre log, edited as a linked one: only what was done and the set, the line's id stays; an edit that
+    // says nothing of its tyre details keeps them whole.
+    const linkedEdit = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: { kind: 'STORAGE_FEE', setId: null } } }))
+    expect(linkedEdit[0].input).toMatchObject({ tyre: { kind: 'STORAGE_FEE', setId: null, lineId: 'l1' } })
+    const amountOnly = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', amount: 30 } }))
+    expect(amountOnly[0].input).toMatchObject({ amount: 30, tyre })
+  })
+
+  it("an expense's tyre details given in a waiting edit stay with it when it is edited again (#290)", () => {
+    const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's1', tyres: [{ tyreId: 't3', id: 'l3' }] }
+    const attach = change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 25, tyre } })
+    const again = fold(attach, change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 30 } }))
+    expect(again).toEqual([expect.objectContaining({ action: 'update', expectedVersion: 2, input: expect.objectContaining({ amount: 30, tyre }) })])
+    const kind = fold(attach, change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 25, tyre: { kind: 'VALVE_REPLACED', setId: 's1' } } }))
+    expect(kind[0].input).toMatchObject({ tyre: { ...tyre, kind: 'VALVE_REPLACED' } })
+    const off = fold(attach, change('update', 'e1', { entity: 'expenses', expectedVersion: 2, input: { id: 'e1', title: 'Puncture', amount: 25, tyre: null } }))
+    expect(off[0].input).toMatchObject({ tyre: null })
   })
 
   it('an add then a trash is nothing at all, whatever came in between', () => {
@@ -248,5 +274,55 @@ describe('photos of a log', () => {
   it('photo changes of one log never fold into another log’s, nor into its edits', () => {
     const list = fold(change('update', 'r1', { input: { volume: 2 } }), addPhoto('local:a'), addPhoto('local:b', 'r2'))
     expect(list.map((c) => [c.action, c.targetId])).toEqual([['update', 'r1'], ['addPhoto', 'r1'], ['addPhoto', 'r2']])
+  })
+})
+
+describe("an expense's tyre details (#290)", () => {
+  it("a visit's make their lines and need the set, as an expense add's", () => {
+    const visit = change('markDone', 'x1', { entity: 'recurring', targetIds: ['rc1'], input: { ids: ['rc1'], date: '2026-10-01', tyre: { kind: 'STORAGE_FEE', setId: 's9', lineId: 'l5' } } })
+    expect(createdBy(visit)).toEqual(['l5'])
+    expect(tyreNeedsOf(visit)).toEqual(['s9'])
+  })
+
+  const tyre = { kind: 'PUNCTURE_REPAIRED', setId: 's9', tyres: [{ tyreId: 'nt1', id: 'l1' }, { tyreId: 'old2', id: 'l2' }], breakUp: { setId: 's9', day: '2026-10-01', tyres: [{ id: 'nt1' }, { id: 'nt2' }] } }
+  const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, tyre } })
+
+  it('make their lines and a break-up\'s tyres, and need the set and the tyres not made by it', () => {
+    expect(createdBy(expenseAdd)).toEqual(['e1', 'l1', 'l2', 'nt1', 'nt2'])
+    expect(tyreNeedsOf(expenseAdd)).toEqual(['s9', 'old2'])
+    expect(createdBy(change('update', 'e2', { entity: 'expenses', input: { id: 'e2', tyre: { kind: 'OTHER', setId: null, lineId: 'l3' } } }))).toEqual(['l3'])
+    expect(createdBy(change('update', 'e2', { entity: 'expenses', input: { id: 'e2', amount: 3 } }))).toEqual([])
+  })
+
+  it('taken back, take along what was made on their lines', () => {
+    const onLine = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l1', kind: 'VALVE_REPLACED' } })
+    const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
+    expect(discard([expenseAdd, onLine, other], expenseAdd.id)).toEqual([other])
+  })
+
+  it('a visit with an amount, taken back, takes along what was made on its lines and on its expense', () => {
+    const visit = change('markDone', 'e5', { entity: 'recurring', targetIds: ['rc1'], input: { ids: ['rc1'], date: '2026-10-01', amount: 30, expenseId: 'e5', tyre } })
+    const onLine = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l2', kind: 'VALVE_REPLACED' } })
+    const onExpense = change('update', 'e5', { entity: 'expenses', input: { id: 'e5', note: 'x' } })
+    const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
+    expect(discard([visit, onLine, onExpense, other], visit.id)).toEqual([other])
+  })
+})
+
+
+describe("an expense's tyre details replaced or taken back (#290)", () => {
+  const picked = { kind: 'PUNCTURE_REPAIRED', setId: 's9', tyres: [{ tyreId: 'nt1', id: 'l1' }], breakUp: { setId: 's9', day: '2026-10-01', tyres: [{ id: 'nt1' }, { id: 'nt2' }] } }
+  const expenseAdd = change('add', 'e1', { id: 'e1', entity: 'expenses', input: { id: 'e1', vehicleId: 'v1', date: '2026-10-01', title: 'Puncture', amount: 25, tyre: picked } })
+
+  it('a whole set chosen in the edit of a waiting change replaces the tyres and break-up it carried', () => {
+    const whole = { kind: 'PUNCTURE_REPAIRED', setId: 's9', lineId: 'L0' }
+    const [only] = fold(expenseAdd, change('update', 'e1', { entity: 'expenses', input: { id: 'e1', title: 'Puncture', tyre: whole } }))
+    expect(only.input?.tyre).toEqual(whole)
+  })
+
+  it('an add trashed before it was sent takes along what was made on its lines and tyres', () => {
+    const onLine = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l1', kind: 'VALVE_REPLACED' } })
+    const other = change('updateTyreEntry', '', { entity: 'tyres', input: { id: 'l9', kind: 'VALVE_REPLACED' } })
+    expect(fold(expenseAdd, onLine, other, change('trash', 'e1', { entity: 'expenses' }))).toEqual([other])
   })
 })

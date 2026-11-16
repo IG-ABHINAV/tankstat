@@ -25,7 +25,16 @@ import { FieldAutocomplete } from './forms/FieldAutocomplete.tsx'
 import { FieldDate } from './forms/FieldDate.tsx'
 import { FieldInput } from './forms/FieldInput.tsx'
 import { Form } from './forms/Form.tsx'
-import { ExpenseCategoriesDocument, LogDefaultsDocument, type DistanceUnit, type LogDefaultsQuery, type ReadingFieldName } from './gql/generated.ts'
+import {
+  ExpenseCategoriesDocument,
+  LogDefaultsDocument,
+  VehicleTyresDocument,
+  type DistanceUnit,
+  type ExpenseTyreInput,
+  type LogDefaultsQuery,
+  type ReadingFieldName,
+  type VehicleTyresFieldsFragment,
+} from './gql/generated.ts'
 import { parseDecimal, useFormat } from './i18n/format.ts'
 import { ErrorMessage } from './messages.tsx'
 import { ReadNote } from './recognition/ReadNote.tsx'
@@ -33,13 +42,17 @@ import { ReadingProblems } from './recognition/ReadingProblems.tsx'
 import { ReadingProgress } from './recognition/ReadingProgress.tsx'
 import { SaveWait } from './components/SaveWait.tsx'
 import type { ReadingExplanation } from './recognition/readingIssues.ts'
-import { mergeReadings, type ReadValues } from './recognition/readValues.ts'
+import { mergeReadings, withoutFields, type ReadValues } from './recognition/readValues.ts'
 import { useDraftReadings } from './recognition/useDraftReadings.ts'
 import { useReadFill } from './recognition/useReadFill.ts'
 import { defaultCategory, defaultTitle, MAX_EXPENSE_TITLE, usesDistance, type DoneItem } from './recurringDone.ts'
 import { Loading } from './components/Loading.tsx'
 import { useToast } from './toast/toastContext.ts'
 import { outbox } from './offline/outbox.ts'
+import type { ChangeEdit } from './dialogs/changeEdit.ts'
+import { visuallyHidden } from './components/visuallyHidden.ts'
+import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
+import { suggestedKind, useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
 
 /** One service visit: the schedules done, and (with an amount) the one expense logged for all of them. */
 export interface DoneValues {
@@ -56,6 +69,11 @@ export interface DoneValues {
   category: string
   /** The id of the expense this visit logs (if it logs one), the same for every Save of one opening of the dialog (see `useClientId`). */
   expenseId?: string
+  /**
+   * Its tyre details (#290, the owner's decisions 57 and 63): the visit's expense is the lines', or without an amount the line (or lines)
+   * alone, on the visit's day with its odometer.
+   */
+  tyre?: ExpenseTyreInput | null
 }
 
 /** The fields photos can fill in (a dashboard: the odometer; an invoice: the cost and the day), and which read value goes into each. */
@@ -80,6 +98,7 @@ export function RecurringDoneDialog({
   open: openProp,
   onOpenChange,
   onClosed,
+  change,
 }: {
   /** The button that opens it; none when the caller opens it (`open`), e.g. one dialog for all the schedules of a card. */
   trigger?: ReactNode
@@ -98,13 +117,21 @@ export function RecurringDoneDialog({
    * list), the caller puts it somewhere else, see `VehicleCard`.
    */
   onClosed?: () => void
+  /**
+   * Edits a visit waiting on this device, or parked by the server, instead of making one (Waiting to sync, #290's decision 71): its
+   * schedules, values and tyre details; no photos, as every change's edit. `onSubmit` decides what saving does.
+   */
+  change?: ChangeEdit<DoneValues>
 }) {
   const { t } = useTranslation()
   const { toast } = useToast()
   const [open, setOpen] = useDialogState({ open: openProp, onOpenChange })
   const clientId = useClientId(open)
-  const { queue, leftOut, saving, submit, reset } = usePhotoSession(vehicle.id, 'expense', open)
-  const drafts = useDraftReadings(queue.uploaded, open)
+  // The ids of what its tyre details make (#290); a visit edited on Waiting to sync keeps the ones they gave.
+  const waitingTyre = change?.initial.tyre ?? null
+  const tyreIds = useTyreDetailsIds(open, waitingTyre)
+  const { queue, leftOut, saving, submit, reset } = usePhotoSession(vehicle.id, 'expense', open && !change)
+  const drafts = useDraftReadings(queue.uploaded, open && !change)
   // Photos kept on this device are read once the visit is synced (photo reading on, as last heard): the amount may be left to them.
   const readLater = queue.kept > 0 && drafts.available
 
@@ -122,7 +149,7 @@ export function RecurringDoneDialog({
         onClosed={onClosed}
         busy={saving}
         maxWidth={480}
-        title={openedFrom ? t('recurring.doneTitle', { title: openedFrom.title }) : t('recurring.doneTitleMany')}
+        title={change?.title ?? (openedFrom ? t('recurring.doneTitle', { title: openedFrom.title }) : t('recurring.doneTitleMany'))}
         description={t('recurring.doneDescription')}
       >
         {leftOut > 0 && <PhotosLeftOut count={leftOut} />}
@@ -131,23 +158,41 @@ export function RecurringDoneDialog({
           <DoneForm
             vehicle={vehicle}
             items={items}
-            selected={selected}
+            selected={change?.initial.ids ?? selected}
+            tyreIds={tyreIds}
+            initial={change?.initial}
+            waitingTyre={waitingTyre}
+            waitingParked={!!change?.parked}
+            submitLabel={change?.submitLabel}
             photosBusy={queue.busy || queue.failed > 0}
             photosPicked={queue.items.length > 0}
             read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
             reading={drafts.pending.length > 0}
-            readLater={readLater}
+            readLater={readLater || !!change?.mayWait}
             wait={{ since: drafts.waitingSince, until: drafts.waitingUntil }}
             explanation={drafts.explanation}
-            gallery={<PhotoGallery kind="expenses" photos={[]} queue={queue} readingIds={drafts.pending} disabled={saving} onChanged={() => undefined} />}
+            gallery={!change && <PhotoGallery kind="expenses" photos={[]} queue={queue} readingIds={drafts.pending} disabled={saving} onChanged={() => undefined} />}
             onSubmit={async (values, logsExpense) => {
+              if (change) {
+                // The visit's expense keeps its id (its kept photos and later edits name it); one it now logs takes the change's own.
+                await onSubmit(logsExpense ? { ...values, expenseId: change.initial.expenseId ?? change.targetId ?? clientId } : values, [])
+                close() // the caller tells what came of it
+                return
+              }
               // Without an expense the photos have nothing to belong to: they are not sent, and closing deletes them.
               // The id is only for the expense the visit logs; without one there is nothing it could name.
               if (await submit((photoIds) => onSubmit(logsExpense ? { ...values, expenseId: clientId } : values, photoIds), !logsExpense)) {
                 close()
-                // Kept on the device for the server (the server was out of reach): the toast says so.
-                toast(outbox.markOf('recurring', values.ids[0]) === 'done' ? t('toast.savedOnDevice') : t('toast.saved'))
+                // Kept on the device for the server (the server was out of reach): the toast says so. A line made without an amount (#290)
+                // says it is on the tyre log alone.
+                toast(
+                  outbox.markOf('recurring', values.ids[0]) === 'done'
+                    ? t('toast.savedOnDevice')
+                    : values.tyre && !logsExpense
+                      ? t('recurring.doneTyreLineAlone')
+                      : t('toast.saved'),
+                )
               }
             }}
           />
@@ -161,6 +206,14 @@ interface FormProps {
   vehicle: { id: string; units: { distance: DistanceUnit } }
   items: DoneItem[]
   selected: string[]
+  tyreIds: TyreDetailsIds
+  /** A visit edited on Waiting to sync: its values to start from. */
+  initial?: Partial<DoneValues>
+  /** Its tyre details, shown to fix or switch off (decision 71); switched off they are sent as none. */
+  waitingTyre?: ExpenseTyreInput | null
+  /** `waitingTyre` is a parked visit's: shown also with no set left. */
+  waitingParked?: boolean
+  submitLabel?: string
   photosBusy: boolean
   photosPicked: boolean
   /** What the photos showed so far. */
@@ -181,15 +234,24 @@ interface FormProps {
 function DoneForm(props: FormProps) {
   const defaults = useQuery(LogDefaultsDocument, { variables: { vehicleId: props.vehicle.id }, fetchPolicy: 'network-only' })
   const categories = useQuery(ExpenseCategoriesDocument, { variables: { vehicleId: props.vehicle.id }, fetchPolicy: 'network-only' })
+  // The vehicle's tyres (#290): its sets for the tyre details, and the last tyre cost's category; kept on the device. Without them (an
+  // answer that failed) there is no switch, never an error of the dialog.
+  const tyres = useQuery(VehicleTyresDocument, { variables: { vehicleId: props.vehicle.id }, fetchPolicy: 'network-only' })
   const d = defaults.data?.logDefaults
-  if (!d) return defaults.error ? <ErrorMessage error={defaults.error} /> : <Loading />
-  return <DoneFields {...props} defaults={d} categories={categories.data?.expenseCategories ?? []} />
+  if (!d || !(tyres.data || tyres.error)) return defaults.error ? <ErrorMessage error={defaults.error} /> : <Loading />
+  return <DoneFields {...props} defaults={d} categories={categories.data?.expenseCategories ?? []} tyres={tyres.data?.vehicleTyres ?? null} />
 }
 
 function DoneFields({
   vehicle,
   items,
   selected,
+  tyreIds,
+  initial,
+  waitingTyre = null,
+  waitingParked = false,
+  submitLabel,
+  tyres,
   photosBusy,
   photosPicked,
   read,
@@ -202,12 +264,12 @@ function DoneFields({
   defaults: d,
   categories,
   onSubmit,
-}: FormProps & { defaults: NonNullable<LogDefaultsQuery['logDefaults']>; categories: string[] }) {
+}: FormProps & { defaults: NonNullable<LogDefaultsQuery['logDefaults']>; categories: string[]; tyres: VehicleTyresFieldsFragment | null }) {
   const { t } = useTranslation()
   const [ticked, setTicked] = useState(() => new Set(selected))
   // The expense's title and category follow the ticked schedules until the person types their own (null: not typed).
-  const [title, setTitle] = useState<string | null>(null)
-  const [category, setCategory] = useState<string | null>(null)
+  const [title, setTitle] = useState<string | null>(initial?.title ?? null)
+  const [category, setCategory] = useState<string | null>(initial?.category ?? null)
   const [error, setError] = useState<unknown>()
   const [noneTicked, setNoneTicked] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -224,10 +286,25 @@ function DoneFields({
     discount: t('recurring.discount'),
     currency: t('recurring.currency'),
   }
+  // The title stays the schedules' with tyre details on (the owner's decision 64); the category opens them as in the Expense dialog.
+  const titleValue = title ?? defaultTitle(done)
+  const categoryValue = category ?? defaultCategory(done)
+  const tyre = useExpenseTyreDetails({ tyres, category: categoryValue, setCategory, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
+  const switchHint = useSwitchHint(tyre, false)
+  // No tyre work where the dialog shows none (no set, no tyres known), so nothing unsaid counts as read.
+  const readForFill = tyre.available ? read : withoutFields(read, 'TYRE_WORK')
   const fill = useReadFill(
-    { date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', discount: '', currency: d.currency ?? '' },
+    initial
+      ? {
+          date: initial.date ?? todayIso(),
+          odometer: initial.odometer?.toString() ?? '',
+          amount: initial.amount?.toString() ?? '',
+          discount: initial.discount?.toString() ?? '',
+          currency: initial.currency ?? d.currency ?? '',
+        }
+      : { date: todayIso(), odometer: d.lastOdometer?.toString() ?? '', amount: '', discount: '', currency: d.currency ?? '' },
     READ_INTO,
-    read,
+    readForFill,
     labels,
     readingDone,
     { ...explanation, last: last ? formatDistance(last.value, vehicle.units.distance) : undefined },
@@ -239,8 +316,6 @@ function DoneFields({
   // The amount is optional here: a discount without it would stop the whole visit on the server, so it is said at the field first.
   const discountWithoutAmount = !hasAmount && fill.values.discount.trim() !== '' && parseDecimal(fill.values.discount) !== undefined
   const logsExpense = hasAmount || reading || readLater
-  const titleValue = title ?? defaultTitle(done)
-  const categoryValue = category ?? defaultCategory(done)
   const note = (field: FillableField) => (
     <ReadNote
       filled={fill.isFilled(field)}
@@ -272,19 +347,27 @@ function DoneFields({
     setBusy(true)
     setError(undefined)
     try {
-      await onSubmit(
-        {
-          ids: done.map((i) => i.id),
-          date: text('date'),
-          odometer: text('odometer') === '' ? null : Number(text('odometer')),
-          amount: hasAmount ? (parseDecimal(text('amount')) ?? null) : null,
-          discount: hasAmount && text('discount') !== '' ? (parseDecimal(text('discount')) ?? null) : null, // without an amount the field says so before this
-          currency: hasAmount ? text('currency').toUpperCase() : null,
-          title: titleValue.trim(),
-          category: categoryValue.trim(), // empty: no category (null would mean "the schedules' one" to the server)
-        },
-        logsExpense,
-      )
+      const tyreInput = await tyre.inputOf(text('date'), tyreIds)
+      if (tyreInput === 'invalid') return // said at What was done, which has the focus
+      const values: DoneValues = {
+        ids: done.map((i) => i.id),
+        date: text('date'),
+        odometer: text('odometer') === '' ? null : Number(text('odometer')),
+        amount: hasAmount ? (parseDecimal(text('amount')) ?? null) : null,
+        discount: hasAmount && text('discount') !== '' ? (parseDecimal(text('discount')) ?? null) : null, // without an amount the field says so before this
+        currency: hasAmount ? text('currency').toUpperCase() : null,
+        title: titleValue.trim(),
+        category: categoryValue.trim(), // empty: no category (null would mean "the schedules' one" to the server)
+        // Switched off, a change's tyre details go as none; without the tyres to show them (no answer) they stay as the change has them.
+        ...(tyreInput ? { tyre: tyreInput.tyre } : waitingTyre && tyre.available ? { tyre: null } : {}),
+      }
+      // A visit with tyre details that will wait on this device (#290, decision 70): its tyre part replayed first, so a refusal the device
+      // can foresee is said here. A visit whose amount is left to its photos logs an expense: a stand-in photo tells the replay so.
+      if (tyreInput && tyres && !initial) {
+        const { checkKept } = await import('./tyres/expenseTyreInput.ts')
+        checkKept(vehicle.id, tyres, { entity: 'recurring', action: 'markDone', targetId: 'visit' }, { ...values, ...(logsExpense ? { expenseId: 'visit', photoIds: ['visit'] } : {}) })
+      }
+      await onSubmit(values, logsExpense)
     } catch (err) {
       setError(err)
     } finally {
@@ -374,6 +457,14 @@ function DoneFields({
         <Field name="category" label={t('recurring.expenseCategory')}>
           <FieldAutocomplete options={categories} value={categoryValue} onChange={setCategory} maxLength={60} openOnFocus />
         </Field>
+        {tyres && (
+          <TyreDetailsFields
+            details={tyre}
+            tyres={tyres}
+            hint={switchHint}
+            note={logsExpense ? t('expenses.tyreDetails.lineNote') : t('expenses.tyreDetails.lineAloneNote')}
+          />
+        )}
         {gallery}
         {photosPicked && !logsExpense && (
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -383,6 +474,17 @@ function DoneFields({
         <div role="status" aria-label={t('a11y.readingStatus')}>
           <ReadingProgress active={reading} canSave={logsExpense} since={wait.since} until={wait.until} />
           {fill.announcement && <Typography variant="body2">{fill.announcement}</Typography>}
+          {tyre.announcement && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {tyre.announcement}
+            </Typography>
+          )}
+          {/* A photo's tyre work offered at the switch comes after a read: said here too (#290, decision 67). */}
+          {tyre.available && tyre.photo && !tyre.open && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {t('expenses.tyreDetails.photoShows', { kind: t(`tyres.entries.kinds.${tyre.photo.kind}`) })}
+            </Typography>
+          )}
           <ReadingProblems problems={fill.problems} />
         </div>
         {error !== undefined && <ErrorMessage error={error} />}
@@ -390,7 +492,7 @@ function DoneFields({
           <SaveWait waiting={photosBusy && !busy} />
           <DialogCancel disabled={busy} />
           <Button type="submit" loading={busy} disabled={photosBusy}>
-            {t('recurring.doneSave')}
+            {submitLabel ?? t('recurring.doneSave')}
           </Button>
         </DialogButtons>
       </Stack>

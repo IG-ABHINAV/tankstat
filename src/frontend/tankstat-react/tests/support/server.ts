@@ -11,7 +11,8 @@ import { graphql } from './graphql.ts'
 // user's UI settings once and tells the server about every change (nothing saved, every save echoed; settings tests use
 // fakeSettingsBackend). The echoes answer exactly the fields the documents select, or Apollo warns about missing fields in every test.
 // A test that opens a vehicle page only to check something else (a card's link, a trash from the Details tab) gets an empty dashboard
-// and no schedules; dashboard and recurring tests answer them with their own fakes.
+// and no schedules; dashboard and recurring tests answer them with their own fakes. The expense dialogs ask for the vehicle's tyres (#290):
+// none here, so they show no tyre details; tyre tests answer VehicleTyres with fakeTyres.
 export const server = setupServer(
   graphql.query('VehicleDashboard', ({ variables }) =>
     HttpResponse.json({ data: { vehicle: { __typename: 'Vehicle', id: variables.id, dashboard: null }, vehicleWidgets: [] } }),
@@ -44,6 +45,7 @@ export const server = setupServer(
   graphql.query('ServerGeneration', () => HttpResponse.json({ data: { session: { __typename: 'Session', instance: { __typename: 'InstanceInfo', generation: '' } } } })),
   graphql.query('UnreadNotificationCount', () => HttpResponse.json({ data: { notificationCount: 0 } })),
   graphql.query('ParkedChanges', () => HttpResponse.json({ data: { parkedChanges: [] } })),
+  graphql.query('VehicleTyres', () => HttpResponse.json({ data: { vehicleTyres: null } })),
   graphql.query('RecognitionStatus', () => HttpResponse.json({ data: { recognitionStatus: { available: false } } })),
   graphql.query('PasswordRequirements', () => HttpResponse.json({ data: { passwordRequirements: { minLength: 10, maxLength: 128 } } })),
   graphql.query('UiSettings', () => HttpResponse.json({ data: { uiSettings: { navOpen: null, language: null, colorMode: null, surface: null, timeFormat: null, dateFormat: null, defaultTimeFormat: null, defaultDateFormat: null, grids: [] } } })),

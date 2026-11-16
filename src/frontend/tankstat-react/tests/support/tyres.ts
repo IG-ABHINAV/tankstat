@@ -159,6 +159,6 @@ export function fakeTyres(initial: FakeTyreSet[], entries: FakeTyreEntry[] = [],
     mutation('RestoreTyrePlace', 'restoreTyrePlace'),
     mutation('UpdateTyreSet', 'updateTyreSet'),
   ]
-  return { state, handlers }
+  return { state, handlers, answer }
 }
 

@@ -1,6 +1,6 @@
 import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './support/test.ts'
-import { addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
+import { addDueRecurring, addExpense, addVehicle, graphql, logRefueling, openVehicle, pageLoaded, signInAsNewUser } from './support/app.ts'
 import { expectSoundLayout } from './support/layout.ts'
 
 // A vehicle's tyres (#287): sets added, swapped with their pairs, a past swap from papers, a swap moved to the trash and back from the Trash
@@ -478,3 +478,134 @@ test('replaces two tyres of a whole set from its History: the set tracked tyre b
   await expect(retired.getByRole('button', { name: 'Replace this tyre' })).toHaveCount(0)
   await expectSoundLayout(page)
 })
+
+// ---- an expense's tyre details (#290) -------------------------------------------------------------------------
+
+/** Opens Add expense on the Expenses tab, and picks what was done in its tyre details. */
+async function chooseKind(page: Page, dialog: Locator, kind: string) {
+  const group = dialog.getByRole('group', { name: 'Tyre details' })
+  await group.getByRole('combobox', { name: 'What was done' }).click()
+  await page.getByRole('option', { name: kind }).click()
+  return group
+}
+
+test('an expense whose category is Tyres puts two tyres of a whole set on the tyre log: one row, the amount once, the chip on the Expenses tab (#290)', async ({ page }) => {
+  const { day } = await summerOnTheCar(page)
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  await page.getByRole('button', { name: 'Add expense' }).click()
+  const add = page.getByRole('dialog', { name: 'Add expense' })
+  await add.getByLabel(/^Category/).fill('Tyres')
+  const group = await chooseKind(page, add, 'Puncture repaired')
+  await expect(add.getByLabel('Title')).toHaveValue('Puncture repaired: Michelin Primacy 4')
+  await group.getByRole('checkbox', { name: 'The whole set' }).click()
+  await group.getByRole('button', { name: 'The rear left tyre' }).click()
+  await group.getByRole('button', { name: 'The rear right tyre' }).click()
+  await add.getByLabel('Amount').fill('13000')
+  await typeDate(page, dateField(add, /^Date/), day(2))
+  await expectSoundLayout(page)
+  await add.getByRole('button', { name: 'Add expense' }).click()
+  await expect(add).toBeHidden()
+  await expect(page.getByText('Saved for S3, S4, with one expense.')).toBeVisible()
+
+  const row = page.getByRole('row').filter({ hasText: 'Puncture repaired: Michelin Primacy 4' })
+  await expect(row).toContainText('Tyre log')
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await expect(log.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ })).toHaveCount(1)
+  await expect(log.getByRole('button', { name: /^Puncture repaired, Michelin Primacy 4 · S3, S4,/ })).toContainText('13,000')
+  await expect(page.getByRole('article', { name: 'Michelin Primacy 4' })).toContainText('Tracked tyre by tyre')
+})
+
+test('an expense the tyre log made: what was done changed in Edit expense, removed from the tyre log, and linked again once its line is restored (#290)', async ({ page }) => {
+  const { vehicle, day } = await summerOnTheCar(page)
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  await page.getByRole('button', { name: 'Add expense' }).click()
+  const add = page.getByRole('dialog', { name: 'Add expense' })
+  await add.getByRole('switch', { name: 'Tyre details' }).click()
+  await chooseKind(page, add, 'Wheel balancing')
+  await add.getByLabel('Amount').fill('8000')
+  await typeDate(page, dateField(add, /^Date/), day(3))
+  await add.getByRole('button', { name: 'Add expense' }).click()
+  await expect(add).toBeHidden()
+
+  // What was done changed from the Expenses tab: the line changes with it.
+  const row = page.getByRole('row').filter({ hasText: 'Wheel balancing: Michelin Primacy 4' })
+  await row.getByRole('button', { name: /^Edit the expense/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await expect(edit.getByRole('switch', { name: 'Tyre details' })).toHaveCount(0)
+  await chooseKind(page, edit, 'Storage fee')
+  await expectSoundLayout(page)
+  await edit.getByRole('button', { name: /^Save/ }).click()
+  await expect(edit).toBeHidden()
+  type Lines = { vehicleTyres: { entries: { id: string; kind: string; expenseId: string | null }[] } }
+  const linesOf = async () => (await graphql<Lines>(page, 'query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { id kind expenseId } } }', { v: vehicle.id })).vehicleTyres.entries
+  await expect.poll(async () => (await linesOf()).filter((e) => e.expenseId).map((e) => e.kind)).toEqual(['STORAGE_FEE'])
+
+  // Removed from the tyre log: the line to the trash, the expense stays, its banner says so (once the edit's toast has gone: toasts queue).
+  await expect(page.getByText('Saved.')).toBeHidden({ timeout: 15_000 })
+  await row.getByRole('button', { name: /^Edit the expense/ }).click()
+  const again = page.getByRole('dialog', { name: 'Edit expense' })
+  await again.getByRole('button', { name: 'Remove from the tyre log' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Remove it from the tyre log?' })
+  await expectSoundLayout(page)
+  await confirm.getByRole('button', { name: 'Remove from the tyre log' }).click()
+  await expect(page.getByText('Removed from the tyre log. Its line is in the trash.')).toBeVisible()
+  await expect(again.getByText(/Its line is in the trash: restoring it there links them again\./)).toBeVisible()
+  await expect(again.getByRole('group', { name: 'Tyre details' })).toHaveCount(0)
+  await again.getByRole('button', { name: 'Cancel' }).click()
+
+  // Restored from the Trash page: the two are linked again.
+  await page.goto('/trash?tab=tyres')
+  await pageLoaded(page)
+  await page.getByRole('row').filter({ hasText: 'Storage fee' }).getByRole('button', { name: /^Restore/ }).click()
+  await expect.poll(async () => (await linesOf()).filter((e) => e.expenseId).map((e) => e.kind)).toEqual(['STORAGE_FEE'])
+})
+
+test('a plain expense given tyre details in Edit expense is put on the tyre log (#290)', async ({ page }) => {
+  const { vehicle, day } = await summerOnTheCar(page)
+  await addExpense(page, vehicle.id, { title: 'Tyre hotel', date: day(5), amount: 6000 })
+  await openVehicle(page, vehicle.id, 'expenses')
+  await page.getByRole('row').filter({ hasText: 'Tyre hotel' }).getByRole('button', { name: /^Edit the expense/ }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit expense' })
+  await edit.getByRole('switch', { name: 'Tyre details' }).click()
+  await expect(edit.getByLabel(/^Category/)).toHaveValue('Tyres') // an empty category takes the tyre one
+  await chooseKind(page, edit, 'Storage fee')
+  await expectSoundLayout(page)
+  await edit.getByRole('button', { name: /^Save/ }).click()
+  await expect(edit).toBeHidden()
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  await expect(page.getByRole('region', { name: 'Tyre log' }).getByRole('button', { name: /^Storage fee, Michelin Primacy 4,/ })).toContainText('6,000')
+})
+
+test('a visit with tyre details: with an amount its expense is the line\'s, without one the line is logged alone (#290)', async ({ page }) => {
+  const { vehicle } = await summerOnTheCar(page)
+  await addDueRecurring(page, vehicle.id, 'Wheel balancing', 'Tyres')
+  await addDueRecurring(page, vehicle.id, 'Tyre hotel', 'Storage')
+  await openVehicle(page, vehicle.id, 'recurring')
+
+  await page.getByRole('button', { name: 'Mark Wheel balancing as done' }).click()
+  const paid = page.getByRole('dialog', { name: 'Mark as done: Wheel balancing' })
+  await chooseKind(page, paid, 'Wheel balancing') // the schedule's category Tyres opened the section
+  await paid.getByLabel('Amount (optional)').fill('8000')
+  await expect(paid.getByLabel('Expense title')).toHaveValue('Wheel balancing') // the schedule's title stays
+  await expectSoundLayout(page)
+  await paid.getByRole('button', { name: 'Mark as done' }).click()
+  await expect(paid).toBeHidden()
+
+  await page.getByRole('button', { name: 'Mark Tyre hotel as done' }).click()
+  const alone = page.getByRole('dialog', { name: 'Mark as done: Tyre hotel' })
+  await alone.getByRole('switch', { name: 'Tyre details' }).click()
+  await chooseKind(page, alone, 'Storage fee')
+  await expect(alone.getByText('Without an amount the line is logged on its own, with no expense.')).toBeVisible()
+  await alone.getByRole('button', { name: 'Mark as done' }).click()
+  await expect(alone).toBeHidden()
+  await expect(page.getByText('Marked as done. Logged on the tyre log, without an amount.')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Tyres' }).click()
+  const log = page.getByRole('region', { name: 'Tyre log' })
+  await expect(log.getByRole('button', { name: /^Wheel balancing, Michelin Primacy 4,/ })).toContainText('8,000')
+  await expect(log.getByRole('button', { name: /^Storage fee, Michelin Primacy 4,/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Expenses' }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Wheel balancing' })).toContainText('Tyre log')
+})
+

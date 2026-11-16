@@ -46,6 +46,11 @@ internal static class OpenAiCompatiblePrompt
             .Append($"The fields of each kind: {fields} Leave out a field you cannot read; with \"unknown\" there are no fields. ")
             .Append("Formats: odometer as digits only, without unit or separators; total, volume, unitPrice and discount with \".\" as the decimal separator, no thousands separators, no currency sign; ")
             .Append("currency as an ISO 4217 code (HUF, EUR, USD); date as yyyy-MM-dd; title as the shop's name, at most 120 characters. Every value is a string.");
+        // The tyre work a receipt is for (#290): asked of every expense photo, its values a closed list, left out unless the receipt says.
+        if (allowed.SelectMany(ReadingChecks.FieldsOf).Contains(ReadingFieldName.TyreWork))
+            text.Append(" tyreWork only when the receipt is for tyre work, as one of ")
+                .Append(string.Join(", ", ReadingNormaliser.TyreWorks.Keys))
+                .Append(" (a puncture repaired, a valve replaced, wheels balanced, tyres stored, tyres bought); leave it out for anything else.");
         if (Conventions.TryGetValue(locale, out var convention)) text.Append(' ').Append(convention).Append(" Convert them to the formats above.");
         return text.ToString();
     }

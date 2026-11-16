@@ -234,6 +234,31 @@ public class SyncGraphQLTests : IDisposable
     }
 
     [Fact]
+    public async Task AnExpenseWithTyreDetails_KeptOffline_IsAppliedWithItsLine_AndOneWhoseTyrePartIsRefused_IsParkedWhole()
+    {
+        // #290, the owner's decision 70: the tyre part's refusal parks the whole change, with its key; nothing of it is saved.
+        var people = await _app.Users();
+        var (car, set, expense, line, refused) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await Send(people.Alice,
+            new { id = car, addVehicle = new { id = car, name = "Golf", fuelType = "PETROL" } },
+            new { id = set, addTyreSet = new { id = set, vehicleId = car, name = "Michelin", season = "SUMMER", since = "2023-03-25", fitted = true, day = "2026-03-28", pairOneFront = true, installationId = Guid.NewGuid() } });
+
+        var result = await Send(people.Alice,
+            new { id = expense, addExpense = new { id = expense, vehicleId = car, date = "2026-09-20", title = "Puncture", category = "Tyres", amount = 25, currency = "EUR", odometer = 148_200,
+                tyre = new { kind = "PUNCTURE_REPAIRED", setId = set, lineId = line } } },
+            new { id = refused, addExpense = new { id = refused, vehicleId = car, date = "2026-09-21", title = "Note", amount = 5, currency = "EUR",
+                tyre = new { kind = "PUNCTURE_REPAIRED", setId = Guid.NewGuid() } } });
+
+        var results = result.GetProperty("results").EnumerateArray().ToList();
+        Assert.Equal(("APPLIED", "PARKED", "tyres.setNotFound"), (results[0].GetProperty("status").GetString(), results[1].GetProperty("status").GetString(),
+            results[1].GetProperty("reason").GetProperty("key").GetString()));
+        var lines = (await people.Alice.Gql("query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { id expenseId } } }", new { v = car })).Data()
+            .GetProperty("vehicleTyres").GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("expenseId").ValueKind == JsonValueKind.String).ToList();
+        Assert.Equal([(line.ToString(), expense.ToString())], lines.Select(e => (e.GetProperty("id").GetString(), e.GetProperty("expenseId").GetString())));
+        Assert.Equal(JsonValueKind.Null, (await people.Alice.Gql("query($e: UUID!) { expense(id: $e) { id } }", new { e = refused })).Data().GetProperty("expense").ValueKind);
+    }
+
+    [Fact]
     public async Task AChangeMadeFromAnOldVersion_IsParked_AndChangesNothing()
     {
         var people = await _app.Users();

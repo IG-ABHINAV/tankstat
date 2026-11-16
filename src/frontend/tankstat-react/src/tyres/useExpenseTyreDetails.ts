@@ -1,0 +1,216 @@
+import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useClientId } from '../dialogs/useClientId.ts'
+import type { ExpenseTyreInput, TyreEntryKind, VehicleTyresFieldsFragment } from '../gql/generated.ts'
+import { isTyreCategory, tyreCategories } from './tyreCategory.ts'
+
+type TyreLine = VehicleTyresFieldsFragment['entries'][number]
+
+/**
+ * The section and the car picture (`TyreDetailsFields`), and the input's making (`expenseTyreInput.ts`), are chunks of their own (the dialogs
+ * are eager: the home cards open them); the section is loaded ahead once a vehicle has tyre sets.
+ */
+export const loadSection = () => import('./ExpenseTyreSection.tsx')
+
+/** The tyre details as picked in a dialog (#290); kept while the section is closed, so they come back if it opens again (decision 59). */
+export interface TyreDetailsState {
+  /** The switch as the person left it: on, off, or not touched (null: the category decides). */
+  on: boolean | null
+  kind: TyreEntryKind | ''
+  /** The set (none: *No set*). */
+  setId: string
+  whole: boolean
+  /** The tyres tapped: their ids on a broken-up set, their corners on a whole one. */
+  picked: string[]
+  /** A whole set's labels as typed (empty: the suggested ones). */
+  labels: string[]
+}
+
+/** A whole set's corners in the order its labels are kept (as `singleTyres.ts` `EXACT`, which this eager module does not import). */
+export const EXACT_ORDER = ['FRONT_LEFT', 'FRONT_RIGHT', 'REAR_LEFT', 'REAR_RIGHT'] as const
+
+/** The device's ids of what a save makes (see `ExpenseTyreSection`). */
+export interface TyreDetailsIds {
+  line: string
+  lines: readonly string[]
+  newTyres: readonly string[]
+}
+
+/**
+ * The ids of the lines (and a whole set's new tyres) a dialog's tyre details make (#290): the same for every Save of one opening; a change
+ * edited on Waiting to sync keeps the ones its tyre details gave (later tyre changes may name them), fresh ones after them.
+ */
+export function useTyreDetailsIds(open: boolean, waitingTyre: ExpenseTyreInput | null): TyreDetailsIds {
+  const fresh = {
+    line: useClientId(open),
+    lines: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+    newTyres: [useClientId(open), useClientId(open), useClientId(open), useClientId(open)],
+  }
+  const waitingNew = EXACT_ORDER.map((c) => waitingTyre?.breakUp?.tyres.find((t) => t.corner === c)?.id)
+  return {
+    line: waitingTyre?.lineId ?? fresh.line,
+    lines: fresh.lines.map((id, n) => waitingTyre?.tyres?.[n]?.id ?? id),
+    newTyres: fresh.newTyres.map((id, n) => waitingNew[n] ?? id),
+  }
+}
+
+/**
+ * An expense's tyre details in a dialog (#290, the owner's decisions 51, 58, 59, 62, 65 and 68): a vehicle with a tyre set gets the switch;
+ * the section opens by itself while the category is a tyre category, until the person switches it off, and closes when the category stops
+ * being one unless the person switched it on; switched on, an empty category takes the last tyre cost's (else Tyres or Gumik). *What
+ * was done* starts unchosen, *Set* at the set on the car. Opening and closing by the category are announced, never moving the focus.
+ */
+export function useExpenseTyreDetails({
+  tyres,
+  category,
+  setCategory,
+  linked,
+  initial,
+  suggested,
+  parked = false,
+}: {
+  tyres: VehicleTyresFieldsFragment | null | undefined
+  category: string
+  setCategory: (category: string) => void
+  /**
+   * An expense the tyre log made (#290, decisions 53 and 60): its first live line. The section is shown without the switch, from what
+   * that line says; a save sends what was done and the set only when they changed.
+   */
+  linked?: TyreLine | null
+  /**
+   * A change edited on Waiting to sync (decision 70): the tyre details it carries, shown to fix or switch off. Its set while it is still
+   * offered (else the usual start: one the server refused may be gone), its tyres, a whole set's labels and the break-up it carries.
+   */
+  initial?: ExpenseTyreInput | null
+  /**
+   * What the photos say was done (#290, the owner's decisions 56 and 67: one of the five a receipt can tell, `suggestedKind`): offered at the
+   * switch while the section is closed, and once it is open filled into *What was done* while the person has not changed it, offered after.
+   */
+  suggested?: TyreEntryKind | null
+  /** `initial` is a parked change's (decision 70): the server refused it, so with no set left to offer its set is gone. */
+  parked?: boolean
+}) {
+  const { t } = useTranslation()
+  // A parked change that carries tyre details shows them also with no set left: the server refused it, so its set is gone, and it can be
+  // switched off. A waiting one with no set to offer keeps them unseen: the device may simply know none (its data removed, the change
+  // kept), and an edit of its amount must never move its line to no set.
+  const available = !!tyres && (tyres.sets.length > 0 || !!linked || (!!initial && parked))
+  const last = tyres?.expenseCategory ?? null
+  const [own, setState] = useState<TyreDetailsState>(() => {
+    if (linked) return { on: true, kind: linked.kind, setId: linked.setId ?? '', whole: true, picked: [], labels: [] }
+    const sets = tyres?.sets.filter((s) => !s.set.isRetired) ?? []
+    const start = (sets.find((s) => s.onTheCar) ?? sets[0])?.set.id ?? ''
+    if (!initial) return { on: null, kind: '', setId: start, whole: true, picked: [], labels: [] }
+    const offered = !initial.setId || sets.some((s) => s.set.id === initial.setId)
+    // Its set no longer offered: the usual start, the whole set (its tyres were the gone set's, never the start's).
+    if (!offered) return { on: true, kind: initial.kind, setId: start, whole: true, picked: [], labels: [] }
+    const lines = initial.tyres ?? []
+    // A whole set it breaks up, shown whole (a parked change is not replayed here): its tyres picked by their corners, its labels as typed.
+    // Shown broken up (a waiting change is replayed, its break-up made), or a broken-up set: by their ids.
+    const made = initial.breakUp?.tyres ?? []
+    const shownWhole = !tyres?.sets.find((s) => s.set.id === initial.setId)?.set.brokenUpOn
+    const byCorner = made.length > 0 && shownWhole
+    const picked = byCorner ? made.filter((t) => lines.some((l) => l.tyreId === t.id)).map((t) => t.corner ?? '').filter(Boolean) : lines.map((l) => l.tyreId)
+    const labels = byCorner ? EXACT_ORDER.map((corner) => made.find((t) => t.corner === corner)?.label ?? '') : []
+    return { on: true, kind: initial.kind, setId: initial.setId ?? '', whole: lines.length === 0, picked, labels }
+  })
+  const open = available && (!!linked || own.on === true || (own.on !== false && isTyreCategory(category, last)))
+  const [kindError, setKindError] = useState<string>()
+  const kindRef = useRef<{ focus: () => void }>(null)
+
+  // Opened or closed by the category: said once in the dialog's live region; the switch says its own state.
+  const [announcement, setAnnouncement] = useState('')
+  const seen = useRef(open)
+  const bySwitch = useRef(false)
+  useEffect(() => {
+    if (seen.current === open) return
+    seen.current = open
+    if (!bySwitch.current) setAnnouncement(t(open ? 'expenses.tyreDetails.opened' : 'expenses.tyreDetails.closed'))
+    bySwitch.current = false
+  }, [open, t])
+  useEffect(() => {
+    if (available) void loadSection() // ready before a tyre category is typed
+  }, [available])
+
+  const toggle = (on: boolean) => {
+    bySwitch.current = true
+    setState((s) => ({ ...s, on }))
+    if (on && !category.trim()) setCategory(last?.trim() || t('tyres.fee.defaultCategory'))
+  }
+  // What was done as the photos say (#290, decision 67): while the section is open and the person has not changed it, it is the photo's
+  // (worked out here, never stored, so a later photo still counts); once they chose a kind, the photo's is only offered.
+  const [kindTouched, setKindTouched] = useState(false)
+  const photoKind = !linked && suggested ? suggested : null
+  const state: TyreDetailsState = open && photoKind && !kindTouched && own.kind !== photoKind ? { ...own, kind: photoKind } : own
+  // A photo filling What was done in the open section is said like the dialog's other fields (the owner's decision 67), once per kind.
+  const filledByPhoto = state !== own ? photoKind : null
+  const saidFill = useRef<string | null>(null)
+  useEffect(() => {
+    if (filledByPhoto && saidFill.current !== filledByPhoto) setAnnouncement(t('reading.announce', { fields: t('tyres.entries.kind') }))
+    saidFill.current = filledByPhoto
+  }, [filledByPhoto, t])
+  const change = (next: TyreDetailsState) => {
+    const kindChanged = next.kind !== state.kind
+    if (kindChanged) setKindTouched(true)
+    // A change of the set or the tyres carries the photo's kind along: keep it unstored, so a removed photo leaves What was done unchosen.
+    setState(kindChanged || kindTouched ? next : { ...next, kind: own.kind })
+    if (next.kind) setKindError(undefined)
+  }
+  /** The photo's suggestion: `filled` while *What was done* is the photo's, `offered` once the person chose another; `use` takes it (and opens the section). */
+  const photo = photoKind
+    ? {
+        kind: photoKind,
+        filled: open && !kindTouched && state.kind === photoKind,
+        offered: (!open || kindTouched) && state.kind !== photoKind,
+        use: () => {
+          if (!open) toggle(true)
+          setKindTouched(false)
+          setState((s) => ({ ...s, on: true, kind: photoKind }))
+          setKindError(undefined)
+        },
+      }
+    : null
+  const setName = tyres?.sets.find((s) => s.set.id === state.setId)?.set.name ?? null
+  /** The expense's title while the person has not typed one (decision 52): "{kind}: {set}", as *Add entry*'s fee. */
+  const title = open && state.kind ? (setName ? `${t(`tyres.entries.kinds.${state.kind}`)}: ${setName}` : t(`tyres.entries.kinds.${state.kind}`)) : null
+
+  /**
+   * The input to send, worked out on save: undefined while the section is closed, `'invalid'` when no kind was chosen (said at the field,
+   * which takes the focus: "Choose what was done."). A tyre that must be tapped and was not throws the tyre log's own refusal.
+   */
+  async function inputOf(day: string, ids: TyreDetailsIds): Promise<{ tyre: ExpenseTyreInput; named: string } | 'invalid' | undefined> {
+    if (!open || !tyres) return undefined
+    if (linked) {
+      // Its lines change only when what was done or the set did; the set always goes with it (left out, it would be no set).
+      const same = state.kind === linked.kind && state.setId === (linked.setId ?? '')
+      return same || !state.kind ? undefined : { tyre: { kind: state.kind, setId: state.setId || null }, named: '' }
+    }
+    if (!state.kind) {
+      setKindError(t('expenses.tyreDetails.chooseKind'))
+      kindRef.current?.focus()
+      return 'invalid'
+    }
+    return (await import('./expenseTyreInput.ts')).tyreInputOf(state, tyres, ids, day, initial?.setId === state.setId ? initial.breakUp : null)
+  }
+
+  // A kind the photo filled in after a refused Save answers "Choose what was done." too.
+  return { available, open, state, change, toggle, kindError: state.kind ? undefined : kindError, kindRef, title, announcement, inputOf, last, linked: linked ?? null, photo }
+}
+
+export type ExpenseTyreDetails = ReturnType<typeof useExpenseTyreDetails>
+
+/** The kinds a receipt can tell (#290, the owner's decision 66): never *Other*, a note or a swap. */
+const PHOTO_KINDS: readonly TyreEntryKind[] = ['PUNCTURE_REPAIRED', 'VALVE_REPLACED', 'WHEEL_BALANCING', 'STORAGE_FEE', 'BOUGHT']
+
+/** The kind a photo's `TYRE_WORK` names (the server keeps the kind's own name, `WheelBalancing`), or none. */
+export function suggestedKind(value: string | undefined): TyreEntryKind | null {
+  if (!value) return null
+  const kind = value.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() as TyreEntryKind
+  return PHOTO_KINDS.includes(kind) ? kind : null
+}
+
+/** The switch's hint in *Add expense* and *Edit expense* (decisions 51, 54): it names the tyre categories that open it by itself. */
+export function useSwitchHint(details: ExpenseTyreDetails, editing: boolean) {
+  const { t } = useTranslation()
+  return editing ? t('expenses.tyreDetails.hintEdit') : t('expenses.tyreDetails.hintAdd', { list: tyreCategories(details.last).join(', ') })
+}
