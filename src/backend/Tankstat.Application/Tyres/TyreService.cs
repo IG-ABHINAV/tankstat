@@ -410,12 +410,23 @@ public sealed class TyreService(
         RequireExpenseKind(details.Kind);
         RequireNotFuture(expense.Date);
         if (details.SetId is { } setId) LiveSet(book, setId);
-        // The expense's id is the add's: one already there was answered before (ExpenseService). The lines' and tyres' ids are new, so one
-        // already in use is someone else's, never a repeat of this add.
-        await RequireUnusedAsync(details, ct);
+        // An add saved meanwhile by the same add sent again is its repeat; an edit has none (a lost race is the version check's).
+        Func<Task<bool>> repeat = changes is null ? async () => await expenses.FindIncludingDeletedAsync(expense.Id, ct) is not null : () => Task.FromResult(false);
         var save = new TyreSave { Book = book, By = by };
         var firstId = details.Tyres is [{ Id: { } given }, ..] ? given : details.LineId;
-        var lines = NewLines(vehicle, book, save, details.Kind, details.SetId, expense.Date, odometer: null, note: null, details.Tyres, details.BreakUp, firstId, details.LineId, by);
+        List<TyreEntry> lines;
+        try
+        {
+            // The lines' and tyres' ids are new: one already in use is someone else's (sync.idTaken), unless the same add, past the expense's
+            // id lookup (ExpenseService) at once with this one, saved them meanwhile; its break-up then refuses this one's too.
+            await RequireUnusedAsync(details, ct);
+            lines = NewLines(vehicle, book, save, details.Kind, details.SetId, expense.Date, odometer: null, note: null, details.Tyres, details.BreakUp, firstId, details.LineId, by);
+        }
+        catch (KeyedException) when (changes is null)
+        {
+            if (await repeat()) return false;
+            throw;
+        }
         foreach (var line in lines)
         {
             if (expense.OdometerReading is { } reading) line.HoldReading(reading); // one row: the expense's, held by its lines too
@@ -431,8 +442,6 @@ public sealed class TyreService(
             save.ExpenseChanges.Add(changes);
             save.Change(expense);
         }
-        // An add saved meanwhile by the same add sent again is its repeat; an edit has none (a lost race is the version check's).
-        Func<Task<bool>> repeat = changes is null ? async () => await expenses.FindIncludingDeletedAsync(expense.Id, ct) is not null : () => Task.FromResult(false);
         if (!await SaveOnceAsync(save, repeat, ct)) return false;
         logger.LogDebug("User {UserId} put expense {ExpenseId} on the tyre log of vehicle {VehicleId}: {Count} lines from {EntryId}", by, expense.Id, vehicle.Id, lines.Count, lines[0].Id);
         return true;
