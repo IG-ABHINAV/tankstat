@@ -16,15 +16,18 @@ namespace Tankstat.Api.GraphQL;
 /// <param name="PhotoIds">Photos uploaded for this expense beforehand (<c>PUT /media/vehicles/{id}/photo-drafts</c>); they become its photos.</param>
 /// <param name="Id">An id the client chose for the new expense; the same add sent again (a lost answer, a replay after being offline) answers with what it created. Omit to let the server choose.</param>
 /// <param name="Discount">What was taken off the amount, which is what was paid; needs the amount.</param>
+/// <param name="Tyre">Its tyre details (#290): saved with the tyre log line (or lines) holding it, all or nothing.</param>
 public sealed record AddExpenseInput(
     Guid VehicleId, DateOnly Date, string Title, string? Category, decimal? Amount, string? Currency, long? Odometer, string? Note, IReadOnlyList<Guid>? PhotoIds = null,
-    Guid? Id = null, decimal? Discount = null);
+    Guid? Id = null, decimal? Discount = null, ExpenseTyreInput? Tyre = null);
 
 /// <param name="Amount">May be omitted only while a photo of the expense is still being read.</param>
 /// <param name="Currency">Omit to keep the expense's currency.</param>
 /// <param name="Discount">What was taken off the amount; omit (or null) to keep the expense's, and send 0 for none.</param>
+/// <param name="Tyre">Its tyre details (#290): an expense no line holds is put on the tyre log; one the tyre log made changes what was done
+/// (and a whole set's line's set). Left out (or null) leaves it as it is.</param>
 public sealed record UpdateExpenseInput(
-    Guid Id, DateOnly Date, string Title, string? Category, decimal? Amount, string? Currency, long? Odometer, string? Note, decimal? Discount = null);
+    Guid Id, DateOnly Date, string Title, string? Category, decimal? Amount, string? Currency, long? Odometer, string? Note, decimal? Discount = null, ExpenseTyreInput? Tyre = null);
 
 /// <summary>The expense type exposes its odometer and amount as plain values; the linked reading and cost stay internal details.</summary>
 public sealed class ExpenseType : ObjectType<Expense>
@@ -110,10 +113,12 @@ public sealed class ExpenseMutations
 {
     public Task<Expense> AddExpense(AddExpenseInput input, [Service] ExpenseService expenses, [Service] IOptionsSnapshot<VehicleDefaultsOptions> defaults, CancellationToken ct) =>
         expenses.AddAsync(input.VehicleId,
-            new ExpenseInput(input.Date, input.Title, input.Category, input.Amount, input.Currency ?? defaults.Value.Currency, input.Odometer, input.Note, input.Discount), ct, input.PhotoIds, input.Id);
+            new ExpenseInput(input.Date, input.Title, input.Category, input.Amount, input.Currency ?? defaults.Value.Currency, input.Odometer, input.Note, input.Discount), ct, input.PhotoIds, input.Id,
+            input.Tyre?.ToDetails());
 
     public Task<Expense> UpdateExpense(UpdateExpenseInput input, [Service] ExpenseService expenses, CancellationToken ct) =>
-        expenses.UpdateAsync(input.Id, new ExpenseInput(input.Date, input.Title, input.Category, input.Amount, input.Currency, input.Odometer, input.Note, input.Discount), ct);
+        expenses.UpdateAsync(input.Id, new ExpenseInput(input.Date, input.Title, input.Category, input.Amount, input.Currency, input.Odometer, input.Note, input.Discount), ct,
+            tyre: input.Tyre?.ToDetails());
 
     public Task<Expense> DeleteExpense(Guid id, [Service] ExpenseService expenses, CancellationToken ct) => expenses.DeleteAsync(id, ct);
 

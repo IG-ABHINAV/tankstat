@@ -8,7 +8,8 @@ import { uuidV4 } from '../../offline/uuid.ts'
 
 /** What a new, changed or trashed refuelling or expense makes the vehicle page ask again (only the queries that are showing). */
 export const REFUELING_QUERIES = ['Refuelings', 'VehicleDetails', 'LogDefaults']
-export const EXPENSE_QUERIES = ['Expenses', 'VehicleDetails', 'LogDefaults', 'ExpenseCategories']
+/** `VehicleTyres` too: an expense the tyre log made, or one saved with tyre details (#290), changes the tyre log and its costs. */
+export const EXPENSE_QUERIES = ['Expenses', 'VehicleDetails', 'LogDefaults', 'ExpenseCategories', 'VehicleTyres']
 
 /**
  * Adding a refuelling or an expense on the vehicle page, from its tabs and from the floating add button alike: once saved, the lists and

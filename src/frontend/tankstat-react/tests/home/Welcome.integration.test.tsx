@@ -5,6 +5,7 @@ import { graphql } from '../support/graphql.ts'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import App from '../../src/App.tsx'
 import { server } from '../support/server.ts'
+import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 import {
   adminSession,
   fakeExpenseBackend,
@@ -435,6 +436,32 @@ it('adds an expense from the card; the spending updates in place', async () => {
   expect(expenses.state.calls.AddExpense).toEqual([{ input: expect.objectContaining({ vehicleId: 'v1', title: 'Tyres', amount: 120000 }) }])
   await c.findByText(/170,000/) // 50,000 + 120,000
   expect(state.requests.Welcome).toHaveLength(1)
+})
+
+it('adds an expense with tyre details from the card, and asks the tyre log again (#290)', async () => {
+  const { ui, expenses } = setup()
+  const tyres = fakeTyres([tyreSummer, tyreWinter])
+  let asked = 0
+  server.use(graphql.query('VehicleTyres', () => {
+    asked++
+    return HttpResponse.json({ data: { vehicleTyres: tyres.answer() } })
+  }))
+  const c = within(await card('Octavia'))
+
+  await ui.click(c.getByRole('button', { name: 'Expense for Octavia' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
+  await waitFor(() => expect(within(dialog).getByLabelText('Currency')).toHaveValue('HUF'))
+  await ui.type(within(dialog).getByLabelText(/^Category/), 'Tyres')
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Wheel balancing' }))
+  await ui.type(within(dialog).getByLabelText('Amount'), '12000')
+  const before = asked
+  await ui.click(within(dialog).getByRole('button', { name: 'Add expense' }))
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(expenses.state.calls.AddExpense).toEqual([{ input: expect.objectContaining({ title: 'Wheel balancing: Michelin Primacy 4', tyre: expect.objectContaining({ kind: 'WHEEL_BALANCING', setId: 's1' }) }) }])
+  await waitFor(() => expect(asked).toBeGreaterThan(before)) // the device's copy of the tyre log has the line at once
 })
 
 it('marks a due schedule done from the card: it leaves the attention list, the logged expense shows, and the focus lands on the title', async () => {

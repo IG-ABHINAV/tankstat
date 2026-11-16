@@ -10,6 +10,7 @@ using Tankstat.Application.Vehicles;
 using Tankstat.Application.Expenses;
 using Tankstat.Domain;
 using Tankstat.Domain.Measurements;
+using Tankstat.Domain.Odometers;
 using Tankstat.Domain.Sync;
 using Tankstat.Domain.Tyres;
 using Tankstat.Domain.Users;
@@ -281,6 +282,64 @@ public class TyreRepositoryTests
         save.AddedExpenses.Add(expense);
         Assert.True(await db.Get<ITyreRepository>().SaveAsync(save, default));
         return (line, expense);
+    }
+
+    [Fact]
+    public async Task AnExpenseWithTyreDetails_AndItsLine_AreSavedTogether_TheLineHoldingTheExpensesReading()
+    {
+        // #290: the Expense dialog's expense makes the reading, its line holds it (the other way round from #288's fee).
+        await using var db = Database();
+        var car = await Car(db);
+        var expense = Expense.Create(car.OwnerId, car.OwnerId, car.Id, D(2026, 9, 20), "Puncture repaired", "Tyres", Cost.Create(car.OwnerId, car.Id, D(2026, 9, 20), 25, "EUR"),
+            OdometerReading.Create(car.OwnerId, car.Id, D(2026, 9, 20), 148_200));
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.PunctureRepaired, null, expense.Date, null, null);
+        line.HoldReading(expense.OdometerReading!);
+        line.LinkExpense(expense.Id);
+        var save = new TyreSave();
+        save.AddedEntries.Add(line);
+        save.AddedReadings.Add(expense.OdometerReading!);
+        save.AddedExpenses.Add(expense);
+
+        Assert.True(await db.Get<ITyreRepository>().SaveAsync(save, default));
+
+        var book = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
+        Assert.Same(book.Entries.Single(e => e.Id == line.Id).OdometerReading, Assert.Single(book.LinkedExpenses).OdometerReading);
+        Assert.Equal([new ReadingPoint(D(2026, 9, 20), 148_200)], book.Readings);
+        Assert.Equal(25m, (await db.Get<IExpenseRepository>().FindAsync(expense.Id, default))!.Amount);
+    }
+
+    [Theory]
+    [InlineData(null, 147_100L)] // a reading new with the edit
+    [InlineData(147_000L, 147_100L)] // its reading changed
+    [InlineData(147_000L, null)] // its reading cleared
+    [InlineData(null, null)] // none before or after
+    public async Task APlainExpensesEdit_SavedWithTheLinesThatPutItOnTheTyreLog_LeavesOneReadingRowHeldByBoth(long? before, long? after)
+    {
+        // #290, the owner's decision 54: an expense no line holds, given tyre details in its edit: its own edit's changes and the new line, one save.
+        await using var db = Database();
+        var car = await Car(db);
+        var plain = Expense.Create(car.OwnerId, car.OwnerId, car.Id, D(2026, 9, 1), "Tyre hotel", "Tyres", Cost.Create(car.OwnerId, car.Id, D(2026, 9, 1), 60, "EUR"),
+            before is { } value ? OdometerReading.Create(car.OwnerId, car.Id, D(2026, 9, 1), value) : null);
+        Assert.True(await db.Get<IExpenseRepository>().AddAsync(plain, default));
+        var loaded = (await db.Get<IExpenseRepository>().FindAsync(plain.Id, default))!;
+        var changes = loaded.Update(D(2026, 9, 2), "Tyre hotel", "Tyres", 60, "EUR", after, null, false, car.OwnerId, 0);
+        var line = TyreEntry.Create(car.OwnerId, car.OwnerId, car.Id, TyreEntryKind.StorageFee, null, loaded.Date, null, null);
+        if (loaded.OdometerReading is { } reading) line.HoldReading(reading);
+        line.LinkExpense(loaded.Id);
+        var save = new TyreSave();
+        save.AddedEntries.Add(line);
+        save.ExpenseChanges.Add(changes);
+        save.Change(loaded);
+
+        Assert.True(await db.Get<ITyreRepository>().SaveAsync(save, default));
+
+        var saved = (await db.Get<IExpenseRepository>().FindAsync(plain.Id, default))!;
+        var book = await db.Get<ITyreRepository>().LoadAsync(car.Id, default);
+        Assert.Equal((D(2026, 9, 2), after), (saved.Date, saved.Odometer));
+        Assert.Equal(saved.OdometerReadingId, book.Entries.Single(e => e.Id == line.Id).OdometerReadingId);
+        Assert.Equal(after is { } now ? [new ReadingPoint(D(2026, 9, 2), now)] : [], book.Readings);
+        await using var direct = await db.Get<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
+        Assert.Equal(after is null ? 0 : 1, await direct.OdometerReadings.IgnoreQueryFilters().CountAsync()); // a cleared reading's row is gone
     }
 
     [Fact]

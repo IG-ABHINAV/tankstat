@@ -1,4 +1,4 @@
-import type { Change } from '../offline/changes.ts'
+import { expenseTyreOf as tyreDetailsOf, type Change } from '../offline/changes.ts'
 import { isTyreAction } from '../offline/tyreChanges.ts'
 import { checked, moveSwap, TyreRuleError, type SetState, type InstallationState } from './tyreHistory.ts'
 import { follow, type Joined, type LineState } from './tyreLog.ts'
@@ -186,8 +186,12 @@ function swapped(
   history(m, [...placed.installations], joined, c.id, placed.places)
 }
 
-/** A change the tyres follow: a tyre change, or an edit of an expense (#288: one a line made shares its day and reading with the line). */
-export const touchesTyres = (c: Change) => c.entity === 'tyres' || (c.entity === 'expenses' && c.action === 'update')
+/**
+ * A change the tyres follow: a tyre change, an edit of an expense (#288: one a line made shares its day and reading with the line), or an
+ * expense or a visit saved with tyre details (#290).
+ */
+export const touchesTyres = (c: Change) =>
+  c.entity === 'tyres' || (c.entity === 'expenses' && c.action === 'update') || tyreDetailsOf(c) !== null
 
 /**
  * A waiting edit of a line's expense (#288), as the server's `UpdateExpenseAsync`: its date and odometer are the line's (a swap's day moving
@@ -196,22 +200,110 @@ export const touchesTyres = (c: Change) => c.entity === 'tyres' || (c.entity ===
  */
 function expenseEdited(m: Model, c: Change) {
   const line = m.entries.find((e) => e.expenseId === c.targetId)
-  if (!line) return
+  const details = tyreDetailsOf(c)
+  // An expense no line holds, given tyre details (#290: an add, or a plain one's edit): its lines, holding it, on its day.
+  if (!line) return details ? expenseLines(m, c, details) : undefined
+  if (details && c.action === 'add') return // sent before: the server answers it with what it made
   const input = c.input ?? {}
   const on = day(input.date) ?? line.day
   const odometer = 'odometer' in input ? num(input.odometer) : (line.odometer ?? null)
   if (LINE_KINDS.has(line.kind) && on !== line.day) history(m, moveSwap(states(m), m.installations, line.installationId ?? line.id, on), [], c.id)
   // Every line holding it follows (#289, the owner's decision 34): the lines made together for several tyres share one expense.
-  m.entries = m.entries.map((e) =>
-    e.expenseId === c.targetId
-      ? entryOf({ ...lineOf(e), day: on, odometer }, e, { ...moneyOf(e), amount: num(input.amount) ?? e.amount ?? null, currency: str(input.currency) || (e.currency ?? null) })
-      : e,
+  m.entries = m.entries.map((e) => {
+    if (e.expenseId !== c.targetId) return e
+    // What was done and a whole set's set from the Expense dialog (#290, decision 60), as the server's `KindAndSetFor`.
+    const { kind, setId } = details ? kindAndSetFor(m, e, details) : { kind: e.kind, setId: e.setId ?? null }
+    return entryOf({ ...lineOf(e), kind, setId, day: on, odometer }, e, { ...moneyOf(e), amount: num(input.amount) ?? e.amount ?? null, currency: str(input.currency) || (e.currency ?? null) })
+  })
+}
+
+/**
+ * What a line holding an expense says after the Expense dialog's tyre details (#290): every line takes what was done; a whole set's (or
+ * no set's) line the set too, a live one or none; a tyre's line keeps its set; a swap's line both, what it says already passing.
+ */
+function kindAndSetFor(m: Model, line: Entry, details: Record<string, unknown>): { kind: Entry['kind']; setId: string | null } {
+  const kind = str(details.kind) as Entry['kind']
+  const setId = str(details.setId) || null
+  if (LINE_KINDS.has(line.kind)) {
+    if (kind !== line.kind || setId !== (line.setId ?? null)) throw new TyreRuleError('tyres.swapLineLocked')
+    return { kind, setId }
+  }
+  if (kind !== line.kind && kind === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
+  if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
+  if (line.tyreId) {
+    if (setId !== (line.setId ?? null)) throw new TyreRuleError('tyres.tyreNotOfSet')
+    return { kind, setId }
+  }
+  if (setId && setId !== line.setId) setOf(m, setId)
+  return { kind, setId }
+}
+
+/** The lines of an expense's tyre details (#290), as the server's `AttachLinesAsync`: an add's lines on its day, holding it and its reading. */
+function expenseLines(m: Model, c: Change, details: Record<string, unknown>) {
+  const input = c.input ?? {}
+  if (str(details.kind) === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
+  // A linked expense's edit names what was done and the set alone (no line of its own): with no live line holding it, the server refuses it.
+  if (c.action === 'update' && !details.lineId && listOf(details.tyres).length === 0) throw new TyreRuleError('tyres.expenseLineInTrash')
+  addLines(m, c, { ...details, id: details.lineId, day: input.date, odometer: input.odometer, note: null }, () => ({
+    expenseId: c.targetId, amount: num(input.amount), currency: str(input.currency) || null, category: text(input.category), expenseTrashed: false,
+  }))
+}
+
+/**
+ * A visit's tyre details (#290, the owner's decisions 57 and 63), as the server's `MarkDoneAsync`: with an amount (or photos) the lines hold
+ * the visit's expense, as an expense add's; without one they are logged alone, on the visit's day with its odometer.
+ */
+function visitLines(m: Model, c: Change, details: Record<string, unknown>) {
+  const input = c.input ?? {}
+  // As the server decides: an amount, or photos (the amount left to them). Its expense id alone says nothing: an edit that emptied the
+  // amount, or a trash of its expense, leaves it in the input.
+  const withExpense = num(input.amount) !== null || (Array.isArray(input.photoIds) && input.photoIds.length > 0)
+  if (withExpense && str(details.kind) === 'NOTE') throw new TyreRuleError('tyres.noteTakesNoAmount')
+  addLines(m, c, { ...details, id: details.lineId, day: input.date, odometer: input.odometer, note: null }, () =>
+    withExpense
+      ? { expenseId: str(input.expenseId) || null, amount: num(input.amount), currency: str(input.currency) || null, category: text(input.category), expenseTrashed: false }
+      : NO_MONEY,
   )
+}
+
+/**
+ * The lines an add makes (#288, #289): the whole set's (or no set's) line, or a line each for the tyres picked, the first one's id the
+ * group's, a whole set broken up first; their money from `moneyFor` (the first line's), one expense for all of them, counted once.
+ */
+function addLines(m: Model, c: Change, input: Record<string, unknown>, moneyFor: (first: Entry) => Money) {
+  // Sent before, the server answers it with what it made, so the repeat is found before a break-up that already happened would refuse it.
+  const picked = listOf(input.tyres)
+  const firstId = str(picked[0]?.id) || str(input.id) || c.id
+  if (m.entries.some((e) => e.id === firstId)) return
+  const kind = str(input.kind) as Entry['kind']
+  if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
+  if (input.setId) setOf(m, input.setId)
+  const breakUpInput = input.breakUp as Record<string, unknown> | null | undefined
+  if (breakUpInput) {
+    if (breakUpInput.setId !== input.setId) throw new TyreRuleError('tyres.tyreNotOfSet')
+    breakUpIn(m, breakUpInput)
+  }
+  const line = { kind, setId: day(input.setId), installationId: null, day: str(input.day), odometer: num(input.odometer), note: text(input.note) }
+  let added: Entry[]
+  if (picked.length > 0) {
+    const setId = day(input.setId)
+    if (!setId) throw new TyreRuleError('tyres.tyreNeedsSet')
+    if (new Set(picked.map((p) => p.tyreId)).size !== picked.length) throw new TyreRuleError('tyres.tyreTwice')
+    for (const p of picked) if (!m.tyres.some((t) => t.id === p.tyreId && t.setId === setId && !t.isRetired)) throw new TyreRuleError('tyres.tyreNotFound')
+    const groupId = picked.length > 1 ? firstId : null
+    added = picked.map((p, n) => entryOf({ ...line, id: n === 0 ? firstId : str(p.id) || `${c.id}:line:${n}` }, undefined, NO_MONEY, { tyreId: str(p.tyreId), groupId }))
+  } else added = [entryOf({ ...line, id: firstId }, undefined, NO_MONEY)]
+  const money = moneyFor(added[0])
+  m.entries = [...m.entries, ...added.map((e) => entryOf(lineOf(e), e, money))]
 }
 
 /** Applies one tyre change to the model; a rule it breaks is thrown (`TyreRuleError`), as the server would refuse it. */
 function apply(m: Model, c: Change, vehicleId: string) {
   if (c.entity === 'expenses') return expenseEdited(m, c)
+  if (c.entity === 'recurring') {
+    const details = tyreDetailsOf(c)
+    return details ? visitLines(m, c, details) : undefined
+  }
   if (!isTyreAction(c.action)) return
   const input = c.input ?? {}
   switch (c.action) {
@@ -338,35 +430,10 @@ function apply(m: Model, c: Change, vehicleId: string) {
       if (!m.installations.some((x) => x.id === input.id)) throw new TyreRuleError('tyres.installationNotFound')
       history(m, m.installations.filter((x) => x.id !== input.id), [], c.id)
       return
-    case 'addTyreEntry': {
-      // For several tyres (#289) a line each, the first one's id the group's; sent before, the server answers it with what it made, so the
-      // repeat is found before a break-up that already happened would refuse it.
-      const picked = listOf(input.tyres)
-      const firstId = str(picked[0]?.id) || str(input.id) || c.id
-      if (m.entries.some((e) => e.id === firstId)) return
-      const kind = str(input.kind) as Entry['kind']
-      if (LINE_KINDS.has(kind)) throw new TyreRuleError('tyres.entryKindNotAllowed')
-      if (input.setId) setOf(m, input.setId)
-      const breakUpInput = input.breakUp as Record<string, unknown> | null | undefined
-      if (breakUpInput) {
-        if (breakUpInput.setId !== input.setId) throw new TyreRuleError('tyres.tyreNotOfSet')
-        breakUpIn(m, breakUpInput)
-      }
-      const line = { kind, setId: day(input.setId), installationId: null, day: str(input.day), odometer: num(input.odometer), note: text(input.note) }
-      let added: Entry[]
-      if (picked.length > 0) {
-        const setId = day(input.setId)
-        if (!setId) throw new TyreRuleError('tyres.tyreNeedsSet')
-        if (new Set(picked.map((p) => p.tyreId)).size !== picked.length) throw new TyreRuleError('tyres.tyreTwice')
-        for (const p of picked) if (!m.tyres.some((t) => t.id === p.tyreId && t.setId === setId && !t.isRetired)) throw new TyreRuleError('tyres.tyreNotFound')
-        const groupId = picked.length > 1 ? firstId : null
-        added = picked.map((p, n) => entryOf({ ...line, id: n === 0 ? firstId : str(p.id) || `${c.id}:line:${n}` }, undefined, NO_MONEY, { tyreId: str(p.tyreId), groupId }))
-      } else added = [entryOf({ ...line, id: firstId }, undefined, NO_MONEY)]
-      // One expense for all of them, counted once.
-      const money = feeOn(added[0], input.fee)
-      m.entries = [...m.entries, ...added.map((e) => entryOf(lineOf(e), e, money))]
+    case 'addTyreEntry':
+      // For several tyres (#289) a line each, sharing one expense of the fee, counted once.
+      addLines(m, c, input, (first) => feeOn(first, input.fee))
       return
-    }
     case 'updateTyreEntry':
       updateEntry(m, input, c.id)
       return

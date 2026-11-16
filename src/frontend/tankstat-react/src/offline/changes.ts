@@ -72,10 +72,10 @@ export function keptPhotosOf(change: Change): string[] {
 }
 
 /**
- * The changes that can be edited before they are sent or applied (Waiting to sync): adds and edits of logs, vehicles and schedules. A
- * trash, a restore, a visit or a photo is only kept, removed, applied or discarded.
+ * The changes that can be edited before they are sent or applied (Waiting to sync): adds and edits of logs, vehicles and schedules, and a
+ * visit (#290, the owner's decision 71). A trash, a restore or a photo is only kept, removed, applied or discarded.
  */
-export const canEdit = (change: Change) => change.action === 'add' || change.action === 'update'
+export const canEdit = (change: Change) => change.action === 'add' || change.action === 'update' || change.action === 'markDone'
 
 const isPhoto = (c: Change) => c.action === 'addPhoto' || c.action === 'removePhoto'
 const isPicture = (c: Change) => c.action === 'setPicture' || c.action === 'removePicture'
@@ -83,17 +83,51 @@ const isPicture = (c: Change) => c.action === 'setPicture' || c.action === 'remo
 /** The fields an update sets (and carries over onto an add that is still waiting: the add's own id and vehicle stay). */
 export const UPDATABLE: Record<ChangeEntity, readonly string[]> = {
   refuelings: ['date', 'volume', 'totalCost', 'discount', 'currency', 'odometer', 'isFullTank', 'missedPreviousFillUp', 'note'],
-  expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note'],
+  // `tyre` (#290) is an input, not a value of the row: an edit's tyre details fold into a waiting add; the server's values never carry it.
+  expenses: ['date', 'title', 'category', 'amount', 'discount', 'currency', 'odometer', 'note', 'tyre'],
   vehicles: ['name', 'licensePlate', 'fuelType', 'units'],
   recurring: ['title', 'category', 'note', 'kind', 'intervalMonths', 'intervalDistance', 'lastDoneDate', 'lastDoneOdometer', 'warnDays', 'warnDistance'],
   tyres: [], // never folded
 }
 
-/** The ids a change creates: an add's own, a tyre change's sets and installations (what is made on them must reach the server after it). */
-export const createdBy = (c: Change): string[] => (isTyreAction(c.action) ? tyreCreates(c.action, c.input) : c.action === 'add' ? [c.targetId] : [])
+/**
+ * An expense change's or a visit's tyre details (#290), when it carries some: the lines it makes, or what a linked expense's lines say.
+ */
+export const expenseTyreOf = (c: Change): Record<string, unknown> | null =>
+  ((c.entity === 'expenses' && (c.action === 'add' || c.action === 'update')) || (c.entity === 'recurring' && c.action === 'markDone')) &&
+  c.input?.tyre && typeof c.input.tyre === 'object'
+    ? (c.input.tyre as Record<string, unknown>)
+    : null
 
-/** The ids of what a tyre change is made on (its set, its installation), any of which may have been created here. */
-export const tyreNeedsOf = (c: Change): string[] => (isTyreAction(c.action) ? tyreNeeds(c.action, c.input) : [])
+const ids = (value: unknown): string[] => (typeof value === 'string' && value !== '' ? [value] : [])
+const rows = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? (value as Record<string, unknown>[]) : [])
+
+/** The tyre log lines and the tyres an expense's tyre details make (#290): its lines' ids, a whole set's new tyres. */
+const expenseTyreCreates = (tyre: Record<string, unknown>): string[] => [
+  ...ids(tyre.lineId), ...rows(tyre.tyres).flatMap((t) => ids(t.id)), ...rows((tyre.breakUp as Record<string, unknown> | null)?.tyres).flatMap((t) => ids(t.id)),
+]
+
+/**
+ * The ids a change creates: an add's own, a tyre change's sets and installations, an expense's tyre log lines (#290) (what is made on them
+ * must reach the server after it).
+ */
+export function createdBy(c: Change): string[] {
+  if (isTyreAction(c.action)) return tyreCreates(c.action, c.input)
+  const tyre = expenseTyreOf(c)
+  return [...(c.action === 'add' ? [c.targetId] : []), ...(tyre ? expenseTyreCreates(tyre) : [])]
+}
+
+/**
+ * The ids of what a tyre change is made on (its set, its installation), any of which may have been created here; for an expense with tyre
+ * details (#290) its set and the tyres its lines are for, unless its own break-up makes them.
+ */
+export function tyreNeedsOf(c: Change): string[] {
+  if (isTyreAction(c.action)) return tyreNeeds(c.action, c.input)
+  const tyre = expenseTyreOf(c)
+  if (!tyre) return []
+  const made = new Set(expenseTyreCreates(tyre))
+  return [...ids(tyre.setId), ...rows(tyre.tyres).flatMap((t) => ids(t.tyreId))].filter((id) => !made.has(id))
+}
 
 /**
  * The changes waiting after `incoming` joins them. Changes of one log fold into one:
@@ -152,12 +186,19 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
       return [...existing, incoming]
     case 'update':
       if (trash) return [...existing] // on its way to the trash: nothing to edit
-      if (add) return replace(existing, add, { ...add, input: { ...add.input, ...pick(incoming.input, UPDATABLE[incoming.entity]) } })
-      if (update) return replace(existing, update, { ...from(update, incoming), id: update.id, seq: update.seq, createdAt: update.createdAt })
+      if (add) return replace(existing, add, { ...add, input: { ...add.input, ...pick(incoming.input, UPDATABLE[incoming.entity]), ...foldedTyre(add.input, incoming.input) } })
+      if (update) {
+        const folded = from(update, incoming)
+        return replace(existing, update, { ...folded, input: { ...folded.input, ...foldedTyre(update.input, incoming.input) }, id: update.id, seq: update.seq, createdAt: update.createdAt })
+      }
       return [...existing, next]
     case 'trash': {
       if (trash) return [...existing] // already waiting to go
-      if (add) return withoutDependents(others, incoming).filter((c) => !photosOfLog(c)) // never sent: nothing to take back, nor anything made to it
+      if (add) {
+        // Never sent: nothing to take back, nor anything made to it (an expense's tyre log lines and tyres too, #290).
+        const left = withoutDependents(others, incoming).filter((c) => !photosOfLog(c))
+        return expenseTyreOf(add) ? withoutTyreDependents(left, createdBy(add)) : left
+      }
       // Photos of a log in the trash can be neither added nor removed: those changes go (a restore does not bring them back).
       const kept = existing.filter((c) => !photosOfLog(c))
       if (restore) return kept.filter((c) => c !== restore)
@@ -171,6 +212,23 @@ export function collapse(existing: readonly Change[], incoming: Change): Change[
     default:
       return [...existing, incoming] // a tyre change, returned above
   }
+}
+
+/**
+ * An expense's tyre details (#290) when an edit folds into the change waiting before it: the edit of an expense the tyre log made names only
+ * what was done and the set, so the lines, tyres and break-up the earlier change makes stay with it, and an edit that says nothing of them
+ * keeps them whole. Tyre details of their own (a line's id or the tyres', from the section with its switch: Waiting to sync's Edit) take
+ * the earlier ones' place whole, so none of their lines, tyres or break-up is left over. `null` (switched off) and an earlier change
+ * without any take the edit's as it is (`{}`).
+ */
+function foldedTyre(earlier: Change['input'], incoming: Change['input']): Record<string, unknown> {
+  const before = earlier?.tyre
+  if (!before || typeof before !== 'object') return {}
+  if (!incoming || !('tyre' in incoming)) return { tyre: before }
+  const after = incoming.tyre
+  if (!after || typeof after !== 'object') return {}
+  const own = 'lineId' in after || 'tyres' in after
+  return { tyre: own ? after : { ...before, ...after } }
 }
 
 /** `incoming` as made from where `first` started: its version and the values it had then (none known: none). */
@@ -195,10 +253,16 @@ export function discard(existing: readonly Change[], id: string): Change[] {
   const removed = existing.find((c) => c.id === id)
   if (removed?.action === 'trash' && removed.input) return replace(existing, removed, asEdit(removed))
   // A visit taken back logs no expense: what was made to that expense here goes with it.
-  if (removed && isVisitOf(removed, removed.targetId)) return existing.filter((c) => c.id !== id && !(c.entity === 'expenses' && c.targetId === removed.targetId))
+  if (removed && isVisitOf(removed, removed.targetId)) {
+    const rest = existing.filter((c) => c.id !== id && !(c.entity === 'expenses' && c.targetId === removed.targetId))
+    // Its tyre details' lines (#290) go too, and what was made on them, as an expense add's.
+    return expenseTyreOf(removed) ? withoutTyreDependents(rest, createdBy(removed)) : rest
+  }
   const rest = existing.filter((c) => c.id !== id)
   if (removed?.entity === 'tyres') return withoutTyreDependents(rest, createdBy(removed))
-  return removed?.action === 'add' ? withoutDependents(rest, removed) : rest
+  // An expense taken back that made tyre log lines (#290): what was made on its lines goes with it.
+  const withLines = removed && expenseTyreOf(removed) ? withoutTyreDependents(rest, createdBy(removed)) : rest
+  return removed?.action === 'add' ? withoutDependents(withLines, removed) : withLines
 }
 
 /** A visit that logs the expense `expenseId` (one with an amount; its expense id is its target). */

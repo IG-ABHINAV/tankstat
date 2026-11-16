@@ -1337,6 +1337,7 @@ input AddExpenseInput {
   photoIds: [UUID!]
   id: UUID
   discount: Decimal
+  tyre: ExpenseTyreInput
 }
 
 input AddLogPhotoInput {
@@ -1543,6 +1544,14 @@ input DeleteUserInput {
   moveToUserId: UUID
 }
 
+input ExpenseTyreInput {
+  kind: TyreEntryKind!
+  setId: UUID
+  tyres: [TyreLineInput!]
+  breakUp: BreakUpTyreSetInput
+  lineId: UUID
+}
+
 input FigureRecipeInput {
   measure: FigureMeasure!
   period: TrendPeriodInput
@@ -1590,6 +1599,7 @@ input MarkRecurringExpensesDoneInput {
   photoIds: [UUID!]
   expenseId: UUID
   discount: Decimal
+  tyre: ExpenseTyreInput
 }
 
 input MeasurementUnitsInput {
@@ -1804,6 +1814,7 @@ input UpdateExpenseInput {
   odometer: Long
   note: String
   discount: Decimal
+  tyre: ExpenseTyreInput
 }
 
 input UpdateOfflineSettingsInput {
@@ -2142,6 +2153,7 @@ enum ReadingFieldName {
   DATE
   TITLE
   DISCOUNT
+  TYRE_WORK
 }
 
 enum ReadingIssueCode {

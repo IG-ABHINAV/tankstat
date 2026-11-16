@@ -32,6 +32,22 @@ public sealed record TyreFeeInput(decimal? Amount, string? Currency = null, stri
     internal TyreFee ToFee() => new(Amount, Currency, Category, Title, ExpenseId);
 }
 
+/// <summary>
+/// The tyre details of an expense (#290): the tyre log line (a line per tyre) the Expense or Done dialog makes holding it, on its day, with its
+/// reading. On an edit of an expense the tyre log made, <c>kind</c> changes every live line holding it and <c>setId</c> a whole set's line
+/// (a tyre's line keeps its set: <c>tyres.tyreNotOfSet</c>; a swap's line both: <c>tyres.swapLineLocked</c>); <c>tyres</c> and <c>breakUp</c>
+/// count only when the lines are made. Refused while every line holding the expense is in the trash (<c>tyres.expenseLineInTrash</c>).
+/// </summary>
+/// <param name="Kind">What was done: a kind that takes an amount (not <c>NOTE</c>: <c>tyres.noteTakesNoAmount</c>; not the swap kinds).</param>
+/// <param name="SetId">The set it concerns; left out for none.</param>
+/// <param name="Tyres">Single tyres of the set, a line each with the client's id, sharing the expense; left out: the whole set's line.</param>
+/// <param name="BreakUp">For some tyres of a whole set: it is broken up first, and <c>tyres</c> name its new tyres' ids.</param>
+/// <param name="LineId">The client's id of the whole set's (or no set's) line.</param>
+public sealed record ExpenseTyreInput(TyreEntryKind Kind, Guid? SetId = null, IReadOnlyList<TyreLineInput>? Tyres = null, BreakUpTyreSetInput? BreakUp = null, Guid? LineId = null)
+{
+    internal ExpenseTyreDetails ToDetails() => new(Kind, SetId, Tyres?.Select(t => t.ToLine()).ToList(), BreakUp?.ToBreakUp(), LineId);
+}
+
 /// <param name="WithExpense">Its expense goes to the trash with it (the remove dialog's box, ticked at first), and comes back with it.</param>
 public sealed record DeleteTyreEntryInput(Guid Id, bool WithExpense = true);
 
@@ -64,7 +80,10 @@ public sealed record NewTyreInput(string Label, TyreCorner? Corner = null, Guid?
 
 /// <param name="Day">The device's today: the set is tracked tyre by tyre from it, for good.</param>
 /// <param name="Tyres">The four tyres.</param>
-public sealed record BreakUpTyreSetInput(Guid SetId, DateOnly Day, IReadOnlyList<NewTyreInput> Tyres);
+public sealed record BreakUpTyreSetInput(Guid SetId, DateOnly Day, IReadOnlyList<NewTyreInput> Tyres)
+{
+    internal TyreBreakUpInput ToBreakUp() => new(SetId, Day, [.. Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]);
+}
 
 public sealed record UpdateTyreInput(Guid Id, string Label);
 
@@ -112,7 +131,10 @@ public sealed record AddTyreEntryInput(
     IReadOnlyList<TyreLineInput>? Tyres = null, BreakUpTyreSetInput? BreakUp = null);
 
 /// <param name="Id">The line's id chosen by the client.</param>
-public sealed record TyreLineInput(Guid TyreId, Guid? Id = null);
+public sealed record TyreLineInput(Guid TyreId, Guid? Id = null)
+{
+    internal TyreLine ToLine() => new(TyreId, Id);
+}
 
 /// <param name="Kind">A swap's line keeps its kind and set (<c>tyres.swapLineLocked</c>); its new day moves the swap.</param>
 /// <param name="Odometer">The reading; left out clears it (for good).</param>
@@ -442,12 +464,12 @@ internal static class TyreChanges
         i.Corners?.GroupBy(c => c.TyreId).ToDictionary(g => g.Key, g => g.Last().Corner));
 
     public static Task<TyreOverview> BreakUp(BreakUpTyreSetInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
-        tyres.BreakUpAsync(new TyreBreakUpInput(i.SetId, i.Day, [.. i.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]), ct, version);
+        tyres.BreakUpAsync(i.ToBreakUp(), ct, version);
 
     public static Task<TyreOverview> Replace(ReplaceTyresInput i, TyreService tyres, CancellationToken ct) =>
         tyres.ReplaceTyresAsync(new TyreReplaceInput(i.SetId, i.Day, i.Odometer, i.Why,
             [.. i.Tyres.Select(t => new TyreReplacement(t.TyreId, t.Id, t.Label, t.Name, t.MadeWeek, t.MadeYear, t.LineId))], i.Price?.ToFee(),
-            i.BreakUp is { } b ? new TyreBreakUpInput(b.SetId, b.Day, [.. b.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]) : null), ct);
+            i.BreakUp?.ToBreakUp()), ct);
 
     public static Task<TyreOverview> AddPlace(AddTyrePlaceInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddPlaceAsync(i.TyreId, new TyrePlaceInput(i.From, i.Until, i.Corner), ct, i.Id);
@@ -473,8 +495,8 @@ internal static class TyreChanges
 
     public static Task<TyreOverview> AddEntry(AddTyreEntryInput i, TyreService tyres, CancellationToken ct) =>
         tyres.AddEntryAsync(i.VehicleId, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note, i.Fee?.ToFee(),
-            i.Tyres?.Select(t => new TyreLine(t.TyreId, t.Id)).ToList(),
-            i.BreakUp is { } b ? new TyreBreakUpInput(b.SetId, b.Day, [.. b.Tyres.Select(t => new NewTyre(t.Id, t.Label, t.Corner))]) : null), ct, i.Id);
+            i.Tyres?.Select(t => t.ToLine()).ToList(),
+            i.BreakUp?.ToBreakUp()), ct, i.Id);
 
     public static Task<TyreOverview> UpdateEntry(UpdateTyreEntryInput i, TyreService tyres, CancellationToken ct, int? version = null) =>
         tyres.UpdateEntryAsync(i.Id, new TyreEntryInput(i.Kind, i.SetId, i.Day, i.Odometer, i.Note, i.Fee?.ToFee(), Also: i.Also, SharedExpense: i.SharedExpense), ct, version);

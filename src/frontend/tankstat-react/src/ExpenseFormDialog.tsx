@@ -3,7 +3,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { lazy, Suspense, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { OdometerField } from './components/OdometerField.tsx'
 import { PhotoGallery } from './components/PhotoGallery.tsx'
@@ -22,7 +22,18 @@ import { FieldAutocomplete } from './forms/FieldAutocomplete.tsx'
 import { FieldDate } from './forms/FieldDate.tsx'
 import { FieldInput } from './forms/FieldInput.tsx'
 import { Form } from './forms/Form.tsx'
-import { ExpenseCategoriesDocument, ExpenseDetailsDocument, LogDefaultsDocument, type DistanceUnit, type LogValue, type ReadingFieldName, type ReviewState } from './gql/generated.ts'
+import {
+  ExpenseCategoriesDocument,
+  ExpenseDetailsDocument,
+  LogDefaultsDocument,
+  VehicleTyresDocument,
+  type DistanceUnit,
+  type ExpenseTyreInput,
+  type LogValue,
+  type ReadingFieldName,
+  type ReviewState,
+  type VehicleTyresFieldsFragment,
+} from './gql/generated.ts'
 import { parseDecimal } from './i18n/format.ts'
 import { ErrorMessage } from './messages.tsx'
 import { ReadNote } from './recognition/ReadNote.tsx'
@@ -30,18 +41,26 @@ import { ReadingProblems } from './recognition/ReadingProblems.tsx'
 import { ReadingProgress } from './recognition/ReadingProgress.tsx'
 import { SaveWait } from './components/SaveWait.tsx'
 import type { ReadingExplanation } from './recognition/readingIssues.ts'
-import { mergeReadings, type ReadValues } from './recognition/readValues.ts'
+import { mergeReadings, withoutFields, type ReadValues } from './recognition/readValues.ts'
 import { filledFields } from './recognition/review.ts'
 import { ReviewCallout } from './recognition/ReviewState.tsx'
 import { useDraftReadings } from './recognition/useDraftReadings.ts'
 import { useReadFill } from './recognition/useReadFill.ts'
 import { Loading } from './components/Loading.tsx'
 import { useToast } from './toast/toastContext.ts'
+import { visuallyHidden } from './components/visuallyHidden.ts'
 import { OfflineNote, ReadLaterNote } from './components/OfflineNote.tsx'
 import type { ChangeEdit, MergeInfo } from './dialogs/changeEdit.ts'
 import { useMergeFields } from './dialogs/useMergeFields.tsx'
 import { outbox } from './offline/outbox.ts'
 import { TyreLogBanner } from './tyres/TyreLogBanner.tsx'
+import { TyreDetailsFields } from './tyres/TyreDetailsFields.tsx'
+import { suggestedKind, useExpenseTyreDetails, useSwitchHint, useTyreDetailsIds, type TyreDetailsIds } from './tyres/useExpenseTyreDetails.ts'
+
+// Removing an expense from the tyre log changes tyre lines (the tyre modules, with the offline replay): a chunk of its own.
+const RemoveFromTyreLog = lazy(() => import('./tyres/RemoveFromTyreLog.tsx'))
+
+type TyreLine = VehicleTyresFieldsFragment['entries'][number]
 
 /** The amount is null only when it was left for a photo that is still being read. */
 export interface ExpenseValues {
@@ -57,6 +76,11 @@ export interface ExpenseValues {
   currency: string
   odometer: number | null
   note: string | null
+  /**
+   * Its tyre details (#290): the tyre log line(s) it is saved with, or, for one the tyre log made, what was done and a whole set's set.
+   * Left out when the section is not used; null (an edit on Waiting to sync with them switched off) leaves the lines as they are.
+   */
+  tyre?: ExpenseTyreInput | null
 }
 
 interface Initial {
@@ -117,11 +141,26 @@ export function ExpenseFormDialog({
   const details = useQuery(ExpenseDetailsDocument, { variables: { id: expenseId ?? '' }, skip: !expenseId || !!change || !open, fetchPolicy: 'network-only' })
   const defaults = useQuery(LogDefaultsDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
   const categories = useQuery(ExpenseCategoriesDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
+  // The vehicle's tyres (#290): its sets for the tyre details, and the last tyre cost's category; kept on the device. Without them (an
+  // answer that failed) there is no switch, never an error of the dialog.
+  const tyres = useQuery(VehicleTyresDocument, { variables: { vehicleId: vehicle.id }, skip: !open, fetchPolicy: 'network-only' })
+  // A change edited on Waiting to sync keeps the ids its tyre details gave (later tyre changes may name them), fresh ones after them.
+  const waitingTyre = change?.initial.tyre ?? null
+  const tyreIds = useTyreDetailsIds(open, waitingTyre)
   const error = details.error ?? defaults.error
   const existing = details.data?.expense
+  // An expense the tyre log made (#290): its first live line, as the tyre log has it now (lines this device made too, and on Waiting to
+  // sync for a change of it); while it is in the trash, none (decision 69). The lines a change being edited makes itself are its own tyre
+  // details, not a line that made it. A linked expense's edit waiting here shows what it says was done, and keeps saying it.
+  const allTyres = tyres.data?.vehicleTyres ?? null
+  const subjectId = expenseId ?? change?.targetId
+  const ownLines = new Set([waitingTyre?.lineId, ...(waitingTyre?.tyres ?? []).map((l) => l.id)].filter(Boolean))
+  const holder = existing?.tyreEntry?.trashed || !allTyres || !subjectId ? null : (allTyres.entries.find((e) => e.expenseId === subjectId && !ownLines.has(e.id)) ?? null)
+  const tyreLine = holder && change && waitingTyre ? { ...holder, kind: waitingTyre.kind, setId: waitingTyre.setId ?? null } : holder
+  const [removeError, setRemoveError] = useState<unknown>()
   // Photos kept on this device are read once the expense is synced (photo reading on, as last heard): its amount may be left empty.
   const readLater = !editing && queue.kept > 0 && drafts.available
-  const ready = defaults.data && (!expenseId || change || existing)
+  const ready = defaults.data && (!expenseId || change || existing) && (tyres.data || tyres.error)
   const currency = defaults.data?.logDefaults?.currency ?? ''
   const fresh: Initial = { date: todayIso(), title: '', category: null, currency, note: null }
   const initial: Initial = change ? { ...fresh, ...change.initial } : existing ? { ...existing, currency: existing.currency ?? currency } : fresh
@@ -129,6 +168,7 @@ export function ExpenseFormDialog({
     setOpen(false)
     reset()
     setAdded([])
+    setRemoveError(undefined)
   }
 
   return (
@@ -144,7 +184,31 @@ export function ExpenseFormDialog({
       >
         {error && <ErrorMessage error={error} />}
         {!change && <OfflineNote />}
-        {existing?.tyreEntry && <TyreLogBanner vehicleId={vehicle.id} line={existing.tyreEntry} />}
+        {existing?.tyreEntry && (
+          <TyreLogBanner
+            vehicleId={vehicle.id}
+            line={existing.tyreEntry}
+            actions={
+              tyreLine && allTyres && !change && (
+                <Suspense fallback={null}>
+                  <RemoveFromTyreLog
+                    vehicleId={vehicle.id}
+                    tyres={allTyres}
+                    line={tyreLine}
+                    onDone={(err, kept) => {
+                      // Lines that went before a refusal stay in the trash: the dialog shows the expense as it is now either way.
+                      setRemoveError(err)
+                      if (err === undefined) toast(kept ? t('toast.savedOnDevice') : t('expenses.tyreLog.removed'))
+                      void details.refetch()
+                      void tyres.refetch()
+                    }}
+                  />
+                </Suspense>
+              )
+            }
+          />
+        )}
+        {removeError !== undefined && <ErrorMessage error={removeError} />}
         {readLater && <ReadLaterNote />}
         {!error && !ready && (
           <Loading />
@@ -160,6 +224,18 @@ export function ExpenseFormDialog({
             photosBusy={queue.busy || queue.failed > 0 || adding}
             read={mergeReadings(drafts.readings.values(), { DISCOUNT: 'TOTAL' })}
             readingDone={drafts.done}
+            // An expense the tyre log made shows its line in the banner (#288); the others may be given tyre details here (#290).
+            tyres={existing?.tyreEntry && !tyreLine ? null : allTyres}
+            tyreLine={tyreLine}
+            waitingTyre={tyreLine ? null : waitingTyre}
+            waitingParked={!!change?.parked}
+            keptTyre={tyreLine ? waitingTyre : null}
+            tyreIds={tyreIds}
+            checkTyres={async (values) => {
+              if (!values.tyre || !allTyres || change) return // a change on Waiting to sync is checked when it is applied
+              const { checkKept } = await import('./tyres/expenseTyreInput.ts')
+              checkKept(vehicle.id, allTyres, { entity: 'expenses', action: editing ? 'update' : 'add', targetId: editing ? expenseId! : clientId }, { ...values })
+            }}
             explanation={drafts.explanation}
             // A new expense may leave its amount to a photo that is being read; a saved one still waiting for its photos may stay so.
             mayWait={drafts.pending.length > 0 || readLater || (editing && existing?.reviewState === 'AWAITING_PHOTOS') || !!change?.mayWait}
@@ -182,7 +258,7 @@ export function ExpenseFormDialog({
                 onChanged={() => details.refetch()}
               />
             }
-            onSubmit={async (values) => {
+            onSubmit={async (values, named) => {
               if (change) {
                 await onSubmit(values, []) // the caller tells what came of it
                 close()
@@ -190,8 +266,8 @@ export function ExpenseFormDialog({
               }
               if (await submit((photoIds) => onSubmit(editing ? values : { ...values, id: clientId }, photoIds), editing)) {
                 close()
-                // Kept on the device for the server (the server was out of reach): the toast says so.
-                toast(outbox.markOf('expenses', editing ? expenseId! : clientId) ? t('toast.savedOnDevice') : t('toast.saved'))
+                // Kept on the device for the server (the server was out of reach): the toast says so. Lines for tyres name them (#290).
+                toast(outbox.markOf('expenses', editing ? expenseId! : clientId) ? t('toast.savedOnDevice') : named ? t('tyres.entries.savedFor', { tyres: named }) : t('toast.saved'))
               }
             }}
           />
@@ -211,6 +287,13 @@ function ExpenseForm({
   read,
   readingDone,
   explanation,
+  tyres,
+  tyreLine,
+  waitingTyre,
+  waitingParked = false,
+  keptTyre,
+  tyreIds,
+  checkTyres,
   mayWait,
   readingNow,
   wait,
@@ -234,13 +317,27 @@ function ExpenseForm({
   readingDone: boolean
   /** Why the photos gave less than they might have. */
   explanation: ReadingExplanation
+  /** The vehicle's tyres, for its tyre details (#290); none: no switch (an expense the tyre log made, or no answer). */
+  tyres: VehicleTyresFieldsFragment | null
+  /** An expense the tyre log made: its first live line (decisions 53, 60). */
+  tyreLine: TyreLine | null
+  /** A change edited on Waiting to sync: the tyre details it carries (decision 70). */
+  waitingTyre: ExpenseTyreInput | null
+  /** `waitingTyre` is a parked change's: shown also with no set left. */
+  waitingParked?: boolean
+  /** A linked expense's edit waiting on this device (`tyre` naming what was done and the set): sent again unless changed here. */
+  keptTyre: ExpenseTyreInput | null
+  tyreIds: TyreDetailsIds
+  /** A change kept on the device with tyre details: what the server would refuse of its tyre part, thrown here first (decision 70). */
+  checkTyres: (values: ExpenseValues) => Promise<void>
   /** A photo is still being read: the amount may be left empty. */
   mayWait: boolean
   /** A photo is being read right now (the dialog says so near Save). */
   readingNow: boolean
   /** The window the dialog waits in for the photos being read (the bar near Save). */
   wait: { since: number | null; until: number | null }
-  onSubmit: (values: ExpenseValues) => Promise<unknown>
+  /** `named`: the tyres lines were made for (the toast names them). */
+  onSubmit: (values: ExpenseValues, named?: string) => Promise<unknown>
 }) {
   const { t } = useTranslation()
   const odometerLabel = useOdometerLabel(unit, true)
@@ -252,6 +349,17 @@ function ExpenseForm({
     currency: t('expenses.fields.currency'),
     odometer: odometerLabel,
   }
+  const merging = useMergeFields(merge)
+  // The category is controlled: a tyre category opens the tyre details (#290), and their switch fills an empty one.
+  const [category, setCategory] = useState(merging.value('category', initial.category) ?? '')
+  const tyre = useExpenseTyreDetails({ tyres, category, setCategory, linked: tyreLine, initial: waitingTyre, parked: waitingParked, suggested: suggestedKind(read.TYRE_WORK?.value) })
+  const switchHint = useSwitchHint(tyre, editing)
+  // A new expense's title follows its tyre details until the person types one (the owner's decision 52).
+  const [titleTyped, setTitleTyped] = useState(false)
+  const followsTyres = !editing && !titleTyped && tyre.title !== null
+  // What the fill takes of the photos: not a title while it follows the tyre details (it is only offered then, the owner's choice on #329),
+  // and no tyre work where the dialog shows none (no set, no tyres known, an expense the tyre log made), so nothing unsaid counts as read.
+  const readForFill = withoutFields(read, ...(followsTyres ? (['TITLE'] as const) : []), ...(tyre.available && !tyre.linked ? [] : (['TYRE_WORK'] as const)))
   const fill = useReadFill(
     {
       date: initial.date,
@@ -262,7 +370,7 @@ function ExpenseForm({
       odometer: initial.odometer?.toString() ?? '',
     },
     READ_INTO,
-    read,
+    readForFill,
     labels,
     readingDone,
     explanation,
@@ -270,10 +378,22 @@ function ExpenseForm({
     editing,
     { discount: 'amount' }, // a photo's discount was taken off its own total: next to an amount the user entered, it is only offered
   )
-  const merging = useMergeFields(merge)
+  const title = followsTyres ? tyre.title! : fill.values.title
   const fromPhoto = filledFields(initial.filledFromPhoto, FROM_PHOTO)
   const amountOptional = mayWait
-  const note = (field: FillableField) => (
+  // A title read from a photo (a shop's name) while the title follows the tyre details (#290, the owner's choice on #329): the tyre title
+  // stays, as decision 52 has it, and the shop's name is only offered; Use it makes it the title, which then no longer follows.
+  const readTitle = followsTyres ? read.TITLE?.value?.trim() : undefined
+  const note = (field: FillableField) =>
+    field === 'title' && followsTyres ? (
+      <ReadNote
+        filled={false}
+        offered={readTitle && readTitle !== title ? readTitle : undefined}
+        field={labels.title}
+        // The title no longer follows: the fill then takes the photo's title, and says so.
+        onUse={() => setTitleTyped(true)}
+      />
+    ) : (
     <>
       <ReadNote
         filled={fill.isFilled(field) || fromPhoto.has(field)}
@@ -284,7 +404,7 @@ function ExpenseForm({
       />
       {merging.note(field, labels[field], (value) => fill.change(field, value == null ? '' : String(value)))}
     </>
-  )
+    )
   const [error, setError] = useState<unknown>()
   const [busy, setBusy] = useState(false)
 
@@ -295,7 +415,9 @@ function ExpenseForm({
     setBusy(true)
     setError(undefined)
     try {
-      await onSubmit({
+      const tyreInput = await tyre.inputOf(text('date'), tyreIds)
+      if (tyreInput === 'invalid') return // said at What was done, which has the focus
+      const values: ExpenseValues = {
         date: text('date'),
         title: text('title'),
         category: text('category') || null,
@@ -306,7 +428,12 @@ function ExpenseForm({
         currency: text('currency').toUpperCase(),
         odometer: text('odometer') === '' ? null : Number(text('odometer')),
         note: text('note') || null,
-      })
+        // Switched off in a change's edit: null, so the change's own tyre details go (its input is spread under these values). Without the
+        // section (no answer of the vehicle's tyres, or no set left for a waiting change) nothing is said of them: the change keeps its own.
+        ...(tyreInput ? { tyre: tyreInput.tyre } : keptTyre ? { tyre: keptTyre } : waitingTyre && tyre.available ? { tyre: null } : {}),
+      }
+      await checkTyres(values)
+      await onSubmit(values, tyreInput?.named || undefined)
     } catch (err) {
       setError(err)
     } finally {
@@ -321,16 +448,24 @@ function ExpenseForm({
         <Field name="date" label={labels.date} required extra={note('date')}>
           <FieldDate disableFuture value={fill.values.date} onChange={(v) => fill.change('date', v)} />
         </Field>
-        <Field name="title" label={labels.title} required extra={note('title')}>
-          <FieldInput maxLength={120} autoComplete="off" value={fill.values.title} onChange={(e) => fill.change('title', e.target.value)} />
+        <Field name="title" label={labels.title} required hint={followsTyres ? t('expenses.tyreDetails.titleHint') : undefined} extra={note('title')}>
+          <FieldInput
+            maxLength={120}
+            autoComplete="off"
+            value={title}
+            onChange={(e) => {
+              setTitleTyped(true)
+              fill.change('title', e.target.value)
+            }}
+          />
         </Field>
         <Field
           name="category"
           label={t('expenses.fields.category')}
           hint={categories.length > 0 ? t('expenses.hints.categories', { list: categories.join(', ') }) : undefined}
-          extra={merging.note('category', t('expenses.fields.category'))}
+          extra={merging.note('category', t('expenses.fields.category'), (value) => setCategory(value == null ? '' : String(value)))}
         >
-          <FieldAutocomplete key={merging.key('category')} options={categories} defaultValue={merging.value('category', initial.category) ?? ''} maxLength={60} openOnFocus />
+          <FieldAutocomplete options={categories} value={category} onChange={setCategory} maxLength={60} openOnFocus />
         </Field>
         <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
           <Box sx={{ flex: '2 1 8rem', minWidth: 0 }}>
@@ -370,10 +505,22 @@ function ExpenseForm({
         <Field name="note" label={t('expenses.fields.note')} extra={merging.note('note', t('expenses.fields.note'))}>
           <FieldInput key={merging.key('note')} multiline minRows={2} maxLength={500} defaultValue={merging.value('note', initial.note) ?? ''} />
         </Field>
+        {tyres && <TyreDetailsFields details={tyre} tyres={tyres} hint={switchHint} note={t('expenses.tyreDetails.lineNote')} />}
         {gallery}
         <div role="status" aria-label={t('a11y.readingStatus')}>
           <ReadingProgress active={readingNow} canSave={mayWait} since={wait.since} until={wait.until} />
           {fill.announcement && <Typography variant="body2">{fill.announcement}</Typography>}
+          {tyre.announcement && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {tyre.announcement}
+            </Typography>
+          )}
+          {/* A photo's tyre work offered at the switch comes after a read: said here too (#290, decision 67). */}
+          {tyre.available && tyre.photo && !tyre.open && (
+            <Typography variant="body2" style={visuallyHidden}>
+              {t('expenses.tyreDetails.photoShows', { kind: t(`tyres.entries.kinds.${tyre.photo.kind}`) })}
+            </Typography>
+          )}
           <ReadingProblems problems={fill.problems} />
         </div>
         {error !== undefined && <ErrorMessage error={error} />}

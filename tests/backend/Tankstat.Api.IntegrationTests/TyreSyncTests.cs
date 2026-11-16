@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+using Tankstat.Domain.Vehicles;
 using System.Text.Json;
 
 namespace Tankstat.Api.IntegrationTests;
@@ -344,5 +346,130 @@ public class TyreSyncTests : IDisposable
         Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
         Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "BOUGHT"
             && e.TryGetProperty("tyreId", out var tyre) && tyre.ValueKind != JsonValueKind.Null));
+    }
+
+    [Fact]
+    public async Task TheLargestExpenseChange_TenPhotosAndTyreDetailsBreakingASetUp_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        // #290: an expense add with every text at its longest, accented, ten photos, and tyre details for the four tyres of a whole set.
+        var (people, car, summer, _, _) = await Car(_app);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var photos = new List<string>();
+        for (var n = 0; n < 10; n++) photos.Add(await UploadDraft(people.Alice, car));
+        var expense = Guid.NewGuid();
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            addExpense = new
+            {
+                id = expense, vehicleId = car, date = "2026-09-20", title = new string('ű', Expense.MaxTitleLength), category = new string('ő', Expense.MaxCategoryLength),
+                amount = 123_456.78m, discount = 1_234.56m, currency = "HUF", odometer = 148_200, note = new string('é', Expense.MaxNoteLength), photoIds = photos,
+                tyre = new
+                {
+                    kind = "PUNCTURE_REPAIRED", setId = summer,
+                    tyres = tyres.Select(t => new { tyreId = t, id = Guid.NewGuid() }).ToArray(), // once: the same ids on every send
+                    breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+                },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        Assert.Equal(4, (await TyresOf(people.Alice, car)).GetProperty("entries").EnumerateArray().Count(e => e.GetProperty("kind").GetString() == "PUNCTURE_REPAIRED"));
+    }
+
+    private static async Task<List<JsonElement>> LinesOf(HttpClient c, string car) =>
+        [.. (await c.Gql("query($v: UUID!) { vehicleTyres(vehicleId: $v) { entries { id kind odometer expenseId } } }", new { v = car }))
+            .Data().GetProperty("vehicleTyres").GetProperty("entries").EnumerateArray()];
+
+    private static async Task<string> Schedule(HttpClient c, string car) =>
+        (await c.Gql("mutation($i: AddRecurringExpenseInput!) { addRecurringExpense(input: $i) { id } }", new
+        {
+            i = new { vehicleId = car, title = "Wheel balancing", category = "Tyres", kind = "TIME", intervalMonths = 12, lastDoneDate = "2025-09-01" },
+        })).Data().GetProperty("addRecurringExpense").GetProperty("id").GetString()!;
+
+    [Fact]
+    public async Task TheLargestVisit_TenPhotosAndTyreDetailsBreakingASetUp_FitsOneChangeOfTheQueue_AndIsAppliedOnce()
+    {
+        // #290: a visit (Mark as done) with every text at its longest, accented, ten photos, and tyre details for the four tyres of a whole set.
+        var (people, car, summer, _, _) = await Car(_app);
+        var schedule = await Schedule(people.Alice, car);
+        Guid[] tyres = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        string[] corners = ["FRONT_LEFT", "FRONT_RIGHT", "REAR_LEFT", "REAR_RIGHT"];
+        var photos = new List<string>();
+        for (var n = 0; n < 10; n++) photos.Add(await UploadDraft(people.Alice, car));
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            markRecurringExpensesDone = new
+            {
+                ids = new[] { schedule }, date = "2026-09-20", odometer = 148_200, amount = 123_456.78m, discount = 1_234.56m, currency = "HUF",
+                title = new string('ű', Expense.MaxTitleLength), category = new string('ő', Expense.MaxCategoryLength), photoIds = photos, expenseId = Guid.NewGuid(),
+                tyre = new
+                {
+                    kind = "PUNCTURE_REPAIRED", setId = summer,
+                    tyres = tyres.Select(t => new { tyreId = t, id = Guid.NewGuid() }).ToArray(), // once: the same ids on every send
+                    breakUp = new { setId = summer, day = "2026-09-20", tyres = tyres.Select((id, n) => new { id, label = $"ŐŰ{n + 1}ÁÉÍ", corner = corners[n] }) },
+                },
+            },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() }))); // the same, sent again: nothing twice
+        var made = (await LinesOf(people.Alice, car)).Where(e => e.GetProperty("kind").GetString() == "PUNCTURE_REPAIRED").ToList();
+        Assert.Equal(4, made.Count);
+        Assert.Single(made.Select(l => l.GetProperty("expenseId").GetString()).Distinct()); // one expense, held by every line
+    }
+
+    [Theory]
+    [InlineData(8000)]
+    [InlineData(null)]
+    public async Task AVisitWhoseTyreDetailsTheServerRefuses_IsParkedWithTheTyreKey_AndNothingMoves(int? amount)
+    {
+        var (people, car, _, _, _) = await Car(_app);
+        var schedule = await Schedule(people.Alice, car);
+        var (line, expense) = (Guid.NewGuid(), Guid.NewGuid());
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            markRecurringExpensesDone = new
+            {
+                ids = new[] { schedule }, date = "2026-09-20", odometer = 148_300, amount, currency = amount is null ? null : "HUF", expenseId = amount is null ? (Guid?)null : expense,
+                tyre = new { kind = "WHEEL_BALANCING", setId = Guid.NewGuid(), lineId = line }, // a set that is not there
+            },
+        };
+
+        Assert.Equal(("PARKED", "tyres.setNotFound"), Result(await Send(people.Alice, change)));
+
+        var scheduleNow = (await people.Alice.Gql("query($v: UUID!) { vehicle(id: $v) { recurring { lastDoneDate } } }", new { v = car })).Data().GetProperty("vehicle").GetProperty("recurring")[0];
+        Assert.Equal("2025-09-01", scheduleNow.GetProperty("lastDoneDate").GetString());
+        Assert.DoesNotContain(await LinesOf(people.Alice, car), e => e.GetProperty("id").GetString() == line.ToString());
+        var expenses = (await people.Alice.Gql("query($v: UUID!) { expenses(vehicleId: $v) { id } }", new { v = car })).Data().GetProperty("expenses");
+        Assert.DoesNotContain(expenses.EnumerateArray(), e => e.GetProperty("id").GetString() == expense.ToString());
+    }
+
+    [Fact]
+    public async Task AVisitWithoutAnAmount_WithTyreDetails_MakesTheLineAlone_FromTheQueueToo()
+    {
+        var (people, car, summer, _, _) = await Car(_app);
+        var schedule = await Schedule(people.Alice, car);
+        var line = Guid.NewGuid();
+        var change = new
+        {
+            id = Guid.NewGuid(),
+            markRecurringExpensesDone = new { ids = new[] { schedule }, date = "2026-09-20", odometer = 148_300, tyre = new { kind = "WHEEL_BALANCING", setId = summer, lineId = line } },
+        };
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change)));
+        Assert.Equal(("APPLIED", null), Result(await Send(people.Alice, change with { id = Guid.NewGuid() })));
+        var made = Assert.Single(await LinesOf(people.Alice, car), e => e.GetProperty("id").GetString() == line.ToString());
+        Assert.Equal(("WHEEL_BALANCING", 148_300L, JsonValueKind.Null), (made.GetProperty("kind").GetString(), made.GetProperty("odometer").GetInt64(), made.GetProperty("expenseId").ValueKind));
+    }
+
+    private static async Task<string> UploadDraft(HttpClient c, string vehicleId)
+    {
+        var content = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var response = await c.PutAsync($"/media/vehicles/{vehicleId}/photo-drafts", content);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
     }
 }

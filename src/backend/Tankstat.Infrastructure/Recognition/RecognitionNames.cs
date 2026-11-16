@@ -22,6 +22,7 @@ internal static class RecognitionNames
         ["date"] = ReadingFieldName.Date,
         ["title"] = ReadingFieldName.Title,
         ["discount"] = ReadingFieldName.Discount,
+        ["tyreWork"] = ReadingFieldName.TyreWork,
     };
 
     /// <summary>The kind a name stands for; anything else (including "unknown") is <see cref="DocumentKind.Unknown"/>.</summary>

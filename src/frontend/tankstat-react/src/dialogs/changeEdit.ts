@@ -9,6 +9,10 @@ export interface ChangeEdit<T> {
   submitLabel: string
   /** A waiting add whose amounts were left for its kept photos to fill: they may stay empty in the edit too. */
   mayWait?: boolean
+  /** The log the change is about (its id), so a dialog can find what is tied to it (an expense's tyre log line, #290). */
+  targetId?: string
+  /** A change the server parked (Edit and apply), not one waiting here: its refusal says what it names may be gone (#290). */
+  parked?: boolean
   /** Merging a parked edit with what is on the server now (`initial` is the merged values): what to say under each field. */
   merge?: MergeInfo
 }

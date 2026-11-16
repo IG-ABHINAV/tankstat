@@ -4,6 +4,7 @@ import { HttpResponse } from 'msw'
 import { expect, it, vi } from 'vitest'
 import App from '../../src/App.tsx'
 import { check, setup, setupAccessibilityTests } from '../support/accessibility.tsx'
+import { fakeTyres, tyreSummer, tyreWinter } from '../support/tyres.ts'
 import { server } from '../support/server.ts'
 import { graphql } from '../support/graphql.ts'
 import { fakeExpense, fakeLogBackend, fakePhotoStore, fakeRecognition, fakeRefueling, fakeVehicle, healthHandler, renderWithApollo, sessionHandler, stubViewport } from '../support/mocks.tsx'
@@ -71,6 +72,43 @@ it('the add expense dialog is labelled, described and free of violations', async
   await within(dialog).findByText(/Used before/)
 
   expect(dialog).toHaveAccessibleDescription(/Money spent on the vehicle/)
+  await check(document.body)
+})
+
+it("the expense dialog's tyre details, a whole set's car picture with its labels, are labelled and free of violations (#290)", async () => {
+  const { ui } = setup('/vehicles/v1?tab=expenses')
+  server.use(...fakeTyres([tyreSummer, tyreWinter]).handlers)
+  await screen.findByText('Oil change')
+
+  await ui.click(screen.getByRole('button', { name: 'Add expense' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
+  await ui.click(await within(dialog).findByRole('switch', { name: 'Tyre details' }))
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('checkbox', { name: 'The whole set' }))
+  await within(group).findByLabelText(/^Label, front left/)
+
+  expect(within(dialog).getByRole('switch', { name: 'Tyre details' })).toHaveAccessibleDescription(/Opens by itself for the category Tyres, Gumik\./)
+  await check(document.body)
+})
+
+it("a receipt's tyre work, offered at the switch and then under What was done, is linked to its control and free of violations (#290)", async () => {
+  const { ui } = setup('/vehicles/v1?tab=expenses')
+  server.use(...fakeTyres([tyreSummer, tyreWinter]).handlers, ...fakeRecognition({ results: [[{ name: 'TOTAL', value: '8000' }, { name: 'TYRE_WORK', value: 'WheelBalancing' }]], queuedPolls: 0 }).handlers)
+  await screen.findByText('Oil change')
+  await ui.click(screen.getByRole('button', { name: 'Add expense' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add expense' })
+  await within(dialog).findByRole('switch', { name: 'Tyre details' })
+
+  await ui.upload(within(dialog).getByTestId('photo-camera'), new File([new Uint8Array([1, 2, 3])], 'receipt.png', { type: 'image/png' }))
+
+  const use = await within(dialog).findByRole('button', { name: 'Use Wheel balancing from the photo for What was done' }, { timeout: 5000 })
+  expect(within(dialog).getByRole('status', { name: 'Photo reading status' })).toHaveTextContent('The photo shows tyre work: Wheel balancing') // announced
+  await check(document.body)
+  await ui.click(use)
+  const group = await within(dialog).findByRole('group', { name: 'Tyre details' })
+  await ui.click(within(group).getByRole('combobox', { name: 'What was done' }))
+  await ui.click(await screen.findByRole('option', { name: 'Storage fee' }))
+  expect(within(group).getByRole('combobox', { name: 'What was done' })).toHaveAccessibleDescription(/The photo shows Wheel balancing/)
   await check(document.body)
 })
 

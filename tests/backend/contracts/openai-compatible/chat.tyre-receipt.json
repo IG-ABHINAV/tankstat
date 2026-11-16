@@ -1,0 +1,15 @@
+{
+  "id": "chatcmpl-ollama-tyres",
+  "object": "chat.completion",
+  "created": 1759650003,
+  "model": "llama3.2-vision:latest",
+  "system_fingerprint": "fp_ollama",
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": "{\"kind\":\"expense-receipt\",\"fields\":[{\"name\":\"total\",\"value\":\"8000\",\"confidence\":0.9},{\"name\":\"currency\",\"value\":\"HUF\",\"confidence\":0.9},{\"name\":\"date\",\"value\":\"2026-09-30\",\"confidence\":0.8},{\"name\":\"title\",\"value\":\"Gumiszerviz\",\"confidence\":0.7},{\"name\":\"tyreWork\",\"value\":\"wheel-balancing\",\"confidence\":0.8}]}" },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": { "prompt_tokens": 1450, "completion_tokens": 85, "total_tokens": 1535 }
+}
